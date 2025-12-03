@@ -129,7 +129,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       setHasChanges(current !== initial)
     } else {
       // 새로 생성하는 경우: 필드에 값이 있으면 변경사항 있음
-      const hasAnyValue = 
+      const hasAnyValue = Boolean(
         formData.title || 
         formData.description || 
         formData.contentName || 
@@ -144,6 +144,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         firstMenuField.thumbnail ||
         menuFields.length > 0 ||
         menuFields.some(f => f.value || f.thumbnail)
+      )
       
       setHasChanges(hasAnyValue)
     }
@@ -205,7 +206,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_font_size: parseInt(formData.menuFontSize) || 16,
         subtitle_font_size: parseInt(formData.subtitleFontSize) || 14,
         body_font_size: parseInt(formData.bodyFontSize) || 11,
-        menu_items: [firstMenuField, ...menuFields],
+        menu_items: [
+          ...(firstMenuField.value || firstMenuField.thumbnail ? [{ id: 0, value: firstMenuField.value, thumbnail: firstMenuField.thumbnail }] : []),
+          ...menuFields
+        ],
         is_new: formData.showNew,
       }
       
