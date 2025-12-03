@@ -49,7 +49,7 @@ function ResultContent() {
   const currentAudioRef = useRef<HTMLAudioElement | null>(null) // 현재 재생 중인 오디오 (ref로 관리하여 리렌더링 방지)
   const [shouldStop, setShouldStop] = useState(false) // 재생 중지 플래그
 
-  // 페이지가 비활성화되면 음성 재생 중지
+  // 페이지가 비활성화되거나 브라우저 뒤로 가기 시 음성 재생 중지
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden && currentAudioRef.current) {
@@ -62,10 +62,24 @@ function ResultContent() {
       }
     }
 
+    const handlePopState = () => {
+      // 브라우저 뒤로 가기/앞으로 가기 시 오디오 중지
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause()
+        currentAudioRef.current.currentTime = 0
+        currentAudioRef.current = null
+        setIsPlaying(false)
+        setPlayingResultId(null)
+        setShouldStop(true)
+      }
+    }
+
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('popstate', handlePopState)
     
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('popstate', handlePopState)
     }
   }, [])
 
@@ -921,6 +935,27 @@ function ResultContent() {
                     currentAudio.currentTime = 0;
                     currentAudio = null;
                     isPlaying = false;
+                    
+                    // 버튼 상태 복원
+                    const button = document.getElementById('ttsButton');
+                    const icon = document.getElementById('ttsIcon');
+                    const text = document.getElementById('ttsText');
+                    if (button && icon && text) {
+                      button.disabled = false;
+                      icon.textContent = '🔊';
+                      text.textContent = '음성으로 듣기';
+                    }
+                  }
+                });
+
+                // 브라우저 뒤로 가기/앞으로 가기 시 음성 재생 중지
+                window.addEventListener('popstate', function() {
+                  if (currentAudio) {
+                    currentAudio.pause();
+                    currentAudio.currentTime = 0;
+                    currentAudio = null;
+                    isPlaying = false;
+                    shouldStop = true;
                     
                     // 버튼 상태 복원
                     const button = document.getElementById('ttsButton');
