@@ -390,7 +390,9 @@ function FormContent() {
                 <div className="mb-4">
                   <p className="text-gray-700 font-medium">
                     <span className="text-pink-600">{currentSubtitle}</span>
-                    <span className="text-gray-500">을 만들고 있어요</span>
+                    {currentSubtitle !== '내담자님의 사주명식을 자세히 분석중이에요' && (
+                      <span className="text-gray-500">을 만들고 있어요</span>
+                    )}
                   </p>
                 </div>
               )}
