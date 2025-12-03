@@ -2,17 +2,19 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { getContents, getSelectedModel, saveSelectedModel } from '@/lib/supabase-admin'
+import { getContents, getSelectedModel, saveSelectedModel, getSelectedSpeaker, saveSelectedSpeaker } from '@/lib/supabase-admin'
 
 export default function AdminPage() {
   const router = useRouter()
   const [contents, setContents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash')
+  const [selectedSpeaker, setSelectedSpeaker] = useState<string>('nara')
 
   useEffect(() => {
     loadContents()
     loadSelectedModel()
+    loadSelectedSpeaker()
   }, [])
 
   const loadSelectedModel = async () => {
@@ -24,6 +26,27 @@ export default function AdminPage() {
       console.error('모델 로드 실패:', error)
       // 기본값 사용
       setSelectedModel('gemini-2.5-flash')
+    }
+  }
+
+  const loadSelectedSpeaker = async () => {
+    try {
+      const speaker = await getSelectedSpeaker()
+      setSelectedSpeaker(speaker)
+      console.log('=== 관리자 컨텐츠 리스트: 선택된 화자 로드 ===')
+      console.log('선택된 화자:', speaker)
+      console.log('화자 옵션:')
+      console.log('  - nara: 나라 (여성)')
+      console.log('  - mijin: 미진 (여성)')
+      console.log('  - nhajun: 나준 (여성)')
+      console.log('  - ndain: 다인 (여성)')
+      console.log('  - jinho: 진호 (남성)')
+      console.log('==========================================')
+    } catch (error) {
+      console.error('화자 로드 실패:', error)
+      // 기본값 사용
+      setSelectedSpeaker('nara')
+      console.log('기본값 사용: nara')
     }
   }
 
@@ -57,7 +80,8 @@ export default function AdminPage() {
   }
 
   const handleAdd = () => {
-    router.push('/admin/form')
+    // 선택된 화자 정보를 URL 파라미터로 전달
+    router.push(`/admin/form?speaker=${selectedSpeaker}`)
   }
 
   const handleContentClick = (content: any) => {
@@ -84,6 +108,42 @@ export default function AdminPage() {
           
           {/* 모델 선택 토글 */}
           <div className="flex items-center gap-2 ml-auto bg-gray-800 rounded-lg p-1 border border-gray-700">
+            {/* TTS 화자 선택 드롭다운 */}
+            <select
+              value={selectedSpeaker}
+              onChange={async (e) => {
+                const speaker = e.target.value
+                const speakerNames: { [key: string]: string } = {
+                  'nara': '나라 (여성)',
+                  'mijin': '미진 (여성)',
+                  'nhajun': '나준 (여성)',
+                  'ndain': '다인 (여성)',
+                  'jinho': '진호 (남성)'
+                }
+                const speakerDisplayName = speakerNames[speaker] || speaker
+                
+                console.log('=== 관리자 컨텐츠 리스트: 화자 변경 ===')
+                console.log('이전 화자:', selectedSpeaker, `(${speakerNames[selectedSpeaker] || selectedSpeaker})`)
+                console.log('새 화자:', speaker, `(${speakerDisplayName})`)
+                
+                setSelectedSpeaker(speaker)
+                try {
+                  await saveSelectedSpeaker(speaker)
+                  console.log('Supabase에 화자 저장 완료:', speaker, `(${speakerDisplayName})`)
+                  console.log('==============================')
+                } catch (error) {
+                  console.error('화자 저장 실패:', error)
+                  alert('화자 저장에 실패했습니다. 콘솔을 확인해주세요.')
+                }
+              }}
+              className="bg-gray-800 border border-gray-700 rounded-md px-4 py-2 text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-pink-500 h-[36px] mr-2"
+            >
+              <option value="nara">나라 (여성)</option>
+              <option value="mijin">미진 (여성)</option>
+              <option value="nhajun">나준 (여성)</option>
+              <option value="ndain">다인 (여성)</option>
+              <option value="jinho">진호 (남성)</option>
+            </select>
             <button
               onClick={() => handleModelChange('gemini-2.5-flash')}
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${

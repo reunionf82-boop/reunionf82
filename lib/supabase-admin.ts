@@ -19,6 +19,7 @@ export interface ContentData {
   body_font_size?: number
   menu_items?: Array<{ id: number; value: string; thumbnail?: string }>
   is_new?: boolean
+  tts_speaker?: string // TTS 화자 (nara, jinho, mijin, nhajun, ndain)
   created_at?: string
   updated_at?: string
 }
@@ -80,6 +81,10 @@ export async function getContentById(id: number) {
 
 // 컨텐츠 저장/업데이트
 export async function saveContent(contentData: ContentData) {
+  console.log('=== Supabase: 컨텐츠 저장/업데이트 ===');
+  console.log('contentData.id:', contentData.id);
+  console.log('contentData.tts_speaker:', contentData.tts_speaker);
+  
   // menu_items를 JSONB 형식으로 변환
   const { menu_items, ...restData } = contentData
   const dataToSave = {
@@ -87,9 +92,12 @@ export async function saveContent(contentData: ContentData) {
     menu_items: menu_items ? JSON.stringify(menu_items) : null,
     updated_at: new Date().toISOString(),
   }
+  
+  console.log('저장할 dataToSave.tts_speaker:', dataToSave.tts_speaker);
 
   if (contentData.id) {
     // 업데이트
+    console.log('업데이트 모드: id =', contentData.id);
     const { data, error } = await supabase
       .from('contents')
       .update(dataToSave)
@@ -102,9 +110,12 @@ export async function saveContent(contentData: ContentData) {
       console.error('저장하려는 데이터:', dataToSave)
       throw new Error(`저장에 실패했습니다: ${error.message}`)
     }
+    console.log('업데이트 완료, 반환된 data.tts_speaker:', data?.tts_speaker);
+    console.log('==============================');
     return data
   } else {
     // 새로 생성
+    console.log('생성 모드');
     const { data, error } = await supabase
       .from('contents')
       .insert({
@@ -119,6 +130,8 @@ export async function saveContent(contentData: ContentData) {
       console.error('저장하려는 데이터:', dataToSave)
       throw new Error(`저장에 실패했습니다: ${error.message}`)
     }
+    console.log('생성 완료, 반환된 data.tts_speaker:', data?.tts_speaker);
+    console.log('==============================');
     return data
   }
 }
@@ -312,4 +325,74 @@ export async function saveSelectedModel(model: string) {
     throw e
   }
 }
+
+// 화자 설정 가져오기
+export async function getSelectedSpeaker(): Promise<string> {
+  try {
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('selected_speaker')
+      .eq('id', 1)
+      .single()
+    
+    if (error) {
+      // 테이블이 없거나 레코드가 없으면 기본값 반환
+      console.log('화자 설정 조회 실패, 기본값 사용:', error.message)
+      return 'nara'
+    }
+    
+    return data?.selected_speaker || 'nara'
+  } catch (e) {
+    console.error('화자 설정 조회 에러:', e)
+    return 'nara'
+  }
+}
+
+// 화자 설정 저장
+export async function saveSelectedSpeaker(speaker: string) {
+  try {
+    // 먼저 레코드가 있는지 확인
+    const { data: existing } = await supabase
+      .from('app_settings')
+      .select('id')
+      .eq('id', 1)
+      .single()
+    
+    if (existing) {
+      // 업데이트
+      const { error } = await supabase
+        .from('app_settings')
+        .update({ 
+          selected_speaker: speaker,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', 1)
+      
+      if (error) {
+        console.error('화자 설정 업데이트 에러:', error)
+        throw error
+      }
+    } else {
+      // 새로 생성
+      const { error } = await supabase
+        .from('app_settings')
+        .insert({
+          id: 1,
+          selected_speaker: speaker,
+          updated_at: new Date().toISOString()
+        })
+      
+      if (error) {
+        console.error('화자 설정 생성 에러:', error)
+        throw error
+      }
+    }
+    
+    return true
+  } catch (e) {
+    console.error('화자 설정 저장 에러:', e)
+    throw e
+  }
+}
+
 

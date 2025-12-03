@@ -13,6 +13,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const contentId = searchParams.get('id')
+  const speakerParam = searchParams.get('speaker') // URL에서 화자 파라미터 가져오기
   
   const [formData, setFormData] = useState({
     title: '',
@@ -32,6 +33,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     menuFontSize: '16',
     subtitleFontSize: '14',
     bodyFontSize: '11',
+    ttsSpeaker: speakerParam || 'nara', // URL 파라미터 또는 기본값: nara
   })
   const [menuFields, setMenuFields] = useState<Array<{ id: number; value: string; thumbnail?: string }>>([])
   const [firstMenuField, setFirstMenuField] = useState({ value: '', thumbnail: '' })
@@ -78,6 +80,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         body_font_size: parseInt(formData.bodyFontSize) || 11,
         menu_items: currentMenuItems,
         is_new: formData.showNew,
+        tts_speaker: formData.ttsSpeaker || 'nara',
       }
       
       // initialData도 정규화 (menu_items 배열 처리)
@@ -99,6 +102,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         body_font_size: initialData.body_font_size || 11,
         menu_items: initialData.menu_items || [],
         is_new: initialData.is_new || false,
+        tts_speaker: initialData.tts_speaker || 'nara',
       }
       
       // menu_items 배열 정규화 (id 제거하고 value와 thumbnail만 비교)
@@ -172,6 +176,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menuFontSize: String(data.menu_font_size || '16'),
         subtitleFontSize: String(data.subtitle_font_size || '14'),
         bodyFontSize: String(data.body_font_size || '11'),
+        ttsSpeaker: data.tts_speaker || 'nara',
       })
       if (data.menu_items && data.menu_items.length > 0) {
         setFirstMenuField({
@@ -189,6 +194,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     e.preventDefault()
     setSaving(true)
     try {
+      console.log('=== 관리자 폼: 컨텐츠 저장 ===');
+      console.log('formData.ttsSpeaker:', formData.ttsSpeaker);
+      console.log('contentId:', contentId);
+      console.log('speakerParam:', speakerParam);
+      
       const contentData: ContentData = {
         id: contentId ? parseInt(contentId) : undefined,
         role_prompt: formData.title,
@@ -211,7 +221,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           ...menuFields
         ],
         is_new: formData.showNew,
+        tts_speaker: formData.ttsSpeaker || 'nara',
       }
+      
+      console.log('저장할 contentData.tts_speaker:', contentData.tts_speaker);
+      console.log('==============================');
       
       await saveContent(contentData)
       router.push('/admin')
@@ -278,7 +292,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            금칙사항
+            주의사항 프롬프트
           </label>
           <textarea
             name="description"
@@ -286,7 +300,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             onChange={handleChange}
             rows={3}
             className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y"
-            placeholder="금칙사항을 입력하세요"
+            placeholder="주의사항 프롬프트를 입력하세요"
             required
           />
         </div>

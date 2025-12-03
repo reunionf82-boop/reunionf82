@@ -81,8 +81,28 @@ export async function POST(req: NextRequest) {
       }
     }) : []
 
+    // 한국의 현재 날짜/시간 가져오기 (Asia/Seoul, UTC+9)
+    const now = new Date()
+    const koreaFormatter = new Intl.DateTimeFormat('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+    const koreaDateString = koreaFormatter.format(now)
+    const koreaYearFormatter = new Intl.DateTimeFormat('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+    })
+    const currentYear = parseInt(koreaYearFormatter.format(now))
+
     const prompt = `
 당신은 ${role_prompt}입니다.
+
+**중요: 현재 날짜 정보**
+- 오늘은 ${koreaDateString}입니다.
+- 현재 연도는 ${currentYear}년입니다.
+- 해석할 때 반드시 이 날짜 정보를 기준으로 하세요. 과거 연도(예: 2024년)를 언급하지 마세요.
 
 ${restrictions ? `금칙사항: ${restrictions}` : ''}
 
@@ -159,10 +179,11 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
 2. 메뉴 제목은 <h2 class="menu-title">으로 표시
 3. 썸네일이 있으면 <img src="[URL]" alt="[제목]" class="menu-thumbnail" />로 표시
 4. 각 소제목은 <div class="subtitle-section">으로 구분
-5. 소제목 제목은 <h3 class="subtitle-title">으로 표시
+5. 소제목 제목은 <h3 class="subtitle-title">으로 표시하되, 소제목 끝에 반드시 마침표(.)를 추가하세요. 예: <h3 class="subtitle-title">1-1. 나의 타고난 '기본 성격'과 '가치관'.</h3>
 6. 해석 내용은 <div class="subtitle-content"> 안에 HTML 형식으로 작성
 7. 각 content는 해당 subtitle의 char_count를 초과하지 않도록 주의
 8. 모든 메뉴와 소제목을 순서대로 포함
+9. 소제목 제목에 마침표가 없으면 자동으로 마침표를 추가하세요 (TTS 재생 시 자연스러운 구분을 위해)
 `
 
     console.log('Gemini API 호출 시작 (스트리밍 모드)')

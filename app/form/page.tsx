@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
-import { getContents, getSelectedModel } from '@/lib/supabase-admin'
+import { getContents, getSelectedModel, getSelectedSpeaker } from '@/lib/supabase-admin'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
 
 function FormContent() {
@@ -66,6 +66,10 @@ function FormContent() {
   const [streamingProgress, setStreamingProgress] = useState(0)
   const [currentSubtitle, setCurrentSubtitle] = useState<string>('')
   
+  // 음성 재생 상태
+  const [playingResultId, setPlayingResultId] = useState<string | null>(null)
+  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null)
+  
   // 궁합형 여부 확인
   const isGonghapType = content?.content_type === 'gonghap'
 
@@ -100,6 +104,160 @@ function FormContent() {
     }
   }
 
+  // HTML에서 텍스트 추출 (태그 제거)
+  const extractTextFromHtml = (htmlString: string): string => {
+    if (typeof window === 'undefined') return ''
+    const tempDiv = document.createElement('div')
+    tempDiv.innerHTML = htmlString
+    return tempDiv.textContent || tempDiv.innerText || ''
+  }
+
+  // 텍스트를 청크로 분할하는 함수
+  const splitTextIntoChunks = (text: string, maxLength: number): string[] => {
+    const chunks: string[] = []
+    let currentIndex = 0
+
+    while (currentIndex < text.length) {
+      let chunk = text.substring(currentIndex, currentIndex + maxLength)
+      
+      // 마지막 청크가 아니면 문장 중간에서 잘리지 않도록 처리
+      if (currentIndex + maxLength < text.length) {
+        const lastSpace = chunk.lastIndexOf(' ')
+        const lastPeriod = chunk.lastIndexOf('.')
+        const lastComma = chunk.lastIndexOf(',')
+        const lastNewline = chunk.lastIndexOf('\n')
+        const lastQuestion = chunk.lastIndexOf('?')
+        const lastExclamation = chunk.lastIndexOf('!')
+        
+        const cutPoint = Math.max(
+          lastSpace, 
+          lastPeriod, 
+          lastComma, 
+          lastNewline,
+          lastQuestion,
+          lastExclamation,
+          Math.floor(chunk.length * 0.9) // 최소 90%는 유지
+        )
+        
+        if (cutPoint > chunk.length * 0.8) {
+          chunk = chunk.substring(0, cutPoint + 1)
+        }
+      }
+      
+      chunks.push(chunk.trim())
+      currentIndex += chunk.length
+    }
+
+    return chunks.filter(chunk => chunk.length > 0)
+  }
+
+  // 저장된 결과 음성으로 듣기 기능 - 청크 단위로 나누어 재생
+  const handleSavedResultTextToSpeech = async (savedResult: any) => {
+    if (!savedResult.html || playingResultId === savedResult.id) return
+
+    try {
+      setPlayingResultId(savedResult.id)
+      
+      // HTML에서 텍스트 추출
+      const textContent = extractTextFromHtml(savedResult.html)
+      
+      if (!textContent.trim()) {
+        alert('읽을 내용이 없습니다.')
+        setPlayingResultId(null)
+        return
+      }
+
+      // 저장된 컨텐츠에서 화자 정보 가져오기 (기본값: nara)
+      const speaker = savedResult.content?.tts_speaker || 'nara'
+
+      // 텍스트를 2000자 단위로 분할
+      const maxLength = 2000
+      const chunks = splitTextIntoChunks(textContent, maxLength)
+      
+      console.log(`저장된 결과 음성 변환 시작, 전체 텍스트 길이: ${textContent.length}자, 청크 수: ${chunks.length}, 화자: ${speaker}`)
+
+      // 각 청크를 순차적으로 변환하고 재생
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i]
+        console.log(`청크 ${i + 1}/${chunks.length} 처리 중, 길이: ${chunk.length}자`)
+
+        // TTS API 호출 (화자 정보 포함)
+        const response = await fetch('/api/tts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: chunk, speaker }),
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || `청크 ${i + 1} 음성 변환에 실패했습니다.`)
+        }
+
+        // 오디오 데이터를 Blob으로 변환
+        const audioBlob = await response.blob()
+        const url = URL.createObjectURL(audioBlob)
+
+        // 오디오 재생 (Promise로 대기)
+        await new Promise<void>((resolve, reject) => {
+          const audio = new Audio(url)
+          setCurrentAudio(audio) // 현재 오디오 저장
+          
+          audio.onended = () => {
+            URL.revokeObjectURL(url)
+            setCurrentAudio(null)
+            resolve()
+          }
+          
+          audio.onerror = () => {
+            URL.revokeObjectURL(url)
+            setCurrentAudio(null)
+            reject(new Error(`청크 ${i + 1} 재생 중 오류가 발생했습니다.`))
+          }
+          
+          audio.onpause = () => {
+            // 사용자가 일시정지하거나 페이지가 비활성화된 경우
+            if (document.hidden) {
+              setCurrentAudio(null)
+              setPlayingResultId(null)
+            }
+          }
+          
+          audio.play().catch(reject)
+        })
+      }
+
+      console.log('모든 청크 재생 완료')
+      setPlayingResultId(null)
+      setCurrentAudio(null)
+    } catch (error: any) {
+      console.error('저장된 결과 음성 변환 실패:', error)
+      alert(error?.message || '음성 변환에 실패했습니다.')
+      setPlayingResultId(null)
+      setCurrentAudio(null)
+    }
+  }
+
+  // 페이지가 비활성화되면 음성 재생 중지
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && currentAudio) {
+        // 페이지가 숨겨지면 오디오 중지
+        currentAudio.pause()
+        currentAudio.currentTime = 0
+        setCurrentAudio(null)
+        setPlayingResultId(null)
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [currentAudio])
+
   useEffect(() => {
     loadContent()
     loadSavedResults()
@@ -116,6 +274,21 @@ function FormContent() {
         decodedTitle = title
       }
       const foundContent = data?.find((item: any) => item.content_name === decodedTitle)
+      console.log('Form 페이지: 로드된 컨텐츠:', foundContent)
+      console.log('Form 페이지: 컨텐츠의 tts_speaker (원본):', foundContent?.tts_speaker)
+      
+      // tts_speaker가 없거나 'nara'이면 app_settings에서 선택된 화자 사용
+      if (foundContent && (!foundContent.tts_speaker || foundContent.tts_speaker === 'nara')) {
+        try {
+          const selectedSpeaker = await getSelectedSpeaker()
+          console.log('Form 페이지: app_settings에서 선택된 화자:', selectedSpeaker)
+          foundContent.tts_speaker = selectedSpeaker
+          console.log('Form 페이지: 컨텐츠의 tts_speaker (업데이트됨):', foundContent.tts_speaker)
+        } catch (error) {
+          console.error('Form 페이지: 선택된 화자 조회 실패:', error)
+        }
+      }
+      
       setContent(foundContent || null)
     } catch (error) {
       console.error('컨텐츠 로드 실패:', error)
@@ -228,6 +401,41 @@ function FormContent() {
       setStreamingProgress(0)
       setCurrentSubtitle('내담자님의 사주명식을 자세히 분석중이에요')
       
+      // 가짜 로딩바 (스트리밍 도착 전까지 계속 증가)
+      let fakeProgressInterval: NodeJS.Timeout | null = null
+      let fakeProgressStartTime = Date.now()
+      let isStreamingStarted = false
+      let streamingStartProgress = 0
+      
+      // 가짜 로딩바 시작 (스트리밍 도착 전까지 계속 증가, 최대 95%까지)
+      fakeProgressInterval = setInterval(() => {
+        if (isStreamingStarted) {
+          // 스트리밍이 시작되면 가짜 로딩바 중지
+          if (fakeProgressInterval) {
+            clearInterval(fakeProgressInterval)
+            fakeProgressInterval = null
+          }
+          return
+        }
+        
+        const elapsed = Date.now() - fakeProgressStartTime
+        // 초기 30초 동안 빠르게 증가 (0% -> 30%), 그 이후 느리게 증가 (30% -> 95%)
+        let fakeProgress = 0
+        if (elapsed <= 30000) {
+          // 처음 30초: 0% -> 30%
+          fakeProgress = (elapsed / 30000) * 30
+        } else {
+          // 30초 이후: 30% -> 95% (매우 느리게 증가, 약 2분 동안)
+          const additionalTime = elapsed - 30000
+          const additionalProgress = Math.min(65, (additionalTime / 120000) * 65) // 2분 동안 65% 증가
+          fakeProgress = 30 + additionalProgress
+        }
+        
+        fakeProgress = Math.min(95, fakeProgress) // 최대 95%
+        setStreamingProgress(fakeProgress)
+        streamingStartProgress = fakeProgress
+      }, 100) // 100ms마다 업데이트
+      
       // 스트리밍 시작
       let accumulatedHtml = ''
       let finalHtml = ''
@@ -242,14 +450,29 @@ function FormContent() {
           if (data.type === 'start') {
             console.log('스트리밍 시작')
             accumulatedHtml = ''
-            setStreamingProgress(5)
+            isStreamingStarted = true
+            
+            // 가짜 로딩바 중지
+            if (fakeProgressInterval) {
+              clearInterval(fakeProgressInterval)
+              fakeProgressInterval = null
+            }
+            
+            // 스트리밍 시작 시점의 진행도를 기준으로 실제 진행도 계산
+            setStreamingProgress(Math.max(streamingStartProgress, 5))
             setCurrentSubtitle('내담자님의 사주명식을 자세히 분석중이에요')
           } else if (data.type === 'chunk') {
             accumulatedHtml += data.text || ''
             
-            // 진행률 계산
+            // 진행률 계산 (스트리밍 시작 후 실제 진행도)
             if (data.accumulatedLength) {
-              const estimatedProgress = Math.min(95, (data.accumulatedLength / 50000) * 100)
+              // 30%부터 95%까지 실제 진행도에 따라 증가
+              const baseProgress = streamingStartProgress || 30
+              const remainingProgress = 95 - baseProgress
+              const estimatedProgress = Math.min(
+                95, 
+                baseProgress + (data.accumulatedLength / 50000) * remainingProgress
+              )
               setStreamingProgress(estimatedProgress)
             }
             
@@ -274,6 +497,13 @@ function FormContent() {
           } else if (data.type === 'done') {
             console.log('스트리밍 완료')
             console.log('최종 HTML 길이:', (data.html || accumulatedHtml).length)
+            
+            // 가짜 로딩바 중지
+            if (fakeProgressInterval) {
+              clearInterval(fakeProgressInterval)
+              fakeProgressInterval = null
+            }
+            
             setStreamingProgress(100)
             setCurrentSubtitle('완료!')
             finalHtml = data.html || accumulatedHtml
@@ -284,11 +514,14 @@ function FormContent() {
             
             // 결과 데이터 준비
             const resultData = {
-              content,
+              content, // content 객체 전체 저장 (tts_speaker 포함)
               html: finalHtml,
               startTime: startTime,
               model: currentModel
             }
+            
+            console.log('Form 페이지: 저장할 resultData의 content:', content)
+            console.log('Form 페이지: 저장할 content의 tts_speaker:', content?.tts_speaker)
             
             // 세션 스토리지에 저장
             const storageKey = `result_${Date.now()}`
@@ -305,6 +538,13 @@ function FormContent() {
             }, 500)
           } else if (data.type === 'error') {
             console.error('스트리밍 에러:', data.error)
+            
+            // 가짜 로딩바 중지
+            if (fakeProgressInterval) {
+              clearInterval(fakeProgressInterval)
+              fakeProgressInterval = null
+            }
+            
             setShowLoadingPopup(false)
             setSubmitting(false)
             alert(data.error || '스트리밍 중 오류가 발생했습니다.')
@@ -318,6 +558,13 @@ function FormContent() {
         console.error('에러 객체:', streamError)
         console.error('에러 메시지:', streamError?.message)
         console.error('에러 스택:', streamError?.stack)
+        
+        // 가짜 로딩바 중지
+        if (fakeProgressInterval) {
+          clearInterval(fakeProgressInterval)
+          fakeProgressInterval = null
+        }
+        
         setShowLoadingPopup(false)
         setSubmitting(false)
         alert(streamError?.message || '결제 처리 중 오류가 발생했습니다.\n\n개발자 도구 콘솔을 확인해주세요.')
@@ -976,19 +1223,312 @@ function FormContent() {
                                         line-height: 1.8;
                                         white-space: pre-line;
                                       }
+                                      .title-container {
+                                        margin-bottom: 8px;
+                                      }
+                                      .tts-button {
+                                        background: linear-gradient(to right, #f9fafb, #f3f4f6);
+                                        color: #1f2937;
+                                        border: 1px solid #d1d5db;
+                                        padding: 12px 24px;
+                                        border-radius: 12px;
+                                        font-size: 14px;
+                                        font-weight: 600;
+                                        cursor: pointer;
+                                        display: flex;
+                                        align-items: center;
+                                        justify-content: center;
+                                        gap: 12px;
+                                        transition: all 0.3s ease;
+                                        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+                                        min-width: 180px;
+                                        margin-bottom: 16px;
+                                      }
+                                      .tts-button:hover:not(:disabled) {
+                                        background: linear-gradient(to right, #f3f4f6, #e5e7eb);
+                                        border-color: #60a5fa;
+                                        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                                        transform: translateY(-1px);
+                                      }
+                                      .tts-button:active:not(:disabled) {
+                                        transform: translateY(0);
+                                        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+                                      }
+                                      .tts-button:disabled {
+                                        background: linear-gradient(to right, #e5e7eb, #d1d5db);
+                                        border-color: #d1d5db;
+                                        cursor: not-allowed;
+                                        opacity: 0.6;
+                                      }
+                                      .tts-button span:first-child {
+                                        font-size: 20px;
+                                        transition: transform 0.2s ease;
+                                      }
+                                      .tts-button:hover:not(:disabled) span:first-child {
+                                        transform: scale(1.1);
+                                      }
+                                      .spinner {
+                                        width: 20px;
+                                        height: 20px;
+                                        border: 2px solid #3b82f6;
+                                        border-top-color: transparent;
+                                        border-radius: 50%;
+                                        animation: spin 0.8s linear infinite;
+                                      }
+                                      @keyframes spin {
+                                        to { transform: rotate(360deg); }
+                                      }
                                       ${savedDynamicStyles}
                                     </style>
                                   </head>
                                   <body>
                                     <div class="container">
-                                      <h1>${saved.title}</h1>
+                                      <div class="title-container">
+                                        <h1>${saved.title}</h1>
+                                      </div>
+                                      <div>
+                                        <button id="ttsButton" class="tts-button" onclick="handleTextToSpeech()">
+                                          <span id="ttsIcon">🔊</span>
+                                          <span id="ttsText">음성으로 듣기</span>
+                                        </button>
+                                      </div>
                                       <div class="saved-at">
                                         저장일시: ${saved.savedAt}<br/>
                                         ${saved.model ? `모델: ${saved.model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : saved.model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : saved.model}<br/>` : ''}
                                         ${saved.processingTime ? `처리 시간: ${saved.processingTime}` : ''}
                                       </div>
-                                      ${saved.html}
+                                      <div id="contentHtml">${saved.html}</div>
                                     </div>
+                                    <script>
+                                      // 저장된 컨텐츠의 화자 정보를 전역 변수로 설정
+                                      window.savedContentSpeaker = ${saved.content?.tts_speaker ? `'${saved.content.tts_speaker}'` : "'nara'"};
+                                      
+                                      let isPlaying = false;
+                                      let currentAudio = null;
+                                      let shouldStop = false;
+                                      
+                                      // 페이지가 비활성화되면 음성 재생 중지
+                                      document.addEventListener('visibilitychange', function() {
+                                        if (document.hidden && currentAudio) {
+                                          currentAudio.pause();
+                                          currentAudio.currentTime = 0;
+                                          currentAudio = null;
+                                          isPlaying = false;
+                                          
+                                          // 버튼 상태 복원
+                                          const button = document.getElementById('ttsButton');
+                                          const icon = document.getElementById('ttsIcon');
+                                          const text = document.getElementById('ttsText');
+                                          if (button && icon && text) {
+                                            button.disabled = false;
+                                            icon.textContent = '🔊';
+                                            text.textContent = '음성으로 듣기';
+                                          }
+                                        }
+                                      });
+
+                                      // HTML에서 텍스트 추출
+                                      function extractTextFromHtml(htmlString) {
+                                        const tempDiv = document.createElement('div');
+                                        tempDiv.innerHTML = htmlString;
+                                        return tempDiv.textContent || tempDiv.innerText || '';
+                                      }
+
+                                      // 텍스트를 청크로 분할하는 함수
+                                      function splitTextIntoChunks(text, maxLength) {
+                                        const chunks = [];
+                                        let currentIndex = 0;
+
+                                        while (currentIndex < text.length) {
+                                          let chunk = text.substring(currentIndex, currentIndex + maxLength);
+                                          
+                                          // 마지막 청크가 아니면 문장 중간에서 잘리지 않도록 처리
+                                          if (currentIndex + maxLength < text.length) {
+                                            const lastSpace = chunk.lastIndexOf(' ');
+                                            const lastPeriod = chunk.lastIndexOf('.');
+                                            const lastComma = chunk.lastIndexOf(',');
+                                            const lastNewline = chunk.lastIndexOf('\\n');
+                                            const lastQuestion = chunk.lastIndexOf('?');
+                                            const lastExclamation = chunk.lastIndexOf('!');
+                                            
+                                            const cutPoint = Math.max(
+                                              lastSpace, 
+                                              lastPeriod, 
+                                              lastComma, 
+                                              lastNewline,
+                                              lastQuestion,
+                                              lastExclamation,
+                                              Math.floor(chunk.length * 0.9) // 최소 90%는 유지
+                                            );
+                                            
+                                            if (cutPoint > chunk.length * 0.8) {
+                                              chunk = chunk.substring(0, cutPoint + 1);
+                                            }
+                                          }
+                                          
+                                          chunks.push(chunk.trim());
+                                          currentIndex += chunk.length;
+                                        }
+
+                                        return chunks.filter(chunk => chunk.length > 0);
+                                      }
+
+                                      // 음성 재생 중지 함수
+                                      function stopTextToSpeech() {
+                                        if (currentAudio) {
+                                          currentAudio.pause();
+                                          currentAudio.currentTime = 0;
+                                          currentAudio = null;
+                                        }
+                                        shouldStop = true;
+                                        isPlaying = false;
+                                        
+                                        const button = document.getElementById('ttsButton');
+                                        const icon = document.getElementById('ttsIcon');
+                                        const text = document.getElementById('ttsText');
+                                        if (button && icon && text) {
+                                          button.disabled = false;
+                                          icon.textContent = '🔊';
+                                          text.textContent = '음성으로 듣기';
+                                        }
+                                      }
+
+                                      // 음성으로 듣기 기능 - 청크 단위로 나누어 재생
+                                      async function handleTextToSpeech() {
+                                        // 재생 중이면 중지
+                                        if (isPlaying) {
+                                          stopTextToSpeech();
+                                          return;
+                                        }
+
+                                        try {
+                                          const contentHtml = document.getElementById('contentHtml').innerHTML;
+                                          const textContent = extractTextFromHtml(contentHtml);
+
+                                          if (!textContent.trim()) {
+                                            alert('읽을 내용이 없습니다.');
+                                            return;
+                                          }
+
+                                          // 버튼 상태 변경
+                                          const button = document.getElementById('ttsButton');
+                                          const icon = document.getElementById('ttsIcon');
+                                          const text = document.getElementById('ttsText');
+                                          button.disabled = false;
+                                          icon.textContent = '⏹️';
+                                          text.textContent = '듣기 종료';
+                                          isPlaying = true;
+                                          shouldStop = false;
+
+                                          // 텍스트를 2000자 단위로 분할
+                                          const maxLength = 2000;
+                                          const chunks = splitTextIntoChunks(textContent, maxLength);
+                                          
+                                          console.log('음성 변환 시작, 전체 텍스트 길이:', textContent.length, '자, 청크 수:', chunks.length);
+
+                                          // 각 청크를 순차적으로 변환하고 재생
+                                          for (let i = 0; i < chunks.length; i++) {
+                                            // 중지 플래그 확인
+                                            if (shouldStop) {
+                                              console.log('재생 중지됨');
+                                              break;
+                                            }
+
+                                            const chunk = chunks[i];
+                                            console.log('청크', i + 1, '/', chunks.length, '처리 중, 길이:', chunk.length, '자');
+
+                                            // TTS API 호출 (화자 정보 포함)
+                                            const speaker = window.savedContentSpeaker || 'nara';
+                                            const response = await fetch('/api/tts', {
+                                              method: 'POST',
+                                              headers: {
+                                                'Content-Type': 'application/json',
+                                              },
+                                              body: JSON.stringify({ text: chunk, speaker }),
+                                            });
+
+                                            if (!response.ok) {
+                                              const error = await response.json();
+                                              throw new Error(error.error || '청크 ' + (i + 1) + ' 음성 변환에 실패했습니다.');
+                                            }
+
+                                            // 중지 플래그 재확인
+                                            if (shouldStop) {
+                                              console.log('재생 중지됨 (API 호출 후)');
+                                              break;
+                                            }
+
+                                            // 오디오 데이터를 Blob으로 변환
+                                            const audioBlob = await response.blob();
+                                            const url = URL.createObjectURL(audioBlob);
+
+                                            // 오디오 재생 (Promise로 대기)
+                                            await new Promise((resolve, reject) => {
+                                              // 중지 플래그 재확인
+                                              if (shouldStop) {
+                                                URL.revokeObjectURL(url);
+                                                resolve();
+                                                return;
+                                              }
+
+                                              const audio = new Audio(url);
+                                              currentAudio = audio; // 현재 오디오 저장
+                                              
+                                              audio.onended = () => {
+                                                URL.revokeObjectURL(url);
+                                                currentAudio = null;
+                                                resolve();
+                                              };
+                                              
+                                              audio.onerror = () => {
+                                                URL.revokeObjectURL(url);
+                                                currentAudio = null;
+                                                reject(new Error('청크 ' + (i + 1) + ' 재생 중 오류가 발생했습니다.'));
+                                              };
+                                              
+                                              audio.onpause = () => {
+                                                // 사용자가 일시정지하거나 페이지가 비활성화된 경우
+                                                if (document.hidden || shouldStop) {
+                                                  currentAudio = null;
+                                                  isPlaying = false;
+                                                  button.disabled = false;
+                                                  icon.textContent = '🔊';
+                                                  text.textContent = '음성으로 듣기';
+                                                }
+                                              };
+                                              
+                                              audio.play().catch(reject);
+                                            });
+
+                                            // 중지 플래그 재확인
+                                            if (shouldStop) {
+                                              console.log('재생 중지됨 (재생 후)');
+                                              break;
+                                            }
+                                          }
+
+                                          if (!shouldStop) {
+                                            console.log('모든 청크 재생 완료');
+                                          }
+                                          isPlaying = false;
+                                          shouldStop = false;
+                                          button.disabled = false;
+                                          icon.textContent = '🔊';
+                                          text.textContent = '음성으로 듣기';
+                                        } catch (error) {
+                                          console.error('음성 변환 실패:', error);
+                                          alert(error?.message || '음성 변환에 실패했습니다.');
+                                          const button = document.getElementById('ttsButton');
+                                          const icon = document.getElementById('ttsIcon');
+                                          const text = document.getElementById('ttsText');
+                                          isPlaying = false;
+                                          shouldStop = false;
+                                          button.disabled = false;
+                                          icon.textContent = '🔊';
+                                          text.textContent = '음성으로 듣기';
+                                        }
+                                      }
+                                    </script>
                                   </body>
                                   </html>
                                 `)

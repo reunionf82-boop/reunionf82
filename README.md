@@ -18,7 +18,17 @@ Fortune82의 궁합/애정 페이지를 클론한 Next.js 프로젝트입니다.
 ```
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+NEXT_PUBLIC_JEMINAI_API_URL=your_gemini_api_key
+NAVER_CLOVA_CLIENT_ID=your_naver_clova_client_id
+NAVER_CLOVA_CLIENT_SECRET=your_naver_clova_client_secret
 ```
+
+**환경 변수 설명:**
+- `NEXT_PUBLIC_SUPABASE_URL`: Supabase 프로젝트 URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase 익명 키
+- `NEXT_PUBLIC_JEMINAI_API_URL`: Google Gemini API 키
+- `NAVER_CLOVA_CLIENT_ID`: 네이버 클라우드 플랫폼 Clova Voice Client ID
+- `NAVER_CLOVA_CLIENT_SECRET`: 네이버 클라우드 플랫폼 Clova Voice Client Secret
 
 ### 2. Supabase 데이터베이스 설정
 
@@ -43,6 +53,8 @@ CREATE TABLE contents (
   subtitle_font_size INTEGER DEFAULT 14,
   body_font_size INTEGER DEFAULT 11,
   menu_items JSONB,
+  is_new BOOLEAN DEFAULT false,
+  tts_speaker TEXT DEFAULT 'nara',
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -94,6 +106,7 @@ ALTER TABLE contents ADD COLUMN IF NOT EXISTS subtitle_font_size INTEGER DEFAULT
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS body_font_size INTEGER DEFAULT 11;
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS menu_items JSONB;
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS is_new BOOLEAN DEFAULT false;
+ALTER TABLE contents ADD COLUMN IF NOT EXISTS tts_speaker TEXT DEFAULT 'nara';
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
 ```
@@ -105,13 +118,17 @@ ALTER TABLE contents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()
 CREATE TABLE IF NOT EXISTS app_settings (
   id INTEGER PRIMARY KEY DEFAULT 1,
   selected_model TEXT DEFAULT 'gemini-2.5-flash',
+  selected_speaker TEXT DEFAULT 'nara',
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
 -- 초기 레코드 삽입 (없는 경우만)
-INSERT INTO app_settings (id, selected_model, updated_at)
-VALUES (1, 'gemini-2.5-flash', NOW())
+INSERT INTO app_settings (id, selected_model, selected_speaker, updated_at)
+VALUES (1, 'gemini-2.5-flash', 'nara', NOW())
 ON CONFLICT (id) DO NOTHING;
+
+-- 기존 테이블에 selected_speaker 컬럼 추가 (이미 존재하는 경우 자동으로 건너뜀)
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS selected_speaker TEXT DEFAULT 'nara';
 
 -- RLS 활성화
 ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
