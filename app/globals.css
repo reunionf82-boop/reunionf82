@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 재미나이 결과 HTML 스타일 */
+.jeminai-results {
+  @apply space-y-8;
+}
+
+.jeminai-results .menu-section {
+  @apply bg-white rounded-xl shadow-sm p-6 md:p-8;
+}
+
+.jeminai-results .menu-title {
+  @apply text-xl font-bold text-gray-900 mb-4;
+}
+
+.jeminai-results .menu-thumbnail {
+  @apply w-full h-64 object-cover mb-6;
+  border-bottom: none !important;
+}
+
+.jeminai-results .subtitle-section {
+  @apply pt-6;
+  border-top: none !important;
+}
+
+.jeminai-results .subtitle-section:first-child {
+  @apply pt-0;
+}
+
+.jeminai-results .subtitle-title {
+  @apply text-lg font-semibold text-gray-800 mb-3;
+}
+
+.jeminai-results .subtitle-content {
+  @apply text-gray-700 leading-relaxed whitespace-pre-line;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: linear-gradient(to bottom, #f8f9fa, #ffffff);
+  min-height: 100vh;
+}
+
+
