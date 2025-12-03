@@ -66,7 +66,8 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
+      {/* 관리 화면을 더 넓게 사용하기 위해 max-w 제한 제거 및 좌우 여백 약간만 유지 */}
+      <div className="w-full mx-auto px-6 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">관리자 컨텐츠 리스트</h1>
           <p className="text-gray-400">컨텐츠를 관리하세요</p>

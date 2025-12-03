@@ -47,7 +47,8 @@ export default function ContentListPage() {
 
   return (
     <div className="min-h-screen bg-black text-white p-8">
-      <div className="max-w-6xl mx-auto">
+      {/* 리스트 화면도 더 넓게 사용하기 위해 최대 너비를 확장 */}
+      <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">컨텐츠 리스트</h1>
           <p className="text-gray-400">컨텐츠를 관리하세요</p>
