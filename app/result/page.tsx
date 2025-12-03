@@ -47,39 +47,58 @@ function ResultContent() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [playingResultId, setPlayingResultId] = useState<string | null>(null) // 재생 중인 저장된 결과 ID
   const currentAudioRef = useRef<HTMLAudioElement | null>(null) // 현재 재생 중인 오디오 (ref로 관리하여 리렌더링 방지)
-  const [shouldStop, setShouldStop] = useState(false) // 재생 중지 플래그
+  const shouldStopRef = useRef(false) // 재생 중지 플래그 (ref로 관리하여 실시간 확인 가능)
+  const [shouldStop, setShouldStop] = useState(false) // 재생 중지 플래그 (UI 업데이트용)
+
+  // 오디오 중지 함수 (여러 곳에서 재사용)
+  const stopAndResetAudio = () => {
+    console.log('오디오 중지 요청')
+    shouldStopRef.current = true // ref 업데이트 (즉시 반영)
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause()
+      currentAudioRef.current.currentTime = 0
+      const url = currentAudioRef.current.src
+      if (url.startsWith('blob:')) {
+        URL.revokeObjectURL(url) // URL 해제
+      }
+      currentAudioRef.current = null
+    }
+    setShouldStop(true) // state 업데이트 (UI 반영)
+    setIsPlaying(false)
+    setPlayingResultId(null)
+  }
 
   // 페이지가 비활성화되거나 브라우저 뒤로 가기 시 음성 재생 중지
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.hidden && currentAudioRef.current) {
-        // 페이지가 숨겨지면 오디오 중지
-        currentAudioRef.current.pause()
-        currentAudioRef.current.currentTime = 0
-        currentAudioRef.current = null
-        setIsPlaying(false)
-        setPlayingResultId(null)
+      if (document.hidden) {
+        console.log('페이지 숨김 감지, 오디오 중지')
+        stopAndResetAudio()
       }
     }
 
-    const handlePopState = () => {
-      // 브라우저 뒤로 가기/앞으로 가기 시 오디오 중지
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause()
-        currentAudioRef.current.currentTime = 0
-        currentAudioRef.current = null
-        setIsPlaying(false)
-        setPlayingResultId(null)
-        setShouldStop(true)
-      }
+    const handlePopState = (e: PopStateEvent) => {
+      console.log('popstate 이벤트 감지 (뒤로가기/앞으로가기), 오디오 중지', e)
+      stopAndResetAudio()
     }
 
+    const handleBeforeUnload = () => {
+      console.log('beforeunload 이벤트 감지, 오디오 중지')
+      stopAndResetAudio()
+    }
+
+    // 이벤트 리스너 등록 (캡처링 단계에서도 처리)
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('popstate', handlePopState)
+    window.addEventListener('popstate', handlePopState, true) // 캡처링 단계에서 처리
+    window.addEventListener('beforeunload', handleBeforeUnload)
     
+    // cleanup: 페이지 언마운트 시 오디오 중지
     return () => {
+      console.log('컴포넌트 언마운트, 오디오 중지')
+      stopAndResetAudio()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('popstate', handlePopState)
+      window.removeEventListener('popstate', handlePopState, true)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
     }
   }, [])
 
@@ -249,13 +268,7 @@ function ResultContent() {
 
   // 음성 재생 중지 함수
   const stopTextToSpeech = () => {
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause()
-      currentAudioRef.current.currentTime = 0
-      currentAudioRef.current = null
-    }
-    setShouldStop(true)
-    setIsPlaying(false)
+    stopAndResetAudio()
   }
 
   // 음성으로 듣기 기능 (현재 결과용) - 청크 단위로 나누어 재생
@@ -270,7 +283,8 @@ function ResultContent() {
 
     try {
       setIsPlaying(true)
-      setShouldStop(false)
+      shouldStopRef.current = false // ref 초기화
+      setShouldStop(false) // state 초기화
       
       // HTML에서 텍스트 추출
       const textContent = extractTextFromHtml(html)
@@ -332,7 +346,7 @@ function ResultContent() {
 
       // 다음 청크를 미리 로드하는 함수
       const preloadNextChunk = async (chunkIndex: number): Promise<{ url: string; audio: HTMLAudioElement } | null> => {
-        if (chunkIndex >= chunks.length || shouldStop) {
+        if (chunkIndex >= chunks.length || shouldStopRef.current) {
           return null
         }
 
@@ -378,8 +392,8 @@ function ResultContent() {
       let preloadedChunk: { url: string; audio: HTMLAudioElement } | null = null
 
       for (let i = 0; i < chunks.length; i++) {
-        // 중지 플래그 확인
-        if (shouldStop) {
+        // 중지 플래그 확인 (ref로 실시간 확인)
+        if (shouldStopRef.current) {
           console.log('재생 중지됨')
           if (preloadedChunk) {
             URL.revokeObjectURL(preloadedChunk.url)
@@ -425,8 +439,8 @@ function ResultContent() {
 
         // 오디오 재생 (Promise로 대기)
         await new Promise<void>((resolve, reject) => {
-          // 중지 플래그 재확인
-          if (shouldStop) {
+          // 중지 플래그 재확인 (ref로 실시간 확인)
+          if (shouldStopRef.current) {
             URL.revokeObjectURL(currentUrl)
             resolve()
             return
@@ -448,7 +462,7 @@ function ResultContent() {
           
           currentAudio.onpause = () => {
             // 사용자가 일시정지하거나 페이지가 비활성화된 경우
-            if (document.hidden || shouldStop) {
+            if (document.hidden || shouldStopRef.current) {
               currentAudioRef.current = null
               setIsPlaying(false)
             }
@@ -928,45 +942,50 @@ function ResultContent() {
                 let currentAudio = null;
                 let shouldStop = false;
                 
-                // 페이지가 비활성화되면 음성 재생 중지
-                document.addEventListener('visibilitychange', function() {
-                  if (document.hidden && currentAudio) {
+                // 오디오 중지 함수 (여러 곳에서 재사용)
+                function stopAndResetAudio() {
+                  console.log('새 창: 오디오 중지 요청');
+                  shouldStop = true;
+                  if (currentAudio) {
                     currentAudio.pause();
                     currentAudio.currentTime = 0;
-                    currentAudio = null;
-                    isPlaying = false;
-                    
-                    // 버튼 상태 복원
-                    const button = document.getElementById('ttsButton');
-                    const icon = document.getElementById('ttsIcon');
-                    const text = document.getElementById('ttsText');
-                    if (button && icon && text) {
-                      button.disabled = false;
-                      icon.textContent = '🔊';
-                      text.textContent = '음성으로 듣기';
+                    const url = currentAudio.src;
+                    if (url && url.startsWith('blob:')) {
+                      URL.revokeObjectURL(url); // URL 해제
                     }
+                    currentAudio = null;
+                  }
+                  isPlaying = false;
+                  
+                  // 버튼 상태 복원
+                  const button = document.getElementById('ttsButton');
+                  const icon = document.getElementById('ttsIcon');
+                  const text = document.getElementById('ttsText');
+                  if (button && icon && text) {
+                    button.disabled = false;
+                    icon.textContent = '🔊';
+                    text.textContent = '음성으로 듣기';
+                  }
+                }
+
+                // 페이지가 비활성화되면 음성 재생 중지
+                document.addEventListener('visibilitychange', function() {
+                  if (document.hidden) {
+                    console.log('새 창: 페이지 숨김 감지, 오디오 중지');
+                    stopAndResetAudio();
                   }
                 });
 
                 // 브라우저 뒤로 가기/앞으로 가기 시 음성 재생 중지
-                window.addEventListener('popstate', function() {
-                  if (currentAudio) {
-                    currentAudio.pause();
-                    currentAudio.currentTime = 0;
-                    currentAudio = null;
-                    isPlaying = false;
-                    shouldStop = true;
-                    
-                    // 버튼 상태 복원
-                    const button = document.getElementById('ttsButton');
-                    const icon = document.getElementById('ttsIcon');
-                    const text = document.getElementById('ttsText');
-                    if (button && icon && text) {
-                      button.disabled = false;
-                      icon.textContent = '🔊';
-                      text.textContent = '음성으로 듣기';
-                    }
-                  }
+                window.addEventListener('popstate', function(e) {
+                  console.log('새 창: popstate 이벤트 감지 (뒤로가기/앞으로가기), 오디오 중지', e);
+                  stopAndResetAudio();
+                }, true); // 캡처링 단계에서 처리
+
+                // 페이지 언로드 시 음성 재생 중지
+                window.addEventListener('beforeunload', function() {
+                  console.log('새 창: beforeunload 이벤트 감지, 오디오 중지');
+                  stopAndResetAudio();
                 });
 
                 // HTML에서 텍스트 추출
@@ -1017,22 +1036,7 @@ function ResultContent() {
 
                 // 음성 재생 중지 함수
                 function stopTextToSpeech() {
-                  if (currentAudio) {
-                    currentAudio.pause();
-                    currentAudio.currentTime = 0;
-                    currentAudio = null;
-                  }
-                  shouldStop = true;
-                  isPlaying = false;
-                  
-                  const button = document.getElementById('ttsButton');
-                  const icon = document.getElementById('ttsIcon');
-                  const text = document.getElementById('ttsText');
-                  if (button && icon && text) {
-                    button.disabled = false;
-                    icon.textContent = '🔊';
-                    text.textContent = '음성으로 듣기';
-                  }
+                  stopAndResetAudio();
                 }
 
                 // 음성으로 듣기 기능 - 청크 단위로 나누어 재생
