@@ -5,6 +5,8 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { getContents, getSelectedModel, getSelectedSpeaker } from '@/lib/supabase-admin'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
+import TermsPopup from '@/components/TermsPopup'
+import PrivacyPopup from '@/components/PrivacyPopup'
 
 function FormContent() {
   const searchParams = useSearchParams()
@@ -65,6 +67,12 @@ function FormContent() {
   const [showLoadingPopup, setShowLoadingPopup] = useState(false)
   const [streamingProgress, setStreamingProgress] = useState(0)
   const [currentSubtitle, setCurrentSubtitle] = useState<string>('')
+  
+  // 이용약관 팝업 상태
+  const [showTermsPopup, setShowTermsPopup] = useState(false)
+  
+  // 개인정보 수집 및 이용 팝업 상태
+  const [showPrivacyPopup, setShowPrivacyPopup] = useState(false)
   
   // 음성 재생 상태
   const [playingResultId, setPlayingResultId] = useState<string | null>(null)
@@ -624,6 +632,12 @@ function FormContent() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+      {/* 이용약관 팝업 */}
+      <TermsPopup isOpen={showTermsPopup} onClose={() => setShowTermsPopup(false)} />
+      
+      {/* 개인정보 수집 및 이용 팝업 */}
+      <PrivacyPopup isOpen={showPrivacyPopup} onClose={() => setShowPrivacyPopup(false)} />
+      
       {/* 스트리밍 로딩 팝업 */}
       {showLoadingPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1076,7 +1090,17 @@ function FormContent() {
                   required
                 />
                 <label htmlFor="agreeTerms" className="text-sm text-gray-700 cursor-pointer flex-1">
-                  서비스 이용 약관에 동의 <span className="text-pink-500 underline">[이용약관보기]</span>
+                  서비스 이용 약관에 동의{' '}
+                  <span 
+                    className="text-pink-500 underline cursor-pointer hover:text-pink-600"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setShowTermsPopup(true)
+                    }}
+                  >
+                    [이용약관보기]
+                  </span>
                 </label>
               </div>
               <div className="flex items-start gap-2">
@@ -1089,7 +1113,17 @@ function FormContent() {
                   required
                 />
                 <label htmlFor="agreePrivacy" className="text-sm text-gray-700 cursor-pointer flex-1">
-                  개인정보 수집 및 이용동의 <span className="text-pink-500 underline">[고지내용보기]</span>
+                  개인정보 수집 및 이용동의{' '}
+                  <span 
+                    className="text-pink-500 underline cursor-pointer hover:text-pink-600"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setShowPrivacyPopup(true)
+                    }}
+                  >
+                    [고지내용보기]
+                  </span>
                 </label>
               </div>
             </div>
