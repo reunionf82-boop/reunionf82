@@ -35,8 +35,8 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
-      <main className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex flex-col">
+      <main className="container mx-auto px-4 py-8 flex-1">
         {loading ? (
           <div className="text-center text-gray-400 py-12">로딩 중...</div>
         ) : services.length === 0 ? (
@@ -50,7 +50,7 @@ export default function Home() {
         )}
       </main>
 
-      <footer className="bg-gray-800 text-white text-center py-6 mt-12">
+      <footer className="bg-gray-800 text-white text-center py-6 mt-auto">
         <p className="text-sm">
           Copyrights © 2022 All Rights Reserved by Techenjoy Inc.
         </p>
