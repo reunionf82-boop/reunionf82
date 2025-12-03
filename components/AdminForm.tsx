@@ -390,7 +390,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             name="summary"
             value={formData.summary}
             onChange={handleChange}
-            rows={3}
+            rows={2}
             className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y"
             placeholder="요약을 입력하세요"
           />
@@ -405,7 +405,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             name="introduction"
             value={formData.introduction}
             onChange={handleChange}
-            rows={3}
+            rows={8}
             className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y"
             placeholder="소개를 입력하세요"
           />
@@ -418,7 +418,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             name="recommendation"
             value={formData.recommendation}
             onChange={handleChange}
-            rows={3}
+            rows={5}
             className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y"
             placeholder="추천을 입력하세요"
           />
@@ -514,7 +514,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               name="menuSubtitle"
               value={formData.menuSubtitle}
               onChange={handleChange}
-              rows={3}
+              rows={16}
               className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize-y"
               placeholder="입력하세요"
             />
@@ -527,7 +527,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               name="interpretationTool"
               value={formData.interpretationTool}
               onChange={handleChange}
-              rows={3}
+              rows={16}
               className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize-y"
               placeholder="입력하세요"
             />
