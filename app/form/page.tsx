@@ -401,11 +401,16 @@ function FormContent() {
       setStreamingProgress(0)
       setCurrentSubtitle('내담자님의 사주명식을 자세히 분석중이에요')
       
+      // 소제목 수 계산
+      const totalSubtitles = menuSubtitlePairs.length
+      console.log('전체 소제목 수:', totalSubtitles)
+      
       // 가짜 로딩바 (스트리밍 도착 전까지 계속 증가)
       let fakeProgressInterval: NodeJS.Timeout | null = null
       let fakeProgressStartTime = Date.now()
       let isStreamingStarted = false
       let streamingStartProgress = 0
+      let completedSubtitles = 0 // 완료된 소제목 수
       
       // 가짜 로딩바 시작 (스트리밍 도착 전까지 계속 증가, 최대 95%까지)
       fakeProgressInterval = setInterval(() => {
@@ -451,6 +456,7 @@ function FormContent() {
             console.log('스트리밍 시작')
             accumulatedHtml = ''
             isStreamingStarted = true
+            completedSubtitles = 0
             
             // 가짜 로딩바 중지
             if (fakeProgressInterval) {
@@ -464,22 +470,28 @@ function FormContent() {
           } else if (data.type === 'chunk') {
             accumulatedHtml += data.text || ''
             
-            // 진행률 계산 (스트리밍 시작 후 실제 진행도)
-            if (data.accumulatedLength) {
-              // 30%부터 95%까지 실제 진행도에 따라 증가
-              const baseProgress = streamingStartProgress || 30
-              const remainingProgress = 95 - baseProgress
-              const estimatedProgress = Math.min(
-                95, 
-                baseProgress + (data.accumulatedLength / 50000) * remainingProgress
-              )
-              setStreamingProgress(estimatedProgress)
-            }
-            
-            // 현재 생성 중인 소제목 추출
+            // 현재 생성 중인 소제목 추출 및 완료된 소제목 수 계산
             // HTML에서 subtitle-title 클래스를 가진 요소 찾기
             const subtitleMatch = accumulatedHtml.match(/<h3[^>]*class="subtitle-title"[^>]*>([^<]+)<\/h3>/g)
             if (subtitleMatch && subtitleMatch.length > 0) {
+              // 완료된 소제목 수 업데이트 (감지된 소제목 수)
+              const detectedSubtitles = subtitleMatch.length
+              if (detectedSubtitles > completedSubtitles) {
+                completedSubtitles = detectedSubtitles
+                console.log(`소제목 ${completedSubtitles}/${totalSubtitles} 감지됨`)
+                
+                // 소제목이 감지되면 진행도를 즉시 업데이트
+                // 스트리밍 시작 시점의 진행도부터 95%까지를 소제목 수에 따라 분배
+                const baseProgress = streamingStartProgress || 30
+                const remainingProgress = 95 - baseProgress
+                
+                // 완료된 소제목 비율에 따라 진행도 계산
+                // 소제목이 감지되면 해당 소제목의 진행도를 즉시 반영
+                const subtitleProgress = baseProgress + (completedSubtitles / totalSubtitles) * remainingProgress
+                setStreamingProgress(Math.min(95, subtitleProgress))
+              }
+              
+              // 현재 생성 중인 소제목 표시
               const lastMatch = subtitleMatch[subtitleMatch.length - 1]
               const subtitleText = lastMatch.replace(/<[^>]+>/g, '').trim()
               // 숫자-숫자 패턴 제거 (예: "1-1. 소제목" -> "소제목")
