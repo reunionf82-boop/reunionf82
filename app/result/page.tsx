@@ -887,7 +887,7 @@ function ResultContent() {
                 <div style="margin-bottom: 16px;">
                   <button id="ttsButton" class="tts-button" onclick="handleTextToSpeech()">
                     <span id="ttsIcon">🔊</span>
-                    <span id="ttsText">음성으로 듣기</span>
+                    <span id="ttsText">점사 듣기</span>
                   </button>
                 </div>
                 <div class="saved-at">
@@ -964,7 +964,7 @@ function ResultContent() {
                   if (button && icon && text) {
                     button.disabled = false;
                     icon.textContent = '🔊';
-                    text.textContent = '음성으로 듣기';
+                    text.textContent = '점사 듣기';
                   }
                 }
 
@@ -1252,7 +1252,7 @@ function ResultContent() {
                             isPlaying = false;
                             button.disabled = false;
                             icon.textContent = '🔊';
-                            text.textContent = '음성으로 듣기';
+                            text.textContent = '점사 듣기';
                           }
                         };
                         
@@ -1281,7 +1281,7 @@ function ResultContent() {
                     shouldStop = false;
                     button.disabled = false;
                     icon.textContent = '🔊';
-                    text.textContent = '음성으로 듣기';
+                    text.textContent = '점사 듣기';
                   } catch (error) {
                     console.error('음성 변환 실패:', error);
                     alert(error?.message || '음성 변환에 실패했습니다.');
@@ -1292,7 +1292,7 @@ function ResultContent() {
                     shouldStop = false;
                     button.disabled = false;
                     icon.textContent = '🔊';
-                    text.textContent = '음성으로 듣기';
+                    text.textContent = '점사 듣기';
                   }
                 }
               </script>
@@ -1337,7 +1337,7 @@ function ResultContent() {
                 ) : (
                   <>
                     <span className="text-xl group-hover:scale-110 transition-transform duration-200">🔊</span>
-                    <span className="text-gray-800">음성으로 듣기</span>
+                    <span className="text-gray-800">점사 듣기</span>
                   </>
                 )}
               </button>
