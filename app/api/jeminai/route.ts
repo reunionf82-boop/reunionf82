@@ -152,19 +152,9 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
   <h2 class="menu-title">[메뉴 제목]</h2>
   ${menuItemsInfo.some((m: any) => m.thumbnail) ? '<img src="[썸네일 URL]" alt="[메뉴 제목]" class="menu-thumbnail" />' : ''}
   
-  <div class="subtitle-section">
-    <h3 class="subtitle-title">[소제목]</h3>
-    <div class="subtitle-content">
-      [해석 내용 (HTML 형식, 글자수 제한 준수)]
-    </div>
-  </div>
+  <div class="subtitle-section"><h3 class="subtitle-title">[소제목]</h3><div class="subtitle-content">[해석 내용 (HTML 형식, 글자수 제한 준수)]</div></div>
   
-  <div class="subtitle-section">
-    <h3 class="subtitle-title">[다음 소제목]</h3>
-    <div class="subtitle-content">
-      [해석 내용 (HTML 형식, 글자수 제한 준수)]
-    </div>
-  </div>
+  <div class="subtitle-section"><h3 class="subtitle-title">[다음 소제목]</h3><div class="subtitle-content">[해석 내용 (HTML 형식, 글자수 제한 준수)]</div></div>
   
   ...
 </div>
@@ -184,6 +174,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
 7. 각 content는 해당 subtitle의 char_count를 초과하지 않도록 주의
 8. 모든 메뉴와 소제목을 순서대로 포함
 9. 소제목 제목에 마침표가 없으면 자동으로 마침표를 추가하세요 (TTS 재생 시 자연스러운 구분을 위해)
+10. 소제목 제목과 해석 내용 사이에 빈 줄이나 공백을 절대 넣지 마세요. <h3 class="subtitle-title"> 태그와 <div class="subtitle-content"> 태그 사이에 줄바꿈이나 공백 문자를 넣지 말고 바로 붙여서 작성하세요. 예: <h3 class="subtitle-title">1-1. 소제목.</h3><div class="subtitle-content">본문 내용</div>
 `
 
     console.log('Gemini API 호출 시작 (스트리밍 모드)')
@@ -270,6 +261,15 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
               console.log('코드 블록 제거됨')
             }
           }
+          
+          // 소제목과 본문 사이의 공백 제거
+          // </h3 class="subtitle-title"> 태그와 <div class="subtitle-content"> 사이의 모든 공백 문자(줄바꿈, 스페이스, 탭 등) 제거
+          cleanHtml = cleanHtml.replace(/(<\/h3[^>]*class="subtitle-title"[^>]*>)\s+/g, '$1')
+          // 일반 </h3> 태그 뒤의 공백도 제거 (혹시 모를 경우 대비)
+          cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content")/g, '$1$2')
+          
+          // ** 문자 제거 (마크다운 강조 표시 제거)
+          cleanHtml = cleanHtml.replace(/\*\*/g, '')
           
           console.log('Gemini API 스트리밍 완료')
           console.log('응답 HTML 길이:', cleanHtml.length)

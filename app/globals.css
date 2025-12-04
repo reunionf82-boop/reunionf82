@@ -30,11 +30,37 @@
 }
 
 .jeminai-results .subtitle-title {
-  @apply text-lg font-semibold text-gray-800 mb-3;
+  @apply text-lg font-semibold text-gray-800;
+  line-height: 1.2 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  margin-bottom: 0 !important;
+  display: block !important;
 }
 
 .jeminai-results .subtitle-content {
   @apply text-gray-700 leading-relaxed whitespace-pre-line;
+  margin: 0 !important;
+  padding: 0 !important;
+  margin-top: 0.5rem !important;
+  padding-top: 0 !important;
+  display: block !important;
+}
+
+.jeminai-results .subtitle-section {
+  @apply pt-6;
+  border-top: none !important;
+  line-height: 1.2 !important;
+}
+
+.jeminai-results .subtitle-section h3 {
+  margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.jeminai-results .subtitle-section div.subtitle-content {
+  margin-top: 0.5rem !important;
+  padding-top: 0 !important;
 }
 
 * {
