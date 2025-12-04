@@ -767,25 +767,37 @@ function ResultContent() {
               <style>
                 body {
                   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-                  max-width: 1200px;
+                  max-width: 896px;
                   margin: 0 auto;
-                  padding: 20px;
-                  background: #f5f5f5;
+                  padding: 32px 16px;
+                  background: #f9fafb;
                 }
                 .container {
-                  background: white;
-                  border-radius: 12px;
-                  padding: 24px;
-                  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                  background: transparent;
+                  padding: 0;
                 }
                 .title-container {
-                  margin-bottom: 8px;
+                  text-align: center;
+                  margin-bottom: 16px;
                 }
                 h1 {
-                  font-size: 28px;
+                  font-size: 30px;
                   font-weight: bold;
-                  margin: 0 0 12px 0;
+                  margin: 0 0 16px 0;
                   color: #111;
+                }
+                .thumbnail-container {
+                  width: 100%;
+                  margin-bottom: 16px;
+                }
+                .thumbnail-container img {
+                  width: 100%;
+                  height: auto;
+                  object-fit: cover;
+                }
+                .tts-button-container {
+                  text-align: center;
+                  margin-bottom: 16px;
                 }
                 .tts-button {
                   background: linear-gradient(to right, #f9fafb, #f3f4f6);
@@ -796,7 +808,7 @@ function ResultContent() {
                   font-size: 14px;
                   font-weight: 600;
                   cursor: pointer;
-                  display: flex;
+                  display: inline-flex;
                   align-items: center;
                   justify-content: center;
                   gap: 8px;
@@ -839,9 +851,10 @@ function ResultContent() {
                   to { transform: rotate(360deg); }
                 }
                 .saved-at {
-                  color: #666;
+                  color: #6b7280;
                   font-size: 14px;
-                  margin-bottom: 24px;
+                  margin-bottom: 32px;
+                  text-align: center;
                 }
                 .menu-section {
                   background: white;
@@ -884,18 +897,22 @@ function ResultContent() {
                 <div class="title-container">
                   <h1>${saved.title}</h1>
                 </div>
-                <div style="margin-bottom: 16px;">
+                ${saved.content?.thumbnail_url ? `
+                <div class="thumbnail-container">
+                  <img src="${saved.content.thumbnail_url}" alt="${saved.title}" />
+                </div>
+                ` : ''}
+                <div class="tts-button-container">
                   <button id="ttsButton" class="tts-button" onclick="handleTextToSpeech()">
                     <span id="ttsIcon">🔊</span>
                     <span id="ttsText">점사 듣기</span>
                   </button>
                 </div>
                 <div class="saved-at">
-                  저장일시: ${saved.savedAt}<br/>
-                  ${saved.model ? `모델: ${saved.model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : saved.model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : saved.model}<br/>` : ''}
-                  ${saved.processingTime ? `처리 시간: ${saved.processingTime}` : ''}
+                  사용 모델: <span style="font-weight: 600; color: #374151;">${saved.model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : saved.model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : saved.model || 'Gemini 2.5 Flash'}</span>
+                  ${saved.processingTime ? ` · 처리 시간: <span style="font-weight: 600; color: #374151;">${saved.processingTime}</span>` : ''}
                 </div>
-                <div id="contentHtml">${saved.html}</div>
+                <div id="contentHtml">${saved.html ? saved.html.replace(/\*\*/g, '') : ''}</div>
               </div>
               <script>
                 // 저장된 컨텐츠의 화자 정보를 전역 변수로 설정 (초기값)
@@ -1321,6 +1338,18 @@ function ResultContent() {
           <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
             {content?.content_name || '결과 생성 중...'}
           </h1>
+          
+          {/* 썸네일 */}
+          {content?.thumbnail_url && (
+            <div className="mb-4 w-full">
+              <img 
+                src={content.thumbnail_url} 
+                alt={content?.content_name || '썸네일'}
+                className="w-full h-auto object-cover"
+              />
+            </div>
+          )}
+          
           {html && (
             <div className="mb-4">
               <button
@@ -1355,7 +1384,7 @@ function ResultContent() {
         {/* 결과 출력 - HTML 그대로 표시 */}
         <div 
           className="jeminai-results"
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={{ __html: html ? html.replace(/\*\*/g, '') : '' }}
         />
 
         {/* 저장된 파일 보기 */}
