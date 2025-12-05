@@ -8,14 +8,47 @@ export default function AdminPage() {
   const router = useRouter()
   const [contents, setContents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null)
   const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash')
   const [selectedSpeaker, setSelectedSpeaker] = useState<string>('nara')
 
   useEffect(() => {
-    loadContents()
-    loadSelectedModel()
-    loadSelectedSpeaker()
+    checkAuth()
   }, [])
+
+  useEffect(() => {
+    if (authenticated === true) {
+      loadContents()
+      loadSelectedModel()
+      loadSelectedSpeaker()
+    }
+  }, [authenticated])
+
+  const checkAuth = async () => {
+    try {
+      const response = await fetch('/api/admin/auth/check')
+      const data = await response.json()
+      if (data.authenticated) {
+        setAuthenticated(true)
+      } else {
+        setAuthenticated(false)
+        router.push('/admin/login')
+      }
+    } catch (error) {
+      console.error('인증 확인 실패:', error)
+      setAuthenticated(false)
+      router.push('/admin/login')
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/admin/auth/login', { method: 'DELETE' })
+      router.push('/admin/login')
+    } catch (error) {
+      console.error('로그아웃 실패:', error)
+    }
+  }
 
   const loadSelectedModel = async () => {
     try {
@@ -88,13 +121,33 @@ export default function AdminPage() {
     router.push(`/admin/form?id=${content.id}`)
   }
 
+  if (authenticated === null) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+        <div className="text-gray-400">인증 확인 중...</div>
+      </div>
+    )
+  }
+
+  if (authenticated === false) {
+    return null // 리다이렉트 중
+  }
+
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       {/* 관리 화면을 더 넓게 사용하기 위해 max-w 제한 제거 및 좌우 여백 약간만 유지 */}
       <div className="w-full mx-auto px-6 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">관리자 컨텐츠 리스트</h1>
-          <p className="text-gray-400">컨텐츠를 관리하세요</p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">관리자 컨텐츠 리스트</h1>
+            <p className="text-gray-400">컨텐츠를 관리하세요</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="bg-gray-700 hover:bg-gray-600 text-white font-semibold px-4 py-2 rounded-lg transition-colors duration-200"
+          >
+            로그아웃
+          </button>
         </div>
 
         {/* 버튼들 */}

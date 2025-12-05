@@ -239,7 +239,7 @@ export async function deleteThumbnail(filePath: string) {
   }
 }
 
-// 썸네일 업로드 (파일명 자동 생성)
+// 썸네일 업로드 (API 라우트를 통해 서버 사이드에서 업로드)
 export async function uploadThumbnailFile(file: File) {
   // 파일 크기 제한 (10MB)
   const maxSize = 10 * 1024 * 1024
@@ -253,41 +253,22 @@ export async function uploadThumbnailFile(file: File) {
     throw new Error('지원하는 이미지 형식: JPEG, PNG, GIF, WebP')
   }
 
-  const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-  const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
-  const filePath = fileName // thumbnails/ 접두사 제거 (버킷 이름이 thumbnails이므로)
+  // API 라우트를 통해 업로드 (서버 사이드에서 서비스 롤 키 사용)
+  const formData = new FormData()
+  formData.append('file', file)
 
-  const { data: uploadData, error: uploadError } = await supabase.storage
-    .from('thumbnails')
-    .upload(filePath, file, {
-      cacheControl: '3600',
-      upsert: false
-    })
+  const response = await fetch('/api/admin/upload', {
+    method: 'POST',
+    body: formData,
+  })
 
-  if (uploadError) {
-    console.error('Supabase 업로드 에러:', uploadError)
-    // 더 구체적인 에러 메시지 제공
-    if (uploadError.message.includes('Bucket not found')) {
-      throw new Error('thumbnails 버킷이 존재하지 않습니다. Supabase Storage에서 버킷을 생성해주세요.')
-    } else if (uploadError.message.includes('new row violates row-level security') || 
-               uploadError.message.includes('permission denied') ||
-               uploadError.message.includes('row-level security')) {
-      throw new Error('Storage 권한이 없습니다.\n\nSupabase 대시보드 → Storage → thumbnails → Policies에서 다음 정책을 추가하세요:\n\nCREATE POLICY "Allow public uploads"\nON storage.objects FOR INSERT\nTO public\nWITH CHECK (bucket_id = \'thumbnails\');')
-    } else if (uploadError.message.includes('duplicate')) {
-      throw new Error('이미 같은 이름의 파일이 존재합니다.')
-    }
-    throw new Error(uploadError.message || '파일 업로드에 실패했습니다.')
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: '업로드에 실패했습니다.' }))
+    throw new Error(errorData.error || '파일 업로드에 실패했습니다.')
   }
 
-  const { data: urlData } = supabase.storage
-    .from('thumbnails')
-    .getPublicUrl(filePath)
-
-  if (!urlData?.publicUrl) {
-    throw new Error('업로드된 파일의 URL을 가져올 수 없습니다.')
-  }
-
-  return urlData.publicUrl
+  const data = await response.json()
+  return data.url
 }
 
 // 모델 설정 가져오기
