@@ -111,8 +111,24 @@ export async function POST(req: NextRequest) {
     const clientSecret = process.env.NAVER_CLOVA_CLIENT_SECRET
 
     if (!clientId || !clientSecret) {
+      console.error('Clova Voice API 인증 정보 누락:', {
+        hasClientId: !!clientId,
+        hasClientSecret: !!clientSecret,
+      })
       return NextResponse.json(
         { error: 'Clova Voice API 인증 정보가 설정되지 않았습니다.' },
+        { status: 500 }
+      )
+    }
+
+    // API 키 형식 검증 (기본적인 형식 확인)
+    if (clientId.length < 10 || clientSecret.length < 10) {
+      console.error('Clova Voice API 인증 정보 형식 오류:', {
+        clientIdLength: clientId.length,
+        clientSecretLength: clientSecret.length,
+      })
+      return NextResponse.json(
+        { error: 'Clova Voice API 인증 정보 형식이 올바르지 않습니다.' },
         { status: 500 }
       )
     }
@@ -147,7 +163,27 @@ export async function POST(req: NextRequest) {
       let errorText = ''
       try {
         errorText = await response.text()
-        console.error('Clova Voice API 에러:', response.status, errorText)
+        console.error('=== Clova Voice API 에러 ===')
+        console.error('응답 상태:', response.status, response.statusText)
+        console.error('에러 응답 본문:', errorText)
+        console.error('요청 헤더:', {
+          'X-NCP-APIGW-API-KEY-ID': clientId ? `${clientId.substring(0, 4)}...` : '없음',
+          'X-NCP-APIGW-API-KEY': clientSecret ? `${clientSecret.substring(0, 4)}...` : '없음',
+        })
+        console.error('요청 파라미터:', {
+          speaker: finalSpeaker,
+          textLength: text.length,
+          textPreview: text.substring(0, 50) + '...',
+        })
+        console.error('========================')
+        
+        // 401 Unauthorized 에러인 경우 특별 처리
+        if (response.status === 401) {
+          return NextResponse.json(
+            { error: '음성 변환 실패: Authentication Failed (API 키가 올바르지 않거나 만료되었습니다. 환경 변수를 확인해주세요.)' },
+            { status: 401 }
+          )
+        }
         
         // JSON 형식의 에러 메시지 파싱 시도
         try {

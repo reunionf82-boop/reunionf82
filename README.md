@@ -21,6 +21,13 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 NEXT_PUBLIC_JEMINAI_API_URL=your_gemini_api_key
 NAVER_CLOVA_CLIENT_ID=your_naver_clova_client_id
 NAVER_CLOVA_CLIENT_SECRET=your_naver_clova_client_secret
+
+# 포털 연동 설정 (선택사항)
+PORTAL_API_URL=https://portal.example.com
+PORTAL_API_KEY=your_portal_api_key
+PORTAL_SECRET_KEY=your_portal_secret_key
+JWT_SECRET=your_jwt_secret_key
+NEXT_PUBLIC_BASE_URL=https://subdomain.example.com
 ```
 
 **환경 변수 설명:**
@@ -29,6 +36,11 @@ NAVER_CLOVA_CLIENT_SECRET=your_naver_clova_client_secret
 - `NEXT_PUBLIC_JEMINAI_API_URL`: Google Gemini API 키
 - `NAVER_CLOVA_CLIENT_ID`: 네이버 클라우드 플랫폼 Clova Voice Client ID
 - `NAVER_CLOVA_CLIENT_SECRET`: 네이버 클라우드 플랫폼 Clova Voice Client Secret
+- `PORTAL_API_URL`: 포털 API URL (포털 연동 시 필요)
+- `PORTAL_API_KEY`: 포털 API 키 (포털 연동 시 필요)
+- `PORTAL_SECRET_KEY`: 포털 HMAC 서명용 비밀 키 (포털 연동 시 필요)
+- `JWT_SECRET`: JWT 토큰 검증용 비밀 키 (포털 연동 시 필요)
+- `NEXT_PUBLIC_BASE_URL`: 서브 도메인 기본 URL (포털 연동 시 필요)
 
 ### 2. Supabase 데이터베이스 설정
 
@@ -258,6 +270,30 @@ reunionf82/
 - ✅ 서비스 카드 그리드 레이아웃
 - ✅ 헤더 네비게이션
 - ✅ 무료/유료 서비스 구분
+- ✅ 관리자 페이지 (컨텐츠 관리)
+- ✅ AI 기반 점사 결과 생성 (Google Gemini)
+- ✅ 텍스트-음성 변환 (Naver Clova Voice)
+- ✅ 포털 연동 지원 (JWT 토큰 + HMAC 서명)
+
+## 포털 연동
+
+포털 사이트에서 2차 도메인으로 서브 페이지를 연동할 수 있습니다.
+
+### 연동 가이드
+
+자세한 연동 가이드는 [`docs/PORTAL_INTEGRATION_GUIDE.md`](./docs/PORTAL_INTEGRATION_GUIDE.md)를 참고하세요.
+
+### 주요 기능
+
+1. **사용자 정보 자동 입력**: 포털로부터 JWT 토큰을 받아 사용자 정보를 자동으로 채웁니다.
+2. **결제 연동**: 결제 요청을 포털로 전송하고, 결제 완료 후 콜백을 받습니다.
+3. **보안**: JWT 토큰 검증 및 HMAC 서명을 통한 요청 검증
+
+### 연동 방식
+
+- **JWT 토큰**: 사용자 정보 전달 (만료 시간 5분)
+- **HMAC 서명**: 모든 API 요청 검증
+- **웹훅 콜백**: 결제 완료 후 포털로부터 알림 수신
 
 ## 라이선스
 

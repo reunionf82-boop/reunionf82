@@ -81,6 +81,61 @@ function FormContent() {
   // 궁합형 여부 확인
   const isGonghapType = content?.content_type === 'gonghap'
 
+  // 포털 연동: JWT 토큰에서 사용자 정보 자동 입력
+  const [formLocked, setFormLocked] = useState(false) // 포털에서 받은 정보는 읽기 전용
+  useEffect(() => {
+    const token = searchParams.get('token')
+    if (token) {
+      // JWT 토큰 검증 및 사용자 정보 가져오기
+      fetch('/api/portal/verify-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.userInfo) {
+            const userInfo = data.userInfo
+            // 사용자 정보 자동 입력
+            setName(userInfo.name || '')
+            setGender(userInfo.gender || '')
+            
+            // 생년월일 파싱
+            if (userInfo.birthDate) {
+              const [y, m, d] = userInfo.birthDate.split('-')
+              setYear(y || '')
+              setMonth(m || '')
+              setDay(d || '')
+            }
+            
+            // 생시 파싱
+            if (userInfo.birthTime) {
+              setBirthHour(userInfo.birthTime)
+            }
+            
+            // 달력 타입
+            if (userInfo.calendarType) {
+              setCalendarType(userInfo.calendarType)
+            }
+            
+            // 폼 잠금 (포털에서 받은 정보는 수정 불가)
+            setFormLocked(true)
+            
+            console.log('포털로부터 사용자 정보 자동 입력 완료:', userInfo)
+          } else {
+            console.error('토큰 검증 실패:', data.error)
+            alert('유효하지 않은 접근입니다.')
+          }
+        })
+        .catch((error) => {
+          console.error('토큰 검증 오류:', error)
+          alert('사용자 정보를 불러오는 중 오류가 발생했습니다.')
+        })
+    }
+  }, [searchParams])
+
   // 저장된 결과 목록 로드
   const loadSavedResults = () => {
     if (typeof window === 'undefined') return
@@ -537,7 +592,8 @@ function FormContent() {
               content, // content 객체 전체 저장 (tts_speaker 포함)
               html: finalHtml,
               startTime: startTime,
-              model: currentModel
+              model: currentModel,
+              userName: name // 사용자 이름 저장
             }
             
             console.log('Form 페이지: 저장할 resultData의 content:', content)
@@ -679,7 +735,7 @@ function FormContent() {
         </div>
       )}
       
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
+      <main className="container mx-auto px-4 sm:px-6 py-8 max-w-4xl w-full">
         {/* 상단 썸네일 영역 */}
         {content?.thumbnail_url ? (
           <div className="relative mb-8 overflow-hidden shadow-sm">
@@ -780,7 +836,7 @@ function FormContent() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                 placeholder="이름을 입력하세요"
                 required
               />
@@ -822,49 +878,50 @@ function FormContent() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 생년월일
               </label>
-              <div className="flex flex-wrap gap-3">
-                {/* 양력/음력 선택 */}
-                <div className="flex gap-2 mb-3 w-full">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="calendarType"
-                      value="solar"
-                      checked={calendarType === 'solar'}
-                      onChange={(e) => setCalendarType(e.target.value as 'solar')}
-                      className="w-4 h-4 text-pink-500"
-                    />
-                    <span className="text-sm text-gray-700">양력</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="calendarType"
-                      value="lunar"
-                      checked={calendarType === 'lunar'}
-                      onChange={(e) => setCalendarType(e.target.value as 'lunar')}
-                      className="w-4 h-4 text-pink-500"
-                    />
-                    <span className="text-sm text-gray-700">음력</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="calendarType"
-                      value="lunar-leap"
-                      checked={calendarType === 'lunar-leap'}
-                      onChange={(e) => setCalendarType(e.target.value as 'lunar-leap')}
-                      className="w-4 h-4 text-pink-500"
-                    />
-                    <span className="text-sm text-gray-700">음력(윤)</span>
-                  </label>
-                </div>
-
+              {/* 양력/음력 선택 */}
+              <div className="flex gap-2 sm:gap-4 mb-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="calendarType"
+                    value="solar"
+                    checked={calendarType === 'solar'}
+                    onChange={(e) => setCalendarType(e.target.value as 'solar')}
+                    className="w-4 h-4 text-pink-500"
+                  />
+                  <span className="text-sm text-gray-700">양력</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="calendarType"
+                    value="lunar"
+                    checked={calendarType === 'lunar'}
+                    onChange={(e) => setCalendarType(e.target.value as 'lunar')}
+                    className="w-4 h-4 text-pink-500"
+                  />
+                  <span className="text-sm text-gray-700">음력</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="calendarType"
+                    value="lunar-leap"
+                    checked={calendarType === 'lunar-leap'}
+                    onChange={(e) => setCalendarType(e.target.value as 'lunar-leap')}
+                    className="w-4 h-4 text-pink-500"
+                  />
+                  <span className="text-sm text-gray-700">음력(윤)</span>
+                </label>
+              </div>
+              
+              {/* 년/월/일 선택 */}
+              <div className="flex flex-row gap-3">
                 {/* 년도 */}
                 <select
                   value={year}
                   onChange={(e) => setYear(e.target.value)}
-                  className="flex-1 min-w-[120px] bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  className="flex-1 min-w-[100px] bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                   required
                 >
                   <option value="">년도</option>
@@ -877,7 +934,7 @@ function FormContent() {
                 <select
                   value={month}
                   onChange={(e) => setMonth(e.target.value)}
-                  className="flex-1 min-w-[100px] bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  className="flex-1 min-w-[80px] bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                   required
                 >
                   <option value="">월</option>
@@ -890,7 +947,7 @@ function FormContent() {
                 <select
                   value={day}
                   onChange={(e) => setDay(e.target.value)}
-                  className="flex-1 min-w-[100px] bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  className="flex-1 min-w-[80px] bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                   required
                 >
                   <option value="">일</option>
@@ -935,7 +992,7 @@ function FormContent() {
                     type="text"
                     value={partnerName}
                     onChange={(e) => setPartnerName(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                     placeholder="이름을 입력하세요"
                     required
                   />
@@ -977,49 +1034,50 @@ function FormContent() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     생년월일
                   </label>
-                  <div className="flex flex-wrap gap-3">
-                    {/* 양력/음력 선택 */}
-                    <div className="flex gap-2 mb-3 w-full">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="partnerCalendarType"
-                          value="solar"
-                          checked={partnerCalendarType === 'solar'}
-                          onChange={(e) => setPartnerCalendarType(e.target.value as 'solar')}
-                          className="w-4 h-4 text-pink-500"
-                        />
-                        <span className="text-sm text-gray-700">양력</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="partnerCalendarType"
-                          value="lunar"
-                          checked={partnerCalendarType === 'lunar'}
-                          onChange={(e) => setPartnerCalendarType(e.target.value as 'lunar')}
-                          className="w-4 h-4 text-pink-500"
-                        />
-                        <span className="text-sm text-gray-700">음력</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="partnerCalendarType"
-                          value="lunar-leap"
-                          checked={partnerCalendarType === 'lunar-leap'}
-                          onChange={(e) => setPartnerCalendarType(e.target.value as 'lunar-leap')}
-                          className="w-4 h-4 text-pink-500"
-                        />
-                        <span className="text-sm text-gray-700">음력(윤)</span>
-                      </label>
-                    </div>
-
+                  {/* 양력/음력 선택 */}
+                  <div className="flex gap-2 sm:gap-4 mb-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="partnerCalendarType"
+                        value="solar"
+                        checked={partnerCalendarType === 'solar'}
+                        onChange={(e) => setPartnerCalendarType(e.target.value as 'solar')}
+                        className="w-4 h-4 text-pink-500"
+                      />
+                      <span className="text-sm text-gray-700">양력</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="partnerCalendarType"
+                        value="lunar"
+                        checked={partnerCalendarType === 'lunar'}
+                        onChange={(e) => setPartnerCalendarType(e.target.value as 'lunar')}
+                        className="w-4 h-4 text-pink-500"
+                      />
+                      <span className="text-sm text-gray-700">음력</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="partnerCalendarType"
+                        value="lunar-leap"
+                        checked={partnerCalendarType === 'lunar-leap'}
+                        onChange={(e) => setPartnerCalendarType(e.target.value as 'lunar-leap')}
+                        className="w-4 h-4 text-pink-500"
+                      />
+                      <span className="text-sm text-gray-700">음력(윤)</span>
+                    </label>
+                  </div>
+                  
+                  {/* 년/월/일 선택 */}
+                  <div className="flex flex-row gap-3">
                     {/* 년도 */}
                     <select
                       value={partnerYear}
                       onChange={(e) => setPartnerYear(e.target.value)}
-                      className="flex-1 min-w-[120px] bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                      className="flex-1 min-w-[100px] bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                       required
                     >
                       <option value="">년도</option>
@@ -1032,7 +1090,7 @@ function FormContent() {
                     <select
                       value={partnerMonth}
                       onChange={(e) => setPartnerMonth(e.target.value)}
-                      className="flex-1 min-w-[100px] bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                      className="flex-1 min-w-[80px] bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                       required
                     >
                       <option value="">월</option>
@@ -1045,7 +1103,7 @@ function FormContent() {
                     <select
                       value={partnerDay}
                       onChange={(e) => setPartnerDay(e.target.value)}
-                      className="flex-1 min-w-[100px] bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                      className="flex-1 min-w-[80px] bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                       required
                     >
                       <option value="">일</option>
@@ -1324,6 +1382,239 @@ function FormContent() {
                                       @keyframes spin {
                                         to { transform: rotate(360deg); }
                                       }
+                                      .question-button-container {
+                                        margin-top: 24px;
+                                        margin-bottom: 16px;
+                                        text-align: center;
+                                      }
+                                      .question-button {
+                                        background: #ec4899;
+                                        color: white;
+                                        font-weight: 600;
+                                        padding: 8px 24px;
+                                        border-radius: 8px;
+                                        border: none;
+                                        cursor: pointer;
+                                        transition: background-color 0.2s;
+                                      }
+                                      .question-button:hover {
+                                        background: #db2777;
+                                      }
+                                      .question-popup-overlay {
+                                        position: fixed;
+                                        inset: 0;
+                                        background: rgba(0, 0, 0, 0.5);
+                                        display: flex;
+                                        align-items: center;
+                                        justify-content: center;
+                                        z-index: 9999;
+                                        padding: 16px;
+                                        opacity: 0;
+                                        visibility: hidden;
+                                        pointer-events: none;
+                                        transition: opacity 0.2s, visibility 0.2s;
+                                        overflow: hidden;
+                                      }
+                                      .question-popup-overlay.show {
+                                        opacity: 1;
+                                        visibility: visible;
+                                        pointer-events: auto;
+                                      }
+                                      .question-popup {
+                                        background: white;
+                                        border-radius: 20px;
+                                        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+                                        max-width: 32rem;
+                                        width: 100%;
+                                        max-height: auto;
+                                        overflow: hidden;
+                                        transform: scale(0.95);
+                                        transition: transform 0.2s;
+                                        position: relative;
+                                        z-index: 10000;
+                                      }
+                                      .question-popup-overlay.show .question-popup {
+                                        transform: scale(1);
+                                      }
+                                      .question-popup-header {
+                                        position: relative;
+                                        background: white;
+                                        border-bottom: 1px solid #e5e7eb;
+                                        padding: 12px 20px;
+                                        border-radius: 20px 20px 0 0;
+                                        display: flex;
+                                        align-items: center;
+                                        justify-content: space-between;
+                                      }
+                                      .question-popup-title {
+                                        font-size: 20px;
+                                        font-weight: bold;
+                                        color: #111827;
+                                      }
+                                      .question-popup-close {
+                                        color: #9ca3af;
+                                        font-size: 24px;
+                                        font-weight: bold;
+                                        background: none;
+                                        border: none;
+                                        cursor: pointer;
+                                        padding: 0;
+                                        width: 32px;
+                                        height: 32px;
+                                        display: flex;
+                                        align-items: center;
+                                        justify-content: center;
+                                      }
+                                      .question-popup-close:hover {
+                                        color: #4b5563;
+                                      }
+                                      .question-popup-body {
+                                        padding: 16px 20px;
+                                        overflow: hidden;
+                                        box-sizing: border-box;
+                                      }
+                                      .question-popup-prompt {
+                                        font-size: 16px;
+                                        color: #4b5563;
+                                        margin-bottom: 6px;
+                                      }
+                                      .question-popup-prompt strong {
+                                        font-weight: 600;
+                                        color: #111827;
+                                      }
+                                      .question-textarea {
+                                        width: 100%;
+                                        max-width: 100%;
+                                        padding: 10px 14px;
+                                        padding-right: 18px;
+                                        border: 1px solid #d1d5db;
+                                        border-radius: 2px;
+                                        font-family: inherit;
+                                        font-size: 17px;
+                                        resize: none;
+                                        min-height: calc(17px * 1.4 * 2 + 10px * 2);
+                                        line-height: 1.4;
+                                        overflow-y: hidden;
+                                        outline: none;
+                                        box-sizing: border-box;
+                                      }
+                                      .question-textarea:not(:focus) {
+                                        padding-right: 18px;
+                                      }
+                                      .question-textarea::-webkit-scrollbar {
+                                        width: 6px;
+                                      }
+                                      .question-textarea::-webkit-scrollbar-track {
+                                        background: transparent;
+                                        margin: 2px 0;
+                                        border-radius: 0;
+                                      }
+                                      .question-textarea::-webkit-scrollbar-thumb {
+                                        background: #d1d5db;
+                                        border-radius: 3px;
+                                      }
+                                      .question-textarea::-webkit-scrollbar-thumb:hover {
+                                        background: #9ca3af;
+                                      }
+                                      .question-textarea:focus {
+                                        border: 1px solid #ec4899;
+                                        padding-right: 18px;
+                                        outline: none;
+                                      }
+                                      .question-char-count {
+                                        margin-top: 4px;
+                                        text-align: right;
+                                        font-size: 14px;
+                                        color: #6b7280;
+                                      }
+                                      .question-error {
+                                        background: #fef2f2;
+                                        border: 1px solid #fecaca;
+                                        color: #991b1b;
+                                        padding: 10px 14px;
+                                        border-radius: 12px;
+                                        font-size: 16px;
+                                        margin-top: 10px;
+                                      }
+                                      .question-answer {
+                                        background: #eff6ff;
+                                        border: 1px solid #bfdbfe;
+                                        border-radius: 12px;
+                                        padding: 12px;
+                                        margin-top: 10px;
+                                        max-height: 200px;
+                                        overflow-y: auto;
+                                      }
+                                      .question-answer p {
+                                        color: #1e40af;
+                                        white-space: pre-line;
+                                        line-height: 1.6;
+                                        margin: 0;
+                                        font-size: 16px;
+                                      }
+                                      .question-loading {
+                                        background: #f9fafb;
+                                        border: 1px solid #e5e7eb;
+                                        border-radius: 12px;
+                                        padding: 12px;
+                                        text-align: center;
+                                        margin-top: 10px;
+                                      }
+                                      .question-loading-content {
+                                        display: inline-flex;
+                                        align-items: center;
+                                        gap: 8px;
+                                      }
+                                      .question-spinner {
+                                        width: 20px;
+                                        height: 20px;
+                                        border: 2px solid #ec4899;
+                                        border-top-color: transparent;
+                                        border-radius: 50%;
+                                        animation: spin 0.8s linear infinite;
+                                      }
+                                      .question-loading-text {
+                                        color: #4b5563;
+                                        font-size: 16px;
+                                      }
+                                      .question-popup-buttons {
+                                        display: flex;
+                                        gap: 10px;
+                                        margin-top: 12px;
+                                      }
+                                      .question-submit-btn {
+                                        flex: 1;
+                                        background: #ec4899;
+                                        color: white;
+                                        font-weight: 600;
+                                        padding: 10px 20px;
+                                        border-radius: 12px;
+                                        border: none;
+                                        cursor: pointer;
+                                        transition: background-color 0.2s;
+                                        font-size: 17px;
+                                      }
+                                      .question-submit-btn:hover:not(:disabled) {
+                                        background: #db2777;
+                                      }
+                                      .question-submit-btn:disabled {
+                                        background: #d1d5db;
+                                        cursor: not-allowed;
+                                      }
+                                      .question-close-btn {
+                                        background: #e5e7eb;
+                                        color: #1f2937;
+                                        font-weight: 600;
+                                        padding: 10px 20px;
+                                        border-radius: 12px;
+                                        border: none;
+                                        cursor: pointer;
+                                        transition: background-color 0.2s;
+                                        font-size: 17px;
+                                      }
+                                      .question-close-btn:hover {
+                                        background: #d1d5db;
+                                      }
                                       ${savedDynamicStyles}
                                     </style>
                                   </head>
@@ -1335,7 +1626,7 @@ function FormContent() {
                                       <div>
                                         <button id="ttsButton" class="tts-button" onclick="handleTextToSpeech()">
                                           <span id="ttsIcon">🔊</span>
-                                          <span id="ttsText">음성으로 듣기</span>
+                                          <span id="ttsText">점사 듣기</span>
                                         </button>
                                       </div>
                                       <div class="saved-at">
@@ -1345,6 +1636,48 @@ function FormContent() {
                                       </div>
                                       <div id="contentHtml">${saved.html}</div>
                                     </div>
+                                    
+                                    <!-- 추가 질문하기 팝업 -->
+                                    <div id="questionPopupOverlay" class="question-popup-overlay">
+                                      <div class="question-popup">
+                                        <div class="question-popup-header">
+                                          <h2 class="question-popup-title">추가 질문하기</h2>
+                                          <button class="question-popup-close" onclick="closeQuestionPopup()">×</button>
+                                        </div>
+                                        <div class="question-popup-body">
+                                          <div class="question-popup-prompt">
+                                            <strong id="questionMenuTitle"></strong>에 대한 추가 질문이 있으신가요?
+                                          </div>
+                                          <form id="questionForm" onsubmit="handleQuestionSubmit(event)">
+                                            <textarea
+                                              id="questionTextarea"
+                                              class="question-textarea"
+                                              placeholder="예: 이 부분에 대해 더 자세히 알려주세요"
+                                              maxlength="100"
+                                              rows="2"
+                                            ></textarea>
+                                            <div class="question-char-count">
+                                              <span id="questionCharCount">0</span>/100
+                                            </div>
+                                            <div id="questionError" class="question-error" style="display: none;"></div>
+                                            <div id="questionAnswer" class="question-answer" style="display: none;">
+                                              <p id="questionAnswerText"></p>
+                                            </div>
+                                            <div id="questionLoading" class="question-loading" style="display: none;">
+                                              <div class="question-loading-content">
+                                                <div class="question-spinner"></div>
+                                                <span class="question-loading-text">점사 중입니다...</span>
+                                              </div>
+                                            </div>
+                                            <div class="question-popup-buttons">
+                                              <button type="submit" id="questionSubmitBtn" class="question-submit-btn">질문하기</button>
+                                              <button type="button" onclick="closeQuestionPopup()" class="question-close-btn">닫기</button>
+                                            </div>
+                                          </form>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
                                     <script>
                                       // 저장된 컨텐츠의 화자 정보를 전역 변수로 설정
                                       window.savedContentSpeaker = ${saved.content?.tts_speaker ? `'${saved.content.tts_speaker}'` : "'nara'"};
@@ -1368,7 +1701,7 @@ function FormContent() {
                                           if (button && icon && text) {
                                             button.disabled = false;
                                             icon.textContent = '🔊';
-                                            text.textContent = '음성으로 듣기';
+                                            text.textContent = '점사 듣기';
                                           }
                                         }
                                       });
@@ -1539,7 +1872,7 @@ function FormContent() {
                                                   isPlaying = false;
                                                   button.disabled = false;
                                                   icon.textContent = '🔊';
-                                                  text.textContent = '음성으로 듣기';
+                                                  text.textContent = '점사 듣기';
                                                 }
                                               };
                                               
@@ -1560,7 +1893,7 @@ function FormContent() {
                                           shouldStop = false;
                                           button.disabled = false;
                                           icon.textContent = '🔊';
-                                          text.textContent = '음성으로 듣기';
+                                          text.textContent = '점사 듣기';
                                         } catch (error) {
                                           console.error('음성 변환 실패:', error);
                                           alert(error?.message || '음성 변환에 실패했습니다.');
@@ -1571,9 +1904,350 @@ function FormContent() {
                                           shouldStop = false;
                                           button.disabled = false;
                                           icon.textContent = '🔊';
-                                          text.textContent = '음성으로 듣기';
+                                          text.textContent = '점사 듣기';
                                         }
                                       }
+                                      
+                                      // 함수를 전역 스코프에 명시적으로 할당 (onclick 핸들러가 작동하도록)
+                                      window.handleTextToSpeech = handleTextToSpeech;
+                                      console.log('handleTextToSpeech 함수를 전역 스코프에 할당 완료');
+                                      
+                                      // 버튼에 이벤트 리스너도 추가 (이중 안전장치)
+                                      function connectTTSButton() {
+                                        const ttsButton = document.getElementById('ttsButton');
+                                        if (ttsButton) {
+                                          console.log('TTS 버튼 발견, 이벤트 리스너 추가');
+                                          const newHandler = function(e) {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            console.log('TTS 버튼 클릭 이벤트 발생');
+                                            if (typeof handleTextToSpeech === 'function') {
+                                              handleTextToSpeech();
+                                            } else if (typeof window.handleTextToSpeech === 'function') {
+                                              window.handleTextToSpeech();
+                                            } else {
+                                              console.error('handleTextToSpeech 함수를 찾을 수 없습니다.');
+                                              alert('음성 재생 기능을 초기화하는 중 오류가 발생했습니다.');
+                                            }
+                                          };
+                                          
+                                          ttsButton.removeEventListener('click', newHandler);
+                                          ttsButton.addEventListener('click', newHandler);
+                                          console.log('TTS 버튼 이벤트 리스너 연결 완료');
+                                          return true;
+                                        } else {
+                                          console.warn('TTS 버튼을 찾을 수 없습니다.');
+                                          return false;
+                                        }
+                                      }
+                                      
+                                      // DOM 로드 후 버튼 연결 시도
+                                      if (document.readyState === 'loading') {
+                                        document.addEventListener('DOMContentLoaded', function() {
+                                          setTimeout(connectTTSButton, 50);
+                                        });
+                                      } else {
+                                        setTimeout(connectTTSButton, 50);
+                                      }
+                                      
+                                      // 추가 안전장치
+                                      setTimeout(function() {
+                                        const ttsButton = document.getElementById('ttsButton');
+                                        if (ttsButton) {
+                                          console.log('추가 안전장치: 버튼 확인 및 재연결');
+                                          connectTTSButton();
+                                        }
+                                      }, 500);
+                                      
+                                      // 추가 질문하기 기능
+                                      let currentQuestionData = null;
+                                      
+                                      // 질문하기 버튼 추가 함수
+                                      function addQuestionButtons() {
+                                        const contentHtml = document.getElementById('contentHtml');
+                                        if (!contentHtml) {
+                                          console.log('contentHtml을 찾을 수 없습니다.');
+                                          return false;
+                                        }
+                                        
+                                        // 실제 DOM에서 menu-section 찾기
+                                        const menuSections = contentHtml.querySelectorAll('.menu-section');
+                                        
+                                        if (menuSections.length === 0) {
+                                          console.log('menu-section을 찾을 수 없습니다.');
+                                          return false;
+                                        }
+                                        
+                                        console.log('발견된 menu-section 개수:', menuSections.length);
+                                        
+                                        let buttonsAdded = 0;
+                                        menuSections.forEach((menuSection, index) => {
+                                          // 이미 버튼이 있으면 건너뛰기
+                                          if (menuSection.querySelector('.question-button-container')) {
+                                            console.log('메뉴', index + 1, ': 버튼이 이미 존재합니다.');
+                                            return;
+                                          }
+                                          
+                                          const menuTitleEl = menuSection.querySelector('.menu-title');
+                                          const menuTitle = menuTitleEl?.textContent?.trim() || '';
+                                          
+                                          console.log('메뉴', index + 1, ':', menuTitle, '에 버튼 추가 중...');
+                                          
+                                          // 소제목 정보 추출
+                                          const subtitlesContent = [];
+                                          const subtitleSections = menuSection.querySelectorAll('.subtitle-section');
+                                          
+                                          subtitleSections.forEach((section) => {
+                                            const titleEl = section.querySelector('.subtitle-title');
+                                            const contentEl = section.querySelector('.subtitle-content');
+                                            
+                                            if (titleEl && contentEl) {
+                                              subtitlesContent.push({
+                                                title: titleEl.textContent?.trim() || '',
+                                                content: contentEl.textContent?.trim() || '',
+                                              });
+                                            }
+                                          });
+                                          
+                                          const subtitles = subtitlesContent.map(sub => sub.title);
+                                          
+                                          // 버튼 컨테이너 생성
+                                          const buttonContainer = document.createElement('div');
+                                          buttonContainer.className = 'question-button-container';
+                                          
+                                          const button = document.createElement('button');
+                                          button.className = 'question-button';
+                                          button.textContent = '추가 질문하기';
+                                          button.onclick = () => {
+                                            openQuestionPopup(menuTitle, subtitles, subtitlesContent);
+                                          };
+                                          
+                                          buttonContainer.appendChild(button);
+                                          menuSection.appendChild(buttonContainer);
+                                          buttonsAdded++;
+                                          
+                                          console.log('메뉴', index + 1, ': 버튼 추가 완료');
+                                        });
+                                        
+                                        return buttonsAdded > 0;
+                                      }
+                                      
+                                      // 팝업 열기
+                                      function openQuestionPopup(menuTitle, subtitles, subtitlesContent) {
+                                        currentQuestionData = { menuTitle, subtitles, subtitlesContent };
+                                        
+                                        const overlay = document.getElementById('questionPopupOverlay');
+                                        const menuTitleEl = document.getElementById('questionMenuTitle');
+                                        
+                                        if (overlay && menuTitleEl) {
+                                          menuTitleEl.textContent = menuTitle;
+                                          overlay.classList.add('show');
+                                          
+                                          // 폼 초기화
+                                          document.getElementById('questionTextarea').value = '';
+                                          document.getElementById('questionCharCount').textContent = '0';
+                                          document.getElementById('questionError').style.display = 'none';
+                                          document.getElementById('questionAnswer').style.display = 'none';
+                                          document.getElementById('questionLoading').style.display = 'none';
+                                        }
+                                      }
+                                      
+                                      // 팝업 닫기
+                                      function closeQuestionPopup() {
+                                        const overlay = document.getElementById('questionPopupOverlay');
+                                        if (overlay) {
+                                          overlay.classList.remove('show');
+                                          currentQuestionData = null;
+                                          
+                                          // 폼 초기화
+                                          document.getElementById('questionTextarea').value = '';
+                                          document.getElementById('questionCharCount').textContent = '0';
+                                          document.getElementById('questionError').style.display = 'none';
+                                          document.getElementById('questionAnswer').style.display = 'none';
+                                          document.getElementById('questionLoading').style.display = 'none';
+                                        }
+                                      }
+                                      
+                                      // 텍스트 영역 높이 조정
+                                      const textarea = document.getElementById('questionTextarea');
+                                      const charCount = document.getElementById('questionCharCount');
+                                      
+                                      if (textarea) {
+                                        // 기본 2줄 높이 계산 (font-size: 17px, line-height: 1.4, padding: 10px)
+                                        const baseHeight = 17 * 1.4 * 2 + 10 * 2; // 약 67.6px
+                                        
+                                        // 초기 높이 및 스크롤 설정
+                                        textarea.style.height = baseHeight + 'px';
+                                        textarea.style.overflowY = 'hidden';
+                                        
+                                        textarea.addEventListener('input', function() {
+                                          // 문자 수 업데이트
+                                          if (charCount) {
+                                            charCount.textContent = this.value.length;
+                                          }
+                                          
+                                          // 높이는 기본 2줄로 고정
+                                          this.style.height = baseHeight + 'px';
+                                          
+                                          // 내용이 많으면 스크롤 표시, 아니면 숨김
+                                          if (this.scrollHeight > baseHeight) {
+                                            this.style.overflowY = 'auto';
+                                          } else {
+                                            this.style.overflowY = 'hidden';
+                                          }
+                                        });
+                                      }
+                                      
+                                      // 질문 제출
+                                      async function handleQuestionSubmit(event) {
+                                        event.preventDefault();
+                                        
+                                        if (!currentQuestionData) return;
+                                        
+                                        const textarea = document.getElementById('questionTextarea');
+                                        const question = textarea.value.trim();
+                                        
+                                        if (!question) {
+                                          const errorEl = document.getElementById('questionError');
+                                          errorEl.textContent = '질문을 입력해주세요.';
+                                          errorEl.style.display = 'block';
+                                          return;
+                                        }
+                                        
+                                        // UI 업데이트
+                                        const errorEl = document.getElementById('questionError');
+                                        const answerEl = document.getElementById('questionAnswer');
+                                        const loadingEl = document.getElementById('questionLoading');
+                                        const submitBtn = document.getElementById('questionSubmitBtn');
+                                        
+                                        errorEl.style.display = 'none';
+                                        answerEl.style.display = 'none';
+                                        loadingEl.style.display = 'block';
+                                        submitBtn.disabled = true;
+                                        
+                                        try {
+                                          const response = await fetch('/api/question', {
+                                            method: 'POST',
+                                            headers: {
+                                              'Content-Type': 'application/json',
+                                            },
+                                            body: JSON.stringify({
+                                              question,
+                                              menuTitle: currentQuestionData.menuTitle,
+                                              subtitles: currentQuestionData.subtitles,
+                                              subtitlesContent: currentQuestionData.subtitlesContent,
+                                              userName: ${saved.userName ? JSON.stringify(saved.userName) : "''"},
+                                            }),
+                                          });
+                                          
+                                          if (!response.ok) {
+                                            const error = await response.json();
+                                            throw new Error(error.error || '답변 생성에 실패했습니다.');
+                                          }
+                                          
+                                          const data = await response.json();
+                                          
+                                          if (!data.answer) {
+                                            throw new Error('답변을 받지 못했습니다.');
+                                          }
+                                          
+                                          // 답변 표시
+                                          document.getElementById('questionAnswerText').textContent = data.answer;
+                                          answerEl.style.display = 'block';
+                                        } catch (err) {
+                                          errorEl.textContent = err.message || '답변을 생성하는 중 오류가 발생했습니다.';
+                                          errorEl.style.display = 'block';
+                                        } finally {
+                                          loadingEl.style.display = 'none';
+                                          submitBtn.disabled = false;
+                                        }
+                                      }
+                                      
+                                      // 오버레이 클릭 시 닫기
+                                      const overlay = document.getElementById('questionPopupOverlay');
+                                      if (overlay) {
+                                        overlay.addEventListener('click', function(e) {
+                                          if (e.target === overlay) {
+                                            closeQuestionPopup();
+                                          }
+                                        });
+                                      }
+                                      
+                                      // 페이지 로드 후 버튼 추가
+                                      function initQuestionButtons() {
+                                        console.log('버튼 추가 초기화 시작');
+                                        
+                                        // 여러 번 재시도하는 함수
+                                        let retryCount = 0;
+                                        const maxRetries = 10;
+                                        
+                                        const tryAddButtons = () => {
+                                          console.log('버튼 추가 시도:', retryCount + 1);
+                                          const success = addQuestionButtons();
+                                          
+                                          if (!success && retryCount < maxRetries) {
+                                            retryCount++;
+                                            // 점진적으로 지연 시간 증가 (200ms, 400ms, 600ms, ...)
+                                            setTimeout(tryAddButtons, 200 * retryCount);
+                                          } else if (success) {
+                                            console.log('버튼 추가 성공');
+                                          } else {
+                                            console.log('버튼 추가 실패: 최대 재시도 횟수 초과');
+                                          }
+                                        };
+                                        
+                                        // requestAnimationFrame을 사용하여 DOM 렌더링 완료 후 실행
+                                        requestAnimationFrame(() => {
+                                          requestAnimationFrame(() => {
+                                            tryAddButtons();
+                                          });
+                                        });
+                                      }
+                                      
+                                      // 여러 이벤트에서 버튼 추가 시도
+                                      // 1. DOMContentLoaded
+                                      if (document.readyState === 'loading') {
+                                        document.addEventListener('DOMContentLoaded', function() {
+                                          console.log('DOMContentLoaded 이벤트 발생');
+                                          setTimeout(initQuestionButtons, 100);
+                                        });
+                                      }
+                                      
+                                      // 2. window.onload
+                                      window.addEventListener('load', function() {
+                                        console.log('window.onload 이벤트 발생');
+                                        setTimeout(initQuestionButtons, 100);
+                                      });
+                                      
+                                      // 3. 즉시 실행 시도 (이미 로드된 경우)
+                                      if (document.readyState !== 'loading') {
+                                        console.log('문서가 이미 로드됨, 즉시 실행');
+                                        setTimeout(initQuestionButtons, 300);
+                                      }
+                                      
+                                      // 4. 추가 안전장치: 일정 시간 후에도 재시도
+                                      setTimeout(function() {
+                                        console.log('추가 안전장치: 버튼 확인');
+                                        const resultsContainer = document.getElementById('contentHtml');
+                                        if (resultsContainer) {
+                                          const menuSections = resultsContainer.querySelectorAll('.menu-section');
+                                          let hasButtons = true;
+                                          menuSections.forEach((section) => {
+                                            if (!section.querySelector('.question-button-container')) {
+                                              hasButtons = false;
+                                            }
+                                          });
+                                          if (!hasButtons) {
+                                            console.log('추가 안전장치: 버튼이 없어서 다시 추가');
+                                            initQuestionButtons();
+                                          }
+                                        }
+                                      }, 2000); // 2초 후 확인
+                                      
+                                      // 전역 함수 할당 (onclick 핸들러가 작동하도록)
+                                      window.closeQuestionPopup = closeQuestionPopup;
+                                      window.handleQuestionSubmit = handleQuestionSubmit;
+                                      console.log('전역 함수 할당 완료');
                                     </script>
                                   </body>
                                   </html>
