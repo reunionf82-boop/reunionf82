@@ -1,4 +1,25 @@
-import { supabase } from './supabase'
+import { createClient } from '@supabase/supabase-js'
+
+// 관리자 페이지용 Supabase 클라이언트 (서비스 롤 키 사용)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error(
+    'Supabase 환경 변수가 설정되지 않았습니다.\n' +
+    '.env.local 파일을 생성하고 다음 변수를 설정하세요:\n' +
+    'NEXT_PUBLIC_SUPABASE_URL=your_supabase_url\n' +
+    'SUPABASE_SERVICE_ROLE_KEY=your_service_role_key (또는 NEXT_PUBLIC_SUPABASE_ANON_KEY)'
+  )
+}
+
+// 서비스 롤 키를 사용하여 RLS 우회
+const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+})
 
 export interface ContentData {
   id?: number
@@ -103,16 +124,22 @@ export async function saveContent(contentData: ContentData) {
       .update(dataToSave)
       .eq('id', contentData.id)
       .select()
-      .single()
     
     if (error) {
       console.error('Supabase 업데이트 에러:', error)
       console.error('저장하려는 데이터:', dataToSave)
       throw new Error(`저장에 실패했습니다: ${error.message}`)
     }
-    console.log('업데이트 완료, 반환된 data.tts_speaker:', data?.tts_speaker);
+    
+    if (!data || data.length === 0) {
+      console.error('업데이트 결과가 없습니다. RLS 정책을 확인하세요.')
+      throw new Error('저장에 실패했습니다: 업데이트 결과를 가져올 수 없습니다. RLS 정책을 확인하세요.')
+    }
+    
+    const result = data[0]
+    console.log('업데이트 완료, 반환된 data.tts_speaker:', result?.tts_speaker);
     console.log('==============================');
-    return data
+    return result
   } else {
     // 새로 생성
     console.log('생성 모드');
@@ -123,16 +150,22 @@ export async function saveContent(contentData: ContentData) {
         created_at: new Date().toISOString(),
       })
       .select()
-      .single()
     
     if (error) {
       console.error('Supabase 삽입 에러:', error)
       console.error('저장하려는 데이터:', dataToSave)
       throw new Error(`저장에 실패했습니다: ${error.message}`)
     }
-    console.log('생성 완료, 반환된 data.tts_speaker:', data?.tts_speaker);
+    
+    if (!data || data.length === 0) {
+      console.error('생성 결과가 없습니다. RLS 정책을 확인하세요.')
+      throw new Error('저장에 실패했습니다: 생성 결과를 가져올 수 없습니다. RLS 정책을 확인하세요.')
+    }
+    
+    const result = data[0]
+    console.log('생성 완료, 반환된 data.tts_speaker:', result?.tts_speaker);
     console.log('==============================');
-    return data
+    return result
   }
 }
 

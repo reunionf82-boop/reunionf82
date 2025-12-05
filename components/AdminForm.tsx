@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { saveContent, getContentById, deleteContent, type ContentData } from '@/lib/supabase-admin'
+import { getContentById, deleteContent, type ContentData } from '@/lib/supabase-admin'
 import ThumbnailModal from '@/components/ThumbnailModal'
 
 interface AdminFormProps {
@@ -227,7 +227,31 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       console.log('저장할 contentData.tts_speaker:', contentData.tts_speaker);
       console.log('==============================');
       
-      await saveContent(contentData)
+      // API 라우트를 통해 저장 (서버 사이드에서 서비스 롤 키 사용)
+      const response = await fetch('/api/admin/content/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(contentData),
+      })
+
+      // Content-Type 확인
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text()
+        console.error('API가 JSON이 아닌 응답을 반환했습니다:', text.substring(0, 200))
+        throw new Error('서버 오류가 발생했습니다. 콘솔을 확인하세요.')
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: '알 수 없는 오류가 발생했습니다.' }))
+        throw new Error(errorData.error || '저장에 실패했습니다.')
+      }
+
+      const result = await response.json()
+      console.log('저장 완료:', result.data)
+      
       router.push('/admin')
     } catch (error: any) {
       console.error('저장 실패:', error)
