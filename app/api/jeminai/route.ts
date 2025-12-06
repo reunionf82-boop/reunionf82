@@ -5,7 +5,7 @@ export async function POST(req: NextRequest) {
   try {
     console.log('=== 재미나이 API 라우트 시작 ===')
     const body = await req.json()
-    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-2.5-flash' } = body
+    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-2.5-flash', manse_ryeok_table } = body
     
     console.log('요청 모델:', model)
     console.log('메뉴 소제목 개수:', menu_subtitles?.length)
@@ -117,6 +117,15 @@ ${partner_info ? `
 - 성별: ${partner_info.gender}
 - 생년월일: ${partner_info.birth_date}
 ${partner_info.birth_hour ? `- 태어난 시: ${partner_info.birth_hour}` : ''}
+` : ''}
+
+${manse_ryeok_table ? `
+**만세력(사주명식) 정보:**
+다음은 내담자의 만세력 테이블입니다. 이 만세력을 기반으로 해석해주세요.
+
+${manse_ryeok_table}
+
+중요: 만세력 테이블의 정보(십성, 음양오행, 천간, 지지, 십이운성, 십이신살)를 참고하여 정확하고 전문적인 해석을 제공해주세요.
 ` : ''}
 
 다음 상품 메뉴 구성과 소제목들을 각각 해석해주세요:

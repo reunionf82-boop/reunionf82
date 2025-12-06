@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { getContents, getSelectedModel, getSelectedSpeaker } from '@/lib/supabase-admin'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
+import { calculateManseRyeok, generateManseRyeokTable, getDayGanji } from '@/lib/manse-ryeok'
 import TermsPopup from '@/components/TermsPopup'
 import PrivacyPopup from '@/components/PrivacyPopup'
 
@@ -438,6 +439,35 @@ function FormContent() {
         ? `${partnerYear}-${partnerMonth.padStart(2, '0')}-${partnerDay.padStart(2, '0')}`
         : undefined
       
+      // 만세력 계산
+      let manseRyeokTable = ''
+      if (year && month && day) {
+        try {
+          const birthYear = parseInt(year)
+          const birthMonth = parseInt(month)
+          const birthDay = parseInt(day)
+          // 태어난 시를 숫자로 변환 (예: "23-01" -> 23)
+          let birthHourNum = 12 // 기본값 12시
+          if (birthHour) {
+            const hourMatch = birthHour.match(/^(\d+)/)
+            if (hourMatch) {
+              birthHourNum = parseInt(hourMatch[1])
+            }
+          }
+          
+          // 일주 계산하여 일간 얻기
+          const dayGanji = getDayGanji(birthYear, birthMonth, birthDay)
+          const dayGan = dayGanji.gan
+          
+          // 만세력 계산 (일간 기준)
+          const manseRyeokData = calculateManseRyeok(birthYear, birthMonth, birthDay, birthHourNum, dayGan)
+          manseRyeokTable = generateManseRyeokTable(manseRyeokData, name)
+          console.log('만세력 테이블 생성 완료')
+        } catch (error) {
+          console.error('만세력 계산 오류:', error)
+        }
+      }
+      
       // 요청 데이터 준비 (결과 페이지에서 스트리밍으로 받기 위해)
       const requestData = {
         role_prompt: content.role_prompt || '',
@@ -456,7 +486,8 @@ function FormContent() {
           birth_date: partnerBirthDate || '',
           birth_hour: partnerBirthHour || undefined
         } : undefined,
-        model: currentModel
+        model: currentModel,
+        manse_ryeok_table: manseRyeokTable
       }
 
       // 로딩 팝업 표시
@@ -585,6 +616,40 @@ function FormContent() {
             
             if (!finalHtml) {
               throw new Error('생성된 결과가 없습니다.')
+            }
+            
+            // 만세력 테이블이 있고 첫 번째 menu-section에 없으면 삽입
+            if (manseRyeokTable && !finalHtml.includes('manse-ryeok-table')) {
+              // 첫 번째 menu-section 찾기
+              const firstMenuSectionMatch = finalHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+              
+              if (firstMenuSectionMatch) {
+                // 썸네일 다음에 만세력 테이블 삽입
+                const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+                
+                if (thumbnailMatch) {
+                  // 썸네일 바로 다음에 삽입 (빨간 박스 영역)
+                  finalHtml = finalHtml.replace(
+                    /(<img[^>]*class="menu-thumbnail"[^>]*\/>)/,
+                    `$1\n${manseRyeokTable}`
+                  )
+                } else {
+                  // 썸네일이 없으면 메뉴 제목 다음에 삽입
+                  const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                  if (menuTitleMatch) {
+                    finalHtml = finalHtml.replace(
+                      /(<h2 class="menu-title">[^<]*<\/h2>)/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  } else {
+                    // 메뉴 제목도 없으면 첫 번째 menu-section 시작 부분에 삽입
+                    finalHtml = finalHtml.replace(
+                      /(<div class="menu-section">)/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  }
+                }
+              }
             }
             
             // 결과 데이터 준비
