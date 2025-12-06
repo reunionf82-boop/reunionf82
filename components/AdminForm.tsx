@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { getContentById, deleteContent, type ContentData } from '@/lib/supabase-admin'
+import { getContentById, type ContentData } from '@/lib/supabase-admin'
 import ThumbnailModal from '@/components/ThumbnailModal'
 
 interface AdminFormProps {
@@ -200,7 +200,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       console.log('speakerParam:', speakerParam);
       
       const contentData: ContentData = {
-        id: contentId ? parseInt(contentId) : undefined,
+        ...(contentId ? { id: parseInt(contentId) } : {}),
         role_prompt: formData.title,
         restrictions: formData.description,
         content_type: formData.isNew ? 'saju' : 'gonghap',
@@ -752,11 +752,19 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 onClick={async () => {
                   if (contentId) {
                     try {
-                      await deleteContent(parseInt(contentId))
+                      const response = await fetch(`/api/admin/content/delete?id=${contentId}`, {
+                        method: 'DELETE',
+                      })
+
+                      if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ error: '삭제에 실패했습니다.' }))
+                        throw new Error(errorData.error || '삭제에 실패했습니다.')
+                      }
+
                       router.push('/admin')
-                    } catch (error) {
+                    } catch (error: any) {
                       console.error('삭제 실패:', error)
-                      alert('삭제에 실패했습니다.')
+                      alert(`삭제에 실패했습니다: ${error.message || '알 수 없는 오류'}`)
                       setShowDeleteConfirm(false)
                     }
                   }

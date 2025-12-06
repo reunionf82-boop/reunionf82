@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { getContents } from '@/lib/supabase-admin'
+import { getContents, deleteContent } from '@/lib/supabase-admin'
 
 export default function AdminPage() {
   const router = useRouter()

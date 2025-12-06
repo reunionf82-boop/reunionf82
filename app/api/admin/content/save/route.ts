@@ -71,11 +71,12 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({ data: result })
     } else {
-      // 새로 생성
+      // 새로 생성 - id 필드 제거 (자동 생성되도록)
+      const { id: _, ...dataWithoutId } = dataToSave
       const { data, error } = await supabase
         .from('contents')
         .insert({
-          ...dataToSave,
+          ...dataWithoutId,
           created_at: new Date().toISOString(),
         })
         .select()
