@@ -77,14 +77,23 @@ export async function GET(req: NextRequest) {
     console.log('selected_model (원본):', modelValue, '타입:', typeof modelValue)
     console.log('selected_speaker (원본):', speakerValue, '타입:', typeof speakerValue)
 
-    // null, undefined, 빈 문자열 체크
-    const finalModel = (modelValue && typeof modelValue === 'string' && modelValue.trim() !== '') 
-      ? modelValue.trim() 
-      : 'gemini-2.5-flash'
+    // null, undefined, 빈 문자열 체크 - 하지만 DB 값이 있으면 무조건 사용
+    let finalModel = 'gemini-2.5-flash'
+    let finalSpeaker = 'nara'
     
-    const finalSpeaker = (speakerValue && typeof speakerValue === 'string' && speakerValue.trim() !== '') 
-      ? speakerValue.trim() 
-      : 'nara'
+    if (modelValue !== null && modelValue !== undefined) {
+      const modelStr = String(modelValue).trim()
+      if (modelStr !== '') {
+        finalModel = modelStr
+      }
+    }
+    
+    if (speakerValue !== null && speakerValue !== undefined) {
+      const speakerStr = String(speakerValue).trim()
+      if (speakerStr !== '') {
+        finalSpeaker = speakerStr
+      }
+    }
 
     console.log('=== 최종 반환 값 ===')
     console.log('finalModel:', finalModel)
