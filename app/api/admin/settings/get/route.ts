@@ -74,25 +74,33 @@ export async function GET(req: NextRequest) {
 
     console.log('=== DB에서 가져온 실제 값 ===')
     console.log('data 객체:', JSON.stringify(data, null, 2))
+    console.log('data.selected_model:', data.selected_model)
+    console.log('data.selected_speaker:', data.selected_speaker)
     console.log('selected_model (원본):', modelValue, '타입:', typeof modelValue)
     console.log('selected_speaker (원본):', speakerValue, '타입:', typeof speakerValue)
+    console.log('modelValue === null:', modelValue === null)
+    console.log('modelValue === undefined:', modelValue === undefined)
+    console.log('speakerValue === null:', speakerValue === null)
+    console.log('speakerValue === undefined:', speakerValue === undefined)
 
-    // null, undefined, 빈 문자열 체크 - 하지만 DB 값이 있으면 무조건 사용
+    // DB 값이 있으면 무조건 사용 (null, undefined, 빈 문자열만 기본값 사용)
     let finalModel = 'gemini-2.5-flash'
     let finalSpeaker = 'nara'
     
-    if (modelValue !== null && modelValue !== undefined) {
-      const modelStr = String(modelValue).trim()
-      if (modelStr !== '') {
-        finalModel = modelStr
-      }
+    // modelValue가 null이나 undefined가 아니고, 빈 문자열도 아니면 사용
+    if (modelValue != null && String(modelValue).trim() !== '') {
+      finalModel = String(modelValue).trim()
+      console.log('DB model 값 사용:', finalModel)
+    } else {
+      console.log('DB model 값이 없어 기본값 사용:', finalModel)
     }
     
-    if (speakerValue !== null && speakerValue !== undefined) {
-      const speakerStr = String(speakerValue).trim()
-      if (speakerStr !== '') {
-        finalSpeaker = speakerStr
-      }
+    // speakerValue가 null이나 undefined가 아니고, 빈 문자열도 아니면 사용
+    if (speakerValue != null && String(speakerValue).trim() !== '') {
+      finalSpeaker = String(speakerValue).trim()
+      console.log('DB speaker 값 사용:', finalSpeaker)
+    } else {
+      console.log('DB speaker 값이 없어 기본값 사용:', finalSpeaker)
     }
 
     console.log('=== 최종 반환 값 ===')
