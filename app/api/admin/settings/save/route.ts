@@ -11,14 +11,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // 환경 변수 직접 확인
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+    
+    console.log('=== 저장 API: Supabase 클라이언트 확인 ===')
+    console.log('Supabase URL:', supabaseUrl)
+    console.log('Supabase URL 길이:', supabaseUrl.length)
+    console.log('Service Key 존재:', !!supabaseServiceKey)
+    console.log('Service Key 길이:', supabaseServiceKey.length)
+    console.log('Service Key 앞 10자리:', supabaseServiceKey.substring(0, 10))
+    
     const supabase = getAdminSupabaseClient()
     const body = await req.json()
     const { model, speaker } = body
 
     console.log('=== 설정 저장 요청 ===')
-    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)
-    console.log('Service Key 존재:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
-    console.log('Service Key 길이:', process.env.SUPABASE_SERVICE_ROLE_KEY?.length)
     console.log('받은 데이터 - model:', model, 'speaker:', speaker)
 
     // 기존 레코드 조회

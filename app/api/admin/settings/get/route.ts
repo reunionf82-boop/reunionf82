@@ -11,12 +11,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const supabase = getAdminSupabaseClient()
+    // 환경 변수 직접 확인
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
     
-    console.log('=== Supabase 클라이언트 확인 ===')
-    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)
-    console.log('Service Key 존재:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
-    console.log('Service Key 길이:', process.env.SUPABASE_SERVICE_ROLE_KEY?.length)
+    console.log('=== 조회 API: Supabase 클라이언트 확인 ===')
+    console.log('Supabase URL:', supabaseUrl)
+    console.log('Supabase URL 길이:', supabaseUrl.length)
+    console.log('Service Key 존재:', !!supabaseServiceKey)
+    console.log('Service Key 길이:', supabaseServiceKey.length)
+    console.log('Service Key 앞 10자리:', supabaseServiceKey.substring(0, 10))
+    
+    const supabase = getAdminSupabaseClient()
     
     // 직접 모든 필드를 조회하여 실제 DB 값을 확인
     const { data, error } = await supabase
