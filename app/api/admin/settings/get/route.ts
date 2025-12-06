@@ -30,6 +30,10 @@ export async function GET(req: NextRequest) {
 
     const supabase = getSupabaseClient()
     
+    console.log('=== 설정 조회 API 시작 ===')
+    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + '...')
+    console.log('Service Key 존재:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
+    
     const { data, error } = await supabase
       .from('app_settings')
       .select('selected_model, selected_speaker')
@@ -39,6 +43,8 @@ export async function GET(req: NextRequest) {
     console.log('=== 설정 조회 API ===')
     console.log('에러:', error)
     console.log('데이터:', data)
+    console.log('원본 selected_model:', data?.selected_model)
+    console.log('원본 selected_speaker:', data?.selected_speaker)
     
     if (error) {
       // 테이블이 없거나 레코드가 없으면 기본값 반환

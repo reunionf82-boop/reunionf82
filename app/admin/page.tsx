@@ -71,22 +71,18 @@ export default function AdminPage() {
       console.log('화자:', data.speaker)
       console.log('현재 상태 - 모델:', selectedModel, '화자:', selectedSpeaker)
       
-      // 모델 설정 (값이 있으면 무조건 설정)
+      // 모델 설정 (DB에서 가져온 값으로 무조건 업데이트)
       const loadedModel = data.model || 'gemini-2.5-flash'
       console.log('로드된 모델:', loadedModel, '현재 모델:', selectedModel)
-      if (loadedModel !== selectedModel) {
-        console.log('모델 상태 업데이트:', selectedModel, '->', loadedModel)
-        setSelectedModel(loadedModel)
-      }
+      console.log('모델 상태 업데이트:', selectedModel, '->', loadedModel)
+      setSelectedModel(loadedModel)
       console.log('관리자 페이지: Supabase에서 모델 로드:', loadedModel)
       
-      // 화자 설정 (값이 있으면 무조건 설정)
+      // 화자 설정 (DB에서 가져온 값으로 무조건 업데이트)
       const loadedSpeaker = data.speaker || 'nara'
       console.log('로드된 화자:', loadedSpeaker, '현재 화자:', selectedSpeaker)
-      if (loadedSpeaker !== selectedSpeaker) {
-        console.log('화자 상태 업데이트:', selectedSpeaker, '->', loadedSpeaker)
-        setSelectedSpeaker(loadedSpeaker)
-      }
+      console.log('화자 상태 업데이트:', selectedSpeaker, '->', loadedSpeaker)
+      setSelectedSpeaker(loadedSpeaker)
       console.log('=== 관리자 컨텐츠 리스트: 선택된 화자 로드 ===')
       console.log('선택된 화자:', loadedSpeaker)
       console.log('화자 옵션:')
