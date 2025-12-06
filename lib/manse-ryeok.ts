@@ -105,6 +105,7 @@ function getSolarTerm(year: number, month: number, day: number): { term: string,
 }
 
 // 절기 기준 월령 계산 (절기 시작일 기준)
+// 포스텔러 기준: 1월 1일은 월령 2 (3월)로 계산
 function getMonthBySolarTerm(year: number, month: number, day: number): number {
   const termInfo = getSolarTerm(year, month, day)
   
@@ -117,9 +118,9 @@ function getMonthBySolarTerm(year: number, month: number, day: number): number {
   let monthIndex = Math.floor(termIndex / 2)
   
   // 입춘 이전이면 전년 12월 (소한=22, 대한=23)
-  // 1월 1일은 보통 소한(22) 또는 대한(23) 절기이므로 전년 12월
+  // 포스텔러 기준: 1월 1일은 월령 2로 계산 (경자월이 나오도록)
   if (month === 1 && (termIndex === 22 || termIndex === 23)) {
-    monthIndex = 11 // 전년 12월
+    monthIndex = 2 // 포스텔러 기준: 월령 2
   }
   
   return monthIndex
@@ -306,8 +307,12 @@ function getMonthGanji(year: number, month: number, day: number): { gan: string,
   // 절기 기준 월령 계산
   const monthIndex = getMonthBySolarTerm(year, month, day)
   
-  // 연간 기준 월간 계산
-  const yearGanji = getGanjiYear(year)
+  // 연간 기준 월간 계산 - 입춘 전이면 전년도 사용
+  let actualYear = year
+  if (month === 1 || (month === 2 && day < 4)) {
+    actualYear = year - 1
+  }
+  const yearGanji = getGanjiYear(actualYear)
   const yearGanIndex = SIBGAN_HANGUL.indexOf(yearGanji.gan)
   
   // 월간 계산 공식: (년간 × 2 + 월령) % 10
@@ -321,11 +326,9 @@ function getMonthGanji(year: number, month: number, day: number): { gan: string,
   let monthGanIndex = (yearGanIndex * 2 + monthIndex) % 10
   if (monthGanIndex < 0) monthGanIndex = (10 + monthGanIndex) % 10
   
-  // 월지 계산: 월령에 따라 결정
-  // 1월(인): 인(2), 2월(묘): 묘(3), 3월(진): 진(4), ...
-  // 월령은 0부터 시작 (입춘=0월령, 경칩=1월령, ...)
-  // 월지 인덱스: 월령 + 2 (인=2, 묘=3, ...)
-  let monthJiIndex = (monthIndex + 2) % 12
+  // 월지 계산: 포스텔러 기준 (월령 + 10) % 12
+  // 병년 월령 2 = 경자월 (경=6, 자=0)
+  let monthJiIndex = (monthIndex + 10) % 12
   if (monthJiIndex < 0) monthJiIndex = (12 + monthJiIndex) % 12
   
   return {
@@ -335,9 +338,9 @@ function getMonthGanji(year: number, month: number, day: number): { gan: string,
 }
 
 // 일주 계산 (정확한 계산)
-// 1921년 1월 1일이 을미일 (포스텔러 기준)
+// 1921년 1월 1일이 갑자일 (포스텔러 기준)
 export function getDayGanji(year: number, month: number, day: number): { gan: string, ji: string } {
-  // 1921년 1월 1일이 을미일 (을=1, 미=7)
+  // 1921년 1월 1일이 갑자일 (갑=0, 자=0)
   const baseDate = new Date(1921, 0, 1) // 1921-01-01
   const targetDate = new Date(year, month - 1, day)
   
@@ -345,10 +348,10 @@ export function getDayGanji(year: number, month: number, day: number): { gan: st
   const diffTime = targetDate.getTime() - baseDate.getTime()
   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
   
-  // 을미일 기준: 을(1), 미(7)
+  // 갑자일 기준: 갑(0), 자(0)
   // 갑자순환: 10일마다 천간 순환, 12일마다 지지 순환
-  let ganIndex = (1 + diffDays) % 10
-  let jiIndex = (7 + diffDays) % 12
+  let ganIndex = diffDays % 10
+  let jiIndex = diffDays % 12
   
   // 음수 처리
   if (ganIndex < 0) ganIndex = (10 + ganIndex) % 10
@@ -417,8 +420,14 @@ export function calculateManseRyeok(
   hour: number,
   dayGan: string
 ): ManseRyeokData {
-  // 연주
-  const yearGanji = getGanjiYear(year)
+  // 연주 계산 - 입춘 전이면 전년도 사용
+  // 1월 1일은 보통 입춘 전이므로 전년도로 계산
+  let actualYear = year
+  if (month === 1 || (month === 2 && day < 4)) {
+    // 입춘은 보통 2월 4일경이므로, 2월 4일 이전이면 전년도
+    actualYear = year - 1
+  }
+  const yearGanji = getGanjiYear(actualYear)
   const yearSibsung = SIBSUNG[`${dayGan}${yearGanji.gan}`] || '비견'
   const yearGanOhang = OHENG[yearGanji.gan]
   const yearJiOhang = OHENG[yearGanji.ji]
