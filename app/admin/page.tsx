@@ -62,29 +62,23 @@ export default function AdminPage() {
       console.log('모델:', data.model)
       console.log('화자:', data.speaker)
       
-      // 모델 설정 (값이 있으면 설정, 없으면 기본값 유지)
-      if (data.model !== undefined && data.model !== null) {
-        setSelectedModel(data.model)
-        console.log('관리자 페이지: Supabase에서 모델 로드:', data.model)
-      } else {
-        console.log('모델 데이터가 없어 기본값 유지:', selectedModel)
-      }
+      // 모델 설정 (값이 있으면 무조건 설정)
+      const loadedModel = data.model || 'gemini-2.5-flash'
+      setSelectedModel(loadedModel)
+      console.log('관리자 페이지: Supabase에서 모델 로드:', loadedModel)
       
-      // 화자 설정 (값이 있으면 설정, 없으면 기본값 유지)
-      if (data.speaker !== undefined && data.speaker !== null) {
-        setSelectedSpeaker(data.speaker)
-        console.log('=== 관리자 컨텐츠 리스트: 선택된 화자 로드 ===')
-        console.log('선택된 화자:', data.speaker)
-        console.log('화자 옵션:')
-        console.log('  - nara: 나라 (여성)')
-        console.log('  - mijin: 미진 (여성)')
-        console.log('  - nhajun: 나준 (여성)')
-        console.log('  - ndain: 다인 (여성)')
-        console.log('  - jinho: 진호 (남성)')
-        console.log('==========================================')
-      } else {
-        console.log('화자 데이터가 없어 기본값 유지:', selectedSpeaker)
-      }
+      // 화자 설정 (값이 있으면 무조건 설정)
+      const loadedSpeaker = data.speaker || 'nara'
+      setSelectedSpeaker(loadedSpeaker)
+      console.log('=== 관리자 컨텐츠 리스트: 선택된 화자 로드 ===')
+      console.log('선택된 화자:', loadedSpeaker)
+      console.log('화자 옵션:')
+      console.log('  - nara: 나라 (여성)')
+      console.log('  - mijin: 미진 (여성)')
+      console.log('  - nhajun: 나준 (여성)')
+      console.log('  - ndain: 다인 (여성)')
+      console.log('  - jinho: 진호 (남성)')
+      console.log('==========================================')
     } catch (error) {
       console.error('설정 로드 실패:', error)
       // 에러 발생 시에도 기본값으로 변경하지 않고 현재 값 유지

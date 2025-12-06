@@ -50,12 +50,17 @@ export async function GET(req: NextRequest) {
     }
     
     // 데이터가 있으면 그대로 반환 (null이어도 반환)
+    // 빈 문자열 체크도 포함
+    const modelValue = data?.selected_model
+    const speakerValue = data?.selected_speaker
+    
     const response = {
-      model: data?.selected_model ?? 'gemini-2.5-flash',
-      speaker: data?.selected_speaker ?? 'nara'
+      model: (modelValue && modelValue.trim() !== '') ? modelValue : 'gemini-2.5-flash',
+      speaker: (speakerValue && speakerValue.trim() !== '') ? speakerValue : 'nara'
     }
     
     console.log('반환할 응답:', response)
+    console.log('원본 데이터 - selected_model:', modelValue, 'selected_speaker:', speakerValue)
     return NextResponse.json(response)
   } catch (error: any) {
     console.error('설정 조회 에러:', error)
