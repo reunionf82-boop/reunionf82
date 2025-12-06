@@ -4,7 +4,7 @@ import { getSelectedModel, getSelectedSpeaker } from '@/lib/supabase-admin'
 export async function GET(req: NextRequest) {
   try {
     // 인증 확인
-    const authCookie = req.cookies.get('admin-auth')
+    const authCookie = req.cookies.get('admin_session')
     if (!authCookie || authCookie.value !== 'authenticated') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
