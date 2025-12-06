@@ -30,79 +30,71 @@ export async function GET(req: NextRequest) {
 
     const supabase = getSupabaseClient()
     
-    console.log('=== 설정 조회 API 시작 ===')
-    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + '...')
-    console.log('Service Key 존재:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
-    
-    // 모든 레코드 조회 (디버깅용)
-    const { data: allRecords, error: allError } = await supabase
-      .from('app_settings')
-      .select('*')
-    
-    console.log('=== 모든 레코드 조회 ===')
-    console.log('allError:', allError)
-    console.log('모든 레코드:', JSON.stringify(allRecords, null, 2))
-    
-    // 직접 SQL 쿼리로 확인 (디버깅용)
-    const { data: rawData, error: rawError } = await supabase
-      .from('app_settings')
-      .select('*')
-      .eq('id', 1)
-      .single()
-    
-    console.log('=== 원본 SQL 조회 결과 (id=1) ===')
-    console.log('rawError:', rawError)
-    console.log('rawData 전체:', JSON.stringify(rawData, null, 2))
-    console.log('rawData?.selected_model:', rawData?.selected_model)
-    console.log('rawData?.selected_speaker:', rawData?.selected_speaker)
-    
+    // 직접 모든 필드를 조회하여 실제 DB 값을 확인
     const { data, error } = await supabase
       .from('app_settings')
-      .select('selected_model, selected_speaker')
+      .select('id, selected_model, selected_speaker, updated_at')
       .eq('id', 1)
-      .single()
-    
-    console.log('=== 설정 조회 API ===')
-    console.log('에러:', error)
-    console.log('데이터:', data)
-    console.log('원본 selected_model:', data?.selected_model)
-    console.log('원본 selected_speaker:', data?.selected_speaker)
-    console.log('rawData와 data 비교:')
-    console.log('  - selected_model:', rawData?.selected_model, 'vs', data?.selected_model)
-    console.log('  - selected_speaker:', rawData?.selected_speaker, 'vs', data?.selected_speaker)
+      .maybeSingle() // 레코드가 없어도 에러가 아닌 null 반환
     
     if (error) {
-      // 테이블이 없거나 레코드가 없으면 기본값 반환
-      console.log('설정 조회 실패, 기본값 사용:', error.message)
+      console.error('=== 설정 조회 에러 ===')
+      console.error('에러:', error)
+      // 에러 발생 시 기본값 반환
       return NextResponse.json({
         model: 'gemini-2.5-flash',
         speaker: 'nara'
+      }, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
       })
     }
-    
-    // 데이터가 있으면 그대로 반환 (null이어도 반환)
-    // 빈 문자열 체크도 포함
-    const modelValue = data?.selected_model
-    const speakerValue = data?.selected_speaker
-    
-    console.log('=== 원본 DB 값 확인 ===')
-    console.log('data 객체 전체:', JSON.stringify(data, null, 2))
-    console.log('data?.selected_model:', data?.selected_model)
-    console.log('data?.selected_speaker:', data?.selected_speaker)
-    console.log('modelValue:', modelValue, '타입:', typeof modelValue)
-    console.log('speakerValue:', speakerValue, '타입:', typeof speakerValue)
-    
-    const response = {
-      model: (modelValue && modelValue.trim() !== '') ? modelValue : 'gemini-2.5-flash',
-      speaker: (speakerValue && speakerValue.trim() !== '') ? speakerValue : 'nara'
+
+    // 데이터가 없으면 기본값 반환
+    if (!data) {
+      console.log('=== 레코드 없음, 기본값 반환 ===')
+      return NextResponse.json({
+        model: 'gemini-2.5-flash',
+        speaker: 'nara'
+      }, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      })
     }
+
+    // 실제 DB 값 확인
+    const modelValue = data.selected_model
+    const speakerValue = data.selected_speaker
+
+    console.log('=== DB에서 가져온 실제 값 ===')
+    console.log('data 객체:', JSON.stringify(data, null, 2))
+    console.log('selected_model (원본):', modelValue, '타입:', typeof modelValue)
+    console.log('selected_speaker (원본):', speakerValue, '타입:', typeof speakerValue)
+
+    // null, undefined, 빈 문자열 체크
+    const finalModel = (modelValue && typeof modelValue === 'string' && modelValue.trim() !== '') 
+      ? modelValue.trim() 
+      : 'gemini-2.5-flash'
     
-    console.log('=== 최종 응답 생성 ===')
-    console.log('반환할 응답:', response)
-    console.log('원본 데이터 - selected_model:', modelValue, 'selected_speaker:', speakerValue)
-    console.log('응답 model:', response.model, '응답 speaker:', response.speaker)
-    
-    // 캐시 방지 헤더 추가
+    const finalSpeaker = (speakerValue && typeof speakerValue === 'string' && speakerValue.trim() !== '') 
+      ? speakerValue.trim() 
+      : 'nara'
+
+    console.log('=== 최종 반환 값 ===')
+    console.log('finalModel:', finalModel)
+    console.log('finalSpeaker:', finalSpeaker)
+
+    const response = {
+      model: finalModel,
+      speaker: finalSpeaker
+    }
+
     return NextResponse.json(response, {
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -111,11 +103,15 @@ export async function GET(req: NextRequest) {
       }
     })
   } catch (error: any) {
-    console.error('설정 조회 에러:', error)
+    console.error('=== 설정 조회 예외 ===')
+    console.error('에러:', error)
     return NextResponse.json(
-      { error: error.message || '설정을 가져오는데 실패했습니다.' },
+      { 
+        error: error.message || '설정을 가져오는데 실패했습니다.',
+        model: 'gemini-2.5-flash',
+        speaker: 'nara'
+      },
       { status: 500 }
     )
   }
 }
-
