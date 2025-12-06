@@ -61,7 +61,15 @@ export async function GET(req: NextRequest) {
     
     console.log('반환할 응답:', response)
     console.log('원본 데이터 - selected_model:', modelValue, 'selected_speaker:', speakerValue)
-    return NextResponse.json(response)
+    
+    // 캐시 방지 헤더 추가
+    return NextResponse.json(response, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    })
   } catch (error: any) {
     console.error('설정 조회 에러:', error)
     return NextResponse.json(
