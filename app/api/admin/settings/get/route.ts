@@ -115,8 +115,17 @@ export async function GET(req: NextRequest) {
 
     const response = {
       model: finalModel,
-      speaker: finalSpeaker
+      speaker: finalSpeaker,
+      // 디버깅용: 실제 DB 값도 포함
+      _debug: {
+        dbModel: modelValue,
+        dbSpeaker: speakerValue,
+        dataObject: data
+      }
     }
+
+    console.log('=== 최종 응답 객체 ===')
+    console.log('response:', JSON.stringify(response, null, 2))
 
     return NextResponse.json(response, {
       headers: {
