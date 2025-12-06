@@ -116,9 +116,10 @@ function getMonthBySolarTerm(year: number, month: number, day: number): number {
   // 절기 인덱스를 월령으로 변환 (2개 절기 = 1개 월)
   let monthIndex = Math.floor(termIndex / 2)
   
-  // 입춘 이전이면 전년 12월
-  if (month === 1 && termIndex >= 22) {
-    monthIndex = 11
+  // 입춘 이전이면 전년 12월 (소한=22, 대한=23)
+  // 1월 1일은 보통 소한(22) 또는 대한(23) 절기이므로 전년 12월
+  if (month === 1 && (termIndex === 22 || termIndex === 23)) {
+    monthIndex = 11 // 전년 12월
   }
   
   return monthIndex
@@ -334,20 +335,20 @@ function getMonthGanji(year: number, month: number, day: number): { gan: string,
 }
 
 // 일주 계산 (정확한 계산)
-// 1924년 1월 1일이 갑자일 (더 정확한 기준)
+// 1921년 1월 1일이 을미일 (포스텔러 기준)
 export function getDayGanji(year: number, month: number, day: number): { gan: string, ji: string } {
-  // 1924년 1월 1일이 갑자일 (갑=0, 자=0)
-  const baseDate = new Date(1924, 0, 1) // 1924-01-01
+  // 1921년 1월 1일이 을미일 (을=1, 미=7)
+  const baseDate = new Date(1921, 0, 1) // 1921-01-01
   const targetDate = new Date(year, month - 1, day)
   
   // 날짜 차이 계산
   const diffTime = targetDate.getTime() - baseDate.getTime()
   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
   
-  // 갑자일 기준: 갑(0), 자(0)
+  // 을미일 기준: 을(1), 미(7)
   // 갑자순환: 10일마다 천간 순환, 12일마다 지지 순환
-  let ganIndex = diffDays % 10
-  let jiIndex = diffDays % 12
+  let ganIndex = (1 + diffDays) % 10
+  let jiIndex = (7 + diffDays) % 12
   
   // 음수 처리
   if (ganIndex < 0) ganIndex = (10 + ganIndex) % 10
@@ -360,20 +361,11 @@ export function getDayGanji(year: number, month: number, day: number): { gan: st
 }
 
 // 시주 계산 (정확한 계산)
-// 서울 기준 (UTC+9, 경도 127도)
+// 포스텔러 기준: 경도 보정 없이 표준시 사용
 function getHourGanji(dayGan: string, hour: number, minute: number = 0): { gan: string, ji: string } {
   const dayGanIndex = SIBGAN_HANGUL.indexOf(dayGan)
   
-  // 서울의 실제 태양시 계산 (경도 보정)
-  // 서울 경도: 127.0도, 표준시 경도: 135.0도
-  // 경도 차이: 127 - 135 = -8도
-  // 시간 차이: -8도 × 4분/도 = -32분
-  // 실제 태양시 = 표준시 - 32분
-  const longitudeCorrection = (127.0 - 135.0) * 4 // 분 단위
-  const solarTime = hour * 60 + minute + longitudeCorrection
-  const adjustedHour = Math.floor(solarTime / 60) % 24
-  const adjustedMinute = solarTime % 60
-  
+  // 포스텔러는 경도 보정을 하지 않고 표준시를 그대로 사용
   // 시지 계산 (정확한 시간 구간)
   // 자시: 23:00~00:59 (23시~0시 59분)
   // 축시: 01:00~02:59
@@ -388,10 +380,10 @@ function getHourGanji(dayGan: string, hour: number, minute: number = 0): { gan: 
   // 술시: 19:00~20:59
   // 해시: 21:00~22:59
   let hourJiIndex: number
-  if (adjustedHour === 23 || adjustedHour === 0) {
+  if (hour === 23 || hour === 0) {
     hourJiIndex = 0 // 자시
   } else {
-    hourJiIndex = Math.floor((adjustedHour + 1) / 2) % 12
+    hourJiIndex = Math.floor((hour + 1) / 2) % 12
   }
   
   // 시간 계산: 일간 기준
