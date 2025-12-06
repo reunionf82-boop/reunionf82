@@ -36,6 +36,10 @@ export async function GET(req: NextRequest) {
       .eq('id', 1)
       .single()
     
+    console.log('=== 설정 조회 API ===')
+    console.log('에러:', error)
+    console.log('데이터:', data)
+    
     if (error) {
       // 테이블이 없거나 레코드가 없으면 기본값 반환
       console.log('설정 조회 실패, 기본값 사용:', error.message)
@@ -45,10 +49,14 @@ export async function GET(req: NextRequest) {
       })
     }
     
-    return NextResponse.json({ 
-      model: data?.selected_model || 'gemini-2.5-flash',
-      speaker: data?.selected_speaker || 'nara'
-    })
+    // 데이터가 있으면 그대로 반환 (null이어도 반환)
+    const response = {
+      model: data?.selected_model ?? 'gemini-2.5-flash',
+      speaker: data?.selected_speaker ?? 'nara'
+    }
+    
+    console.log('반환할 응답:', response)
+    return NextResponse.json(response)
   } catch (error: any) {
     console.error('설정 조회 에러:', error)
     return NextResponse.json(
