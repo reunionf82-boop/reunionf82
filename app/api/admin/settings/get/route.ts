@@ -60,13 +60,22 @@ export async function GET(req: NextRequest) {
     const modelValue = data?.selected_model
     const speakerValue = data?.selected_speaker
     
+    console.log('=== 원본 DB 값 확인 ===')
+    console.log('data 객체 전체:', JSON.stringify(data, null, 2))
+    console.log('data?.selected_model:', data?.selected_model)
+    console.log('data?.selected_speaker:', data?.selected_speaker)
+    console.log('modelValue:', modelValue, '타입:', typeof modelValue)
+    console.log('speakerValue:', speakerValue, '타입:', typeof speakerValue)
+    
     const response = {
       model: (modelValue && modelValue.trim() !== '') ? modelValue : 'gemini-2.5-flash',
       speaker: (speakerValue && speakerValue.trim() !== '') ? speakerValue : 'nara'
     }
     
+    console.log('=== 최종 응답 생성 ===')
     console.log('반환할 응답:', response)
     console.log('원본 데이터 - selected_model:', modelValue, 'selected_speaker:', speakerValue)
+    console.log('응답 model:', response.model, '응답 speaker:', response.speaker)
     
     // 캐시 방지 헤더 추가
     return NextResponse.json(response, {
