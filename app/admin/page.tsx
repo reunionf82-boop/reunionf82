@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { getContents, getSelectedModel, saveSelectedModel, getSelectedSpeaker, saveSelectedSpeaker } from '@/lib/supabase-admin'
+import { getContents } from '@/lib/supabase-admin'
 
 export default function AdminPage() {
   const router = useRouter()
@@ -19,8 +19,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (authenticated === true) {
       loadContents()
-      loadSelectedModel()
-      loadSelectedSpeaker()
+      loadSettings()
     }
   }, [authenticated])
 
@@ -50,36 +49,36 @@ export default function AdminPage() {
     }
   }
 
-  const loadSelectedModel = async () => {
+  const loadSettings = async () => {
     try {
-      const model = await getSelectedModel()
-      setSelectedModel(model)
-      console.log('관리자 페이지: Supabase에서 모델 로드:', model)
+      const response = await fetch('/api/admin/settings/get')
+      if (!response.ok) {
+        throw new Error('설정 조회 실패')
+      }
+      const data = await response.json()
+      
+      if (data.model) {
+        setSelectedModel(data.model)
+        console.log('관리자 페이지: Supabase에서 모델 로드:', data.model)
+      }
+      
+      if (data.speaker) {
+        setSelectedSpeaker(data.speaker)
+        console.log('=== 관리자 컨텐츠 리스트: 선택된 화자 로드 ===')
+        console.log('선택된 화자:', data.speaker)
+        console.log('화자 옵션:')
+        console.log('  - nara: 나라 (여성)')
+        console.log('  - mijin: 미진 (여성)')
+        console.log('  - nhajun: 나준 (여성)')
+        console.log('  - ndain: 다인 (여성)')
+        console.log('  - jinho: 진호 (남성)')
+        console.log('==========================================')
+      }
     } catch (error) {
-      console.error('모델 로드 실패:', error)
+      console.error('설정 로드 실패:', error)
       // 기본값 사용
       setSelectedModel('gemini-2.5-flash')
-    }
-  }
-
-  const loadSelectedSpeaker = async () => {
-    try {
-      const speaker = await getSelectedSpeaker()
-      setSelectedSpeaker(speaker)
-      console.log('=== 관리자 컨텐츠 리스트: 선택된 화자 로드 ===')
-      console.log('선택된 화자:', speaker)
-      console.log('화자 옵션:')
-      console.log('  - nara: 나라 (여성)')
-      console.log('  - mijin: 미진 (여성)')
-      console.log('  - nhajun: 나준 (여성)')
-      console.log('  - ndain: 다인 (여성)')
-      console.log('  - jinho: 진호 (남성)')
-      console.log('==========================================')
-    } catch (error) {
-      console.error('화자 로드 실패:', error)
-      // 기본값 사용
       setSelectedSpeaker('nara')
-      console.log('기본값 사용: nara')
     }
   }
 
@@ -102,7 +101,18 @@ export default function AdminPage() {
     console.log('선택된 모델:', modelDisplayName, `(${model})`)
     
     try {
-      await saveSelectedModel(model)
+      const response = await fetch('/api/admin/settings/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model }),
+      })
+      
+      if (!response.ok) {
+        throw new Error('모델 저장 실패')
+      }
+      
       setSelectedModel(model)
       console.log('Supabase에 저장 완료:', model)
       console.log('==============================')
@@ -181,7 +191,18 @@ export default function AdminPage() {
                 
                 setSelectedSpeaker(speaker)
                 try {
-                  await saveSelectedSpeaker(speaker)
+                  const response = await fetch('/api/admin/settings/save', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ speaker }),
+                  })
+                  
+                  if (!response.ok) {
+                    throw new Error('화자 저장 실패')
+                  }
+                  
                   console.log('Supabase에 화자 저장 완료:', speaker, `(${speakerDisplayName})`)
                   console.log('==============================')
                 } catch (error) {
