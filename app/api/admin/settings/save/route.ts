@@ -1,24 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
 
 export const dynamic = 'force-dynamic'
-
-// 서버 사이드에서만 서비스 롤 키 사용
-function getSupabaseClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-
-  if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error('Supabase 서비스 롤 키가 설정되지 않았습니다.')
-  }
-
-  return createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  })
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,11 +11,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const supabase = getSupabaseClient()
+    const supabase = getAdminSupabaseClient()
     const body = await req.json()
     const { model, speaker } = body
 
     console.log('=== 설정 저장 요청 ===')
+    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)
+    console.log('Service Key 존재:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
+    console.log('Service Key 길이:', process.env.SUPABASE_SERVICE_ROLE_KEY?.length)
     console.log('받은 데이터 - model:', model, 'speaker:', speaker)
 
     // 기존 레코드 조회
