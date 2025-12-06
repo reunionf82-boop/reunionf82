@@ -5,11 +5,17 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   try {
-    // 인증 확인
-    const authCookie = req.cookies.get('admin_session')
-    if (!authCookie || authCookie.value !== 'authenticated') {
+    // 인증 확인 - cookies() 사용 (로그인 API와 동일한 방식)
+    const { cookies: cookieStore } = await import('next/headers')
+    const cookies = await cookieStore()
+    const session = cookies.get('admin_session')
+    
+    if (!session || session.value !== 'authenticated') {
+      console.error('인증 실패 - session:', session)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    
+    console.log('인증 성공 - session:', session.value)
 
     // 환경 변수 직접 확인
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
@@ -83,21 +89,34 @@ export async function GET(req: NextRequest) {
     console.log('speakerValue === undefined:', speakerValue === undefined)
     console.log('speakerValue == null:', speakerValue == null)
 
-    // DB 값이 있으면 무조건 사용 - 단순화된 로직
-    // 기본값은 DB 값이 정말 없을 때만 사용
-    let finalModel = modelValue && String(modelValue).trim() !== '' 
-      ? String(modelValue).trim() 
-      : 'gemini-2.5-flash'
+    // DB 값이 있으면 무조건 사용 - 기본값 사용 금지
+    // modelValue나 speakerValue가 null/undefined/빈 문자열이 아니면 무조건 사용
+    let finalModel: string
+    let finalSpeaker: string
     
-    let finalSpeaker = speakerValue && String(speakerValue).trim() !== '' 
-      ? String(speakerValue).trim() 
-      : 'nara'
+    if (modelValue != null && String(modelValue).trim() !== '') {
+      finalModel = String(modelValue).trim()
+      console.log('✅ DB model 값 사용:', finalModel)
+    } else {
+      // 기본값 사용은 절대 안 됨 - 에러 발생
+      console.error('❌ DB model 값이 없습니다! modelValue:', modelValue)
+      finalModel = String(modelValue || '').trim() || 'ERROR_NO_MODEL'
+    }
+    
+    if (speakerValue != null && String(speakerValue).trim() !== '') {
+      finalSpeaker = String(speakerValue).trim()
+      console.log('✅ DB speaker 값 사용:', finalSpeaker)
+    } else {
+      // 기본값 사용은 절대 안 됨 - 에러 발생
+      console.error('❌ DB speaker 값이 없습니다! speakerValue:', speakerValue)
+      finalSpeaker = String(speakerValue || '').trim() || 'ERROR_NO_SPEAKER'
+    }
     
     console.log('=== 최종 값 결정 ===')
-    console.log('modelValue 원본:', modelValue)
-    console.log('speakerValue 원본:', speakerValue)
-    console.log('finalModel 결정:', finalModel, '(원본:', modelValue, ')')
-    console.log('finalSpeaker 결정:', finalSpeaker, '(원본:', speakerValue, ')')
+    console.log('modelValue 원본:', modelValue, '타입:', typeof modelValue)
+    console.log('speakerValue 원본:', speakerValue, '타입:', typeof speakerValue)
+    console.log('finalModel 결정:', finalModel)
+    console.log('finalSpeaker 결정:', finalSpeaker)
 
     console.log('=== 최종 반환 값 ===')
     console.log('finalModel:', finalModel)

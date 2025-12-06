@@ -5,11 +5,17 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    // 인증 확인
-    const authCookie = req.cookies.get('admin_session')
-    if (!authCookie || authCookie.value !== 'authenticated') {
+    // 인증 확인 - cookies() 사용 (로그인 API와 동일한 방식)
+    const { cookies: cookieStore } = await import('next/headers')
+    const cookies = await cookieStore()
+    const session = cookies.get('admin_session')
+    
+    if (!session || session.value !== 'authenticated') {
+      console.error('인증 실패 - session:', session)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    
+    console.log('인증 성공 - session:', session.value)
 
     // 환경 변수 직접 확인
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
@@ -126,6 +132,14 @@ export async function POST(req: NextRequest) {
         if (verifyData) {
           savedData = verifyData
           console.log('✅ 재조회한 실제 DB 데이터로 savedData 업데이트:', savedData)
+          
+          // 저장 성공 여부 확인
+          if (verifyData.selected_model !== updateData.selected_model || 
+              verifyData.selected_speaker !== updateData.selected_speaker) {
+            console.error('❌ 저장 실패: DB에 저장된 값이 저장하려는 값과 다릅니다!')
+            console.error('저장하려는 값:', updateData.selected_model, updateData.selected_speaker)
+            console.error('DB에 저장된 값:', verifyData.selected_model, verifyData.selected_speaker)
+          }
         } else {
           console.error('❌ verifyData가 null입니다!')
         }
