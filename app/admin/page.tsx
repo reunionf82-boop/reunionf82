@@ -69,6 +69,20 @@ export default function AdminPage() {
       console.log('전체 응답:', data)
       console.log('모델:', data.model)
       console.log('화자:', data.speaker)
+      
+      // 디버그 정보 확인
+      if (data._debug) {
+        console.log('=== 디버그 정보 ===')
+        console.log('DB에서 가져온 model:', data._debug.dbModel)
+        console.log('DB에서 가져온 speaker:', data._debug.dbSpeaker)
+        console.log('DB data 객체:', data._debug.dataObject)
+        console.log('DB model 타입:', typeof data._debug.dbModel)
+        console.log('DB speaker 타입:', typeof data._debug.dbSpeaker)
+        console.log('DB model === null:', data._debug.dbModel === null)
+        console.log('DB model === undefined:', data._debug.dbModel === undefined)
+        console.log('DB speaker === null:', data._debug.dbSpeaker === null)
+        console.log('DB speaker === undefined:', data._debug.dbSpeaker === undefined)
+      }
       console.log('현재 상태 - 모델:', selectedModel, '화자:', selectedSpeaker)
       
       // 모델 설정 (DB에서 가져온 값으로 무조건 업데이트)
