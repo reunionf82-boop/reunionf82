@@ -90,24 +90,20 @@ export async function GET(req: NextRequest) {
     console.log('speakerValue == null:', speakerValue == null)
 
     // DB 값이 있으면 무조건 사용 - 단순화된 로직
-    let finalModel = 'gemini-2.5-flash'
-    let finalSpeaker = 'nara'
+    // 기본값은 DB 값이 정말 없을 때만 사용
+    let finalModel = modelValue && String(modelValue).trim() !== '' 
+      ? String(modelValue).trim() 
+      : 'gemini-2.5-flash'
     
-    // modelValue 처리 - null, undefined, 빈 문자열이 아니면 사용
-    if (modelValue != null && modelValue !== '' && String(modelValue).trim() !== '') {
-      finalModel = String(modelValue).trim()
-      console.log('✅ DB model 값 사용:', finalModel)
-    } else {
-      console.log('❌ DB model 값이 없어 기본값 사용. modelValue:', modelValue)
-    }
+    let finalSpeaker = speakerValue && String(speakerValue).trim() !== '' 
+      ? String(speakerValue).trim() 
+      : 'nara'
     
-    // speakerValue 처리 - null, undefined, 빈 문자열이 아니면 사용
-    if (speakerValue != null && speakerValue !== '' && String(speakerValue).trim() !== '') {
-      finalSpeaker = String(speakerValue).trim()
-      console.log('✅ DB speaker 값 사용:', finalSpeaker)
-    } else {
-      console.log('❌ DB speaker 값이 없어 기본값 사용. speakerValue:', speakerValue)
-    }
+    console.log('=== 최종 값 결정 ===')
+    console.log('modelValue 원본:', modelValue)
+    console.log('speakerValue 원본:', speakerValue)
+    console.log('finalModel 결정:', finalModel, '(원본:', modelValue, ')')
+    console.log('finalSpeaker 결정:', finalSpeaker, '(원본:', speakerValue, ')')
 
     console.log('=== 최종 반환 값 ===')
     console.log('finalModel:', finalModel)
