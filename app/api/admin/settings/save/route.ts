@@ -11,29 +11,12 @@ export async function POST(req: NextRequest) {
     const session = cookies.get('admin_session')
     
     if (!session || session.value !== 'authenticated') {
-      console.error('인증 실패 - session:', session)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    
-    console.log('인증 성공 - session:', session.value)
-
-    // 환경 변수 직접 확인
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-    
-    console.log('=== 저장 API: Supabase 클라이언트 확인 ===')
-    console.log('Supabase URL:', supabaseUrl)
-    console.log('Supabase URL 길이:', supabaseUrl.length)
-    console.log('Service Key 존재:', !!supabaseServiceKey)
-    console.log('Service Key 길이:', supabaseServiceKey.length)
-    console.log('Service Key 앞 10자리:', supabaseServiceKey.substring(0, 10))
     
     const supabase = getAdminSupabaseClient()
     const body = await req.json()
     const { model, speaker } = body
-
-    console.log('=== 설정 저장 요청 ===')
-    console.log('받은 데이터 - model:', model, 'speaker:', speaker)
 
     // 기존 레코드 조회
     const { data: existing, error: existingError } = await supabase
@@ -46,8 +29,6 @@ export async function POST(req: NextRequest) {
       console.error('기존 데이터 조회 에러:', existingError)
       throw existingError
     }
-
-    console.log('기존 데이터:', existing)
 
     // 업데이트할 데이터 준비
     const updateData: {
@@ -80,13 +61,10 @@ export async function POST(req: NextRequest) {
       updateData.selected_speaker = 'nara'
     }
 
-    console.log('저장할 데이터:', updateData)
-
     let savedData: any = null
 
     if (existing) {
       // 업데이트
-      console.log('기존 레코드 업데이트')
       const { data: updatedData, error: updateError } = await supabase
         .from('app_settings')
         .update(updateData)
@@ -103,50 +81,8 @@ export async function POST(req: NextRequest) {
       }
       
       savedData = updatedData[0]
-      console.log('업데이트 완료 (반환된 데이터):', savedData)
-      
-      // 실제로 DB에 저장되었는지 확인하기 위해 다시 조회 (약간의 지연 후)
-      await new Promise(resolve => setTimeout(resolve, 200))
-      
-      const { data: verifyData, error: verifyError } = await supabase
-        .from('app_settings')
-        .select('id, selected_model, selected_speaker, updated_at')
-        .eq('id', 1)
-        .single()
-      
-      if (verifyError) {
-        console.error('저장 확인 조회 에러:', verifyError)
-      } else {
-        console.log('=== 저장 확인: DB에서 다시 조회한 값 ===')
-        console.log('verifyData 전체:', JSON.stringify(verifyData, null, 2))
-        console.log('저장한 값:', updateData.selected_model, updateData.selected_speaker)
-        console.log('DB에 저장된 값:', verifyData?.selected_model, verifyData?.selected_speaker)
-        console.log('저장한 updated_at:', updateData.updated_at)
-        console.log('DB의 updated_at:', verifyData?.updated_at)
-        console.log('저장 성공 여부:', 
-          verifyData?.selected_model === updateData.selected_model && 
-          verifyData?.selected_speaker === updateData.selected_speaker
-        )
-        
-        // 저장 확인 데이터를 savedData에 포함 (실제 DB 값 사용)
-        if (verifyData) {
-          savedData = verifyData
-          console.log('✅ 재조회한 실제 DB 데이터로 savedData 업데이트:', savedData)
-          
-          // 저장 성공 여부 확인
-          if (verifyData.selected_model !== updateData.selected_model || 
-              verifyData.selected_speaker !== updateData.selected_speaker) {
-            console.error('❌ 저장 실패: DB에 저장된 값이 저장하려는 값과 다릅니다!')
-            console.error('저장하려는 값:', updateData.selected_model, updateData.selected_speaker)
-            console.error('DB에 저장된 값:', verifyData.selected_model, verifyData.selected_speaker)
-          }
-        } else {
-          console.error('❌ verifyData가 null입니다!')
-        }
-      }
     } else {
       // 새로 생성
-      console.log('새 레코드 생성')
       const { data: insertedData, error: insertError } = await supabase
         .from('app_settings')
         .insert({
@@ -165,45 +101,15 @@ export async function POST(req: NextRequest) {
       }
       
       savedData = insertedData[0]
-      console.log('생성 완료:', savedData)
-      
-      // 실제로 DB에 저장되었는지 확인하기 위해 다시 조회
-      const { data: verifyData, error: verifyError } = await supabase
-        .from('app_settings')
-        .select('id, selected_model, selected_speaker')
-        .eq('id', 1)
-        .single()
-      
-      if (verifyError) {
-        console.error('저장 확인 조회 에러:', verifyError)
-      } else {
-        console.log('=== 저장 확인: DB에서 다시 조회한 값 ===')
-        console.log('verifyData:', verifyData)
-        console.log('저장한 값:', updateData.selected_model, updateData.selected_speaker)
-        console.log('DB에 저장된 값:', verifyData?.selected_model, verifyData?.selected_speaker)
-      }
     }
 
-    // 저장된 데이터를 직접 반환
-    const response = {
+    return NextResponse.json({
       success: true,
       model: savedData.selected_model || updateData.selected_model,
-      speaker: savedData.selected_speaker || updateData.selected_speaker,
-      // 디버깅용: 저장 확인 정보 포함
-      _debug: {
-        savedData: savedData,
-        updateData: updateData,
-        existing: existing
-      }
-    }
-
-    console.log('=== 저장 완료, 반환할 응답 ===')
-    console.log('response:', JSON.stringify(response, null, 2))
-
-    return NextResponse.json(response)
+      speaker: savedData.selected_speaker || updateData.selected_speaker
+    })
   } catch (error: any) {
-    console.error('=== 설정 저장 에러 ===')
-    console.error('에러:', error)
+    console.error('설정 저장 에러:', error)
     return NextResponse.json(
       { error: error.message || '설정을 저장하는데 실패했습니다.' },
       { status: 500 }
