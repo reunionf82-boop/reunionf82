@@ -162,3 +162,5 @@ SELECT * FROM pg_policies WHERE tablename = 'table_name';
    - 마이그레이션 완료 후 `.env.local` 파일 업데이트
    - 새 프로젝트 URL과 키로 변경
 
+
+

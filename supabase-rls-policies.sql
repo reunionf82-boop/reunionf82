@@ -108,3 +108,5 @@ WITH CHECK (true);
 --    portal_results 테이블에 user_id 컬럼이 있는지 확인하세요.
 --    없다면 테이블 구조를 수정해야 합니다.
 
+
+

@@ -316,12 +316,16 @@ function getMonthGanji(year: number, month: number, day: number): { gan: string,
   // 정임년: 1월(인) 경, 2월(묘) 신, 3월(진) 임, ...
   // 무계년: 1월(인) 임, 2월(묘) 계, 3월(진) 갑, ...
   
-  // 월간 계산
-  const monthGanIndex = (yearGanIndex * 2 + monthIndex) % 10
+  // 월간 계산 (음수 처리 포함)
+  let monthGanIndex = (yearGanIndex * 2 + monthIndex) % 10
+  if (monthGanIndex < 0) monthGanIndex = (10 + monthGanIndex) % 10
   
   // 월지 계산: 월령에 따라 결정
   // 1월(인): 인(2), 2월(묘): 묘(3), 3월(진): 진(4), ...
-  const monthJiIndex = (monthIndex + 1) % 12
+  // 월령은 0부터 시작 (입춘=0월령, 경칩=1월령, ...)
+  // 월지 인덱스: 월령 + 2 (인=2, 묘=3, ...)
+  let monthJiIndex = (monthIndex + 2) % 12
+  if (monthJiIndex < 0) monthJiIndex = (12 + monthJiIndex) % 12
   
   return {
     gan: SIBGAN_HANGUL[monthGanIndex],
@@ -330,37 +334,65 @@ function getMonthGanji(year: number, month: number, day: number): { gan: string,
 }
 
 // 일주 계산 (정확한 계산)
+// 1924년 1월 1일이 갑자일 (더 정확한 기준)
 export function getDayGanji(year: number, month: number, day: number): { gan: string, ji: string } {
-  // 1900년 1월 1일이 경술일 (갑자순환 기준)
-  const baseDate = new Date(1900, 0, 1) // 1900-01-01
+  // 1924년 1월 1일이 갑자일 (갑=0, 자=0)
+  const baseDate = new Date(1924, 0, 1) // 1924-01-01
   const targetDate = new Date(year, month - 1, day)
   
   // 날짜 차이 계산
   const diffTime = targetDate.getTime() - baseDate.getTime()
   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
   
-  // 경술일 기준: 경(6), 술(10)
+  // 갑자일 기준: 갑(0), 자(0)
   // 갑자순환: 10일마다 천간 순환, 12일마다 지지 순환
-  const ganIndex = (6 + diffDays) % 10
-  const jiIndex = (10 + diffDays) % 12
+  let ganIndex = diffDays % 10
+  let jiIndex = diffDays % 12
   
   // 음수 처리
-  const finalGanIndex = ganIndex < 0 ? (10 + ganIndex) % 10 : ganIndex
-  const finalJiIndex = jiIndex < 0 ? (12 + jiIndex) % 12 : jiIndex
+  if (ganIndex < 0) ganIndex = (10 + ganIndex) % 10
+  if (jiIndex < 0) jiIndex = (12 + jiIndex) % 12
   
   return {
-    gan: SIBGAN_HANGUL[finalGanIndex],
-    ji: SIBIJI_HANGUL[finalJiIndex]
+    gan: SIBGAN_HANGUL[ganIndex],
+    ji: SIBIJI_HANGUL[jiIndex]
   }
 }
 
 // 시주 계산 (정확한 계산)
-function getHourGanji(dayGan: string, hour: number): { gan: string, ji: string } {
+// 서울 기준 (UTC+9, 경도 127도)
+function getHourGanji(dayGan: string, hour: number, minute: number = 0): { gan: string, ji: string } {
   const dayGanIndex = SIBGAN_HANGUL.indexOf(dayGan)
   
-  // 시지 계산
-  // 23시~1시: 자시(0), 1시~3시: 축시(1), 3시~5시: 인시(2), ...
-  let hourJiIndex = Math.floor((hour + 1) / 2) % 12
+  // 서울의 실제 태양시 계산 (경도 보정)
+  // 서울 경도: 127.0도, 표준시 경도: 135.0도
+  // 경도 차이: 127 - 135 = -8도
+  // 시간 차이: -8도 × 4분/도 = -32분
+  // 실제 태양시 = 표준시 - 32분
+  const longitudeCorrection = (127.0 - 135.0) * 4 // 분 단위
+  const solarTime = hour * 60 + minute + longitudeCorrection
+  const adjustedHour = Math.floor(solarTime / 60) % 24
+  const adjustedMinute = solarTime % 60
+  
+  // 시지 계산 (정확한 시간 구간)
+  // 자시: 23:00~00:59 (23시~0시 59분)
+  // 축시: 01:00~02:59
+  // 인시: 03:00~04:59
+  // 묘시: 05:00~06:59
+  // 진시: 07:00~08:59
+  // 사시: 09:00~10:59
+  // 오시: 11:00~12:59
+  // 미시: 13:00~14:59
+  // 신시: 15:00~16:59
+  // 유시: 17:00~18:59
+  // 술시: 19:00~20:59
+  // 해시: 21:00~22:59
+  let hourJiIndex: number
+  if (adjustedHour === 23 || adjustedHour === 0) {
+    hourJiIndex = 0 // 자시
+  } else {
+    hourJiIndex = Math.floor((adjustedHour + 1) / 2) % 12
+  }
   
   // 시간 계산: 일간 기준
   // 갑기일: 자시(0) 갑, 축시(1) 을, 인시(2) 병, ...

@@ -85,3 +85,5 @@ Supabase CLI 없이도 마이그레이션할 수 있습니다:
 - Supabase CLI 공식 문서: https://supabase.com/docs/guides/cli
 - GitHub 릴리스: https://github.com/supabase/cli/releases
 
+
+

@@ -134,3 +134,5 @@ CREATE TABLE portal_results (
 
 이렇게 하면 시퀀스가 자동으로 생성됩니다!
 
+
+

@@ -162,3 +162,5 @@ rclone copy old-storage:thumbnails new-storage:thumbnails
 - **백업:** 마이그레이션 전 기존 파일 백업 권장
 - **검증:** 마이그레이션 후 파일 개수 및 크기 확인
 
+
+

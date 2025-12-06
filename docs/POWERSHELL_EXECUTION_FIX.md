@@ -59,3 +59,5 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process; .\scripts\migrate-su
 powershell -ExecutionPolicy Bypass -File .\scripts\migrate-supabase.ps1 -OldProjectRef "jjcnrrbqqjciwqrxgedh" -NewProjectRef "tokazaacpwiqwzgoqpmf"
 ```
 
+
+

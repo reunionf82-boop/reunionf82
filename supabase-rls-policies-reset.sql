@@ -86,3 +86,5 @@ WHERE schemaname = 'public'
   AND tablename IN ('app_settings', 'contents', 'portal_results')
 ORDER BY tablename, policyname;
 
+
+
