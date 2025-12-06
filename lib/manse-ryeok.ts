@@ -364,11 +364,20 @@ export function getDayGanji(year: number, month: number, day: number): { gan: st
 }
 
 // 시주 계산 (정확한 계산)
-// 포스텔러 기준: 경도 보정 없이 표준시 사용
+// 포스텔러 기준: 서울 경도 보정 적용 (127.0도, -32분)
 function getHourGanji(dayGan: string, hour: number, minute: number = 0): { gan: string, ji: string } {
   const dayGanIndex = SIBGAN_HANGUL.indexOf(dayGan)
   
-  // 포스텔러는 경도 보정을 하지 않고 표준시를 그대로 사용
+  // 서울의 실제 태양시 계산 (경도 보정)
+  // 서울 경도: 127.0도, 표준시 경도: 135.0도
+  // 경도 차이: 127 - 135 = -8도
+  // 시간 차이: -8도 × 4분/도 = -32분
+  // 실제 태양시 = 표준시 - 32분
+  const longitudeCorrection = (127.0 - 135.0) * 4 // 분 단위
+  const solarTime = hour * 60 + minute + longitudeCorrection
+  const adjustedHour = Math.floor(solarTime / 60) % 24
+  const adjustedMinute = solarTime % 60
+  
   // 시지 계산 (정확한 시간 구간)
   // 자시: 23:00~00:59 (23시~0시 59분)
   // 축시: 01:00~02:59
@@ -383,10 +392,10 @@ function getHourGanji(dayGan: string, hour: number, minute: number = 0): { gan: 
   // 술시: 19:00~20:59
   // 해시: 21:00~22:59
   let hourJiIndex: number
-  if (hour === 23 || hour === 0) {
+  if (adjustedHour === 23 || adjustedHour === 0) {
     hourJiIndex = 0 // 자시
   } else {
-    hourJiIndex = Math.floor((hour + 1) / 2) % 12
+    hourJiIndex = Math.floor((adjustedHour + 1) / 2) % 12
   }
   
   // 시간 계산: 일간 기준
@@ -418,7 +427,8 @@ export function calculateManseRyeok(
   month: number,
   day: number,
   hour: number,
-  dayGan: string
+  dayGan: string,
+  minute: number = 0
 ): ManseRyeokData {
   // 연주 계산 - 입춘 전이면 전년도 사용
   // 1월 1일은 보통 입춘 전이므로 전년도로 계산
@@ -457,7 +467,7 @@ export function calculateManseRyeok(
   const daySibisinsal = getSibisinsal(dayGanji.gan, dayGanji.ji, 'day', dayGan)
   
   // 시주
-  const hourGanji = getHourGanji(dayGanji.gan, hour)
+  const hourGanji = getHourGanji(dayGanji.gan, hour, minute)
   const hourSibsung = SIBSUNG[`${dayGan}${hourGanji.gan}`] || '비견'
   const hourGanOhang = OHENG[hourGanji.gan]
   const hourJiOhang = OHENG[hourGanji.ji]
