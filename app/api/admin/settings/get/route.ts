@@ -34,6 +34,19 @@ export async function GET(req: NextRequest) {
     console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + '...')
     console.log('Service Key 존재:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
     
+    // 직접 SQL 쿼리로 확인 (디버깅용)
+    const { data: rawData, error: rawError } = await supabase
+      .from('app_settings')
+      .select('*')
+      .eq('id', 1)
+      .single()
+    
+    console.log('=== 원본 SQL 조회 결과 ===')
+    console.log('rawError:', rawError)
+    console.log('rawData 전체:', JSON.stringify(rawData, null, 2))
+    console.log('rawData?.selected_model:', rawData?.selected_model)
+    console.log('rawData?.selected_speaker:', rawData?.selected_speaker)
+    
     const { data, error } = await supabase
       .from('app_settings')
       .select('selected_model, selected_speaker')
@@ -45,6 +58,9 @@ export async function GET(req: NextRequest) {
     console.log('데이터:', data)
     console.log('원본 selected_model:', data?.selected_model)
     console.log('원본 selected_speaker:', data?.selected_speaker)
+    console.log('rawData와 data 비교:')
+    console.log('  - selected_model:', rawData?.selected_model, 'vs', data?.selected_model)
+    console.log('  - selected_speaker:', rawData?.selected_speaker, 'vs', data?.selected_speaker)
     
     if (error) {
       // 테이블이 없거나 레코드가 없으면 기본값 반환
