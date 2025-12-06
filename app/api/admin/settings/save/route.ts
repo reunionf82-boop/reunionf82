@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
       console.log('생성 완료, 반환된 데이터:', insertedData)
     }
 
-    // 저장 후 확인을 위해 다시 조회
+    // 저장 후 확인을 위해 다시 조회하여 실제 저장된 값 반환
     const { data: verifyData, error: verifyError } = await supabase
       .from('app_settings')
       .select('selected_model, selected_speaker')
@@ -95,11 +95,19 @@ export async function POST(req: NextRequest) {
     
     if (verifyError) {
       console.error('저장 확인 조회 에러:', verifyError)
+      return NextResponse.json({ 
+        success: true,
+        model: updateData.selected_model,
+        speaker: updateData.selected_speaker
+      })
     } else {
       console.log('저장 확인 - 현재 DB 값:', verifyData)
+      return NextResponse.json({ 
+        success: true,
+        model: verifyData?.selected_model || updateData.selected_model,
+        speaker: verifyData?.selected_speaker || updateData.selected_speaker
+      })
     }
-
-    return NextResponse.json({ success: true })
   } catch (error: any) {
     console.error('설정 저장 에러:', error)
     return NextResponse.json(

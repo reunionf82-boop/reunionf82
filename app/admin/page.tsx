@@ -117,8 +117,18 @@ export default function AdminPage() {
         throw new Error('모델 저장 실패')
       }
       
-      setSelectedModel(model)
-      console.log('Supabase에 저장 완료:', model)
+      const result = await response.json()
+      console.log('저장 응답:', result)
+      
+      // 저장 응답에서 실제 저장된 값으로 상태 업데이트
+      if (result.model) {
+        setSelectedModel(result.model)
+        console.log('저장된 모델로 상태 업데이트:', result.model)
+      }
+      
+      // 추가로 다시 로드하여 확인
+      await loadSettings()
+      console.log('Supabase에 저장 완료 및 재로드:', model)
       console.log('==============================')
     } catch (error) {
       console.error('모델 저장 실패:', error)
@@ -193,7 +203,6 @@ export default function AdminPage() {
                 console.log('이전 화자:', selectedSpeaker, `(${speakerNames[selectedSpeaker] || selectedSpeaker})`)
                 console.log('새 화자:', speaker, `(${speakerDisplayName})`)
                 
-                setSelectedSpeaker(speaker)
                 try {
                   const response = await fetch('/api/admin/settings/save', {
                     method: 'POST',
@@ -207,7 +216,18 @@ export default function AdminPage() {
                     throw new Error('화자 저장 실패')
                   }
                   
-                  console.log('Supabase에 화자 저장 완료:', speaker, `(${speakerDisplayName})`)
+                  const result = await response.json()
+                  console.log('저장 응답:', result)
+                  
+                  // 저장 응답에서 실제 저장된 값으로 상태 업데이트
+                  if (result.speaker) {
+                    setSelectedSpeaker(result.speaker)
+                    console.log('저장된 화자로 상태 업데이트:', result.speaker)
+                  }
+                  
+                  // 추가로 다시 로드하여 확인
+                  await loadSettings()
+                  console.log('Supabase에 화자 저장 완료 및 재로드:', speaker, `(${speakerDisplayName})`)
                   console.log('==============================')
                 } catch (error) {
                   console.error('화자 저장 실패:', error)
