@@ -103,12 +103,14 @@ export async function POST(req: NextRequest) {
       }
       
       savedData = updatedData[0]
-      console.log('업데이트 완료:', savedData)
+      console.log('업데이트 완료 (반환된 데이터):', savedData)
       
-      // 실제로 DB에 저장되었는지 확인하기 위해 다시 조회
+      // 실제로 DB에 저장되었는지 확인하기 위해 다시 조회 (약간의 지연 후)
+      await new Promise(resolve => setTimeout(resolve, 200))
+      
       const { data: verifyData, error: verifyError } = await supabase
         .from('app_settings')
-        .select('id, selected_model, selected_speaker')
+        .select('id, selected_model, selected_speaker, updated_at')
         .eq('id', 1)
         .single()
       
@@ -116,9 +118,23 @@ export async function POST(req: NextRequest) {
         console.error('저장 확인 조회 에러:', verifyError)
       } else {
         console.log('=== 저장 확인: DB에서 다시 조회한 값 ===')
-        console.log('verifyData:', verifyData)
+        console.log('verifyData 전체:', JSON.stringify(verifyData, null, 2))
         console.log('저장한 값:', updateData.selected_model, updateData.selected_speaker)
         console.log('DB에 저장된 값:', verifyData?.selected_model, verifyData?.selected_speaker)
+        console.log('저장한 updated_at:', updateData.updated_at)
+        console.log('DB의 updated_at:', verifyData?.updated_at)
+        console.log('저장 성공 여부:', 
+          verifyData?.selected_model === updateData.selected_model && 
+          verifyData?.selected_speaker === updateData.selected_speaker
+        )
+        
+        // 저장 확인 데이터를 savedData에 포함 (실제 DB 값 사용)
+        if (verifyData) {
+          savedData = verifyData
+          console.log('✅ 재조회한 실제 DB 데이터로 savedData 업데이트:', savedData)
+        } else {
+          console.error('❌ verifyData가 null입니다!')
+        }
       }
     } else {
       // 새로 생성
