@@ -35,13 +35,17 @@ export async function POST(req: NextRequest) {
     console.log('받은 데이터 - model:', model, 'speaker:', speaker)
 
     // 먼저 레코드가 있는지 확인
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from('app_settings')
       .select('selected_model, selected_speaker')
       .eq('id', 1)
       .single()
 
+    console.log('=== 기존 데이터 조회 ===')
+    console.log('existingError:', existingError)
     console.log('기존 데이터:', existing)
+    console.log('기존 selected_model:', existing?.selected_model)
+    console.log('기존 selected_speaker:', existing?.selected_speaker)
 
     // 기존 값 유지하면서 업데이트할 값만 변경
     const updateData: any = {

@@ -34,6 +34,15 @@ export async function GET(req: NextRequest) {
     console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + '...')
     console.log('Service Key 존재:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
     
+    // 모든 레코드 조회 (디버깅용)
+    const { data: allRecords, error: allError } = await supabase
+      .from('app_settings')
+      .select('*')
+    
+    console.log('=== 모든 레코드 조회 ===')
+    console.log('allError:', allError)
+    console.log('모든 레코드:', JSON.stringify(allRecords, null, 2))
+    
     // 직접 SQL 쿼리로 확인 (디버깅용)
     const { data: rawData, error: rawError } = await supabase
       .from('app_settings')
@@ -41,7 +50,7 @@ export async function GET(req: NextRequest) {
       .eq('id', 1)
       .single()
     
-    console.log('=== 원본 SQL 조회 결과 ===')
+    console.log('=== 원본 SQL 조회 결과 (id=1) ===')
     console.log('rawError:', rawError)
     console.log('rawData 전체:', JSON.stringify(rawData, null, 2))
     console.log('rawData?.selected_model:', rawData?.selected_model)
