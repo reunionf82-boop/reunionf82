@@ -30,6 +30,11 @@ export async function GET(req: NextRequest) {
 
     const supabase = getSupabaseClient()
     
+    console.log('=== Supabase 클라이언트 확인 ===')
+    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)
+    console.log('Service Key 존재:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
+    console.log('Service Key 길이:', process.env.SUPABASE_SERVICE_ROLE_KEY?.length)
+    
     // 직접 모든 필드를 조회하여 실제 DB 값을 확인
     const { data, error } = await supabase
       .from('app_settings')
