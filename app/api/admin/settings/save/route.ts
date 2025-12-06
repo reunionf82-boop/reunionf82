@@ -52,6 +52,8 @@ export async function POST(req: NextRequest) {
 
     console.log('저장할 데이터:', updateData)
 
+    let savedData: any = null
+
     if (existing) {
       // 업데이트
       console.log('기존 레코드 업데이트:', updateData)
@@ -59,14 +61,24 @@ export async function POST(req: NextRequest) {
         .from('app_settings')
         .update(updateData)
         .eq('id', 1)
-        .select()
+        .select('selected_model, selected_speaker')
       
       if (error) {
         console.error('설정 업데이트 에러:', error)
+        console.error('에러 상세:', JSON.stringify(error, null, 2))
         throw error
       }
       
       console.log('업데이트 완료, 반환된 데이터:', updatedData)
+      
+      // 업데이트된 데이터가 없으면 에러
+      if (!updatedData || updatedData.length === 0) {
+        console.error('업데이트된 데이터가 없습니다!')
+        throw new Error('업데이트된 데이터를 가져올 수 없습니다.')
+      }
+      
+      savedData = updatedData[0]
+      console.log('업데이트된 첫 번째 레코드:', savedData)
     } else {
       // 새로 생성
       console.log('새 레코드 생성:', { id: 1, ...updateData })
@@ -76,7 +88,7 @@ export async function POST(req: NextRequest) {
           id: 1,
           ...updateData
         })
-        .select()
+        .select('selected_model, selected_speaker')
       
       if (error) {
         console.error('설정 생성 에러:', error)
@@ -84,30 +96,23 @@ export async function POST(req: NextRequest) {
       }
       
       console.log('생성 완료, 반환된 데이터:', insertedData)
+      
+      if (!insertedData || insertedData.length === 0) {
+        console.error('생성된 데이터가 없습니다!')
+        throw new Error('생성된 데이터를 가져올 수 없습니다.')
+      }
+      
+      savedData = insertedData[0]
+      console.log('생성된 첫 번째 레코드:', savedData)
     }
 
-    // 저장 후 확인을 위해 다시 조회하여 실제 저장된 값 반환
-    const { data: verifyData, error: verifyError } = await supabase
-      .from('app_settings')
-      .select('selected_model, selected_speaker')
-      .eq('id', 1)
-      .single()
-    
-    if (verifyError) {
-      console.error('저장 확인 조회 에러:', verifyError)
-      return NextResponse.json({ 
-        success: true,
-        model: updateData.selected_model,
-        speaker: updateData.selected_speaker
-      })
-    } else {
-      console.log('저장 확인 - 현재 DB 값:', verifyData)
-      return NextResponse.json({ 
-        success: true,
-        model: verifyData?.selected_model || updateData.selected_model,
-        speaker: verifyData?.selected_speaker || updateData.selected_speaker
-      })
-    }
+    // 저장된 데이터를 직접 반환 (추가 조회 없이)
+    console.log('저장 완료 - 반환할 데이터:', savedData)
+    return NextResponse.json({ 
+      success: true,
+      model: savedData?.selected_model || updateData.selected_model,
+      speaker: savedData?.selected_speaker || updateData.selected_speaker
+    })
   } catch (error: any) {
     console.error('설정 저장 에러:', error)
     return NextResponse.json(
