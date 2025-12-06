@@ -120,16 +120,18 @@ export default function AdminPage() {
       const result = await response.json()
       console.log('저장 응답:', result)
       
-      // 저장 응답에서 실제 저장된 값으로 상태 업데이트
+      // 저장 응답에서 실제 저장된 값으로 상태 업데이트 (우선 사용)
       if (result.model) {
         setSelectedModel(result.model)
         console.log('저장된 모델로 상태 업데이트:', result.model)
       }
       
-      // 추가로 다시 로드하여 확인
-      await loadSettings()
-      console.log('Supabase에 저장 완료 및 재로드:', model)
-      console.log('==============================')
+      // 백그라운드에서 지연 후 재로드 (UI는 저장 응답으로 즉시 업데이트)
+      setTimeout(async () => {
+        await loadSettings()
+        console.log('Supabase에 저장 완료 및 재로드:', result.model || model)
+        console.log('==============================')
+      }, 500)
     } catch (error) {
       console.error('모델 저장 실패:', error)
       alert('모델 저장에 실패했습니다. 콘솔을 확인해주세요.')
@@ -219,16 +221,18 @@ export default function AdminPage() {
                   const result = await response.json()
                   console.log('저장 응답:', result)
                   
-                  // 저장 응답에서 실제 저장된 값으로 상태 업데이트
+                  // 저장 응답에서 실제 저장된 값으로 상태 업데이트 (우선 사용)
                   if (result.speaker) {
                     setSelectedSpeaker(result.speaker)
                     console.log('저장된 화자로 상태 업데이트:', result.speaker)
                   }
                   
-                  // 추가로 다시 로드하여 확인
-                  await loadSettings()
-                  console.log('Supabase에 화자 저장 완료 및 재로드:', speaker, `(${speakerDisplayName})`)
-                  console.log('==============================')
+                  // 백그라운드에서 지연 후 재로드 (UI는 저장 응답으로 즉시 업데이트)
+                  setTimeout(async () => {
+                    await loadSettings()
+                    console.log('Supabase에 화자 저장 완료 및 재로드:', result.speaker || speaker, `(${speakerDisplayName})`)
+                    console.log('==============================')
+                  }, 500)
                 } catch (error) {
                   console.error('화자 저장 실패:', error)
                   alert('화자 저장에 실패했습니다. 콘솔을 확인해주세요.')
