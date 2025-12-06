@@ -164,11 +164,17 @@ export async function POST(req: NextRequest) {
     const response = {
       success: true,
       model: savedData.selected_model || updateData.selected_model,
-      speaker: savedData.selected_speaker || updateData.selected_speaker
+      speaker: savedData.selected_speaker || updateData.selected_speaker,
+      // 디버깅용: 저장 확인 정보 포함
+      _debug: {
+        savedData: savedData,
+        updateData: updateData,
+        existing: existing
+      }
     }
 
     console.log('=== 저장 완료, 반환할 응답 ===')
-    console.log('response:', response)
+    console.log('response:', JSON.stringify(response, null, 2))
 
     return NextResponse.json(response)
   } catch (error: any) {
