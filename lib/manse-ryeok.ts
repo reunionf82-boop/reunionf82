@@ -142,8 +142,8 @@ function getSibiunsung(ilgan: string, ilji: string): string {
   let startIndex = 0
   
   if (ohang === '목') {
-    // 목: 자(0) 장생 (포스텔러 기준)
-    const map: { [key: number]: number } = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11 }
+    // 목: 신(8) 장생 (포스텔러 기준 - 시주 십이운성)
+    const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
     startIndex = map[jiIndex] ?? 0
   } else if (ohang === '화') {
     // 화: 사(5) 장생
@@ -255,23 +255,28 @@ function getSibisinsal(gan: string, ji: string, type: 'year' | 'month' | 'day' |
       return SIBISINSAL[index]
     }
   } else if (type === 'hour') {
-    // 시신살: 시간 기준
-    const hourGanOhang = OHENG[gan]
+    // 시신살: 일간 기준 (포스텔러 기준)
+    if (!dayGan) return '역마'
     
-    if (hourGanOhang === '목' || hourGanOhang === '토') {
-      const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
+    const dayGanOhang = OHENG[dayGan]
+    
+    if (dayGanOhang === '목' || dayGanOhang === '토') {
+      // 갑을, 무기: 해(11) 역마 (포스텔러 기준 - 시신살)
+      const map: { [key: number]: number } = { 11: 0, 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11 }
       const index = map[jiIndex] ?? 0
       return SIBISINSAL[index]
-    } else if (hourGanOhang === '금') {
+    } else if (dayGanOhang === '금') {
+      // 경신: 인(2) 역마
       const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
       const index = map[jiIndex] ?? 0
       return SIBISINSAL[index]
-    } else if (hourGanOhang === '화') {
-      // 정(화): 신(8) 역마 (포스텔러 기준)
-      const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
+    } else if (dayGanOhang === '화') {
+      // 병정: 해(11) 역마
+      const map: { [key: number]: number } = { 11: 0, 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11 }
       const index = map[jiIndex] ?? 0
       return SIBISINSAL[index]
-    } else if (hourGanOhang === '수') {
+    } else if (dayGanOhang === '수') {
+      // 임계: 인(2) 역마
       const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
       const index = map[jiIndex] ?? 0
       return SIBISINSAL[index]
