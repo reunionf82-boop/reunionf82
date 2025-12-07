@@ -139,12 +139,29 @@ function getSibiunsung(gan: string, ji: string): string {
   
   let startIndex = 0
   
-  if (ohang === '목') {
-    // 목: 오(6) 장생 (포스텔러 기준 - 일주 십이운성)
+  // 포스텔러 기준: 각 천간별로 다른 장생 기준 사용
+  if (gan === '을') {
+    // 을(목): 오(6) 장생 기준
     const map: { [key: number]: number } = { 6: 0, 7: 1, 8: 2, 9: 3, 10: 4, 11: 5, 0: 6, 1: 7, 2: 8, 3: 9, 4: 10, 5: 11 }
     startIndex = map[jiIndex] ?? 0
+  } else if (gan === '정') {
+    // 정(화): 오(6) 장생 기준 (포스텔러 기준)
+    const map: { [key: number]: number } = { 6: 0, 7: 1, 8: 2, 9: 3, 10: 4, 11: 5, 0: 6, 1: 7, 2: 8, 3: 9, 4: 10, 5: 11 }
+    startIndex = map[jiIndex] ?? 0
+  } else if (gan === '경') {
+    // 경(금): 오(6) 장생 기준
+    const map: { [key: number]: number } = { 6: 0, 7: 1, 8: 2, 9: 3, 10: 4, 11: 5, 0: 6, 1: 7, 2: 8, 3: 9, 4: 10, 5: 11 }
+    startIndex = map[jiIndex] ?? 0
+  } else if (gan === '병') {
+    // 병(화): 인(2) 장생 기준
+    const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
+    startIndex = map[jiIndex] ?? 0
+  } else if (ohang === '목') {
+    // 갑(목): 기본값
+    const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
+    startIndex = map[jiIndex] ?? 0
   } else if (ohang === '화') {
-    // 화: 신(8) 장생 (포스텔러 기준 - 시주/연주 십이운성)
+    // 기타 화: 신(8) 장생 기준
     const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
     startIndex = map[jiIndex] ?? 0
   } else if (ohang === '토') {
@@ -152,8 +169,8 @@ function getSibiunsung(gan: string, ji: string): string {
     const map: { [key: number]: number } = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 7, 9: 8, 10: 9, 11: 10, 0: 11 }
     startIndex = map[jiIndex] ?? 0
   } else if (ohang === '금') {
-    // 금: 자(0) 장생 (포스텔러 기준 - 월주 십이운성)
-    const map: { [key: number]: number } = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11 }
+    // 기타 금: 신(8) 장생 기준
+    const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
     startIndex = map[jiIndex] ?? 0
   } else if (ohang === '수') {
     // 수: 해(11) 장생
@@ -460,7 +477,7 @@ export function calculateManseRyeok(
   
   // 일주
   const dayGanji = getDayGanji(year, month, day)
-  const daySibsung = '일간' // 일간은 자기 자신
+  const daySibsung = SIBSUNG[`${dayGanji.gan}${dayGanji.gan}`] || '비견' // 일간은 자기 자신이므로 비견
   const dayGanOhang = OHENG[dayGanji.gan]
   const dayJiOhang = OHENG[dayGanji.ji]
   const dayGanEumyang = getEumyang(dayGanji.gan, true)
