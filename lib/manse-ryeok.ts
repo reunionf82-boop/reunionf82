@@ -126,36 +126,34 @@ function getMonthBySolarTerm(year: number, month: number, day: number): number {
   return monthIndex
 }
 
-// 십이운성 계산 (일간 기준, 정확한 계산)
-function getSibiunsung(ilgan: string, ilji: string): string {
-  const ganIndex = SIBGAN_HANGUL.indexOf(ilgan)
-  const jiIndex = SIBIJI_HANGUL.indexOf(ilji)
-  const ohang = OHENG[ilgan]
+// 십이운성 계산 (각 주의 천간 기준, 포스텔러 기준)
+function getSibiunsung(gan: string, ji: string): string {
+  const jiIndex = SIBIJI_HANGUL.indexOf(ji)
+  const ohang = OHENG[gan]
   
-  // 십이운성 표 (일간 오행별 지지 위치)
-  // 목: 인(2) 장생, 묘(3) 목욕, 진(4) 관대, 사(5) 건록, 오(6) 제왕, 미(7) 쇠, 신(8) 병, 유(9) 사, 술(10) 묘, 해(11) 절, 자(0) 태, 축(1) 양
-  // 화: 사(5) 장생, 오(6) 목욕, 미(7) 관대, 신(8) 건록, 유(9) 제왕, 술(10) 쇠, 해(11) 병, 자(0) 사, 축(1) 묘, 인(2) 절, 묘(3) 태, 진(4) 양
-  // 토: 축(1) 장생, 인(2) 목욕, 묘(3) 관대, 진(4) 건록, 사(5) 제왕, 오(6) 쇠, 미(7) 병, 신(8) 사, 유(9) 묘, 술(10) 절, 해(11) 태, 자(0) 양
-  // 금: 신(8) 장생, 유(9) 목욕, 술(10) 관대, 해(11) 건록, 자(0) 제왕, 축(1) 쇠, 인(2) 병, 묘(3) 사, 진(4) 묘, 사(5) 절, 오(6) 태, 미(7) 양
-  // 수: 해(11) 장생, 자(0) 목욕, 축(1) 관대, 인(2) 건록, 묘(3) 제왕, 진(4) 쇠, 사(5) 병, 오(6) 사, 미(7) 묘, 신(8) 절, 유(9) 태, 술(10) 양
+  // 십이운성 표 (천간 오행별 지지 위치, 포스텔러 기준)
+  // 화(정): 신(8) 장생 기준
+  // 목(을): 오(6) 장생 기준
+  // 금(경): 자(0) 장생 기준
+  // 화(병): 신(8) 장생 기준
   
   let startIndex = 0
   
   if (ohang === '목') {
-    // 목: 신(8) 장생 (포스텔러 기준 - 시주 십이운성)
-    const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
+    // 목: 오(6) 장생 (포스텔러 기준 - 일주 십이운성)
+    const map: { [key: number]: number } = { 6: 0, 7: 1, 8: 2, 9: 3, 10: 4, 11: 5, 0: 6, 1: 7, 2: 8, 3: 9, 4: 10, 5: 11 }
     startIndex = map[jiIndex] ?? 0
   } else if (ohang === '화') {
-    // 화: 사(5) 장생
-    const map: { [key: number]: number } = { 5: 0, 6: 1, 7: 2, 8: 3, 9: 4, 10: 5, 11: 6, 0: 7, 1: 8, 2: 9, 3: 10, 4: 11 }
+    // 화: 신(8) 장생 (포스텔러 기준 - 시주/연주 십이운성)
+    const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
     startIndex = map[jiIndex] ?? 0
   } else if (ohang === '토') {
     // 토: 축(1) 장생
     const map: { [key: number]: number } = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 7, 9: 8, 10: 9, 11: 10, 0: 11 }
     startIndex = map[jiIndex] ?? 0
   } else if (ohang === '금') {
-    // 금: 신(8) 장생
-    const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
+    // 금: 자(0) 장생 (포스텔러 기준 - 월주 십이운성)
+    const map: { [key: number]: number } = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11 }
     startIndex = map[jiIndex] ?? 0
   } else if (ohang === '수') {
     // 수: 해(11) 장생
@@ -163,8 +161,8 @@ function getSibiunsung(ilgan: string, ilji: string): string {
     startIndex = map[jiIndex] ?? 0
   }
   
-  // 일간의 음양에 따라 순행/역행 결정
-  const isYang = getEumyang(ilgan, true) === '양'
+  // 천간의 음양에 따라 순행/역행 결정
+  const isYang = getEumyang(gan, true) === '양'
   const index = isYang ? startIndex : (12 - startIndex) % 12
   
   return SIBIUNSUNG[index]
@@ -255,27 +253,25 @@ function getSibisinsal(gan: string, ji: string, type: 'year' | 'month' | 'day' |
       return SIBISINSAL[index]
     }
   } else if (type === 'hour') {
-    // 시신살: 일간 기준 (포스텔러 기준)
-    if (!dayGan) return '역마'
+    // 시신살: 시간 기준 (포스텔러 기준)
+    const hourGanOhang = OHENG[gan]
     
-    const dayGanOhang = OHENG[dayGan]
-    
-    if (dayGanOhang === '목' || dayGanOhang === '토') {
+    if (hourGanOhang === '목' || hourGanOhang === '토') {
       // 갑을, 무기: 해(11) 역마 (포스텔러 기준 - 시신살)
       const map: { [key: number]: number } = { 11: 0, 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11 }
       const index = map[jiIndex] ?? 0
       return SIBISINSAL[index]
-    } else if (dayGanOhang === '금') {
+    } else if (hourGanOhang === '금') {
       // 경신: 인(2) 역마
       const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
       const index = map[jiIndex] ?? 0
       return SIBISINSAL[index]
-    } else if (dayGanOhang === '화') {
+    } else if (hourGanOhang === '화') {
       // 병정: 해(11) 역마
       const map: { [key: number]: number } = { 11: 0, 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11 }
       const index = map[jiIndex] ?? 0
       return SIBISINSAL[index]
-    } else if (dayGanOhang === '수') {
+    } else if (hourGanOhang === '수') {
       // 임계: 인(2) 역마
       const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
       const index = map[jiIndex] ?? 0
@@ -449,7 +445,7 @@ export function calculateManseRyeok(
   const yearJiOhang = OHENG[yearGanji.ji]
   const yearGanEumyang = getEumyang(yearGanji.gan, true)
   const yearJiEumyang = getEumyang(yearGanji.ji, false)
-  const yearSibiunsung = getSibiunsung(dayGan, yearGanji.ji) // 일간 기준으로 연지의 십이운성
+  const yearSibiunsung = getSibiunsung(yearGanji.gan, yearGanji.ji) // 연간 기준으로 연지의 십이운성
   const yearSibisinsal = getSibisinsal(yearGanji.gan, yearGanji.ji, 'year')
   
   // 월주 (절기 기준)
@@ -459,7 +455,7 @@ export function calculateManseRyeok(
   const monthJiOhang = OHENG[monthGanji.ji]
   const monthGanEumyang = getEumyang(monthGanji.gan, true)
   const monthJiEumyang = getEumyang(monthGanji.ji, false)
-  const monthSibiunsung = getSibiunsung(dayGan, monthGanji.ji) // 일간 기준으로 월지의 십이운성
+  const monthSibiunsung = getSibiunsung(monthGanji.gan, monthGanji.ji) // 월간 기준으로 월지의 십이운성
   const monthSibisinsal = getSibisinsal(monthGanji.gan, monthGanji.ji, 'month', dayGan)
   
   // 일주
@@ -479,8 +475,8 @@ export function calculateManseRyeok(
   const hourJiOhang = OHENG[hourGanji.ji]
   const hourGanEumyang = getEumyang(hourGanji.gan, true)
   const hourJiEumyang = getEumyang(hourGanji.ji, false)
-  const hourSibiunsung = getSibiunsung(dayGan, hourGanji.ji) // 일간 기준으로 시지의 십이운성
-  const hourSibisinsal = getSibisinsal(hourGanji.gan, hourGanji.ji, 'hour', dayGan)
+  const hourSibiunsung = getSibiunsung(hourGanji.gan, hourGanji.ji) // 시간 기준으로 시지의 십이운성
+  const hourSibisinsal = getSibisinsal(hourGanji.gan, hourGanji.ji, 'hour')
   
   return {
     year: {
