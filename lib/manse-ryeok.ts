@@ -8,6 +8,22 @@ const SIBGAN_HANGUL = ['갑', '을', '병', '정', '무', '기', '경', '신', '
 const SIBIJI = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
 const SIBIJI_HANGUL = ['자', '축', '인', '묘', '진', '사', '오', '미', '신', '유', '술', '해']
 
+// 지장간 (地支藏干) - 각 지지에 숨어있는 천간들 (본기는 마지막)
+const JIJANGGAN: { [key: string]: string[] } = {
+  '자': ['계'],
+  '축': ['기', '신', '계'], // 본기: 계
+  '인': ['갑', '병', '무'], // 본기: 무
+  '묘': ['을'],
+  '진': ['을', '무', '계'], // 본기: 계
+  '사': ['병', '무', '경'], // 본기: 경
+  '오': ['정', '기'], // 본기: 기
+  '미': ['정', '을', '기'], // 본기: 기
+  '신': ['경', '임', '무'], // 본기: 무
+  '유': ['신'],
+  '술': ['신', '정', '무'], // 본기: 무
+  '해': ['임', '갑'] // 본기: 갑
+}
+
 // 십성 (十神)
 const SIBSUNG: { [key: string]: string } = {
   '갑갑': '비견', '갑을': '겁재', '갑병': '식신', '갑정': '상관', '갑무': '편재', '갑기': '정재', '갑경': '편관', '갑신': '정관', '갑임': '편인', '갑계': '정인',
@@ -435,10 +451,10 @@ function getHourGanji(dayGan: string, hour: number, minute: number = 0): { gan: 
 
 // 만세력 테이블 생성
 export interface ManseRyeokData {
-  year: { gan: string, ji: string, sibsung: string, ohang: string, eumyang: string, sibiunsung: string, sibisinsal: string }
-  month: { gan: string, ji: string, sibsung: string, ohang: string, eumyang: string, sibiunsung: string, sibisinsal: string }
-  day: { gan: string, ji: string, sibsung: string, ohang: string, eumyang: string, sibiunsung: string, sibisinsal: string }
-  hour: { gan: string, ji: string, sibsung: string, ohang: string, eumyang: string, sibiunsung: string, sibisinsal: string }
+  year: { gan: string, ji: string, sibsung: string, jiSibsung: string, ohang: string, eumyang: string, sibiunsung: string, sibisinsal: string }
+  month: { gan: string, ji: string, sibsung: string, jiSibsung: string, ohang: string, eumyang: string, sibiunsung: string, sibisinsal: string }
+  day: { gan: string, ji: string, sibsung: string, jiSibsung: string, ohang: string, eumyang: string, sibiunsung: string, sibisinsal: string }
+  hour: { gan: string, ji: string, sibsung: string, jiSibsung: string, ohang: string, eumyang: string, sibiunsung: string, sibisinsal: string }
 }
 
 export function calculateManseRyeok(
@@ -457,7 +473,18 @@ export function calculateManseRyeok(
     actualYear = year - 1
   }
   const yearGanji = getGanjiYear(actualYear)
-  const yearSibsung = SIBSUNG[`${dayGan}${yearGanji.gan}`] || '비견'
+  const yearGanSibsung = SIBSUNG[`${dayGan}${yearGanji.gan}`] || '비견'
+  // 연지의 십성: 지장간 기준 (1개면 그대로, 2개면 중기, 3개면 초기)
+  const yearJijanggan = JIJANGGAN[yearGanji.ji] || []
+  let yearJiMainGan = yearGanji.gan
+  if (yearJijanggan.length === 1) {
+    yearJiMainGan = yearJijanggan[0]
+  } else if (yearJijanggan.length === 2) {
+    yearJiMainGan = yearJijanggan[1] // 중기
+  } else if (yearJijanggan.length === 3) {
+    yearJiMainGan = yearJijanggan[0] // 초기
+  }
+  const yearJiSibsung = SIBSUNG[`${dayGan}${yearJiMainGan}`] || '비견'
   const yearGanOhang = OHENG[yearGanji.gan]
   const yearJiOhang = OHENG[yearGanji.ji]
   const yearGanEumyang = getEumyang(yearGanji.gan, true)
@@ -467,7 +494,18 @@ export function calculateManseRyeok(
   
   // 월주 (절기 기준)
   const monthGanji = getMonthGanji(year, month, day)
-  const monthSibsung = SIBSUNG[`${dayGan}${monthGanji.gan}`] || '비견'
+  const monthGanSibsung = SIBSUNG[`${dayGan}${monthGanji.gan}`] || '비견'
+  // 월지의 십성: 지장간 기준 (1개면 그대로, 2개면 중기, 3개면 초기)
+  const monthJijanggan = JIJANGGAN[monthGanji.ji] || []
+  let monthJiMainGan = monthGanji.gan
+  if (monthJijanggan.length === 1) {
+    monthJiMainGan = monthJijanggan[0]
+  } else if (monthJijanggan.length === 2) {
+    monthJiMainGan = monthJijanggan[1] // 중기
+  } else if (monthJijanggan.length === 3) {
+    monthJiMainGan = monthJijanggan[0] // 초기
+  }
+  const monthJiSibsung = SIBSUNG[`${dayGan}${monthJiMainGan}`] || '비견'
   const monthGanOhang = OHENG[monthGanji.gan]
   const monthJiOhang = OHENG[monthGanji.ji]
   const monthGanEumyang = getEumyang(monthGanji.gan, true)
@@ -477,7 +515,18 @@ export function calculateManseRyeok(
   
   // 일주
   const dayGanji = getDayGanji(year, month, day)
-  const daySibsung = SIBSUNG[`${dayGanji.gan}${dayGanji.gan}`] || '비견' // 일간은 자기 자신이므로 비견
+  const dayGanSibsung = SIBSUNG[`${dayGanji.gan}${dayGanji.gan}`] || '비견' // 일간은 자기 자신이므로 비견
+  // 일지의 십성: 지장간 기준 (1개면 그대로, 2개면 중기, 3개면 초기)
+  const dayJijanggan = JIJANGGAN[dayGanji.ji] || []
+  let dayJiMainGan = dayGanji.gan
+  if (dayJijanggan.length === 1) {
+    dayJiMainGan = dayJijanggan[0]
+  } else if (dayJijanggan.length === 2) {
+    dayJiMainGan = dayJijanggan[1] // 중기
+  } else if (dayJijanggan.length === 3) {
+    dayJiMainGan = dayJijanggan[0] // 초기
+  }
+  const dayJiSibsung = SIBSUNG[`${dayGan}${dayJiMainGan}`] || '비견'
   const dayGanOhang = OHENG[dayGanji.gan]
   const dayJiOhang = OHENG[dayGanji.ji]
   const dayGanEumyang = getEumyang(dayGanji.gan, true)
@@ -487,7 +536,18 @@ export function calculateManseRyeok(
   
   // 시주
   const hourGanji = getHourGanji(dayGanji.gan, hour, minute)
-  const hourSibsung = SIBSUNG[`${dayGan}${hourGanji.gan}`] || '비견'
+  const hourGanSibsung = SIBSUNG[`${dayGan}${hourGanji.gan}`] || '비견'
+  // 시지의 십성: 지장간 기준 (1개면 그대로, 2개면 중기, 3개면 초기)
+  const hourJijanggan = JIJANGGAN[hourGanji.ji] || []
+  let hourJiMainGan = hourGanji.gan
+  if (hourJijanggan.length === 1) {
+    hourJiMainGan = hourJijanggan[0]
+  } else if (hourJijanggan.length === 2) {
+    hourJiMainGan = hourJijanggan[1] // 중기
+  } else if (hourJijanggan.length === 3) {
+    hourJiMainGan = hourJijanggan[0] // 초기
+  }
+  const hourJiSibsung = SIBSUNG[`${dayGan}${hourJiMainGan}`] || '비견'
   const hourGanOhang = OHENG[hourGanji.gan]
   const hourJiOhang = OHENG[hourGanji.ji]
   const hourGanEumyang = getEumyang(hourGanji.gan, true)
@@ -499,7 +559,8 @@ export function calculateManseRyeok(
     year: {
       gan: yearGanji.gan,
       ji: yearGanji.ji,
-      sibsung: yearSibsung,
+      sibsung: yearGanSibsung,
+      jiSibsung: yearJiSibsung,
       ohang: `${yearGanOhang}/${yearJiOhang}`,
       eumyang: `${yearGanEumyang}/${yearJiEumyang}`,
       sibiunsung: yearSibiunsung,
@@ -508,7 +569,8 @@ export function calculateManseRyeok(
     month: {
       gan: monthGanji.gan,
       ji: monthGanji.ji,
-      sibsung: monthSibsung,
+      sibsung: monthGanSibsung,
+      jiSibsung: monthJiSibsung,
       ohang: `${monthGanOhang}/${monthJiOhang}`,
       eumyang: `${monthGanEumyang}/${monthJiEumyang}`,
       sibiunsung: monthSibiunsung,
@@ -517,7 +579,8 @@ export function calculateManseRyeok(
     day: {
       gan: dayGanji.gan,
       ji: dayGanji.ji,
-      sibsung: daySibsung,
+      sibsung: dayGanSibsung,
+      jiSibsung: dayJiSibsung,
       ohang: `${dayGanOhang}/${dayJiOhang}`,
       eumyang: `${dayGanEumyang}/${dayJiEumyang}`,
       sibiunsung: daySibiunsung,
@@ -526,7 +589,8 @@ export function calculateManseRyeok(
     hour: {
       gan: hourGanji.gan,
       ji: hourGanji.ji,
-      sibsung: hourSibsung,
+      sibsung: hourGanSibsung,
+      jiSibsung: hourJiSibsung,
       ohang: `${hourGanOhang}/${hourJiOhang}`,
       eumyang: `${hourGanEumyang}/${hourJiEumyang}`,
       sibiunsung: hourSibiunsung,
@@ -563,7 +627,7 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
     { label: '천간', year: `${data.year.gan}(${getGanHanja(data.year.gan)})`, month: `${data.month.gan}(${getGanHanja(data.month.gan)})`, day: `${data.day.gan}(${getGanHanja(data.day.gan)})`, hour: `${data.hour.gan}(${getGanHanja(data.hour.gan)})` },
     { label: '지지', year: `${data.year.ji}(${getJiHanja(data.year.ji)})`, month: `${data.month.ji}(${getJiHanja(data.month.ji)})`, day: `${data.day.ji}(${getJiHanja(data.day.ji)})`, hour: `${data.hour.ji}(${getJiHanja(data.hour.ji)})` },
     { label: '음양오행', year: `${yearGanEumyang}/${yearJiEumyang}`, month: `${monthGanEumyang}/${monthJiEumyang}`, day: `${dayGanEumyang}/${dayJiEumyang}`, hour: `${hourGanEumyang}/${hourJiEumyang}` },
-    { label: '십성', year: data.year.sibsung, month: data.month.sibsung, day: data.day.sibsung, hour: data.hour.sibsung },
+    { label: '십성', year: data.year.jiSibsung, month: data.month.jiSibsung, day: data.day.jiSibsung, hour: data.hour.jiSibsung },
     { label: '십이운성', year: data.year.sibiunsung, month: data.month.sibiunsung, day: data.day.sibiunsung, hour: data.hour.sibiunsung },
     { label: '십이신살', year: data.year.sibisinsal, month: data.month.sibisinsal, day: data.day.sibisinsal, hour: data.hour.sibisinsal }
   ]
