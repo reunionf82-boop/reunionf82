@@ -474,7 +474,7 @@ export function calculateManseRyeok(
   }
   const yearGanji = getGanjiYear(actualYear)
   const yearGanSibsung = SIBSUNG[`${dayGan}${yearGanji.gan}`] || '비견'
-  // 연지의 십성: 지장간 기준 (1개면 그대로, 2개면 중기, 3개면 초기)
+  // 연지의 십성: 지장간 기준 (1개면 그대로, 2개면 중기, 3개면 축은 초기/기타는 본기)
   const yearJijanggan = JIJANGGAN[yearGanji.ji] || []
   let yearJiMainGan = yearGanji.gan
   if (yearJijanggan.length === 1) {
@@ -482,7 +482,7 @@ export function calculateManseRyeok(
   } else if (yearJijanggan.length === 2) {
     yearJiMainGan = yearJijanggan[1] // 중기
   } else if (yearJijanggan.length === 3) {
-    yearJiMainGan = yearJijanggan[0] // 초기
+    yearJiMainGan = yearGanji.ji === '축' ? yearJijanggan[0] : yearJijanggan[2] // 축은 초기, 기타는 본기
   }
   const yearJiSibsung = SIBSUNG[`${dayGan}${yearJiMainGan}`] || '비견'
   const yearGanOhang = OHENG[yearGanji.gan]
@@ -495,7 +495,7 @@ export function calculateManseRyeok(
   // 월주 (절기 기준)
   const monthGanji = getMonthGanji(year, month, day)
   const monthGanSibsung = SIBSUNG[`${dayGan}${monthGanji.gan}`] || '비견'
-  // 월지의 십성: 지장간 기준 (1개면 그대로, 2개면 중기, 3개면 초기)
+  // 월지의 십성: 지장간 기준 (1개면 그대로, 2개면 중기, 3개면 축은 초기/기타는 본기)
   const monthJijanggan = JIJANGGAN[monthGanji.ji] || []
   let monthJiMainGan = monthGanji.gan
   if (monthJijanggan.length === 1) {
@@ -503,7 +503,7 @@ export function calculateManseRyeok(
   } else if (monthJijanggan.length === 2) {
     monthJiMainGan = monthJijanggan[1] // 중기
   } else if (monthJijanggan.length === 3) {
-    monthJiMainGan = monthJijanggan[0] // 초기
+    monthJiMainGan = monthGanji.ji === '축' ? monthJijanggan[0] : monthJijanggan[2] // 축은 초기, 기타는 본기
   }
   const monthJiSibsung = SIBSUNG[`${dayGan}${monthJiMainGan}`] || '비견'
   const monthGanOhang = OHENG[monthGanji.gan]
@@ -516,7 +516,7 @@ export function calculateManseRyeok(
   // 일주
   const dayGanji = getDayGanji(year, month, day)
   const dayGanSibsung = SIBSUNG[`${dayGanji.gan}${dayGanji.gan}`] || '비견' // 일간은 자기 자신이므로 비견
-  // 일지의 십성: 지장간 기준 (1개면 그대로, 2개면 중기, 3개면 초기)
+  // 일지의 십성: 지장간 기준 (1개면 그대로, 2개면 중기, 3개면 축은 초기/기타는 본기)
   const dayJijanggan = JIJANGGAN[dayGanji.ji] || []
   let dayJiMainGan = dayGanji.gan
   if (dayJijanggan.length === 1) {
@@ -524,7 +524,7 @@ export function calculateManseRyeok(
   } else if (dayJijanggan.length === 2) {
     dayJiMainGan = dayJijanggan[1] // 중기
   } else if (dayJijanggan.length === 3) {
-    dayJiMainGan = dayJijanggan[0] // 초기
+    dayJiMainGan = dayGanji.ji === '축' ? dayJijanggan[0] : dayJijanggan[2] // 축은 초기, 기타는 본기
   }
   const dayJiSibsung = SIBSUNG[`${dayGan}${dayJiMainGan}`] || '비견'
   const dayGanOhang = OHENG[dayGanji.gan]
@@ -537,7 +537,7 @@ export function calculateManseRyeok(
   // 시주
   const hourGanji = getHourGanji(dayGanji.gan, hour, minute)
   const hourGanSibsung = SIBSUNG[`${dayGan}${hourGanji.gan}`] || '비견'
-  // 시지의 십성: 지장간 기준 (1개면 그대로, 2개면 중기, 3개면 초기)
+  // 시지의 십성: 지장간 기준 (1개면 그대로, 2개면 중기, 3개면 축은 초기/기타는 본기)
   const hourJijanggan = JIJANGGAN[hourGanji.ji] || []
   let hourJiMainGan = hourGanji.gan
   if (hourJijanggan.length === 1) {
@@ -545,7 +545,7 @@ export function calculateManseRyeok(
   } else if (hourJijanggan.length === 2) {
     hourJiMainGan = hourJijanggan[1] // 중기
   } else if (hourJijanggan.length === 3) {
-    hourJiMainGan = hourJijanggan[0] // 초기
+    hourJiMainGan = hourGanji.ji === '축' ? hourJijanggan[0] : hourJijanggan[2] // 축은 초기, 기타는 본기
   }
   const hourJiSibsung = SIBSUNG[`${dayGan}${hourJiMainGan}`] || '비견'
   const hourGanOhang = OHENG[hourGanji.gan]
