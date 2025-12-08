@@ -515,6 +515,7 @@ function FormContent() {
       
       // 만세력 계산
       let manseRyeokTable = ''
+      let dayGanInfo = null // 일간 정보 저장
       if (year && month && day) {
         try {
           const birthYear = parseInt(year)
@@ -533,10 +534,29 @@ function FormContent() {
           const dayGanji = getDayGanji(birthYear, birthMonth, birthDay)
           const dayGan = dayGanji.gan
           
+          // 일간 오행 정보 추출
+          const OHENG_MAP: { [key: string]: string } = {
+            '갑': '목', '을': '목', '병': '화', '정': '화', '무': '토', '기': '토', '경': '금', '신': '금', '임': '수', '계': '수'
+          }
+          const dayGanOhang = OHENG_MAP[dayGan] || ''
+          
+          // 일간 정보 저장 (한자 포함)
+          const SIBGAN = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']
+          const SIBGAN_HANGUL = ['갑', '을', '병', '정', '무', '기', '경', '신', '임', '계']
+          const ganIndex = SIBGAN_HANGUL.indexOf(dayGan)
+          const dayGanHanja = ganIndex >= 0 ? SIBGAN[ganIndex] : ''
+          
+          dayGanInfo = {
+            gan: dayGan,
+            hanja: dayGanHanja,
+            ohang: dayGanOhang,
+            fullName: `${dayGan}${dayGanOhang}(${dayGanHanja}${dayGanOhang})`
+          }
+          
           // 만세력 계산 (일간 기준)
           const manseRyeokData = calculateManseRyeok(birthYear, birthMonth, birthDay, birthHourNum, dayGan)
           manseRyeokTable = generateManseRyeokTable(manseRyeokData, name)
-          console.log('만세력 테이블 생성 완료')
+          console.log('만세력 테이블 생성 완료, 일간:', dayGanInfo.fullName)
         } catch (error) {
           console.error('만세력 계산 오류:', error)
         }
@@ -561,7 +581,8 @@ function FormContent() {
           birth_hour: partnerBirthHour || undefined
         } : undefined,
         model: currentModel,
-        manse_ryeok_table: manseRyeokTable
+        manse_ryeok_table: manseRyeokTable,
+        day_gan_info: dayGanInfo // 일간 정보 추가
       }
 
       // 로딩 팝업 표시
