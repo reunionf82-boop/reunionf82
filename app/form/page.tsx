@@ -350,8 +350,12 @@ function FormContent() {
 
   useEffect(() => {
     loadContent()
-    loadSavedResults()
   }, [title])
+
+  // 저장된 결과는 컴포넌트 마운트 시와 title 변경 시 모두 로드
+  useEffect(() => {
+    loadSavedResults()
+  }, [])
 
   const loadContent = async () => {
     try {
@@ -1518,9 +1522,9 @@ function FormContent() {
           </div>
         </div>
 
-        {/* 저장된 결과 목록 */}
+        {/* 서버에 저장된 결과 목록 */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">저장된 결과</h3>
+          <h3 className="text-lg font-bold text-gray-900 mb-4">서버에 저장된 결과</h3>
           <div className="space-y-3">
             {savedResults.length === 0 ? (
               <p className="text-sm text-gray-600">저장된 결과가 없습니다.</p>
