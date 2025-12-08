@@ -5,7 +5,7 @@ export async function POST(req: NextRequest) {
   try {
     console.log('=== 재미나이 API 라우트 시작 ===')
     const body = await req.json()
-    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-2.5-flash', manse_ryeok_table, day_gan_info } = body
+    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-2.5-flash', manse_ryeok_table, manse_ryeok_text, day_gan_info } = body
     
     console.log('요청 모델:', model)
     console.log('메뉴 소제목 개수:', menu_subtitles?.length)
@@ -119,11 +119,11 @@ ${partner_info ? `
 ${partner_info.birth_hour ? `- 태어난 시: ${partner_info.birth_hour}` : ''}
 ` : ''}
 
-${manse_ryeok_table ? `
+${manse_ryeok_text ? `
 **만세력(사주명식) 정보:**
-다음은 내담자의 만세력 테이블입니다. 이 만세력을 기반으로 해석해주세요.
+다음은 내담자의 만세력 정보입니다. 이 만세력을 기반으로 해석해주세요.
 
-${manse_ryeok_table}
+${manse_ryeok_text}
 
 ${day_gan_info ? `
 **내담자의 일간(日干) 정보 (중요):**
@@ -132,14 +132,14 @@ ${day_gan_info ? `
 - 오행: ${day_gan_info.ohang}
 - 전체 표기: ${day_gan_info.fullName}
 
-해석할 때 일간을 언급할 경우, 반드시 위에 명시된 "${day_gan_info.fullName}"을 사용해야 합니다. 절대로 다른 천간(예: 정화(丁火), 갑목(甲木), 병화(丙火) 등)으로 잘못 해석하거나 임의로 추측하지 마세요. 만세력 테이블의 일주 열 천간 행에도 동일한 정보가 표시되어 있으니, 테이블과 일치하는지 확인하세요.
+해석할 때 일간을 언급할 경우, 반드시 위에 명시된 "${day_gan_info.fullName}"을 사용해야 합니다. 절대로 다른 천간(예: 정화(丁火), 갑목(甲木), 병화(丙火) 등)으로 잘못 해석하거나 임의로 추측하지 마세요. 위의 만세력 정보에서 "천간 일주=" 부분에 명시된 값과 일치해야 합니다.
 ` : ''}
 
-**중요: 만세력 테이블 참조 필수사항**
-반드시 위에 제공된 만세력 테이블의 모든 정보(십성, 음양오행, 천간, 지지, 십이운성, 십이신살 등)를 정확하게 참조하여 해석해야 합니다. 만세력 테이블의 데이터를 무시하거나 임의로 추측하지 말고, 반드시 테이블에 명시된 정보를 기반으로만 해석을 제공해주세요. 만세력 테이블의 정보와 일치하지 않는 해석은 절대 하지 마세요.
+**중요: 만세력 정보 참조 필수사항**
+반드시 위에 제공된 만세력 정보의 모든 데이터(십성, 음양오행, 천간, 지지, 십이운성, 십이신살 등)를 정확하게 참조하여 해석해야 합니다. 만세력 정보의 데이터를 무시하거나 임의로 추측하지 말고, 반드시 위에 명시된 정보를 기반으로만 해석을 제공해주세요. 만세력 정보와 일치하지 않는 해석은 절대 하지 마세요.
 
 **특별 주의: 일간(日干) 정보 참조 필수**
-만세력 테이블의 "일주" 열에서 "천간" 행에 표시된 것이 내담자의 일간(日干)입니다. ${day_gan_info ? `위에 명시된 일간 "${day_gan_info.fullName}"과 일치해야 합니다.` : '테이블의 일주 열 천간 행에 표시된 정확한 값을 사용해야 합니다.'} 절대로 다른 천간으로 잘못 해석하거나 임의로 추측하지 마세요. 해석할 때 일간을 언급할 경우, 반드시 만세력 테이블의 일주 열 천간 행에 명시된 정확한 값을 사용해야 합니다. 테이블에 없는 일간 정보를 사용하는 것은 절대 금지입니다.
+위의 만세력 정보에서 "천간 일주=" 부분에 표시된 것이 내담자의 일간(日干)입니다. ${day_gan_info ? `위에 명시된 일간 "${day_gan_info.fullName}"과 일치해야 합니다.` : '만세력 정보의 "천간 일주=" 부분에 표시된 정확한 값을 사용해야 합니다.'} 절대로 다른 천간으로 잘못 해석하거나 임의로 추측하지 마세요. 해석할 때 일간을 언급할 경우, 반드시 만세력 정보의 "천간 일주=" 부분에 명시된 정확한 값을 사용해야 합니다. 만세력 정보에 없는 일간 정보를 사용하는 것은 절대 금지입니다.
 ` : ''}
 
 다음 상품 메뉴 구성과 소제목들을 각각 해석해주세요:

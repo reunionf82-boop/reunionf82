@@ -665,3 +665,54 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
   
   return html
 }
+
+// 만세력 데이터를 텍스트 형식으로 변환 (제미나이 프롬프트용)
+export function generateManseRyeokText(data: ManseRyeokData): string {
+  // 한자 변환 함수
+  const getGanHanja = (gan: string) => {
+    const index = SIBGAN_HANGUL.indexOf(gan)
+    return index >= 0 ? SIBGAN[index] : gan
+  }
+  const getJiHanja = (ji: string) => {
+    const index = SIBIJI_HANGUL.indexOf(ji)
+    return index >= 0 ? SIBIJI[index] : ji
+  }
+  
+  // 천간의 음양오행과 지지의 음양오행 분리
+  const yearGanEumyang = data.year.eumyang.split('/')[0]
+  const yearJiEumyang = data.year.eumyang.split('/')[1]
+  const monthGanEumyang = data.month.eumyang.split('/')[0]
+  const monthJiEumyang = data.month.eumyang.split('/')[1]
+  const dayGanEumyang = data.day.eumyang.split('/')[0]
+  const dayJiEumyang = data.day.eumyang.split('/')[1]
+  const hourGanEumyang = data.hour.eumyang.split('/')[0]
+  const hourJiEumyang = data.hour.eumyang.split('/')[1]
+  
+  let text = ''
+  
+  // 십성 (천간 기준)
+  text += `십성 시주=${data.hour.sibsung}, 일주=${data.day.sibsung}, 월주=${data.month.sibsung}, 연주=${data.year.sibsung}\n`
+  
+  // 음양오행 (천간/지지 통합)
+  text += `음양오행 시주=${data.hour.ohang}, 일주=${data.day.ohang}, 월주=${data.month.ohang}, 연주=${data.year.ohang}\n`
+  
+  // 천간
+  text += `천간 시주=${data.hour.gan}(${getGanHanja(data.hour.gan)}), 일주=${data.day.gan}(${getGanHanja(data.day.gan)}), 월주=${data.month.gan}(${getGanHanja(data.month.gan)}), 연주=${data.year.gan}(${getGanHanja(data.year.gan)})\n`
+  
+  // 지지
+  text += `지지 시주=${data.hour.ji}(${getJiHanja(data.hour.ji)}), 일주=${data.day.ji}(${getJiHanja(data.day.ji)}), 월주=${data.month.ji}(${getJiHanja(data.month.ji)}), 연주=${data.year.ji}(${getJiHanja(data.year.ji)})\n`
+  
+  // 음양오행 (천간/지지 분리)
+  text += `음양오행(천간/지지) 시주=${hourGanEumyang}/${hourJiEumyang}, 일주=${dayGanEumyang}/${dayJiEumyang}, 월주=${monthGanEumyang}/${monthJiEumyang}, 연주=${yearGanEumyang}/${yearJiEumyang}\n`
+  
+  // 십성 (지지 기준)
+  text += `십성(지지) 시주=${data.hour.jiSibsung}, 일주=${data.day.jiSibsung}, 월주=${data.month.jiSibsung}, 연주=${data.year.jiSibsung}\n`
+  
+  // 십이운성
+  text += `십이운성 시주=${data.hour.sibiunsung}, 일주=${data.day.sibiunsung}, 월주=${data.month.sibiunsung}, 연주=${data.year.sibiunsung}\n`
+  
+  // 십이신살
+  text += `십이신살 시주=${data.hour.sibisinsal}, 일주=${data.day.sibisinsal}, 월주=${data.month.sibisinsal}, 연주=${data.year.sibisinsal}`
+  
+  return text
+}

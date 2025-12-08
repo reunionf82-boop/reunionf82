@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { getContents, getSelectedModel, getSelectedSpeaker } from '@/lib/supabase-admin'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
-import { calculateManseRyeok, generateManseRyeokTable, getDayGanji } from '@/lib/manse-ryeok'
+import { calculateManseRyeok, generateManseRyeokTable, generateManseRyeokText, getDayGanji } from '@/lib/manse-ryeok'
 import TermsPopup from '@/components/TermsPopup'
 import PrivacyPopup from '@/components/PrivacyPopup'
 
@@ -174,23 +174,33 @@ function FormContent() {
   const deleteSavedResult = async (resultId: string) => {
     if (typeof window === 'undefined') return
     
+    // 삭제 확인
+    if (!confirm('정말로 이 결과를 삭제하시겠습니까?')) {
+      return
+    }
+    
     try {
       const response = await fetch(`/api/saved-results/delete?id=${resultId}`, {
         method: 'DELETE'
       })
+      
       if (!response.ok) {
-        throw new Error('저장된 결과 삭제 실패')
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || '저장된 결과 삭제 실패')
       }
+      
       const result = await response.json()
       if (result.success) {
         // 목록 다시 로드
         await loadSavedResults()
+        // 성공 메시지 (선택적)
+        console.log('저장된 결과가 삭제되었습니다.')
       } else {
-        throw new Error('저장된 결과 삭제에 실패했습니다.')
+        throw new Error(result.error || '저장된 결과 삭제에 실패했습니다.')
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('저장된 결과 삭제 실패:', e)
-      alert('저장된 결과 삭제에 실패했습니다.')
+      alert(e?.message || '저장된 결과 삭제에 실패했습니다.')
     }
   }
 
@@ -514,7 +524,8 @@ function FormContent() {
         : undefined
       
       // 만세력 계산
-      let manseRyeokTable = ''
+      let manseRyeokTable = '' // HTML 테이블 (화면 표시용)
+      let manseRyeokText = '' // 텍스트 형식 (제미나이 프롬프트용)
       let dayGanInfo = null // 일간 정보 저장
       if (year && month && day) {
         try {
@@ -555,7 +566,8 @@ function FormContent() {
           
           // 만세력 계산 (일간 기준)
           const manseRyeokData = calculateManseRyeok(birthYear, birthMonth, birthDay, birthHourNum, dayGan)
-          manseRyeokTable = generateManseRyeokTable(manseRyeokData, name)
+          manseRyeokTable = generateManseRyeokTable(manseRyeokData, name) // HTML 테이블 (화면 표시용)
+          manseRyeokText = generateManseRyeokText(manseRyeokData) // 텍스트 형식 (제미나이 프롬프트용)
           console.log('만세력 테이블 생성 완료, 일간:', dayGanInfo.fullName)
         } catch (error) {
           console.error('만세력 계산 오류:', error)
@@ -581,7 +593,8 @@ function FormContent() {
           birth_hour: partnerBirthHour || undefined
         } : undefined,
         model: currentModel,
-        manse_ryeok_table: manseRyeokTable,
+        manse_ryeok_table: manseRyeokTable, // HTML 테이블 (화면 표시용)
+        manse_ryeok_text: manseRyeokText, // 텍스트 형식 (제미나이 프롬프트용)
         day_gan_info: dayGanInfo // 일간 정보 추가
       }
 

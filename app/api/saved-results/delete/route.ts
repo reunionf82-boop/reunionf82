@@ -18,23 +18,41 @@ export async function DELETE(request: NextRequest) {
 
     if (!id) {
       return NextResponse.json(
-        { error: 'ID는 필수입니다.' },
+        { success: false, error: 'ID는 필수입니다.' },
         { status: 400 }
       )
     }
 
-    // 저장된 결과 삭제
-    const { error } = await supabase
-      .from('saved_results')
-      .delete()
-      .eq('id', parseInt(id))
+    // ID를 숫자로 변환 (문자열 ID도 처리)
+    const idNum = parseInt(id)
+    if (isNaN(idNum)) {
+      // 숫자가 아니면 문자열 ID로 시도
+      const { error } = await supabase
+        .from('saved_results')
+        .delete()
+        .eq('id', id)
 
-    if (error) {
-      console.error('저장된 결과 삭제 실패:', error)
-      return NextResponse.json(
-        { error: '저장된 결과 삭제에 실패했습니다.', details: error.message },
-        { status: 500 }
-      )
+      if (error) {
+        console.error('저장된 결과 삭제 실패:', error)
+        return NextResponse.json(
+          { success: false, error: '저장된 결과 삭제에 실패했습니다.', details: error.message },
+          { status: 500 }
+        )
+      }
+    } else {
+      // 숫자 ID로 삭제
+      const { error } = await supabase
+        .from('saved_results')
+        .delete()
+        .eq('id', idNum)
+
+      if (error) {
+        console.error('저장된 결과 삭제 실패:', error)
+        return NextResponse.json(
+          { success: false, error: '저장된 결과 삭제에 실패했습니다.', details: error.message },
+          { status: 500 }
+        )
+      }
     }
 
     return NextResponse.json({
@@ -43,7 +61,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error: any) {
     console.error('저장된 결과 삭제 API 오류:', error)
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다.', details: error.message },
+      { success: false, error: '서버 오류가 발생했습니다.', details: error.message },
       { status: 500 }
     )
   }
