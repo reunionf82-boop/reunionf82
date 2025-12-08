@@ -75,6 +75,19 @@ function FormContent() {
   // 개인정보 수집 및 이용 팝업 상태
   const [showPrivacyPopup, setShowPrivacyPopup] = useState(false)
   
+  // 동의 안내 팝업 상태
+  const [showAgreementAlert, setShowAgreementAlert] = useState(false)
+  
+  // 필수 정보 필드별 에러 상태
+  const [fieldErrors, setFieldErrors] = useState<{
+    name?: string
+    gender?: string
+    birthDate?: string
+    partnerName?: string
+    partnerGender?: string
+    partnerBirthDate?: string
+  }>({})
+  
   // 음성 재생 상태
   const [playingResultId, setPlayingResultId] = useState<string | null>(null)
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null)
@@ -137,14 +150,17 @@ function FormContent() {
     }
   }, [searchParams])
 
-  // 저장된 결과 목록 로드
-  const loadSavedResults = () => {
+  // 저장된 결과 목록 로드 (서버)
+  const loadSavedResults = async () => {
     if (typeof window === 'undefined') return
     try {
-      const saved = localStorage.getItem('saved_jeminai_results')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        setSavedResults(parsed)
+      const response = await fetch('/api/saved-results/list')
+      if (!response.ok) {
+        throw new Error('저장된 결과 목록 조회 실패')
+      }
+      const result = await response.json()
+      if (result.success) {
+        setSavedResults(result.data || [])
       } else {
         setSavedResults([])
       }
@@ -154,14 +170,24 @@ function FormContent() {
     }
   }
 
-  // 저장된 결과 삭제
-  const deleteSavedResult = (resultId: string) => {
+  // 저장된 결과 삭제 (서버)
+  const deleteSavedResult = async (resultId: string) => {
     if (typeof window === 'undefined') return
     
     try {
-      const updatedResults = savedResults.filter((r: any) => r.id !== resultId)
-      localStorage.setItem('saved_jeminai_results', JSON.stringify(updatedResults))
-      setSavedResults(updatedResults)
+      const response = await fetch(`/api/saved-results/delete?id=${resultId}`, {
+        method: 'DELETE'
+      })
+      if (!response.ok) {
+        throw new Error('저장된 결과 삭제 실패')
+      }
+      const result = await response.json()
+      if (result.success) {
+        // 목록 다시 로드
+        await loadSavedResults()
+      } else {
+        throw new Error('저장된 결과 삭제에 실패했습니다.')
+      }
     } catch (e) {
       console.error('저장된 결과 삭제 실패:', e)
       alert('저장된 결과 삭제에 실패했습니다.')
@@ -363,22 +389,66 @@ function FormContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // 에러 상태 초기화
+    const errors: typeof fieldErrors = {}
+    let hasError = false
+    
+    // 본인 정보 필수 체크
+    if (!name || !name.trim()) {
+      errors.name = '이름을 입력해주세요.'
+      hasError = true
+    }
+    
+    if (!gender) {
+      errors.gender = '성별을 선택해주세요.'
+      hasError = true
+    }
+    
+    if (!year || !month || !day) {
+      errors.birthDate = '생년월일을 모두 선택해주세요.'
+      hasError = true
+    }
+    
+    // 궁합형인 경우 이성 정보 필수 체크
+    if (isGonghapType) {
+      if (!partnerName || !partnerName.trim()) {
+        errors.partnerName = '이름을 입력해주세요.'
+        hasError = true
+      }
+      
+      if (!partnerGender) {
+        errors.partnerGender = '성별을 선택해주세요.'
+        hasError = true
+      }
+      
+      if (!partnerYear || !partnerMonth || !partnerDay) {
+        errors.partnerBirthDate = '생년월일을 모두 선택해주세요.'
+        hasError = true
+      }
+    }
+    
+    if (hasError) {
+      setFieldErrors(errors)
+      // 첫 번째 에러 필드로 스크롤
+      const firstErrorField = document.querySelector('[data-field-error]')
+      if (firstErrorField) {
+        firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+      return
+    }
+    
+    // 에러가 없으면 에러 상태 초기화
+    setFieldErrors({})
+    
     if (!agreeTerms || !agreePrivacy) {
-      alert('서비스 이용 약관과 개인정보 수집 및 이용에 동의해주세요.')
+      setShowAgreementAlert(true)
       return
     }
     
     if (!content) {
       alert('컨텐츠 정보를 불러올 수 없습니다.')
       return
-    }
-    
-    // 궁합형인 경우 이성 정보 필수 체크
-    if (isGonghapType) {
-      if (!partnerName || !partnerGender || !partnerYear || !partnerMonth || !partnerDay) {
-        alert('이성 정보를 모두 입력해주세요.')
-        return
-      }
     }
 
     setSubmitting(true)
@@ -671,12 +741,10 @@ function FormContent() {
             
             console.log('결과 데이터 저장 완료, 키:', storageKey)
             
-            // 약간의 지연 후 결과 페이지로 이동
-            setTimeout(() => {
-              setShowLoadingPopup(false)
-              setSubmitting(false)
-              router.push(`/result?key=${storageKey}`)
-            }, 500)
+            // 결과 페이지로 즉시 이동
+            setShowLoadingPopup(false)
+            setSubmitting(false)
+            router.push(`/result?key=${storageKey}`)
           } else if (data.type === 'error') {
             console.error('스트리밍 에러:', data.error)
             
@@ -759,6 +827,41 @@ function FormContent() {
       {/* 개인정보 수집 및 이용 팝업 */}
       <PrivacyPopup isOpen={showPrivacyPopup} onClose={() => setShowPrivacyPopup(false)} />
       
+      {/* 동의 안내 팝업 */}
+      {showAgreementAlert && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl p-6">
+            {/* 헤더 */}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">안내</h2>
+              <button
+                onClick={() => setShowAgreementAlert(false)}
+                className="text-gray-400 hover:text-gray-600 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* 내용 */}
+            <div className="mb-6">
+              <p className="text-gray-700 text-center">
+                서비스 이용 약관과 개인정보 수집 및 이용에 동의해주세요.
+              </p>
+            </div>
+            
+            {/* 푸터 */}
+            <div>
+              <button
+                onClick={() => setShowAgreementAlert(false)}
+                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* 스트리밍 로딩 팝업 */}
       {showLoadingPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -784,7 +887,9 @@ function FormContent() {
                 <div className="mb-4">
                   <p className="text-gray-700 font-medium">
                     <span className="text-pink-600">{currentSubtitle}</span>
-                    {currentSubtitle !== '내담자님의 사주명식을 자세히 분석중이에요' && (
+                    {currentSubtitle !== '내담자님의 사주명식을 자세히 분석중이에요' && 
+                     currentSubtitle !== '완료!' && 
+                     streamingProgress < 100 && (
                       <span className="text-gray-500"> 점사 중입니다</span>
                     )}
                   </p>
@@ -893,22 +998,37 @@ function FormContent() {
           
           <div className="space-y-6">
             {/* 이름 */}
-            <div>
+            <div data-field-error={fieldErrors.name ? 'name' : undefined}>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 이름
               </label>
               <input
                 type="text"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                onChange={(e) => {
+                  setName(e.target.value)
+                  if (fieldErrors.name) {
+                    setFieldErrors(prev => ({ ...prev, name: undefined }))
+                  }
+                }}
+                className={`w-full bg-gray-50 border rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent ${
+                  fieldErrors.name ? 'border-red-500' : 'border-gray-300'
+                }`}
                 placeholder="이름을 입력하세요"
                 required
               />
+              {fieldErrors.name && (
+                <div className="relative mt-2">
+                  <div className="absolute top-0 left-0 bg-red-500 text-white text-sm px-3 py-2 rounded-lg shadow-lg z-10 whitespace-nowrap">
+                    {fieldErrors.name}
+                    <div className="absolute -top-1.5 left-4 w-3 h-3 bg-red-500 transform rotate-45"></div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 성별 */}
-            <div>
+            <div data-field-error={fieldErrors.gender ? 'gender' : undefined}>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 성별
               </label>
@@ -919,7 +1039,12 @@ function FormContent() {
                     name="gender"
                     value="male"
                     checked={gender === 'male'}
-                    onChange={(e) => setGender(e.target.value as 'male')}
+                    onChange={(e) => {
+                      setGender(e.target.value as 'male')
+                      if (fieldErrors.gender) {
+                        setFieldErrors(prev => ({ ...prev, gender: undefined }))
+                      }
+                    }}
                     className="w-5 h-5 text-pink-500"
                   />
                   <span className="text-gray-700">남자</span>
@@ -930,16 +1055,29 @@ function FormContent() {
                     name="gender"
                     value="female"
                     checked={gender === 'female'}
-                    onChange={(e) => setGender(e.target.value as 'female')}
+                    onChange={(e) => {
+                      setGender(e.target.value as 'female')
+                      if (fieldErrors.gender) {
+                        setFieldErrors(prev => ({ ...prev, gender: undefined }))
+                      }
+                    }}
                     className="w-5 h-5 text-pink-500"
                   />
                   <span className="text-gray-700">여자</span>
                 </label>
               </div>
+              {fieldErrors.gender && (
+                <div className="relative mt-2">
+                  <div className="absolute top-0 left-0 bg-red-500 text-white text-sm px-3 py-2 rounded-lg shadow-lg z-10 whitespace-nowrap">
+                    {fieldErrors.gender}
+                    <div className="absolute -top-1.5 left-4 w-3 h-3 bg-red-500 transform rotate-45"></div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 생년월일 */}
-            <div>
+            <div data-field-error={fieldErrors.birthDate ? 'birthDate' : undefined}>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 생년월일
               </label>
@@ -985,8 +1123,15 @@ function FormContent() {
                 {/* 년도 */}
                 <select
                   value={year}
-                  onChange={(e) => setYear(e.target.value)}
-                  className="flex-1 min-w-[100px] bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  onChange={(e) => {
+                    setYear(e.target.value)
+                    if (fieldErrors.birthDate && e.target.value && month && day) {
+                      setFieldErrors(prev => ({ ...prev, birthDate: undefined }))
+                    }
+                  }}
+                  className={`flex-1 min-w-[100px] bg-gray-50 border rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent ${
+                    fieldErrors.birthDate ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   required
                 >
                   <option value="">년도</option>
@@ -998,8 +1143,15 @@ function FormContent() {
                 {/* 월 */}
                 <select
                   value={month}
-                  onChange={(e) => setMonth(e.target.value)}
-                  className="flex-1 min-w-[80px] bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  onChange={(e) => {
+                    setMonth(e.target.value)
+                    if (fieldErrors.birthDate && year && e.target.value && day) {
+                      setFieldErrors(prev => ({ ...prev, birthDate: undefined }))
+                    }
+                  }}
+                  className={`flex-1 min-w-[80px] bg-gray-50 border rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent ${
+                    fieldErrors.birthDate ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   required
                 >
                   <option value="">월</option>
@@ -1011,8 +1163,15 @@ function FormContent() {
                 {/* 일 */}
                 <select
                   value={day}
-                  onChange={(e) => setDay(e.target.value)}
-                  className="flex-1 min-w-[80px] bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  onChange={(e) => {
+                    setDay(e.target.value)
+                    if (fieldErrors.birthDate && year && month && e.target.value) {
+                      setFieldErrors(prev => ({ ...prev, birthDate: undefined }))
+                    }
+                  }}
+                  className={`flex-1 min-w-[80px] bg-gray-50 border rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent ${
+                    fieldErrors.birthDate ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   required
                 >
                   <option value="">일</option>
@@ -1021,6 +1180,14 @@ function FormContent() {
                   ))}
                 </select>
               </div>
+              {fieldErrors.birthDate && (
+                <div className="relative mt-2">
+                  <div className="absolute top-0 left-0 bg-red-500 text-white text-sm px-3 py-2 rounded-lg shadow-lg z-10 whitespace-nowrap">
+                    {fieldErrors.birthDate}
+                    <div className="absolute -top-1.5 left-4 w-3 h-3 bg-red-500 transform rotate-45"></div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 태어난 시 */}
@@ -1049,22 +1216,37 @@ function FormContent() {
                   
                   <div className="space-y-6">
                 {/* 이름 */}
-                <div>
+                <div data-field-error={fieldErrors.partnerName ? 'partnerName' : undefined}>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     이름
                   </label>
                   <input
                     type="text"
                     value={partnerName}
-                    onChange={(e) => setPartnerName(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                    onChange={(e) => {
+                      setPartnerName(e.target.value)
+                      if (fieldErrors.partnerName) {
+                        setFieldErrors(prev => ({ ...prev, partnerName: undefined }))
+                      }
+                    }}
+                    className={`w-full bg-gray-50 border rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent ${
+                      fieldErrors.partnerName ? 'border-red-500' : 'border-gray-300'
+                    }`}
                     placeholder="이름을 입력하세요"
                     required
                   />
+                  {fieldErrors.partnerName && (
+                    <div className="relative mt-2">
+                      <div className="absolute top-0 left-0 bg-red-500 text-white text-sm px-3 py-2 rounded-lg shadow-lg z-10 whitespace-nowrap">
+                        {fieldErrors.partnerName}
+                        <div className="absolute -top-1.5 left-4 w-3 h-3 bg-red-500 transform rotate-45"></div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 성별 */}
-                <div>
+                <div data-field-error={fieldErrors.partnerGender ? 'partnerGender' : undefined}>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     성별
                   </label>
@@ -1075,7 +1257,12 @@ function FormContent() {
                         name="partnerGender"
                         value="male"
                         checked={partnerGender === 'male'}
-                        onChange={(e) => setPartnerGender(e.target.value as 'male')}
+                        onChange={(e) => {
+                          setPartnerGender(e.target.value as 'male')
+                          if (fieldErrors.partnerGender) {
+                            setFieldErrors(prev => ({ ...prev, partnerGender: undefined }))
+                          }
+                        }}
                         className="w-5 h-5 text-pink-500"
                       />
                       <span className="text-gray-700">남자</span>
@@ -1086,16 +1273,29 @@ function FormContent() {
                         name="partnerGender"
                         value="female"
                         checked={partnerGender === 'female'}
-                        onChange={(e) => setPartnerGender(e.target.value as 'female')}
+                        onChange={(e) => {
+                          setPartnerGender(e.target.value as 'female')
+                          if (fieldErrors.partnerGender) {
+                            setFieldErrors(prev => ({ ...prev, partnerGender: undefined }))
+                          }
+                        }}
                         className="w-5 h-5 text-pink-500"
                       />
                       <span className="text-gray-700">여자</span>
                     </label>
                   </div>
+                  {fieldErrors.partnerGender && (
+                    <div className="relative mt-2">
+                      <div className="absolute top-0 left-0 bg-red-500 text-white text-sm px-3 py-2 rounded-lg shadow-lg z-10 whitespace-nowrap">
+                        {fieldErrors.partnerGender}
+                        <div className="absolute -top-1.5 left-4 w-3 h-3 bg-red-500 transform rotate-45"></div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 생년월일 */}
-                <div>
+                <div data-field-error={fieldErrors.partnerBirthDate ? 'partnerBirthDate' : undefined}>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     생년월일
                   </label>
@@ -1141,8 +1341,15 @@ function FormContent() {
                     {/* 년도 */}
                     <select
                       value={partnerYear}
-                      onChange={(e) => setPartnerYear(e.target.value)}
-                      className="flex-1 min-w-[100px] bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                      onChange={(e) => {
+                        setPartnerYear(e.target.value)
+                        if (fieldErrors.partnerBirthDate && e.target.value && partnerMonth && partnerDay) {
+                          setFieldErrors(prev => ({ ...prev, partnerBirthDate: undefined }))
+                        }
+                      }}
+                      className={`flex-1 min-w-[100px] bg-gray-50 border rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent ${
+                        fieldErrors.partnerBirthDate ? 'border-red-500' : 'border-gray-300'
+                      }`}
                       required
                     >
                       <option value="">년도</option>
@@ -1154,8 +1361,15 @@ function FormContent() {
                     {/* 월 */}
                     <select
                       value={partnerMonth}
-                      onChange={(e) => setPartnerMonth(e.target.value)}
-                      className="flex-1 min-w-[80px] bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                      onChange={(e) => {
+                        setPartnerMonth(e.target.value)
+                        if (fieldErrors.partnerBirthDate && partnerYear && e.target.value && partnerDay) {
+                          setFieldErrors(prev => ({ ...prev, partnerBirthDate: undefined }))
+                        }
+                      }}
+                      className={`flex-1 min-w-[80px] bg-gray-50 border rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent ${
+                        fieldErrors.partnerBirthDate ? 'border-red-500' : 'border-gray-300'
+                      }`}
                       required
                     >
                       <option value="">월</option>
@@ -1167,8 +1381,15 @@ function FormContent() {
                     {/* 일 */}
                     <select
                       value={partnerDay}
-                      onChange={(e) => setPartnerDay(e.target.value)}
-                      className="flex-1 min-w-[80px] bg-gray-50 border border-gray-300 rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                      onChange={(e) => {
+                        setPartnerDay(e.target.value)
+                        if (fieldErrors.partnerBirthDate && partnerYear && partnerMonth && e.target.value) {
+                          setFieldErrors(prev => ({ ...prev, partnerBirthDate: undefined }))
+                        }
+                      }}
+                      className={`flex-1 min-w-[80px] bg-gray-50 border rounded-lg px-3 sm:px-4 py-2.5 sm:py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent ${
+                        fieldErrors.partnerBirthDate ? 'border-red-500' : 'border-gray-300'
+                      }`}
                       required
                     >
                       <option value="">일</option>
@@ -1177,6 +1398,14 @@ function FormContent() {
                       ))}
                     </select>
                   </div>
+                  {fieldErrors.partnerBirthDate && (
+                    <div className="relative mt-2">
+                      <div className="absolute top-0 left-0 bg-red-500 text-white text-sm px-3 py-2 rounded-lg shadow-lg z-10 whitespace-nowrap">
+                        {fieldErrors.partnerBirthDate}
+                        <div className="absolute -top-1.5 left-4 w-3 h-3 bg-red-500 transform rotate-45"></div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 태어난 시 */}
@@ -1290,10 +1519,12 @@ function FormContent() {
         </div>
 
         {/* 저장된 결과 목록 */}
-        {savedResults.length > 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">저장된 결과</h3>
-            <div className="space-y-3">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
+          <h3 className="text-lg font-bold text-gray-900 mb-4">저장된 결과</h3>
+          <div className="space-y-3">
+            {savedResults.length === 0 ? (
+              <p className="text-sm text-gray-600">저장된 결과가 없습니다.</p>
+            ) : (
               <div className="space-y-2">
                 {savedResults.map((saved: any) => (
                   <div key={saved.id} className="bg-white rounded-lg p-4 border border-gray-200">
@@ -1336,27 +1567,83 @@ function FormContent() {
                                     <style>
                                       body {
                                         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-                                        max-width: 1200px;
+                                        max-width: 896px;
                                         margin: 0 auto;
-                                        padding: 20px;
-                                        background: #f5f5f5;
+                                        padding: 32px 16px;
+                                        background: #f9fafb;
                                       }
                                       .container {
-                                        background: white;
-                                        border-radius: 12px;
-                                        padding: 24px;
-                                        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                                        background: transparent;
+                                        padding: 0;
+                                      }
+                                      .title-container {
+                                        text-align: center;
+                                        margin-bottom: 16px;
                                       }
                                       h1 {
-                                        font-size: 28px;
+                                        font-size: 30px;
                                         font-weight: bold;
-                                        margin-bottom: 8px;
+                                        margin: 0 0 16px 0;
                                         color: #111;
                                       }
-                                      .saved-at {
-                                        color: #666;
+                                      .thumbnail-container {
+                                        width: 100%;
+                                        margin-bottom: 16px;
+                                      }
+                                      .thumbnail-container img {
+                                        width: 100%;
+                                        height: auto;
+                                        object-fit: cover;
+                                      }
+                                      .tts-button-container {
+                                        text-align: center;
+                                        margin-bottom: 16px;
+                                      }
+                                      .tts-button {
+                                        background: linear-gradient(to right, #f9fafb, #f3f4f6);
+                                        color: #1f2937;
+                                        border: 1px solid #d1d5db;
+                                        padding: 6px 12px;
+                                        border-radius: 8px;
                                         font-size: 14px;
-                                        margin-bottom: 24px;
+                                        font-weight: 600;
+                                        cursor: pointer;
+                                        display: inline-flex;
+                                        align-items: center;
+                                        justify-content: center;
+                                        gap: 8px;
+                                        transition: all 0.3s ease;
+                                        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+                                        min-width: 140px;
+                                      }
+                                      .tts-button:hover:not(:disabled) {
+                                        background: linear-gradient(to right, #f3f4f6, #e5e7eb);
+                                        border-color: #60a5fa;
+                                        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                                        transform: translateY(-1px);
+                                      }
+                                      .tts-button:active:not(:disabled) {
+                                        transform: translateY(0);
+                                        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+                                      }
+                                      .tts-button:disabled {
+                                        background: linear-gradient(to right, #e5e7eb, #d1d5db);
+                                        border-color: #d1d5db;
+                                        cursor: not-allowed;
+                                        opacity: 0.6;
+                                      }
+                                      .tts-button span:first-child {
+                                        font-size: 18px;
+                                        transition: transform 0.2s ease;
+                                      }
+                                      .tts-button:hover:not(:disabled) span:first-child {
+                                        transform: scale(1.1);
+                                      }
+                                      .saved-at {
+                                        color: #6b7280;
+                                        font-size: 14px;
+                                        margin-bottom: 32px;
+                                        text-align: center;
                                       }
                                       .menu-section {
                                         background: white;
@@ -1391,50 +1678,6 @@ function FormContent() {
                                         color: #555;
                                         line-height: 1.8;
                                         white-space: pre-line;
-                                      }
-                                      .title-container {
-                                        margin-bottom: 8px;
-                                      }
-                                      .tts-button {
-                                        background: linear-gradient(to right, #f9fafb, #f3f4f6);
-                                        color: #1f2937;
-                                        border: 1px solid #d1d5db;
-                                        padding: 12px 24px;
-                                        border-radius: 12px;
-                                        font-size: 14px;
-                                        font-weight: 600;
-                                        cursor: pointer;
-                                        display: flex;
-                                        align-items: center;
-                                        justify-content: center;
-                                        gap: 12px;
-                                        transition: all 0.3s ease;
-                                        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-                                        min-width: 180px;
-                                        margin-bottom: 16px;
-                                      }
-                                      .tts-button:hover:not(:disabled) {
-                                        background: linear-gradient(to right, #f3f4f6, #e5e7eb);
-                                        border-color: #60a5fa;
-                                        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                                        transform: translateY(-1px);
-                                      }
-                                      .tts-button:active:not(:disabled) {
-                                        transform: translateY(0);
-                                        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-                                      }
-                                      .tts-button:disabled {
-                                        background: linear-gradient(to right, #e5e7eb, #d1d5db);
-                                        border-color: #d1d5db;
-                                        cursor: not-allowed;
-                                        opacity: 0.6;
-                                      }
-                                      .tts-button span:first-child {
-                                        font-size: 20px;
-                                        transition: transform 0.2s ease;
-                                      }
-                                      .tts-button:hover:not(:disabled) span:first-child {
-                                        transform: scale(1.1);
                                       }
                                       .spinner {
                                         width: 20px;
@@ -1688,18 +1931,22 @@ function FormContent() {
                                       <div class="title-container">
                                         <h1>${saved.title}</h1>
                                       </div>
-                                      <div>
-                                        <button id="ttsButton" class="tts-button" onclick="handleTextToSpeech()">
+                                      ${saved.content?.thumbnail_url ? `
+                                      <div class="thumbnail-container">
+                                        <img src="${saved.content.thumbnail_url}" alt="${saved.title}" />
+                                      </div>
+                                      ` : ''}
+                                      <div class="tts-button-container">
+                                        <button id="ttsButton" class="tts-button">
                                           <span id="ttsIcon">🔊</span>
                                           <span id="ttsText">점사 듣기</span>
                                         </button>
                                       </div>
                                       <div class="saved-at">
-                                        저장일시: ${saved.savedAt}<br/>
-                                        ${saved.model ? `모델: ${saved.model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : saved.model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : saved.model}<br/>` : ''}
-                                        ${saved.processingTime ? `처리 시간: ${saved.processingTime}` : ''}
+                                        사용 모델: <span style="font-weight: 600; color: #374151;">${saved.model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : saved.model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : saved.model || 'Gemini 2.5 Flash'}</span>
+                                        ${saved.processingTime ? ` · 처리 시간: <span style="font-weight: 600; color: #374151;">${saved.processingTime}</span>` : ''}
                                       </div>
-                                      <div id="contentHtml">${saved.html}</div>
+                                      <div id="contentHtml">${saved.html ? saved.html.replace(/\*\*/g, '') : ''}</div>
                                     </div>
                                     
                                     <!-- 추가 질문하기 팝업 -->
@@ -1817,40 +2064,79 @@ function FormContent() {
                                         return chunks.filter(chunk => chunk.length > 0);
                                       }
 
-                                      // 음성 재생 중지 함수
-                                      function stopTextToSpeech() {
-                                        if (currentAudio) {
-                                          currentAudio.pause();
-                                          currentAudio.currentTime = 0;
-                                          currentAudio = null;
-                                        }
+                                      // 오디오 중지 함수 (여러 곳에서 재사용)
+                                      function stopAndResetAudio() {
+                                        console.log('새 창: 오디오 중지 요청');
                                         shouldStop = true;
-                                        isPlaying = false;
                                         
+                                        // 모든 오디오 즉시 중지
+                                        if (currentAudio) {
+                                          try {
+                                            console.log('오디오 중지 시도:', currentAudio.src);
+                                            currentAudio.pause();
+                                            currentAudio.currentTime = 0;
+                                            const url = currentAudio.src;
+                                            if (url && url.startsWith('blob:')) {
+                                              URL.revokeObjectURL(url);
+                                            }
+                                            currentAudio = null;
+                                            console.log('오디오 중지 완료');
+                                          } catch (e) {
+                                            console.error('오디오 중지 중 오류:', e);
+                                            currentAudio = null;
+                                          }
+                                        }
+                                        
+                                        isPlaying = false;
+                                        isProcessing = false;
+                                        
+                                        // 버튼 상태 복원
                                         const button = document.getElementById('ttsButton');
                                         const icon = document.getElementById('ttsIcon');
                                         const text = document.getElementById('ttsText');
                                         if (button && icon && text) {
                                           button.disabled = false;
                                           icon.textContent = '🔊';
-                                          text.textContent = '음성으로 듣기';
+                                          text.textContent = '점사 듣기';
                                         }
                                       }
 
+                                      // 음성 재생 중지 함수
+                                      function stopTextToSpeech() {
+                                        console.log('stopTextToSpeech 호출됨');
+                                        stopAndResetAudio();
+                                      }
+
                                       // 음성으로 듣기 기능 - 청크 단위로 나누어 재생
+                                      let isProcessing = false; // 중복 실행 방지 플래그
                                       async function handleTextToSpeech() {
+                                        // 중복 실행 방지
+                                        if (isProcessing) {
+                                          console.log('이미 처리 중입니다.');
+                                          return;
+                                        }
+                                        
                                         // 재생 중이면 중지
                                         if (isPlaying) {
                                           stopTextToSpeech();
                                           return;
                                         }
 
+                                        isProcessing = true;
+                                        
                                         try {
-                                          const contentHtml = document.getElementById('contentHtml').innerHTML;
-                                          const textContent = extractTextFromHtml(contentHtml);
+                                          const contentHtml = document.getElementById('contentHtml');
+                                          if (!contentHtml) {
+                                            alert('내용을 찾을 수 없습니다.');
+                                            isProcessing = false;
+                                            return;
+                                          }
+                                          
+                                          const textContent = extractTextFromHtml(contentHtml.innerHTML);
 
                                           if (!textContent.trim()) {
                                             alert('읽을 내용이 없습니다.');
+                                            isProcessing = false;
                                             return;
                                           }
 
@@ -1858,6 +2144,13 @@ function FormContent() {
                                           const button = document.getElementById('ttsButton');
                                           const icon = document.getElementById('ttsIcon');
                                           const text = document.getElementById('ttsText');
+                                          
+                                          if (!button || !icon || !text) {
+                                            alert('버튼을 찾을 수 없습니다.');
+                                            isProcessing = false;
+                                            return;
+                                          }
+                                          
                                           button.disabled = false;
                                           icon.textContent = '⏹️';
                                           text.textContent = '듣기 종료';
@@ -1916,32 +2209,88 @@ function FormContent() {
                                               }
 
                                               const audio = new Audio(url);
+                                              
+                                              // 이전 오디오가 있으면 먼저 정리
+                                              if (currentAudio && currentAudio !== audio) {
+                                                try {
+                                                  currentAudio.pause();
+                                                  currentAudio.currentTime = 0;
+                                                  const oldUrl = currentAudio.src;
+                                                  if (oldUrl && oldUrl.startsWith('blob:')) {
+                                                    URL.revokeObjectURL(oldUrl);
+                                                  }
+                                                } catch (e) {
+                                                  console.error('이전 오디오 정리 중 오류:', e);
+                                                }
+                                              }
+                                              
                                               currentAudio = audio; // 현재 오디오 저장
                                               
+                                              // shouldStop 체크를 위한 인터벌
+                                              const stopCheckInterval = setInterval(() => {
+                                                if (shouldStop) {
+                                                  console.log('shouldStop 감지, 오디오 중지');
+                                                  clearInterval(stopCheckInterval);
+                                                  try {
+                                                    audio.pause();
+                                                    audio.currentTime = 0;
+                                                    URL.revokeObjectURL(url);
+                                                    if (currentAudio === audio) {
+                                                      currentAudio = null;
+                                                    }
+                                                    resolve();
+                                                  } catch (e) {
+                                                    console.error('인터벌에서 오디오 중지 오류:', e);
+                                                    resolve();
+                                                  }
+                                                }
+                                              }, 100); // 100ms마다 체크
+                                              
                                               audio.onended = () => {
-                                                URL.revokeObjectURL(url);
-                                                currentAudio = null;
+                                                clearInterval(stopCheckInterval);
+                                                if (currentAudio === audio && !shouldStop) {
+                                                  URL.revokeObjectURL(url);
+                                                  currentAudio = null;
+                                                }
                                                 resolve();
                                               };
                                               
-                                              audio.onerror = () => {
-                                                URL.revokeObjectURL(url);
-                                                currentAudio = null;
+                                              audio.onerror = (e) => {
+                                                clearInterval(stopCheckInterval);
+                                                console.error('오디오 재생 오류:', e);
+                                                if (currentAudio === audio) {
+                                                  URL.revokeObjectURL(url);
+                                                  currentAudio = null;
+                                                }
                                                 reject(new Error('청크 ' + (i + 1) + ' 재생 중 오류가 발생했습니다.'));
                                               };
                                               
                                               audio.onpause = () => {
+                                                clearInterval(stopCheckInterval);
                                                 // 사용자가 일시정지하거나 페이지가 비활성화된 경우
                                                 if (document.hidden || shouldStop) {
-                                                  currentAudio = null;
+                                                  if (currentAudio === audio) {
+                                                    currentAudio = null;
+                                                  }
                                                   isPlaying = false;
-                                                  button.disabled = false;
-                                                  icon.textContent = '🔊';
-                                                  text.textContent = '점사 듣기';
+                                                  isProcessing = false;
+                                                  if (button && icon && text) {
+                                                    button.disabled = false;
+                                                    icon.textContent = '🔊';
+                                                    text.textContent = '점사 듣기';
+                                                  }
                                                 }
                                               };
                                               
-                                              audio.play().catch(reject);
+                                              audio.play().catch((err) => {
+                                                clearInterval(stopCheckInterval);
+                                                console.error('오디오 play 오류:', err);
+                                                if (currentAudio === audio) {
+                                                  URL.revokeObjectURL(url);
+                                                  currentAudio = null;
+                                                }
+                                                reject(err);
+                                              });
                                             });
 
                                             // 중지 플래그 재확인
@@ -1956,6 +2305,7 @@ function FormContent() {
                                           }
                                           isPlaying = false;
                                           shouldStop = false;
+                                          isProcessing = false;
                                           button.disabled = false;
                                           icon.textContent = '🔊';
                                           text.textContent = '점사 듣기';
@@ -1967,28 +2317,57 @@ function FormContent() {
                                           const text = document.getElementById('ttsText');
                                           isPlaying = false;
                                           shouldStop = false;
-                                          button.disabled = false;
-                                          icon.textContent = '🔊';
-                                          text.textContent = '점사 듣기';
+                                          isProcessing = false;
+                                          if (button && icon && text) {
+                                            button.disabled = false;
+                                            icon.textContent = '🔊';
+                                            text.textContent = '점사 듣기';
+                                          }
                                         }
                                       }
                                       
                                       // 함수를 전역 스코프에 명시적으로 할당 (onclick 핸들러가 작동하도록)
                                       window.handleTextToSpeech = handleTextToSpeech;
-                                      console.log('handleTextToSpeech 함수를 전역 스코프에 할당 완료');
+                                      window.stopTextToSpeech = stopTextToSpeech;
+                                      console.log('handleTextToSpeech, stopTextToSpeech 함수를 전역 스코프에 할당 완료');
                                       
-                                      // 버튼에 이벤트 리스너도 추가 (이중 안전장치)
+                                      // 버튼에 이벤트 리스너 추가 (중복 방지)
+                                      let ttsButtonHandler = null;
                                       function connectTTSButton() {
                                         const ttsButton = document.getElementById('ttsButton');
                                         if (ttsButton) {
-                                          console.log('TTS 버튼 발견, 이벤트 리스너 추가');
-                                          const newHandler = function(e) {
+                                          // 기존 핸들러가 있으면 제거
+                                          if (ttsButtonHandler) {
+                                            ttsButton.removeEventListener('click', ttsButtonHandler);
+                                            ttsButtonHandler = null;
+                                          }
+                                          
+                                          // 새 핸들러 생성 및 등록
+                                          ttsButtonHandler = function(e) {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            console.log('TTS 버튼 클릭 이벤트 발생');
-                                            if (typeof handleTextToSpeech === 'function') {
-                                              handleTextToSpeech();
-                                            } else if (typeof window.handleTextToSpeech === 'function') {
+                                            console.log('TTS 버튼 클릭 이벤트 발생, isPlaying:', isPlaying, 'shouldStop:', shouldStop);
+                                            
+                                            // 재생 중이면 중지
+                                            if (isPlaying) {
+                                              console.log('재생 중지 요청');
+                                              if (typeof window.stopTextToSpeech === 'function') {
+                                                window.stopTextToSpeech();
+                                              } else {
+                                                console.error('stopTextToSpeech 함수를 찾을 수 없습니다.');
+                                                // 폴백: 직접 중지
+                                                stopAndResetAudio();
+                                              }
+                                              return;
+                                            }
+                                            
+                                            // 중복 실행 방지
+                                            if (isProcessing) {
+                                              console.log('이미 처리 중입니다.');
+                                              return;
+                                            }
+                                            
+                                            if (typeof window.handleTextToSpeech === 'function') {
                                               window.handleTextToSpeech();
                                             } else {
                                               console.error('handleTextToSpeech 함수를 찾을 수 없습니다.');
@@ -1996,9 +2375,8 @@ function FormContent() {
                                             }
                                           };
                                           
-                                          ttsButton.removeEventListener('click', newHandler);
-                                          ttsButton.addEventListener('click', newHandler);
-                                          console.log('TTS 버튼 이벤트 리스너 연결 완료');
+                                          ttsButton.addEventListener('click', ttsButtonHandler);
+                                          console.log('TTS 버튼 이벤트 리스너 연결 완료 (중복 방지)');
                                           return true;
                                         } else {
                                           console.warn('TTS 버튼을 찾을 수 없습니다.');
@@ -2006,23 +2384,44 @@ function FormContent() {
                                         }
                                       }
                                       
-                                      // DOM 로드 후 버튼 연결 시도
-                                      if (document.readyState === 'loading') {
-                                        document.addEventListener('DOMContentLoaded', function() {
-                                          setTimeout(connectTTSButton, 50);
-                                        });
-                                      } else {
-                                        setTimeout(connectTTSButton, 50);
+                                      // DOM 로드 후 버튼 연결 시도 (한 번만 실행)
+                                      let ttsButtonInitialized = false;
+                                      function initTTSButton() {
+                                        if (ttsButtonInitialized) {
+                                          console.log('TTS 버튼이 이미 초기화되었습니다.');
+                                          return;
+                                        }
+                                        
+                                        let retryCount = 0;
+                                        const maxRetries = 5;
+                                        
+                                        const tryConnect = () => {
+                                          if (connectTTSButton()) {
+                                            console.log('TTS 버튼 연결 성공');
+                                            ttsButtonInitialized = true;
+                                          } else if (retryCount < maxRetries) {
+                                            retryCount++;
+                                            console.log('TTS 버튼 연결 재시도:', retryCount);
+                                            setTimeout(tryConnect, 200 * retryCount);
+                                          } else {
+                                            console.error('TTS 버튼 연결 실패: 최대 재시도 횟수 초과');
+                                          }
+                                        };
+                                        
+                                        if (document.readyState === 'loading') {
+                                          document.addEventListener('DOMContentLoaded', function() {
+                                            setTimeout(tryConnect, 100);
+                                          });
+                                        } else {
+                                          // 이미 로드된 경우 즉시 실행
+                                          setTimeout(tryConnect, 100);
+                                        }
                                       }
                                       
-                                      // 추가 안전장치
-                                      setTimeout(function() {
-                                        const ttsButton = document.getElementById('ttsButton');
-                                        if (ttsButton) {
-                                          console.log('추가 안전장치: 버튼 확인 및 재연결');
-                                          connectTTSButton();
-                                        }
-                                      }, 500);
+                                      initTTSButton();
+                                      
+                                      // 전역 함수로 노출 (외부에서 호출 가능하도록)
+                                      window.initTTSButton = initTTSButton;
                                       
                                       // 추가 질문하기 기능
                                       let currentQuestionData = null;
@@ -2312,12 +2711,45 @@ function FormContent() {
                                       // 전역 함수 할당 (onclick 핸들러가 작동하도록)
                                       window.closeQuestionPopup = closeQuestionPopup;
                                       window.handleQuestionSubmit = handleQuestionSubmit;
+                                      window.initQuestionButtons = initQuestionButtons;
                                       console.log('전역 함수 할당 완료');
+                                      
+                                      // document.write() 후 DOM이 완전히 로드되도록 보장
+                                      if (document.readyState === 'complete') {
+                                        console.log('문서가 이미 완료됨, 즉시 버튼 추가 시도');
+                                        setTimeout(initQuestionButtons, 100);
+                                      } else {
+                                        window.addEventListener('load', function() {
+                                          console.log('새 창 로드 완료, 버튼 추가 시도');
+                                          setTimeout(initQuestionButtons, 100);
+                                        });
+                                      }
                                     </script>
                                   </body>
                                   </html>
                                 `)
                                 newWindow.document.close()
+                                
+                                // document.close() 후에도 버튼 추가 및 TTS 버튼 연결 시도 (안전장치)
+                                // 주의: initTTSButton은 내부에서 이미 한 번만 실행되도록 보장되므로
+                                // 외부에서 다시 호출해도 중복 등록되지 않습니다.
+                                setTimeout(() => {
+                                  try {
+                                    if (newWindow.document.readyState === 'complete') {
+                                      const windowWithCustomProps = newWindow as Window & {
+                                        initQuestionButtons?: () => void
+                                      }
+                                      if (windowWithCustomProps.initQuestionButtons) {
+                                        console.log('외부에서 버튼 추가 함수 호출');
+                                        windowWithCustomProps.initQuestionButtons();
+                                      }
+                                      // TTS 버튼은 내부에서 이미 초기화되므로 외부 호출 불필요
+                                      // 필요시에만 호출 (중복 방지 로직이 내부에 있음)
+                                    }
+                                  } catch (e) {
+                                    console.error('외부에서 함수 호출 실패:', e);
+                                  }
+                                }, 500)
                               }
                             } catch (e) {
                               console.error('저장된 결과 보기 실패:', e)
@@ -2339,9 +2771,9 @@ function FormContent() {
                   </div>
                 ))}
               </div>
-            </div>
+            )}
           </div>
-        )}
+        </div>
       </main>
     </div>
   )

@@ -40,13 +40,16 @@ function ResultContent() {
   })
 
   // 저장된 결과 목록 로드 함수 (useEffect 위에 정의)
-  const loadSavedResults = () => {
+  const loadSavedResults = async () => {
     if (typeof window === 'undefined') return
     try {
-      const saved = localStorage.getItem('saved_jeminai_results')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        setSavedResults(parsed)
+      const response = await fetch('/api/saved-results/list')
+      if (!response.ok) {
+        throw new Error('저장된 결과 목록 조회 실패')
+      }
+      const result = await response.json()
+      if (result.success) {
+        setSavedResults(result.data || [])
       } else {
         setSavedResults([])
       }
@@ -922,8 +925,8 @@ function ResultContent() {
     }
   }
 
-  // 결과를 로컬에 저장
-  const saveResultToLocal = () => {
+  // 결과를 서버에 저장
+  const saveResultToLocal = async () => {
     if (typeof window === 'undefined' || !resultData) {
       console.error('결과 저장 실패: resultData가 없습니다.')
       alert('결과 저장에 실패했습니다. (데이터 없음)')
@@ -931,30 +934,38 @@ function ResultContent() {
     }
     
     try {
-      const currentSaved = [...savedResults]
-      const newResult = {
-        id: `result_${Date.now()}`,
-        title: content?.content_name || '재회 결과',
-        html: html || '',
-        savedAt: new Date().toLocaleString('ko-KR'),
-        content: content, // content 객체 전체 저장 (tts_speaker 포함)
-        model: model || 'gemini-2.5-flash', // 모델 정보 저장
-        processingTime: currentTime, // 처리 시간 저장 (timeString 대신 currentTime 사용)
-        userName: resultData?.userName || '' // 사용자 이름 저장
+      const response = await fetch('/api/saved-results/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: content?.content_name || '재회 결과',
+          html: html || '',
+          content: content, // content 객체 전체 저장 (tts_speaker 포함)
+          model: model || 'gemini-2.5-flash', // 모델 정보 저장
+          processingTime: currentTime, // 처리 시간 저장
+          userName: resultData?.userName || '' // 사용자 이름 저장
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || '결과 저장에 실패했습니다.')
       }
+
+      const result = await response.json()
       
-      console.log('저장할 결과:', newResult)
-      console.log('저장할 컨텐츠의 tts_speaker:', content?.tts_speaker)
-      
-      currentSaved.unshift(newResult) // 최신 결과를 맨 위에
-      const maxSaved = 50 // 최대 50개만 저장
-      const trimmedResults = currentSaved.slice(0, maxSaved)
-      
-      localStorage.setItem('saved_jeminai_results', JSON.stringify(trimmedResults))
-      setSavedResults(trimmedResults) // 상태 업데이트
-      alert('결과가 저장되었습니다.')
-      
-      // 페이지 새로고침하지 않고 상태만 업데이트
+      if (result.success) {
+        console.log('저장된 결과:', result.data)
+        console.log('저장할 컨텐츠의 tts_speaker:', content?.tts_speaker)
+        
+        // 저장된 결과 목록 다시 로드
+        await loadSavedResults()
+        alert('결과가 저장되었습니다.')
+      } else {
+        throw new Error('결과 저장에 실패했습니다.')
+      }
     } catch (e) {
       console.error('결과 저장 실패:', e)
       console.error('에러 상세:', e instanceof Error ? e.stack : e)
@@ -963,13 +974,23 @@ function ResultContent() {
   }
 
   // 저장된 결과 삭제
-  const deleteSavedResult = (resultId: string) => {
+  const deleteSavedResult = async (resultId: string) => {
     if (typeof window === 'undefined') return
     
     try {
-      const updatedResults = savedResults.filter((r: any) => r.id !== resultId)
-      localStorage.setItem('saved_jeminai_results', JSON.stringify(updatedResults))
-      setSavedResults(updatedResults)
+      const response = await fetch(`/api/saved-results/delete?id=${resultId}`, {
+        method: 'DELETE'
+      })
+      if (!response.ok) {
+        throw new Error('저장된 결과 삭제 실패')
+      }
+      const result = await response.json()
+      if (result.success) {
+        // 목록 다시 로드
+        await loadSavedResults()
+      } else {
+        throw new Error('저장된 결과 삭제에 실패했습니다.')
+      }
     } catch (e) {
       console.error('저장된 결과 삭제 실패:', e)
       alert('저장된 결과 삭제에 실패했습니다.')
