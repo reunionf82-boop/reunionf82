@@ -611,6 +611,44 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
   const hourGanEumyang = data.hour.eumyang.split('/')[0]
   const hourJiEumyang = data.hour.eumyang.split('/')[1]
   
+  // 한자 매핑
+  const SIBSUNG_HANJA: Record<string, string> = {
+    '비견': '比肩', '겁재': '劫財', '식신': '食神', '상관': '傷官',
+    '편재': '偏財', '정재': '正財', '편관': '偏官', '정관': '正官',
+    '편인': '偏印', '정인': '正印'
+  }
+  const OHANG_HANJA: Record<string, string> = {
+    '목': '木', '화': '火', '토': '土', '금': '金', '수': '水'
+  }
+  const SIBIUNSUNG_HANJA: Record<string, string> = {
+    '장생': '長生', '목욕': '沐浴', '관대': '冠帶', '건록': '建祿',
+    '제왕': '帝王', '쇠': '衰', '병': '病', '사': '死',
+    '묘': '墓', '절': '絶', '태': '胎', '양': '養'
+  }
+  const SIBISINSAL_HANJA: Record<string, string> = {
+    '백호': '白虎', '지살': '地殺', '화개': '華蓋', '도화': '桃花',
+    '역마': '驛馬', '천을': '天乙', '홍염': '紅艶', '천덕': '天德',
+    '월덕': '月德', '천덕합': '天德合', '월덕합': '月德合', '공망': '空亡'
+  }
+
+  const formatWithHanja = (value: string, map: Record<string, string>) => {
+    const trimmed = value?.trim()
+    if (!trimmed) return ''
+    const hanja = map[trimmed]
+    return hanja ? `${trimmed}(${hanja})` : trimmed
+  }
+
+  const formatOhang = (value: string) => {
+    return value
+      .split('/')
+      .map(v => {
+        const t = v.trim()
+        const hanja = OHANG_HANJA[t]
+        return hanja ? `${t}(${hanja})` : t
+      })
+      .join('/')
+  }
+
   // 한자 변환 함수
   const getGanHanja = (gan: string) => {
     const index = SIBGAN_HANGUL.indexOf(gan)
@@ -622,14 +660,14 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
   }
   
   const rows = [
-    { label: '십성', year: data.year.sibsung, month: data.month.sibsung, day: data.day.sibsung, hour: data.hour.sibsung },
-    { label: '음양오행', year: data.year.ohang, month: data.month.ohang, day: data.day.ohang, hour: data.hour.ohang },
+    { label: '십성', year: formatWithHanja(data.year.sibsung, SIBSUNG_HANJA), month: formatWithHanja(data.month.sibsung, SIBSUNG_HANJA), day: formatWithHanja(data.day.sibsung, SIBSUNG_HANJA), hour: formatWithHanja(data.hour.sibsung, SIBSUNG_HANJA) },
+    { label: '음양오행', year: formatOhang(data.year.ohang), month: formatOhang(data.month.ohang), day: formatOhang(data.day.ohang), hour: formatOhang(data.hour.ohang) },
     { label: '천간', year: `${data.year.gan}(${getGanHanja(data.year.gan)})`, month: `${data.month.gan}(${getGanHanja(data.month.gan)})`, day: `${data.day.gan}(${getGanHanja(data.day.gan)})`, hour: `${data.hour.gan}(${getGanHanja(data.hour.gan)})` },
     { label: '지지', year: `${data.year.ji}(${getJiHanja(data.year.ji)})`, month: `${data.month.ji}(${getJiHanja(data.month.ji)})`, day: `${data.day.ji}(${getJiHanja(data.day.ji)})`, hour: `${data.hour.ji}(${getJiHanja(data.hour.ji)})` },
     { label: '음양오행', year: `${yearGanEumyang}/${yearJiEumyang}`, month: `${monthGanEumyang}/${monthJiEumyang}`, day: `${dayGanEumyang}/${dayJiEumyang}`, hour: `${hourGanEumyang}/${hourJiEumyang}` },
-    { label: '십성', year: data.year.jiSibsung, month: data.month.jiSibsung, day: data.day.jiSibsung, hour: data.hour.jiSibsung },
-    { label: '십이운성', year: data.year.sibiunsung, month: data.month.sibiunsung, day: data.day.sibiunsung, hour: data.hour.sibiunsung },
-    { label: '십이신살', year: data.year.sibisinsal, month: data.month.sibisinsal, day: data.day.sibisinsal, hour: data.hour.sibisinsal }
+    { label: '십성', year: formatWithHanja(data.year.jiSibsung, SIBSUNG_HANJA), month: formatWithHanja(data.month.jiSibsung, SIBSUNG_HANJA), day: formatWithHanja(data.day.jiSibsung, SIBSUNG_HANJA), hour: formatWithHanja(data.hour.jiSibsung, SIBSUNG_HANJA) },
+    { label: '십이운성', year: formatWithHanja(data.year.sibiunsung, SIBIUNSUNG_HANJA), month: formatWithHanja(data.month.sibiunsung, SIBIUNSUNG_HANJA), day: formatWithHanja(data.day.sibiunsung, SIBIUNSUNG_HANJA), hour: formatWithHanja(data.hour.sibiunsung, SIBIUNSUNG_HANJA) },
+    { label: '십이신살', year: formatWithHanja(data.year.sibisinsal, SIBISINSAL_HANJA), month: formatWithHanja(data.month.sibisinsal, SIBISINSAL_HANJA), day: formatWithHanja(data.day.sibisinsal, SIBISINSAL_HANJA), hour: formatWithHanja(data.hour.sibisinsal, SIBISINSAL_HANJA) }
   ]
   
   let html = ''

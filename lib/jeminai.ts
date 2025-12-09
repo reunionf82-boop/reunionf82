@@ -22,6 +22,10 @@ interface JeminaiRequest {
     birth_hour?: string
   }
   model?: string
+  manse_ryeok_table?: string
+  manse_ryeok_text?: string
+  manse_ryeok_json?: string
+  day_gan_info?: any
 }
 
 interface JeminaiResponse {
@@ -104,7 +108,11 @@ export async function callJeminaiAPIStream(
         menu_items: request.menu_items || [],
         user_info: request.user_info,
         partner_info: request.partner_info,
-        model: request.model || 'gemini-2.5-flash'
+        model: request.model || 'gemini-2.5-flash',
+        manse_ryeok_table: request.manse_ryeok_table,
+        manse_ryeok_text: request.manse_ryeok_text,
+        manse_ryeok_json: request.manse_ryeok_json,
+        day_gan_info: request.day_gan_info
       }),
     })
 

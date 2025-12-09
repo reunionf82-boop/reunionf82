@@ -526,6 +526,7 @@ function FormContent() {
       // 만세력 계산
       let manseRyeokTable = '' // HTML 테이블 (화면 표시용)
       let manseRyeokText = '' // 텍스트 형식 (제미나이 프롬프트용)
+      let manseRyeokData: any = null // 구조화 만세력 데이터
       let dayGanInfo = null // 일간 정보 저장
       if (year && month && day) {
         try {
@@ -565,7 +566,7 @@ function FormContent() {
           }
           
           // 만세력 계산 (일간 기준)
-          const manseRyeokData = calculateManseRyeok(birthYear, birthMonth, birthDay, birthHourNum, dayGan)
+          manseRyeokData = calculateManseRyeok(birthYear, birthMonth, birthDay, birthHourNum, dayGan)
           manseRyeokTable = generateManseRyeokTable(manseRyeokData, name) // HTML 테이블 (화면 표시용)
           manseRyeokText = generateManseRyeokText(manseRyeokData) // 텍스트 형식 (제미나이 프롬프트용)
           console.log('만세력 테이블 생성 완료, 일간:', dayGanInfo.fullName)
@@ -574,7 +575,25 @@ function FormContent() {
         }
       }
       
-      // 요청 데이터 준비 (결과 페이지에서 스트리밍으로 받기 위해)
+      // 만세력 생성 검증
+      const manseRyeokJsonString = manseRyeokData ? JSON.stringify(manseRyeokData, null, 2) : ''
+      console.log('만세력 생성 검증:', {
+        year,
+        month,
+        day,
+        birthHour,
+        manseRyeokTextLength: manseRyeokText?.length || 0,
+        manseRyeokJsonLength: manseRyeokJsonString?.length || 0,
+        hasData: !!manseRyeokData
+      })
+      if (!manseRyeokText || !manseRyeokText.trim() || !manseRyeokData) {
+        console.error('만세력 데이터가 생성되지 않았습니다.', { manseRyeokTextLength: manseRyeokText?.length || 0, hasData: !!manseRyeokData })
+        alert('만세력 데이터 생성에 실패했습니다. 생년월일/태어난 시를 다시 확인해주세요.')
+        setSubmitting(false)
+        setShowLoadingPopup(false)
+        return
+      }
+
       const requestData = {
         role_prompt: content.role_prompt || '',
         restrictions: content.restrictions || '',
@@ -595,6 +614,7 @@ function FormContent() {
         model: currentModel,
         manse_ryeok_table: manseRyeokTable, // HTML 테이블 (화면 표시용)
         manse_ryeok_text: manseRyeokText, // 텍스트 형식 (제미나이 프롬프트용)
+        manse_ryeok_json: manseRyeokData ? manseRyeokJsonString : undefined, // 구조화 데이터
         day_gan_info: dayGanInfo // 일간 정보 추가
       }
 
@@ -648,7 +668,12 @@ function FormContent() {
       let finalHtml = ''
       
       console.log('=== 스트리밍 시작 ===')
-      console.log('요청 데이터:', requestData)
+      console.log('요청 데이터:', {
+        ...requestData,
+        manse_ryeok_text_preview: manseRyeokText?.slice(0, 200),
+        manse_ryeok_text_length: manseRyeokText?.length,
+        manse_ryeok_json_length: requestData.manse_ryeok_json?.length
+      })
       
       try {
         await callJeminaiAPIStream(requestData, (data) => {

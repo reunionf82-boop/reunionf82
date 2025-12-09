@@ -5,10 +5,12 @@ export async function POST(req: NextRequest) {
   try {
     console.log('=== 재미나이 API 라우트 시작 ===')
     const body = await req.json()
-    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-2.5-flash', manse_ryeok_table, manse_ryeok_text, day_gan_info } = body
+    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-2.5-flash', manse_ryeok_table, manse_ryeok_text, manse_ryeok_json, day_gan_info } = body
     
     console.log('요청 모델:', model)
     console.log('메뉴 소제목 개수:', menu_subtitles?.length)
+    console.log('manse_ryeok_text 길이:', manse_ryeok_text ? manse_ryeok_text.length : 0)
+    console.log('manse_ryeok_json 길이:', manse_ryeok_json ? manse_ryeok_json.length : 0)
     
     if (!role_prompt || !menu_subtitles || !Array.isArray(menu_subtitles) || menu_subtitles.length === 0) {
       return NextResponse.json(
@@ -43,7 +45,8 @@ export async function POST(req: NextRequest) {
     const geminiModel = genAI.getGenerativeModel({ 
       model: selectedModel,
       generationConfig: {
-        temperature: 0.7,
+        // 창의성 억제, 입력 데이터 집착
+        temperature: 0.2,
         topP: 0.95,
         topK: 40,
         maxOutputTokens: maxOutputTokens,
@@ -68,6 +71,45 @@ export async function POST(req: NextRequest) {
         },
       ],
     })
+
+    // JSON 데이터 파싱하여 각 주의 값 추출
+    let parsedManseRyeok: any = null
+    if (manse_ryeok_json) {
+      try {
+        parsedManseRyeok = JSON.parse(manse_ryeok_json)
+      } catch (e) {
+        console.error('만세력 JSON 파싱 실패:', e)
+      }
+    }
+
+    // 계산된 만세력 데이터 로그 출력
+    console.log('=== 만세력 데이터 점검 ===')
+    console.log('manse_ryeok_text 길이:', manse_ryeok_text ? manse_ryeok_text.length : 0)
+    console.log('manse_ryeok_json 길이:', manse_ryeok_json ? manse_ryeok_json.length : 0)
+    if (parsedManseRyeok) {
+      console.log('파싱된 만세력 데이터:')
+      console.log('  연주:', `${parsedManseRyeok.year?.gan || ''}${parsedManseRyeok.year?.ji || ''}`)
+      console.log('  월주:', `${parsedManseRyeok.month?.gan || ''}${parsedManseRyeok.month?.ji || ''}`)
+      console.log('  일주:', `${parsedManseRyeok.day?.gan || ''}${parsedManseRyeok.day?.ji || ''}`)
+      console.log('  시주:', `${parsedManseRyeok.hour?.gan || ''}${parsedManseRyeok.hour?.ji || ''}`)
+    } else {
+      console.warn('⚠️ parsedManseRyeok 없음')
+    }
+    if (day_gan_info) {
+      console.log('일간 정보:', day_gan_info.fullName, day_gan_info.gan, day_gan_info.hanja, day_gan_info.ohang)
+    }
+    console.log('=======================')
+
+    const hasManseRyeokData = !!(parsedManseRyeok || manse_ryeok_text || manse_ryeok_table)
+
+    // 만세력 데이터 필수 확인
+    if (!hasManseRyeokData) {
+      console.error('만세력 데이터가 없습니다. 요청을 중단합니다.')
+      return NextResponse.json(
+        { error: 'manse_ryeok_text 또는 manse_ryeok_json이 필요합니다.' },
+        { status: 400 }
+      )
+    }
 
     // 프롬프트 작성
     // menu_items 정보를 포함하여 각 메뉴별로 제목과 썸네일을 포함한 HTML 생성
@@ -99,6 +141,61 @@ export async function POST(req: NextRequest) {
     const prompt = `
 당신은 ${role_prompt}입니다.
 
+---
+# ⚠️ 입력 데이터 (계산된 불변의 값 - 그대로 복사하여 사용)
+
+${manse_ryeok_text ? `${manse_ryeok_text}` : '(만세력 텍스트 데이터 없음 - 해석 불가)'}
+
+${manse_ryeok_json ? `
+**JSON 형식 만세력 데이터 (구조화):**
+\`\`\`json
+${manse_ryeok_json}
+\`\`\`
+` : ''}
+
+${day_gan_info ? `
+**일간(日干) 정보:** ${day_gan_info.fullName} (천간: ${day_gan_info.gan}(${day_gan_info.hanja}), 오행: ${day_gan_info.ohang})
+` : ''}
+
+${hasManseRyeokData ? `
+**중요:** 위 데이터만 사용하세요. 생년월일/띠/출생지는 보안상 제공되지 않았으며, 임의로 추정하거나 계산하는 행위는 금지됩니다.
+` : ''}
+
+${!hasManseRyeokData ? `
+⚠️⚠️⚠️ 만세력 데이터가 없습니다. 어떤 해석도 하지 말고, "만세력 데이터가 없어 해석할 수 없습니다"라고만 답하세요.
+` : ''}
+
+---
+# 🛑 분석 절차 (반드시 순서대로 수행할 것)
+
+**STEP 1: 데이터 검증 (Copy & Paste)**
+- 가장 먼저 위 [입력 데이터]에 적힌 년주/월주/일주/시주를 그대로 복사하여 출력하세요.
+- "분석 대상 명식: [연주] [월주] [일주] [시주]" 형식으로 시작하세요.
+- 생년월일을 다시 계산하거나 다른 글자를 가져오지 마세요.
+
+**STEP 2: 글자 기반 팩트 추출**
+- STEP 1에서 출력한 글자들만 사용하여 합(合), 충(沖), 형(刑), 공망 여부 등 팩트만 나열하세요. (해석 금지)
+
+**STEP 3: 심층 해석**
+- STEP 2에서 뽑은 팩트를 근거로 해석하세요.
+- [입력 데이터]에 없는 신살/오행/연도/띠/출생지 등은 언급 금지.
+
+---
+# 예시 (Few-shot)
+
+**입력된 만세력:**
+- 일주: 병인(丙寅)
+- 월주: 경신(庚申)
+
+**나쁜 답변 (X):**
+- "1980년생 원숭이띠로..." (생년월일 유추 금지)
+- "사주에 물이 많아서..." (입력 데이터에 없는 오행 언급 금지)
+
+**좋은 답변 (O):**
+- "제공된 명식을 보면 일주 병화(丙火)와 월주 경금(庚金)이 편재 관계입니다. 지지에서 인신충(寅申沖)이 발생하여 ... [이후 입력 글자 기반 해석]"
+
+---
+
 **중요: 현재 날짜 정보**
 - 오늘은 ${koreaDateString}입니다.
 - 현재 연도는 ${currentYear}년입니다.
@@ -108,39 +205,16 @@ ${restrictions ? `금칙사항: ${restrictions}` : ''}
 
 사용자 정보:
 - 이름: ${user_info.name}
-- 성별: ${user_info.gender}
-- 생년월일: ${user_info.birth_date}
-${user_info.birth_hour ? `- 태어난 시: ${user_info.birth_hour}` : ''}
+${user_info.gender ? `- 성별: ${user_info.gender}` : ''}
+- 생년월일/생시는 보안상 제공하지 않습니다.
 ${partner_info ? `
 이성 정보:
 - 이름: ${partner_info.name}
-- 성별: ${partner_info.gender}
-- 생년월일: ${partner_info.birth_date}
-${partner_info.birth_hour ? `- 태어난 시: ${partner_info.birth_hour}` : ''}
+${partner_info.gender ? `- 성별: ${partner_info.gender}` : ''}
+- 생년월일/생시는 보안상 제공하지 않습니다.
 ` : ''}
 
-${manse_ryeok_text ? `
-**만세력(사주명식) 정보:**
-다음은 내담자의 만세력 정보입니다. 이 만세력을 기반으로 해석해주세요.
-
-${manse_ryeok_text}
-
-${day_gan_info ? `
-**내담자의 일간(日干) 정보 (중요):**
-내담자의 일간은 반드시 "${day_gan_info.fullName}"입니다. 
-- 천간: ${day_gan_info.gan}(${day_gan_info.hanja})
-- 오행: ${day_gan_info.ohang}
-- 전체 표기: ${day_gan_info.fullName}
-
-해석할 때 일간을 언급할 경우, 반드시 위에 명시된 "${day_gan_info.fullName}"을 사용해야 합니다. 절대로 다른 천간(예: 정화(丁火), 갑목(甲木), 병화(丙火) 등)으로 잘못 해석하거나 임의로 추측하지 마세요. 위의 만세력 정보에서 "천간 일주=" 부분에 명시된 값과 일치해야 합니다.
-` : ''}
-
-**중요: 만세력 정보 참조 필수사항**
-반드시 위에 제공된 만세력 정보의 모든 데이터(십성, 음양오행, 천간, 지지, 십이운성, 십이신살 등)를 정확하게 참조하여 해석해야 합니다. 만세력 정보의 데이터를 무시하거나 임의로 추측하지 말고, 반드시 위에 명시된 정보를 기반으로만 해석을 제공해주세요. 만세력 정보와 일치하지 않는 해석은 절대 하지 마세요.
-
-**특별 주의: 일간(日干) 정보 참조 필수**
-위의 만세력 정보에서 "천간 일주=" 부분에 표시된 것이 내담자의 일간(日干)입니다. ${day_gan_info ? `위에 명시된 일간 "${day_gan_info.fullName}"과 일치해야 합니다.` : '만세력 정보의 "천간 일주=" 부분에 표시된 정확한 값을 사용해야 합니다.'} 절대로 다른 천간으로 잘못 해석하거나 임의로 추측하지 마세요. 해석할 때 일간을 언급할 경우, 반드시 만세력 정보의 "천간 일주=" 부분에 명시된 정확한 값을 사용해야 합니다. 만세력 정보에 없는 일간 정보를 사용하는 것은 절대 금지입니다.
-` : ''}
+---
 
 다음 상품 메뉴 구성과 소제목들을 각각 해석해주세요:
 
