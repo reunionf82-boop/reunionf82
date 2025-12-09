@@ -629,6 +629,13 @@ export function calculateManseRyeok(
   }
 }
 
+// 음양과 오행을 결합하여 포맷팅하는 함수 (예: -화(火))
+const formatEumyangOhang = (eumyang: string, ohang: string): string => {
+  const eumyangSymbol = eumyang === '양' ? '+' : '-'
+  const ohangHanja = OHANG_HANJA[ohang] || ''
+  return `${eumyangSymbol}${ohang}${ohangHanja ? `(${ohangHanja})` : ''}`
+}
+
 export function generateManseRyeokTable(data: ManseRyeokData, userName?: string): string {
   // 천간의 음양오행과 지지의 음양오행 분리
   const yearGanEumyang = data.year.eumyang.split('/')[0]
@@ -640,12 +647,22 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
   const hourGanEumyang = data.hour.eumyang.split('/')[0]
   const hourJiEumyang = data.hour.eumyang.split('/')[1]
 
+  // 오행 분리
+  const yearGanOhang = data.year.ohang.split('/')[0]
+  const yearJiOhang = data.year.ohang.split('/')[1]
+  const monthGanOhang = data.month.ohang.split('/')[0]
+  const monthJiOhang = data.month.ohang.split('/')[1]
+  const dayGanOhang = data.day.ohang.split('/')[0]
+  const dayJiOhang = data.day.ohang.split('/')[1]
+  const hourGanOhang = data.hour.ohang.split('/')[0]
+  const hourJiOhang = data.hour.ohang.split('/')[1]
+
   const rows = [
     { label: '십성', year: formatWithHanja(data.year.sibsung, SIBSUNG_HANJA), month: formatWithHanja(data.month.sibsung, SIBSUNG_HANJA), day: formatWithHanja(data.day.sibsung, SIBSUNG_HANJA), hour: formatWithHanja(data.hour.sibsung, SIBSUNG_HANJA) },
-    { label: '음양오행', year: formatOhang(data.year.ohang), month: formatOhang(data.month.ohang), day: formatOhang(data.day.ohang), hour: formatOhang(data.hour.ohang) },
+    { label: '음양오행', year: formatEumyangOhang(yearGanEumyang, yearGanOhang), month: formatEumyangOhang(monthGanEumyang, monthGanOhang), day: formatEumyangOhang(dayGanEumyang, dayGanOhang), hour: formatEumyangOhang(hourGanEumyang, hourGanOhang) },
     { label: '천간', year: `${data.year.gan}(${getGanHanja(data.year.gan)})`, month: `${data.month.gan}(${getGanHanja(data.month.gan)})`, day: `${data.day.gan}(${getGanHanja(data.day.gan)})`, hour: `${data.hour.gan}(${getGanHanja(data.hour.gan)})` },
     { label: '지지', year: `${data.year.ji}(${getJiHanja(data.year.ji)})`, month: `${data.month.ji}(${getJiHanja(data.month.ji)})`, day: `${data.day.ji}(${getJiHanja(data.day.ji)})`, hour: `${data.hour.ji}(${getJiHanja(data.hour.ji)})` },
-    { label: '음양오행', year: `${yearGanEumyang}/${yearJiEumyang}`, month: `${monthGanEumyang}/${monthJiEumyang}`, day: `${dayGanEumyang}/${dayJiEumyang}`, hour: `${hourGanEumyang}/${hourJiEumyang}` },
+    { label: '음양오행', year: formatEumyangOhang(yearJiEumyang, yearJiOhang), month: formatEumyangOhang(monthJiEumyang, monthJiOhang), day: formatEumyangOhang(dayJiEumyang, dayJiOhang), hour: formatEumyangOhang(hourJiEumyang, hourJiOhang) },
     { label: '십성', year: formatWithHanja(data.year.jiSibsung, SIBSUNG_HANJA), month: formatWithHanja(data.month.jiSibsung, SIBSUNG_HANJA), day: formatWithHanja(data.day.jiSibsung, SIBSUNG_HANJA), hour: formatWithHanja(data.hour.jiSibsung, SIBSUNG_HANJA) },
     { label: '십이운성', year: formatWithHanja(data.year.sibiunsung, SIBIUNSUNG_HANJA), month: formatWithHanja(data.month.sibiunsung, SIBIUNSUNG_HANJA), day: formatWithHanja(data.day.sibiunsung, SIBIUNSUNG_HANJA), hour: formatWithHanja(data.hour.sibiunsung, SIBIUNSUNG_HANJA) },
     { label: '십이신살', year: formatWithHanja(data.year.sibisinsal, SIBISINSAL_HANJA), month: formatWithHanja(data.month.sibisinsal, SIBISINSAL_HANJA), day: formatWithHanja(data.day.sibisinsal, SIBISINSAL_HANJA), hour: formatWithHanja(data.hour.sibisinsal, SIBISINSAL_HANJA) }
@@ -653,23 +670,23 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
   
   let html = ''
   
-  html += '<table class="manse-ryeok-table" style="width: 100%; border-collapse: collapse; margin: 20px 0;">'
+  html += '<table class="manse-ryeok-table" style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px;">'
   html += '<thead><tr>'
-  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">구분</th>'
-  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">시주</th>'
-  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">일주</th>'
-  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">월주</th>'
-  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">연주</th>'
+  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">구분</th>'
+  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">시주</th>'
+  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">일주</th>'
+  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">월주</th>'
+  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">연주</th>'
   html += '</tr></thead>'
   html += '<tbody>'
   
   rows.forEach(row => {
     html += '<tr>'
-    html += `<td style="border: 1px solid #ddd; padding: 8px; font-weight: bold;">${row.label}</td>`
-    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${row.hour}</td>`
-    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${row.day}</td>`
-    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${row.month}</td>`
-    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${row.year}</td>`
+    html += `<td style="border: 1px solid #ddd; padding: 8px; font-weight: bold; font-size: 14px;">${row.label}</td>`
+    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: 14px;">${row.hour}</td>`
+    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: 14px;">${row.day}</td>`
+    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: 14px;">${row.month}</td>`
+    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: 14px;">${row.year}</td>`
     html += '</tr>'
   })
   
