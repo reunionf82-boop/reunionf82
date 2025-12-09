@@ -26,6 +26,10 @@ function ResultContent() {
   const [savedResults, setSavedResults] = useState<any[]>([])
   const [streamingProgress, setStreamingProgress] = useState(0)
   
+  // 추가 질문 횟수 관리 (메뉴별 카운트)
+  const [usedQuestionCounts, setUsedQuestionCounts] = useState<Record<string, number>>({})
+  const MAX_QUESTIONS = 3
+
   // 추가 질문 팝업 상태
   const [questionPopup, setQuestionPopup] = useState<{
     isOpen: boolean
@@ -171,6 +175,24 @@ function ResultContent() {
     
     return () => clearTimeout(timer)
   }, [storageKey, isStreaming])
+
+  // 질문 횟수 로드 (localStorage)
+  useEffect(() => {
+    if (storageKey) {
+      try {
+        const savedCounts = localStorage.getItem(`question_counts_${storageKey}`)
+        if (savedCounts) {
+          setUsedQuestionCounts(JSON.parse(savedCounts))
+        } else {
+          // 하위 호환성: 기존 단일 카운트가 있다면 초기화 (또는 무시)
+          setUsedQuestionCounts({})
+        }
+      } catch (e) {
+        console.error('질문 횟수 로드 실패:', e)
+        setUsedQuestionCounts({})
+      }
+    }
+  }, [storageKey])
 
   // 경과 시간 계산 (완료된 결과만 표시)
   useEffect(() => {
@@ -398,19 +420,32 @@ function ResultContent() {
     }
   `
 
-  // HTML에서 텍스트 추출 (태그 제거)
+  // HTML에서 텍스트 추출 (태그 제거, 테이블 제외)
   const extractTextFromHtml = (htmlString: string): string => {
     if (typeof window === 'undefined') return ''
     const tempDiv = document.createElement('div')
     tempDiv.innerHTML = htmlString
+    
+    // 테이블 요소 제거 (manse-ryeok-table 클래스를 가진 테이블 및 모든 table 요소)
+    const tables = tempDiv.querySelectorAll('table, .manse-ryeok-table')
+    tables.forEach(table => table.remove())
+    
     return tempDiv.textContent || tempDiv.innerText || ''
   }
 
   // 질문 제출 핸들러
   const handleQuestionSubmit = async (question: string): Promise<string> => {
+    const currentMenuTitle = questionPopup.menuTitle
+    const currentCount = usedQuestionCounts[currentMenuTitle] || 0
+
+    // 클라이언트 사이드 방어 코드
+    if (currentCount >= MAX_QUESTIONS) {
+      throw new Error('이 메뉴에 대한 질문 횟수를 모두 소진했습니다.')
+    }
+
     console.log('질문 제출 API 호출 시작:', {
       question,
-      menuTitle: questionPopup.menuTitle,
+      menuTitle: currentMenuTitle,
       subtitles: questionPopup.subtitles,
       subtitlesContent: questionPopup.subtitlesContent,
     })
@@ -455,6 +490,15 @@ function ResultContent() {
       throw new Error('답변을 받지 못했습니다.')
     }
     
+    // 질문 횟수 증가 및 저장 (메뉴별)
+    const newCount = currentCount + 1
+    const newCounts = { ...usedQuestionCounts, [currentMenuTitle]: newCount }
+    
+    setUsedQuestionCounts(newCounts)
+    if (storageKey) {
+      localStorage.setItem(`question_counts_${storageKey}`, JSON.stringify(newCounts))
+    }
+
     return data.answer
   }
 
@@ -604,10 +648,21 @@ function ResultContent() {
           const url = URL.createObjectURL(audioBlob)
           const audio = new Audio(url)
           
-          // 오디오가 로드될 때까지 대기
+          // 오디오가 로드될 때까지 대기 (타임아웃 추가)
           await new Promise<void>((resolve, reject) => {
-            audio.oncanplaythrough = () => resolve()
-            audio.onerror = () => reject(new Error(`청크 ${chunkIndex + 1} 로드 실패`))
+            const timeout = setTimeout(() => {
+              reject(new Error(`청크 ${chunkIndex + 1} 로드 타임아웃`))
+            }, 30000) // 30초 타임아웃
+            
+            audio.oncanplaythrough = () => {
+              clearTimeout(timeout)
+              resolve()
+            }
+            audio.onerror = (e) => {
+              clearTimeout(timeout)
+              console.error(`청크 ${chunkIndex + 1} 오디오 로드 에러:`, e)
+              reject(new Error(`청크 ${chunkIndex + 1} 로드 실패`))
+            }
             audio.load()
           })
 
@@ -668,7 +723,7 @@ function ResultContent() {
           currentAudio = new Audio(currentUrl)
         }
 
-        // 오디오 재생 (Promise로 대기)
+        // 오디오 재생 (Promise로 대기, 타임아웃 및 에러 처리 개선)
         await new Promise<void>((resolve, reject) => {
           // 중지 플래그 재확인 (ref로 실시간 확인)
           if (shouldStopRef.current) {
@@ -679,36 +734,69 @@ function ResultContent() {
 
           currentAudioRef.current = currentAudio // 현재 오디오 저장 (ref 사용, 리렌더링 방지)
           
-          currentAudio.onended = () => {
+          // 타임아웃 설정 (5분 - 매우 긴 오디오 대비)
+          const timeout = setTimeout(() => {
+            console.error(`청크 ${i + 1} 재생 타임아웃`)
+            currentAudio.pause()
             URL.revokeObjectURL(currentUrl)
             currentAudioRef.current = null
+            reject(new Error(`청크 ${i + 1} 재생 타임아웃`))
+          }, 300000) // 5분
+          
+          const cleanup = () => {
+            clearTimeout(timeout)
+            URL.revokeObjectURL(currentUrl)
+            currentAudioRef.current = null
+          }
+          
+          currentAudio.onended = () => {
+            console.log(`청크 ${i + 1} 재생 완료`)
+            cleanup()
             resolve()
           }
           
-          currentAudio.onerror = () => {
-            URL.revokeObjectURL(currentUrl)
-            currentAudioRef.current = null
-            reject(new Error(`청크 ${i + 1} 재생 중 오류가 발생했습니다.`))
+          currentAudio.onerror = (e) => {
+            console.error(`청크 ${i + 1} 재생 중 오류:`, e, currentAudio.error)
+            cleanup()
+            // 에러가 발생해도 다음 청크로 계속 진행하도록 resolve (reject 대신)
+            console.warn(`청크 ${i + 1} 재생 실패, 다음 청크로 진행`)
+            resolve()
           }
           
           currentAudio.onpause = () => {
             // 사용자가 일시정지하거나 페이지가 비활성화된 경우
             if (document.hidden || shouldStopRef.current) {
-              currentAudioRef.current = null
+              cleanup()
               setIsPlaying(false)
             }
           }
           
-          currentAudio.play().catch(reject)
+          currentAudio.play().catch((err) => {
+            console.error(`청크 ${i + 1} play() 실패:`, err)
+            cleanup()
+            // play 실패해도 다음 청크로 계속 진행
+            console.warn(`청크 ${i + 1} play 실패, 다음 청크로 진행`)
+            resolve()
+          })
         })
 
         // 다음 청크 미리 로드 완료 대기 및 저장
         if (i < chunks.length - 1) {
-          preloadedChunk = await nextChunkPromise
+          try {
+            preloadedChunk = await nextChunkPromise
+            if (preloadedChunk) {
+              console.log(`청크 ${i + 2} 미리 로드 완료`)
+            } else {
+              console.warn(`청크 ${i + 2} 미리 로드 실패 (null 반환)`)
+            }
+          } catch (err) {
+            console.error(`청크 ${i + 2} 미리 로드 중 에러:`, err)
+            preloadedChunk = null
+          }
         }
 
         // 중지 플래그 재확인
-        if (shouldStop) {
+        if (shouldStopRef.current) {
           console.log('재생 중지됨 (재생 후)')
           if (preloadedChunk) {
             URL.revokeObjectURL(preloadedChunk.url)
@@ -717,12 +805,15 @@ function ResultContent() {
         }
       }
 
-      if (!shouldStop) {
+      if (!shouldStopRef.current) {
         console.log('모든 청크 재생 완료')
+      } else {
+        console.log('재생이 중지되었습니다')
       }
       setIsPlaying(false)
       currentAudioRef.current = null
       setShouldStop(false)
+      shouldStopRef.current = false
     } catch (error: any) {
       console.error('음성 변환 실패:', error)
       alert(error?.message || '음성 변환에 실패했습니다.')
@@ -826,10 +917,21 @@ function ResultContent() {
           const url = URL.createObjectURL(audioBlob)
           const audio = new Audio(url)
           
-          // 오디오가 로드될 때까지 대기
+          // 오디오가 로드될 때까지 대기 (타임아웃 추가)
           await new Promise<void>((resolve, reject) => {
-            audio.oncanplaythrough = () => resolve()
-            audio.onerror = () => reject(new Error(`청크 ${chunkIndex + 1} 로드 실패`))
+            const timeout = setTimeout(() => {
+              reject(new Error(`청크 ${chunkIndex + 1} 로드 타임아웃`))
+            }, 30000) // 30초 타임아웃
+            
+            audio.oncanplaythrough = () => {
+              clearTimeout(timeout)
+              resolve()
+            }
+            audio.onerror = (e) => {
+              clearTimeout(timeout)
+              console.error(`저장된 결과: 청크 ${chunkIndex + 1} 오디오 로드 에러:`, e)
+              reject(new Error(`청크 ${chunkIndex + 1} 로드 실패`))
+            }
             audio.load()
           })
 
@@ -881,40 +983,73 @@ function ResultContent() {
           currentAudio = new Audio(currentUrl)
         }
 
-        // 오디오 재생 (Promise로 대기)
+        // 오디오 재생 (Promise로 대기, 타임아웃 및 에러 처리 개선)
         await new Promise<void>((resolve, reject) => {
           currentAudioRef.current = currentAudio // 현재 오디오 저장 (ref 사용, 리렌더링 방지)
           
-          currentAudio.onended = () => {
+          // 타임아웃 설정 (5분)
+          const timeout = setTimeout(() => {
+            console.error(`저장된 결과: 청크 ${i + 1} 재생 타임아웃`)
+            currentAudio.pause()
             URL.revokeObjectURL(currentUrl)
             currentAudioRef.current = null
+            reject(new Error(`청크 ${i + 1} 재생 타임아웃`))
+          }, 300000) // 5분
+          
+          const cleanup = () => {
+            clearTimeout(timeout)
+            URL.revokeObjectURL(currentUrl)
+            currentAudioRef.current = null
+          }
+          
+          currentAudio.onended = () => {
+            console.log(`저장된 결과: 청크 ${i + 1} 재생 완료`)
+            cleanup()
             resolve()
           }
           
-          currentAudio.onerror = () => {
-            URL.revokeObjectURL(currentUrl)
-            currentAudioRef.current = null
-            reject(new Error(`청크 ${i + 1} 재생 중 오류가 발생했습니다.`))
+          currentAudio.onerror = (e) => {
+            console.error(`저장된 결과: 청크 ${i + 1} 재생 중 오류:`, e, currentAudio.error)
+            cleanup()
+            // 에러가 발생해도 다음 청크로 계속 진행
+            console.warn(`저장된 결과: 청크 ${i + 1} 재생 실패, 다음 청크로 진행`)
+            resolve()
           }
           
           currentAudio.onpause = () => {
             // 사용자가 일시정지하거나 페이지가 비활성화된 경우
             if (document.hidden) {
-              currentAudioRef.current = null
+              cleanup()
               setPlayingResultId(null)
             }
           }
           
-          currentAudio.play().catch(reject)
+          currentAudio.play().catch((err) => {
+            console.error(`저장된 결과: 청크 ${i + 1} play() 실패:`, err)
+            cleanup()
+            // play 실패해도 다음 청크로 계속 진행
+            console.warn(`저장된 결과: 청크 ${i + 1} play 실패, 다음 청크로 진행`)
+            resolve()
+          })
         })
 
         // 다음 청크 미리 로드 완료 대기 및 저장
         if (i < chunks.length - 1) {
-          preloadedChunk = await nextChunkPromise
+          try {
+            preloadedChunk = await nextChunkPromise
+            if (preloadedChunk) {
+              console.log(`저장된 결과: 청크 ${i + 2} 미리 로드 완료`)
+            } else {
+              console.warn(`저장된 결과: 청크 ${i + 2} 미리 로드 실패 (null 반환)`)
+            }
+          } catch (err) {
+            console.error(`저장된 결과: 청크 ${i + 2} 미리 로드 중 에러:`, err)
+            preloadedChunk = null
+          }
         }
       }
 
-      console.log('모든 청크 재생 완료')
+      console.log('저장된 결과: 모든 청크 재생 완료')
       setPlayingResultId(null)
       currentAudioRef.current = null
     } catch (error: any) {
@@ -1527,10 +1662,17 @@ function ResultContent() {
                   stopAndResetAudio();
                 });
 
-                // HTML에서 텍스트 추출
+                // HTML에서 텍스트 추출 (테이블 제외)
                 function extractTextFromHtml(htmlString) {
                   const tempDiv = document.createElement('div');
                   tempDiv.innerHTML = htmlString;
+                  
+                  // 테이블 요소 제거 (manse-ryeok-table 클래스를 가진 테이블 및 모든 table 요소)
+                  const tables = tempDiv.querySelectorAll('table, .manse-ryeok-table');
+                  tables.forEach(function(table) {
+                    table.remove();
+                  });
+                  
                   return tempDiv.textContent || tempDiv.innerText || '';
                 }
 
@@ -1703,10 +1845,21 @@ function ResultContent() {
                         const url = URL.createObjectURL(audioBlob);
                         const audio = new Audio(url);
                         
-                        // 오디오가 로드될 때까지 대기
+                        // 오디오가 로드될 때까지 대기 (타임아웃 추가)
                         await new Promise((resolve, reject) => {
-                          audio.oncanplaythrough = () => resolve();
-                          audio.onerror = () => reject(new Error('청크 ' + (chunkIndex + 1) + ' 로드 실패'));
+                          const timeout = setTimeout(function() {
+                            reject(new Error('청크 ' + (chunkIndex + 1) + ' 로드 타임아웃'));
+                          }, 30000); // 30초 타임아웃
+                          
+                          audio.oncanplaythrough = function() {
+                            clearTimeout(timeout);
+                            resolve();
+                          };
+                          audio.onerror = function(e) {
+                            clearTimeout(timeout);
+                            console.error('새 창: 청크 ' + (chunkIndex + 1) + ' 오디오 로드 에러:', e);
+                            reject(new Error('청크 ' + (chunkIndex + 1) + ' 로드 실패'));
+                          };
                           audio.load();
                         });
 
@@ -1774,7 +1927,7 @@ function ResultContent() {
                         currentAudioElement = new Audio(currentUrl);
                       }
 
-                      // 오디오 재생 (Promise로 대기)
+                      // 오디오 재생 (Promise로 대기, 타임아웃 및 에러 처리 개선)
                       await new Promise((resolve, reject) => {
                         // 중지 플래그 재확인
                         if (shouldStop) {
@@ -1785,22 +1938,39 @@ function ResultContent() {
 
                         currentAudio = currentAudioElement; // 현재 오디오 저장
                         
-                        currentAudioElement.onended = () => {
+                        // 타임아웃 설정 (5분)
+                        const timeout = setTimeout(function() {
+                          console.error('새 창: 청크 ' + (i + 1) + ' 재생 타임아웃');
+                          currentAudioElement.pause();
                           URL.revokeObjectURL(currentUrl);
                           currentAudio = null;
+                          reject(new Error('청크 ' + (i + 1) + ' 재생 타임아웃'));
+                        }, 300000); // 5분
+                        
+                        const cleanup = function() {
+                          clearTimeout(timeout);
+                          URL.revokeObjectURL(currentUrl);
+                          currentAudio = null;
+                        };
+                        
+                        currentAudioElement.onended = function() {
+                          console.log('새 창: 청크 ' + (i + 1) + ' 재생 완료');
+                          cleanup();
                           resolve();
                         };
                         
-                        currentAudioElement.onerror = () => {
-                          URL.revokeObjectURL(currentUrl);
-                          currentAudio = null;
-                          reject(new Error('청크 ' + (i + 1) + ' 재생 중 오류가 발생했습니다.'));
+                        currentAudioElement.onerror = function(e) {
+                          console.error('새 창: 청크 ' + (i + 1) + ' 재생 중 오류:', e, currentAudioElement.error);
+                          cleanup();
+                          // 에러가 발생해도 다음 청크로 계속 진행
+                          console.warn('새 창: 청크 ' + (i + 1) + ' 재생 실패, 다음 청크로 진행');
+                          resolve();
                         };
                         
-                        currentAudioElement.onpause = () => {
+                        currentAudioElement.onpause = function() {
                           // 사용자가 일시정지하거나 페이지가 비활성화된 경우
                           if (document.hidden || shouldStop) {
-                            currentAudio = null;
+                            cleanup();
                             isPlaying = false;
                             button.disabled = false;
                             icon.textContent = '🔊';
@@ -1808,12 +1978,28 @@ function ResultContent() {
                           }
                         };
                         
-                        currentAudioElement.play().catch(reject);
+                        currentAudioElement.play().catch(function(err) {
+                          console.error('새 창: 청크 ' + (i + 1) + ' play() 실패:', err);
+                          cleanup();
+                          // play 실패해도 다음 청크로 계속 진행
+                          console.warn('새 창: 청크 ' + (i + 1) + ' play 실패, 다음 청크로 진행');
+                          resolve();
+                        });
                       });
 
                       // 다음 청크 미리 로드 완료 대기 및 저장
                       if (i < chunks.length - 1) {
-                        preloadedChunk = await nextChunkPromise;
+                        try {
+                          preloadedChunk = await nextChunkPromise;
+                          if (preloadedChunk) {
+                            console.log('새 창: 청크 ' + (i + 2) + ' 미리 로드 완료');
+                          } else {
+                            console.warn('새 창: 청크 ' + (i + 2) + ' 미리 로드 실패 (null 반환)');
+                          }
+                        } catch (err) {
+                          console.error('새 창: 청크 ' + (i + 2) + ' 미리 로드 중 에러:', err);
+                          preloadedChunk = null;
+                        }
                       }
 
                       // 중지 플래그 재확인
@@ -1827,7 +2013,9 @@ function ResultContent() {
                     }
 
                     if (!shouldStop) {
-                      console.log('모든 청크 재생 완료');
+                      console.log('새 창: 모든 청크 재생 완료');
+                    } else {
+                      console.log('새 창: 재생이 중지되었습니다');
                     }
                     isPlaying = false;
                     shouldStop = false;
@@ -2233,6 +2421,8 @@ function ResultContent() {
         menuTitle={questionPopup.menuTitle}
         subtitles={questionPopup.subtitles}
         onQuestionSubmit={handleQuestionSubmit}
+        usedQuestions={usedQuestionCounts[questionPopup.menuTitle] || 0}
+        maxQuestions={MAX_QUESTIONS}
       />
       
       {/* 동적 스타일 주입 */}

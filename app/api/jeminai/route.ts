@@ -168,13 +168,14 @@ ${!hasManseRyeokData ? `
 ---
 # 🛑 분석 절차 (반드시 순서대로 수행할 것)
 
-**STEP 1: 데이터 검증 (Copy & Paste)**
-- 가장 먼저 위 [입력 데이터]에 적힌 년주/월주/일주/시주를 그대로 복사하여 출력하세요.
-- "분석 대상 명식: [연주] [월주] [일주] [시주]" 형식으로 시작하세요.
+**STEP 1: 데이터 검증 (내부 확인만)**
+- 위 [입력 데이터]에 적힌 년주/월주/일주/시주를 확인하되, 출력하지 마세요.
+- 내부적으로만 기억하고 바로 해석으로 넘어가세요.
+- "분석 대상 명식: ..." 같은 텍스트를 출력하지 마세요.
 - 생년월일을 다시 계산하거나 다른 글자를 가져오지 마세요.
 
 **STEP 2: 글자 기반 팩트 추출**
-- STEP 1에서 출력한 글자들만 사용하여 합(合), 충(沖), 형(刑), 공망 여부 등 팩트만 나열하세요. (해석 금지)
+- STEP 1에서 확인한 글자들만 사용하여 합(合), 충(沖), 형(刑), 공망 여부 등 팩트만 나열하세요. (해석 금지)
 
 **STEP 3: 심층 해석**
 - STEP 2에서 뽑은 팩트를 근거로 해석하세요.
@@ -360,10 +361,19 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
           }
           
           // 소제목과 본문 사이의 공백 제거
-          // </h3 class="subtitle-title"> 태그와 <div class="subtitle-content"> 사이의 모든 공백 문자(줄바꿈, 스페이스, 탭 등) 제거
-          cleanHtml = cleanHtml.replace(/(<\/h3[^>]*class="subtitle-title"[^>]*>)\s+/g, '$1')
-          // 일반 </h3> 태그 뒤의 공백도 제거 (혹시 모를 경우 대비)
-          cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content")/g, '$1$2')
+          // </h3> 태그와 <div class="subtitle-content"> 사이의 모든 공백 문자(줄바꿈, 스페이스, 탭 등) 제거
+          // 전역적으로 교체하기 위해 replaceAll 대신 정규식을 사용
+          // 방법 1: 소제목 닫는 태그 뒤의 공백 제거
+          cleanHtml = cleanHtml.replace(/(<\/h3>)\s+(<div class="subtitle-content">)/g, '$1$2')
+          // 방법 2: 구체적인 클래스명이 있는 경우도 처리
+          cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content"[^>]*>)/g, '$1$2')
+          // 방법 3: 태그 사이의 줄바꿈 문자 제거 (전체 HTML에서 불필요한 줄바꿈 제거)
+          // 주의: <pre> 태그 등이 없으므로 안전하다고 가정
+          // cleanHtml = cleanHtml.replace(/>\s+</g, '><') // 이건 너무 과감할 수 있음
+          
+          // <br> 태그 처리: 불필요한 연속 <br> 제거
+          cleanHtml = cleanHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
+
           
           // ** 문자 제거 (마크다운 강조 표시 제거)
           cleanHtml = cleanHtml.replace(/\*\*/g, '')

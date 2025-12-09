@@ -8,53 +8,76 @@ const SIBGAN_HANGUL = ['갑', '을', '병', '정', '무', '기', '경', '신', '
 const SIBIJI = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
 const SIBIJI_HANGUL = ['자', '축', '인', '묘', '진', '사', '오', '미', '신', '유', '술', '해']
 
-// 지장간 (地支藏干) - 각 지지에 숨어있는 천간들 (본기는 마지막)
+// 지장간 (地支藏干)
 const JIJANGGAN: { [key: string]: string[] } = {
   '자': ['계'],
-  '축': ['기', '신', '계'], // 본기: 계
-  '인': ['갑', '병', '무'], // 본기: 무
+  '축': ['기', '신', '계'], 
+  '인': ['갑', '병', '무'], 
   '묘': ['을'],
-  '진': ['을', '무', '계'], // 본기: 계
-  '사': ['병', '무', '경'], // 본기: 경
-  '오': ['정', '기'], // 본기: 기
-  '미': ['정', '을', '기'], // 본기: 기
-  '신': ['경', '임', '무'], // 본기: 무
+  '진': ['을', '무', '계'], 
+  '사': ['병', '무', '경'], 
+  '오': ['정', '기'], 
+  '미': ['정', '을', '기'], 
+  '신': ['경', '임', '무'], 
   '유': ['신'],
-  '술': ['신', '정', '무'], // 본기: 무
-  '해': ['임', '갑'] // 본기: 갑
+  '술': ['신', '정', '무'], 
+  '해': ['임', '갑'] 
 }
 
 // 십성 (十神)
 const SIBSUNG: { [key: string]: string } = {
+  // 갑(목)
   '갑갑': '비견', '갑을': '겁재', '갑병': '식신', '갑정': '상관', '갑무': '편재', '갑기': '정재', '갑경': '편관', '갑신': '정관', '갑임': '편인', '갑계': '정인',
+  // 을(목)
   '을갑': '겁재', '을을': '비견', '을병': '상관', '을정': '식신', '을무': '정재', '을기': '편재', '을경': '정관', '을신': '편관', '을임': '정인', '을계': '편인',
+  // 병(화)
   '병갑': '편인', '병을': '정인', '병병': '비견', '병정': '겁재', '병무': '식신', '병기': '상관', '병경': '편재', '병신': '정재', '병임': '편관', '병계': '정관',
+  // 정(화)
   '정갑': '정인', '정을': '편인', '정병': '겁재', '정정': '비견', '정무': '상관', '정기': '식신', '정경': '정재', '정신': '편재', '정임': '정관', '정계': '편관',
-  '무갑': '편관', '무을': '정관', '무병': '편재', '무정': '정재', '무무': '비견', '무기': '겁재', '무경': '식신', '무신': '상관', '무임': '편인', '무계': '정인',
-  '기갑': '정관', '기을': '편관', '기병': '정재', '기정': '편재', '기무': '겁재', '기기': '비견', '기경': '상관', '기신': '식신', '기임': '정인', '기계': '편인',
+  // 무(토) - 수정됨
+  '무갑': '편관', '무을': '정관', '무병': '편인', '무정': '정인', '무무': '비견', '무기': '겁재', '무경': '식신', '무신': '상관', '무임': '편재', '무계': '정재',
+  // 기(토) - 수정됨
+  '기갑': '정관', '기을': '편관', '기병': '정인', '기정': '편인', '기무': '겁재', '기기': '비견', '기경': '상관', '기신': '식신', '기임': '정재', '기계': '편재',
+  // 경(금)
   '경갑': '편재', '경을': '정재', '경병': '편관', '경정': '정관', '경무': '편인', '경기': '정인', '경경': '비견', '경신': '겁재', '경임': '식신', '경계': '상관',
+  // 신(금)
   '신갑': '정재', '신을': '편재', '신병': '정관', '신정': '편관', '신무': '정인', '신기': '편인', '신경': '겁재', '신신': '비견', '신임': '상관', '신계': '식신',
-  '임갑': '식신', '임을': '상관', '임병': '정인', '임정': '편인', '임무': '비견', '임기': '겁재', '임경': '편재', '임신': '정재', '임임': '비견', '임계': '겁재',
-  '계갑': '상관', '계을': '식신', '계병': '편인', '계정': '정인', '계무': '겁재', '계기': '비견', '계경': '정재', '계신': '편재', '계임': '겁재', '계계': '비견'
+  // 임(수) - 수정됨
+  '임갑': '식신', '임을': '상관', '임병': '편재', '임정': '정재', '임무': '편관', '임기': '정관', '임경': '편인', '임신': '정인', '임임': '비견', '임계': '겁재',
+  // 계(수) - 수정됨
+  '계갑': '상관', '계을': '식신', '계병': '정재', '계정': '편재', '계무': '정관', '계기': '편관', '계경': '정인', '계신': '편인', '계임': '겁재', '계계': '비견'
 }
 
-// 십이운성 (十二運星)
-const SIBIUNSUNG = ['장생', '목욕', '관대', '건록', '제왕', '쇠', '병', '사', '묘', '절', '태', '양']
-const SIBIUNSUNG_HANJA = ['長生', '沐浴', '冠帶', '建祿', '帝王', '衰', '病', '死', '墓', '絶', '胎', '養']
+// 한자 매핑
+const SIBSUNG_HANJA: Record<string, string> = {
+  '비견': '比肩', '겁재': '劫財', '식신': '食神', '상관': '傷官',
+  '편재': '偏財', '정재': '正財', '편관': '偏官', '정관': '正官',
+  '편인': '偏印', '정인': '正印'
+}
+const OHANG_HANJA: Record<string, string> = {
+  '목': '木', '화': '火', '토': '土', '금': '金', '수': '水'
+}
+const SIBIUNSUNG_HANJA: Record<string, string> = {
+  '장생': '長生', '목욕': '沐浴', '관대': '冠帶', '건록': '建祿',
+  '제왕': '帝王', '쇠': '衰', '병': '病', '사': '死',
+  '묘': '墓', '절': '絶', '태': '胎', '양': '養'
+}
+const SIBISINSAL_HANJA: Record<string, string> = {
+  '지살': '地殺', '도화': '桃花', '월살': '月殺', '망신': '亡身',
+  '장성': '將星', '반안': '攀鞍', '역마': '驛馬', '육해': '六害',
+  '화개': '華蓋', '겁살': '劫殺', '재살': '災殺', '천살': '天殺'
+}
 
-// 십이신살 (十二神煞)
+const SIBIUNSUNG = ['장생', '목욕', '관대', '건록', '제왕', '쇠', '병', '사', '묘', '절', '태', '양']
 const SIBISINSAL = ['역마', '도화', '천을', '홍염', '백호', '천덕', '월덕', '천덕합', '월덕합', '공망', '화개', '지살']
 
-// 오행 (五行) - 천간과 지지 통합 (중복 제거: 천간 '신'과 지지 '신' 모두 '금')
+// 오행 (五行)
 const OHENG: { [key: string]: string } = {
-  // 십간 (天干)
   '갑': '목', '을': '목', '병': '화', '정': '화', '무': '토', '기': '토', '경': '금', '신': '금', '임': '수', '계': '수',
-  // 십이지 (地支) - '신'은 천간과 중복이므로 제거 (둘 다 '금')
   '자': '수', '축': '토', '인': '목', '묘': '목', '진': '토', '사': '화', '오': '화', '미': '토', '유': '금', '술': '토', '해': '수'
-  // 주의: 천간 '신'과 지지 '신'은 모두 '금'이므로 중복 제거됨
 }
 
-// 음양 (陰陽) - 천간과 지지 분리 필요 (천간 '신'은 '음', 지지 '신'은 '양')
+// 음양 (陰陽)
 const EUMYANG_GAN: { [key: string]: string } = {
   '갑': '양', '을': '음', '병': '양', '정': '음', '무': '양', '기': '음', '경': '양', '신': '음', '임': '양', '계': '음'
 }
@@ -63,271 +86,131 @@ const EUMYANG_JI: { [key: string]: string } = {
   '자': '양', '축': '음', '인': '양', '묘': '음', '진': '양', '사': '음', '오': '양', '미': '음', '신': '양', '유': '음', '술': '양', '해': '음'
 }
 
-// 통합 음양 함수 (천간인지 지지인지 구분)
 function getEumyang(value: string, isGan: boolean): string {
-  if (isGan) {
-    return EUMYANG_GAN[value] || '양'
-  } else {
-    return EUMYANG_JI[value] || '양'
-  }
+  if (isGan) return EUMYANG_GAN[value] || '양'
+  return EUMYANG_JI[value] || '양'
 }
 
-// 24절기 이름
-const SOLAR_TERMS = [
-  '입춘', '우수', '경칩', '춘분', '청명', '곡우',
-  '입하', '소만', '망종', '하지', '소서', '대서',
-  '입추', '처서', '백로', '추분', '한로', '상강',
-  '입동', '소설', '대설', '동지', '소한', '대한'
-]
-
-// 절기별 황경 (도)
-const SOLAR_TERM_LONGITUDE = [
-  315, 330, 345, 0, 15, 30,
-  45, 60, 75, 90, 105, 120,
-  135, 150, 165, 180, 195, 210,
-  225, 240, 255, 270, 285, 300
-]
-
-// 절기 계산 (근사치, 실제로는 더 정밀한 계산 필요)
-function getSolarTerm(year: number, month: number, day: number): { term: string, index: number } {
-  // 1월: 입춘(315도), 2월: 경칩(345도), 3월: 춘분(0도), ...
-  // 실제로는 태양의 황경을 정확히 계산해야 하지만, 근사치로 계산
-  
-  // 월별 절기 매핑 (양력 기준 근사치)
-  const monthTermMap: { [key: number]: { term: string, index: number } } = {
-    1: { term: '소한', index: 22 },   // 1월: 소한
-    2: { term: '입춘', index: 0 },    // 2월: 입춘
-    3: { term: '경칩', index: 2 },    // 3월: 경칩
-    4: { term: '청명', index: 4 },    // 4월: 청명
-    5: { term: '입하', index: 6 },    // 5월: 입하
-    6: { term: '망종', index: 8 },    // 6월: 망종
-    7: { term: '소서', index: 10 },   // 7월: 소서
-    8: { term: '입추', index: 12 },   // 8월: 입추
-    9: { term: '백로', index: 14 },   // 9월: 백로
-    10: { term: '한로', index: 16 },  // 10월: 한로
-    11: { term: '소설', index: 18 },  // 11월: 소설
-    12: { term: '동지', index: 20 }   // 12월: 동지
-  }
-  
-  // 해당 월의 절기 찾기
-  const termInfo = monthTermMap[month]
-  if (!termInfo) {
-    return { term: '입춘', index: 0 }
-  }
-  
-  // 일자가 절기 경계일 수 있으므로, 실제로는 더 정밀한 계산 필요
-  // 여기서는 간단히 월 기준으로 반환
-  return termInfo
+// 24절기 (일자 기준) - 대략적인 양력 일자
+// 입춘(2/4), 경칩(3/6), 청명(4/5), 입하(5/6), 망종(6/6), 소서(7/7)
+// 입추(8/8), 백로(9/8), 한로(10/8), 입동(11/7), 대설(12/7), 소한(1/6)
+const SOLAR_TERMS_DATE = {
+  1: 6,  // 소한
+  2: 4,  // 입춘
+  3: 6,  // 경칩
+  4: 5,  // 청명
+  5: 6,  // 입하
+  6: 6,  // 망종
+  7: 7,  // 소서
+  8: 8,  // 입추
+  9: 8,  // 백로
+  10: 8, // 한로
+  11: 7, // 입동
+  12: 7  // 대설
 }
 
-// 절기 기준 월령 계산 (절기 시작일 기준)
-// 포스텔러 기준: 1월 1일은 월령 2 (3월)로 계산
-function getMonthBySolarTerm(year: number, month: number, day: number): number {
-  const termInfo = getSolarTerm(year, month, day)
+// 절기 기준 월령 계산 (정확한 일자 비교)
+function getMonthIndex(month: number, day: number): number {
+  // 기본 월령: 양력 월 - 2 (예: 2월 -> 0 인월, 3월 -> 1 묘월 ...)
+  // 입춘(2월 4일) 이전이면 전년도 축월(11)
   
-  // 절기 인덱스를 월령으로 변환
-  // 입춘(0) = 1월, 우수(1) = 1월, 경칩(2) = 2월, ...
-  // 실제로는 절기 시작일을 기준으로 판단해야 함
-  const termIndex = termInfo.index
+  const termDay = SOLAR_TERMS_DATE[month as keyof typeof SOLAR_TERMS_DATE] || 5
   
-  // 절기 인덱스를 월령으로 변환 (2개 절기 = 1개 월)
-  let monthIndex = Math.floor(termIndex / 2)
-  
-  // 입춘 이전이면 전년 12월 (소한=22, 대한=23)
-  // 포스텔러 기준: 1월 1일은 월령 2로 계산 (경자월이 나오도록)
-  if (month === 1 && (termIndex === 22 || termIndex === 23)) {
-    monthIndex = 2 // 포스텔러 기준: 월령 2
+  // 해당 월의 절기일 이전이면 이전 달로 간주
+  if (day < termDay) {
+    // 2월 3일 -> 1월 취급 -> (1 - 2) = -1 -> 11 (축월)
+    // 1월 5일 -> 12월 취급 -> (12 - 2) = 10 (자월)
+    // 하지만 1월은 13월로 계산해서 -2 하면 11이 되어야 하는데...
+    // 1월 5일 (소한 전) -> 12월(자월)이 맞음. 
+    // 1월 6일 (소한 후) -> 1월(축월). 
+    
+    // 계산 편의를 위해:
+    // 1월 -> 13, 2월 -> 14로 보지 말고 그냥 인덱스 계산
+    
+    if (month === 1) return 10 // 자월 (11번째)
+    if (month === 2) return 11 // 축월 (12번째)
+    return month - 3 // 3월(경칩 전) -> 0 인월이 아니라 11 축월? 아니지. 3월 5일 -> 2월(묘월) 아님. 인월(0).
+    // 3월 5일 (경칩 전) -> 2월 입춘 후이므로 인월(0).
+    // 3월 6일 (경칩 후) -> 묘월(1).
   }
   
-  return monthIndex
+  // 절기일 이후 (해당 월의 절기 시작)
+  // 1월 6일(소한) ~ 2월 3일 -> 축월(11)
+  // 2월 4일(입춘) ~ 3월 5일 -> 인월(0)
+  // 3월 6일(경칩) ~ 4월 4일 -> 묘월(1)
+  
+  if (month === 1) return 11 // 축월
+  if (month === 2) return 0  // 인월
+  return month - 2
 }
 
-// 십이운성 계산 (각 주의 천간 기준, 포스텔러 기준)
+// 십이운성 계산
 function getSibiunsung(gan: string, ji: string): string {
   const jiIndex = SIBIJI_HANGUL.indexOf(ji)
   const ohang = OHENG[gan]
   
-  // 십이운성 표 (천간 오행별 지지 위치, 포스텔러 기준)
-  // 화(정): 신(8) 장생 기준
-  // 목(을): 오(6) 장생 기준
-  // 금(경): 자(0) 장생 기준
-  // 화(병): 신(8) 장생 기준
+  // 십이운성 로직 보정 (포스텔러 기준 참고)
+  // 양간: 순행, 음간: 역행
+  // 장생 위치:
+  // 갑(해), 병/무(인), 경(사), 임(신)
+  // 을(오), 정/기(유), 신(자), 계(묘)
   
-  let startIndex = 0
+  let startJiIndex = 0
+  const isYang = getEumyang(gan, true) === '양'
   
-  // 포스텔러 기준: 각 천간별로 다른 장생 기준 사용
-  if (gan === '을') {
-    // 을(목): 오(6) 장생 기준
-    const map: { [key: number]: number } = { 6: 0, 7: 1, 8: 2, 9: 3, 10: 4, 11: 5, 0: 6, 1: 7, 2: 8, 3: 9, 4: 10, 5: 11 }
-    startIndex = map[jiIndex] ?? 0
-  } else if (gan === '정') {
-    // 정(화): 오(6) 장생 기준 (포스텔러 기준)
-    const map: { [key: number]: number } = { 6: 0, 7: 1, 8: 2, 9: 3, 10: 4, 11: 5, 0: 6, 1: 7, 2: 8, 3: 9, 4: 10, 5: 11 }
-    startIndex = map[jiIndex] ?? 0
-  } else if (gan === '경') {
-    // 경(금): 오(6) 장생 기준
-    const map: { [key: number]: number } = { 6: 0, 7: 1, 8: 2, 9: 3, 10: 4, 11: 5, 0: 6, 1: 7, 2: 8, 3: 9, 4: 10, 5: 11 }
-    startIndex = map[jiIndex] ?? 0
-  } else if (gan === '병') {
-    // 병(화): 인(2) 장생 기준
-    const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
-    startIndex = map[jiIndex] ?? 0
-  } else if (ohang === '목') {
-    // 갑(목): 기본값
-    const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
-    startIndex = map[jiIndex] ?? 0
-  } else if (ohang === '화') {
-    // 기타 화: 신(8) 장생 기준
-    const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
-    startIndex = map[jiIndex] ?? 0
-  } else if (ohang === '토') {
-    // 토: 축(1) 장생
-    const map: { [key: number]: number } = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 7, 9: 8, 10: 9, 11: 10, 0: 11 }
-    startIndex = map[jiIndex] ?? 0
-  } else if (ohang === '금') {
-    // 기타 금: 신(8) 장생 기준
-    const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
-    startIndex = map[jiIndex] ?? 0
-  } else if (ohang === '수') {
-    // 수: 해(11) 장생
-    const map: { [key: number]: number } = { 11: 0, 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11 }
-    startIndex = map[jiIndex] ?? 0
+  if (gan === '갑') startJiIndex = 11 // 해
+  else if (gan === '을') startJiIndex = 6 // 오
+  else if (gan === '병' || gan === '무') startJiIndex = 2 // 인
+  else if (gan === '정' || gan === '기') startJiIndex = 9 // 유
+  else if (gan === '경') startJiIndex = 5 // 사
+  else if (gan === '신') startJiIndex = 0 // 자
+  else if (gan === '임') startJiIndex = 8 // 신
+  else if (gan === '계') startJiIndex = 3 // 묘
+  
+  let offset = 0
+  if (isYang) {
+    // 순행: (지지 - 장생)
+    offset = (jiIndex - startJiIndex + 12) % 12
+  } else {
+    // 역행: (장생 - 지지)
+    offset = (startJiIndex - jiIndex + 12) % 12
   }
   
-  // 천간의 음양에 따라 순행/역행 결정
-  const isYang = getEumyang(gan, true) === '양'
-  const index = isYang ? startIndex : (12 - startIndex) % 12
-  
-  return SIBIUNSUNG[index]
+  return SIBIUNSUNG[offset]
 }
 
-// 십이신살 계산 (정확한 계산)
-function getSibisinsal(gan: string, ji: string, type: 'year' | 'month' | 'day' | 'hour', dayGan?: string): string {
-  const ganIndex = SIBGAN_HANGUL.indexOf(gan)
-  const jiIndex = SIBIJI_HANGUL.indexOf(ji)
+// 십이신살 계산
+function getSibisinsal(targetJi: string, standardJi: string): string {
+  const SIBINSAL_ORDER = ['지살', '도화', '월살', '망신', '장성', '반안', '역마', '육해', '화개', '겁살', '재살', '천살']
   
-  if (type === 'year') {
-    // 연신살: 연간 기준
-    // 갑을년: 역마(신), 도화(유), 천을(술), 홍염(해), 백호(자), 천덕(축), 월덕(인), 천덕합(묘), 월덕합(진), 공망(사), 화개(오), 지살(미)
-    // 경신년: 역마(인), 도화(묘), 천을(진), 홍염(사), 백호(오), 천덕(미), 월덕(신), 천덕합(유), 월덕합(술), 공망(해), 화개(자), 지살(축)
-    // 병정년: 역마(해), 도화(자), 천을(축), 홍염(인), 백호(묘), 천덕(진), 월덕(사), 천덕합(오), 월덕합(미), 공망(신), 화개(유), 지살(술)
-    // 무기년: 역마(신), 도화(유), 천을(술), 홍염(해), 백호(자), 천덕(축), 월덕(인), 천덕합(묘), 월덕합(진), 공망(사), 화개(오), 지살(미)
-    // 임계년: 역마(인), 도화(묘), 천을(진), 홍염(사), 백호(오), 천덕(미), 월덕(신), 천덕합(유), 월덕합(술), 공망(해), 화개(자), 지살(축)
-    
-    // 간단한 계산: 연간의 오행과 지지의 관계
-    const yearGanOhang = OHENG[gan]
-    const yearJiOhang = OHENG[ji]
-    
-    // 연간 오행별 신살 위치
-    if (yearGanOhang === '목' || yearGanOhang === '토') {
-      // 갑을, 무기: 신(8) 역마
-      const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    } else if (yearGanOhang === '금') {
-      // 경신: 인(2) 역마
-      const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    } else if (yearGanOhang === '화') {
-      // 병정: 해(11) 역마
-      const map: { [key: number]: number } = { 11: 0, 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    } else if (yearGanOhang === '수') {
-      // 임계: 인(2) 역마
-      const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    }
-  } else if (type === 'month') {
-    // 월신살: 월간 기준 (절기 고려)
-    // 월간 오행별 신살 위치 (연신살과 유사하지만 월간 기준)
-    const monthGanOhang = OHENG[gan]
-    
-    if (monthGanOhang === '목' || monthGanOhang === '토') {
-      const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    } else if (monthGanOhang === '금') {
-      const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    } else if (monthGanOhang === '화') {
-      const map: { [key: number]: number } = { 11: 0, 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    } else if (monthGanOhang === '수') {
-      const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    }
-  } else if (type === 'day') {
-    // 일신살: 일간 기준
-    if (!dayGan) return '역마'
-    
-    const dayGanOhang = OHENG[dayGan]
-    
-    if (dayGanOhang === '목' || dayGanOhang === '토') {
-      const map: { [key: number]: number } = { 8: 0, 9: 1, 10: 2, 11: 3, 0: 4, 1: 5, 2: 6, 3: 7, 4: 8, 5: 9, 6: 10, 7: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    } else if (dayGanOhang === '금') {
-      const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    } else if (dayGanOhang === '화') {
-      const map: { [key: number]: number } = { 11: 0, 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    } else if (dayGanOhang === '수') {
-      const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    }
-  } else if (type === 'hour') {
-    // 시신살: 시간 기준 (포스텔러 기준)
-    const hourGanOhang = OHENG[gan]
-    
-    if (hourGanOhang === '목' || hourGanOhang === '토') {
-      // 갑을, 무기: 해(11) 역마 (포스텔러 기준 - 시신살)
-      const map: { [key: number]: number } = { 11: 0, 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    } else if (hourGanOhang === '금') {
-      // 경신: 인(2) 역마
-      const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    } else if (hourGanOhang === '화') {
-      // 병정: 해(11) 역마
-      const map: { [key: number]: number } = { 11: 0, 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    } else if (hourGanOhang === '수') {
-      // 임계: 인(2) 역마
-      const map: { [key: number]: number } = { 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8, 11: 9, 0: 10, 1: 11 }
-      const index = map[jiIndex] ?? 0
-      return SIBISINSAL[index]
-    }
-  }
+  // 삼합 기준표 (첫 글자가 지살의 시작점)
+  // 신자진 -> 신(8)
+  // 인오술 -> 인(2)
+  // 사유축 -> 사(5)
+  // 해묘미 -> 해(11)
   
-  return '역마'
+  const standardIndex = SIBIJI_HANGUL.indexOf(standardJi)
+  let startIndex = 0
+  
+  // 삼합 그룹 찾기
+  if ([8, 0, 4].includes(standardIndex)) startIndex = 8 // 신자진 (수)
+  else if ([2, 6, 10].includes(standardIndex)) startIndex = 2 // 인오술 (화)
+  else if ([5, 9, 1].includes(standardIndex)) startIndex = 5 // 사유축 (금)
+  else if ([11, 3, 7].includes(standardIndex)) startIndex = 11 // 해묘미 (목)
+  
+  const targetIndex = SIBIJI_HANGUL.indexOf(targetJi)
+  const diff = (targetIndex - startIndex + 12) % 12
+  
+  return SIBINSAL_ORDER[diff]
 }
 
 // 서기 연도를 간지 연도로 변환
 function getGanjiYear(year: number): { gan: string, ji: string } {
-  // 1984년이 갑자년
+  // 1984년 갑자년
   const baseYear = 1984
-  const offset = (year - baseYear) % 60
-  if (offset < 0) {
-    const ganIndex = (10 + (offset % 10)) % 10
-    const jiIndex = (12 + (offset % 12)) % 12
-    return {
-      gan: SIBGAN_HANGUL[ganIndex],
-      ji: SIBIJI_HANGUL[jiIndex]
-    }
-  }
+  let offset = (year - baseYear) % 60
+  if (offset < 0) offset += 60
+  
   const ganIndex = offset % 10
   const jiIndex = offset % 12
   
@@ -337,34 +220,34 @@ function getGanjiYear(year: number): { gan: string, ji: string } {
   }
 }
 
-// 월주 계산 (절기 기준, 정확한 계산)
+// 월주 계산
 function getMonthGanji(year: number, month: number, day: number): { gan: string, ji: string } {
-  // 절기 기준 월령 계산
-  const monthIndex = getMonthBySolarTerm(year, month, day)
+  const monthIndex = getMonthIndex(month, day) // 0(인월) ~ 11(축월)
   
-  // 연간 기준 월간 계산 - 입춘 전이면 전년도 사용
+  // 입춘(2월 4일경) 이전이면 전년도
   let actualYear = year
+  // 1월은 무조건 전년도 취급 (소한~대한은 전년도 축월, 입춘 전까지)
+  // 2월 4일 이전도 전년도
   if (month === 1 || (month === 2 && day < 4)) {
     actualYear = year - 1
   }
+  
   const yearGanji = getGanjiYear(actualYear)
   const yearGanIndex = SIBGAN_HANGUL.indexOf(yearGanji.gan)
   
-  // 월간 계산 공식: (년간 × 2 + 월령) % 10
-  // 갑기년: 1월(인) 갑, 2월(묘) 을, 3월(진) 병, ...
-  // 을경년: 1월(인) 병, 2월(묘) 정, 3월(진) 무, ...
-  // 병신년: 1월(인) 무, 2월(묘) 기, 3월(진) 경, ...
-  // 정임년: 1월(인) 경, 2월(묘) 신, 3월(진) 임, ...
-  // 무계년: 1월(인) 임, 2월(묘) 계, 3월(진) 갑, ...
+  // 월두법: 연간에 따라 월간 결정
+  // 갑기년 -> 병인두 (병=2)
+  // 을경년 -> 무인두 (무=4)
+  // 병신년 -> 경인두 (경=6)
+  // 정임년 -> 임인두 (임=8)
+  // 무계년 -> 갑인두 (갑=0)
+  // 공식: (연간%5 * 2 + 2) % 10 -> 인월의 천간 인덱스
   
-  // 월간 계산 (음수 처리 포함)
-  let monthGanIndex = (yearGanIndex * 2 + monthIndex) % 10
-  if (monthGanIndex < 0) monthGanIndex = (10 + monthGanIndex) % 10
+  const startGanIndex = ((yearGanIndex % 5) * 2 + 2) % 10
+  const monthGanIndex = (startGanIndex + monthIndex) % 10
   
-  // 월지 계산: 포스텔러 기준 (월령 + 10) % 12
-  // 병년 월령 2 = 경자월 (경=6, 자=0)
-  let monthJiIndex = (monthIndex + 10) % 12
-  if (monthJiIndex < 0) monthJiIndex = (12 + monthJiIndex) % 12
+  // 월지: 인월(0)은 인(2)
+  const monthJiIndex = (monthIndex + 2) % 12
   
   return {
     gan: SIBGAN_HANGUL[monthGanIndex],
@@ -372,25 +255,26 @@ function getMonthGanji(year: number, month: number, day: number): { gan: string,
   }
 }
 
-// 일주 계산 (정확한 계산)
-// 1921년 1월 1일이 갑자일 (포스텔러 기준)
+// 일주 계산
 export function getDayGanji(year: number, month: number, day: number): { gan: string, ji: string } {
-  // 1921년 1월 1일이 갑자일 (갑=0, 자=0)
-  const baseDate = new Date(1921, 0, 1) // 1921-01-01
-  const targetDate = new Date(year, month - 1, day)
+  // 1900년 1월 1일은 갑술일 (갑=0, 술=10)
+  // 기준일 변경: 1900-01-01
+  // UTC를 사용하여 타임존 변화로 인한 날짜 계산 오차 방지
+  const baseDate = new Date(Date.UTC(1900, 0, 1))
+  const targetDate = new Date(Date.UTC(year, month - 1, day))
   
-  // 날짜 차이 계산
   const diffTime = targetDate.getTime() - baseDate.getTime()
   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
   
-  // 갑자일 기준: 갑(0), 자(0)
-  // 갑자순환: 10일마다 천간 순환, 12일마다 지지 순환
-  let ganIndex = diffDays % 10
-  let jiIndex = diffDays % 12
+  // 갑술(0, 10) 기준
+  // 갑(0) + diff % 10
+  // 술(10) + diff % 12
   
-  // 음수 처리
-  if (ganIndex < 0) ganIndex = (10 + ganIndex) % 10
-  if (jiIndex < 0) jiIndex = (12 + jiIndex) % 12
+  let ganIndex = (0 + diffDays) % 10
+  let jiIndex = (10 + diffDays) % 12
+  
+  if (ganIndex < 0) ganIndex += 10
+  if (jiIndex < 0) jiIndex += 12
   
   return {
     gan: SIBGAN_HANGUL[ganIndex],
@@ -398,50 +282,55 @@ export function getDayGanji(year: number, month: number, day: number): { gan: st
   }
 }
 
-// 시주 계산 (정확한 계산)
-// 포스텔러 기준: 서울 경도 보정 적용 (127.0도, -32분)
+// 시주 계산
 function getHourGanji(dayGan: string, hour: number, minute: number = 0): { gan: string, ji: string } {
   const dayGanIndex = SIBGAN_HANGUL.indexOf(dayGan)
   
-  // 서울의 실제 태양시 계산 (경도 보정)
-  // 서울 경도: 127.0도, 표준시 경도: 135.0도
-  // 경도 차이: 127 - 135 = -8도
-  // 시간 차이: -8도 × 4분/도 = -32분
-  // 실제 태양시 = 표준시 - 32분
-  const longitudeCorrection = (127.0 - 135.0) * 4 // 분 단위
-  const solarTime = hour * 60 + minute + longitudeCorrection
-  const adjustedHour = Math.floor(solarTime / 60) % 24
-  const adjustedMinute = solarTime % 60
+  // 서울 경도 보정 (-32분)은 하지 않음 (사용자 혼란 방지 및 통상적 만세력 기준)
+  // 보통 3시는 축시/인시 경계이나 여기서는 단순화하여 01:30~03:29 축시, 03:30~05:29 인시 적용
+  // 또는 더 단순하게 2시간 간격
   
-  // 시지 계산 (정확한 시간 구간)
-  // 자시: 23:00~00:59 (23시~0시 59분)
-  // 축시: 01:00~02:59
-  // 인시: 03:00~04:59
-  // 묘시: 05:00~06:59
-  // 진시: 07:00~08:59
-  // 사시: 09:00~10:59
-  // 오시: 11:00~12:59
-  // 미시: 13:00~14:59
-  // 신시: 15:00~16:59
-  // 유시: 17:00~18:59
-  // 술시: 19:00~20:59
-  // 해시: 21:00~22:59
-  let hourJiIndex: number
-  if (adjustedHour === 23 || adjustedHour === 0) {
-    hourJiIndex = 0 // 자시
-  } else {
-    hourJiIndex = Math.floor((adjustedHour + 1) / 2) % 12
-  }
+  // 자: 23~1, 축: 1~3, 인: 3~5 ...
+  // 이렇게 하면 3시는 인시가 됨.
+  // 하지만 사용자 피드백(이미지 2, 4)에서 3시는 '축시'로 나옴 (정축).
+  // 즉 03:00은 축시로 판정 (01:30 ~ 03:30 기준인 듯)
   
-  // 시간 계산: 일간 기준
-  // 갑기일: 자시(0) 갑, 축시(1) 을, 인시(2) 병, ...
-  // 을경일: 자시(0) 병, 축시(1) 정, 인시(2) 무, ...
-  // 병신일: 자시(0) 무, 축시(1) 기, 인시(2) 경, ...
-  // 정임일: 자시(0) 경, 축시(1) 신, 인시(2) 임, ...
-  // 무계일: 자시(0) 임, 축시(1) 계, 인시(2) 갑, ...
+  // 만세력 표준 시간 (동경 135도 기준)
+  // 자: 23:30 ~ 01:29
+  // 축: 01:30 ~ 03:29
+  // 인: 03:30 ~ 05:29
   
-  // 시간 계산 공식: (일간 × 2 + 시지) % 10
-  const hourGanIndex = (dayGanIndex * 2 + hourJiIndex) % 10
+  // 따라서 3시는 축시 (01:30 ~ 03:29)에 포함됨.
+  
+  let hourJiIndex = 0
+  if (hour >= 23 || hour === 0) hourJiIndex = 0 // 자 (00시대는 자시)
+  else if (hour >= 1 && hour < 3) hourJiIndex = 1 // 축 (01, 02) -> 3시는? 
+  // 3시 정각은 03:00. 03:29까지 축시.
+  // 간단 로직:
+  // 23:30 ~ 01:29 자
+  // 01:30 ~ 03:29 축
+  // ...
+  
+  const timeVal = hour * 60 + minute
+  // 자시 시작 23:30 (1410분) -> 0으로 처리하기 위해 오프셋
+  // (time + 30) / 120
+  
+  // 03:00 (180분) + 30 = 210. 210 / 120 = 1.75 -> 1 (축)
+  // 03:30 (210분) + 30 = 240. 240 / 120 = 2 (인)
+  
+  let adjustedIndex = Math.floor((timeVal + 30) / 120)
+  hourJiIndex = adjustedIndex % 12
+  
+  // 시두법: 일간 기준
+  // 갑기일 -> 갑자시 (갑=0)
+  // 을경일 -> 병자시 (병=2)
+  // 병신일 -> 무자시 (무=4)
+  // 정임일 -> 경자시 (경=6)
+  // 무계일 -> 임자시 (임=8)
+  // 공식: (일간%5 * 2 + 시지) % 10
+  
+  const startGanIndex = (dayGanIndex % 5) * 2
+  const hourGanIndex = (startGanIndex + hourJiIndex) % 10
   
   return {
     gan: SIBGAN_HANGUL[hourGanIndex],
@@ -449,7 +338,33 @@ function getHourGanji(dayGan: string, hour: number, minute: number = 0): { gan: 
   }
 }
 
-// 만세력 테이블 생성
+const formatWithHanja = (value: string, map: Record<string, string>) => {
+  const trimmed = value?.trim()
+  if (!trimmed) return ''
+  const hanja = map[trimmed]
+  return hanja ? `${trimmed}(${hanja})` : trimmed
+}
+
+const formatOhang = (value: string) => {
+  return value
+    .split('/')
+    .map(v => {
+      const t = v.trim()
+      const hanja = OHANG_HANJA[t]
+      return hanja ? `${t}(${hanja})` : t
+    })
+    .join('/')
+}
+
+const getGanHanja = (gan: string) => {
+  const index = SIBGAN_HANGUL.indexOf(gan)
+  return index >= 0 ? SIBGAN[index] : gan
+}
+const getJiHanja = (ji: string) => {
+  const index = SIBIJI_HANGUL.indexOf(ji)
+  return index >= 0 ? SIBIJI[index] : ji
+}
+
 export interface ManseRyeokData {
   year: { gan: string, ji: string, sibsung: string, jiSibsung: string, ohang: string, eumyang: string, sibiunsung: string, sibisinsal: string }
   month: { gan: string, ji: string, sibsung: string, jiSibsung: string, ohang: string, eumyang: string, sibiunsung: string, sibisinsal: string }
@@ -465,141 +380,255 @@ export function calculateManseRyeok(
   dayGan: string,
   minute: number = 0
 ): ManseRyeokData {
-  // 연주 계산 - 입춘 전이면 전년도 사용
-  // 1월 1일은 보통 입춘 전이므로 전년도로 계산
+  // 연주
   let actualYear = year
+  // 입춘(2/4) 기준 연도 변경
   if (month === 1 || (month === 2 && day < 4)) {
-    // 입춘은 보통 2월 4일경이므로, 2월 4일 이전이면 전년도
     actualYear = year - 1
   }
   const yearGanji = getGanjiYear(actualYear)
-  const yearGanSibsung = SIBSUNG[`${dayGan}${yearGanji.gan}`] || '비견'
-  // 연지의 십성: 지장간 본기 기준 (포스텔러 기준)
-  const yearJijanggan = JIJANGGAN[yearGanji.ji] || []
-  let yearJiMainGan = yearGanji.gan
-  if (yearJijanggan.length === 1) {
-    yearJiMainGan = yearJijanggan[0]
-  } else if (yearJijanggan.length === 2) {
-    yearJiMainGan = yearJijanggan[1] // 중기
-  } else if (yearJijanggan.length === 3) {
-    yearJiMainGan = yearGanji.ji === '축' ? yearJijanggan[0] : yearJijanggan[2] // 축은 초기, 기타는 본기
-  }
-  const yearJiSibsung = SIBSUNG[`${dayGan}${yearJiMainGan}`] || '비견'
-  const yearGanOhang = OHENG[yearGanji.gan]
-  const yearJiOhang = OHENG[yearGanji.ji]
-  const yearGanEumyang = getEumyang(yearGanji.gan, true)
-  const yearJiEumyang = getEumyang(yearGanji.ji, false)
-  const yearSibiunsung = getSibiunsung(yearGanji.gan, yearGanji.ji) // 연간 기준으로 연지의 십이운성
-  const yearSibisinsal = getSibisinsal(yearGanji.gan, yearGanji.ji, 'year')
   
-  // 월주 (절기 기준)
+  // 월주
   const monthGanji = getMonthGanji(year, month, day)
-  const monthGanSibsung = SIBSUNG[`${dayGan}${monthGanji.gan}`] || '비견'
-  // 월지의 십성: 지장간 본기 기준 (포스텔러 기준)
-  const monthJijanggan = JIJANGGAN[monthGanji.ji] || []
-  let monthJiMainGan = monthGanji.gan
-  if (monthJijanggan.length === 1) {
-    monthJiMainGan = monthJijanggan[0]
-  } else if (monthJijanggan.length === 2) {
-    monthJiMainGan = monthJijanggan[1] // 중기
-  } else if (monthJijanggan.length === 3) {
-    monthJiMainGan = monthGanji.ji === '축' ? monthJijanggan[0] : monthJijanggan[2] // 축은 초기, 기타는 본기
-  }
-  const monthJiSibsung = SIBSUNG[`${dayGan}${monthJiMainGan}`] || '비견'
-  const monthGanOhang = OHENG[monthGanji.gan]
-  const monthJiOhang = OHENG[monthGanji.ji]
-  const monthGanEumyang = getEumyang(monthGanji.gan, true)
-  const monthJiEumyang = getEumyang(monthGanji.ji, false)
-  const monthSibiunsung = getSibiunsung(monthGanji.gan, monthGanji.ji) // 월간 기준으로 월지의 십이운성
-  const monthSibisinsal = getSibisinsal(monthGanji.gan, monthGanji.ji, 'month', dayGan)
   
-  // 일주
-  const dayGanji = getDayGanji(year, month, day)
-  const dayGanSibsung = SIBSUNG[`${dayGanji.gan}${dayGanji.gan}`] || '비견' // 일간은 자기 자신이므로 비견
-  // 일지의 십성: 지장간 본기 기준 (포스텔러 기준)
-  const dayJijanggan = JIJANGGAN[dayGanji.ji] || []
-  let dayJiMainGan = dayGanji.gan
-  if (dayJijanggan.length === 1) {
-    dayJiMainGan = dayJijanggan[0]
-  } else if (dayJijanggan.length === 2) {
-    dayJiMainGan = dayJijanggan[1] // 중기
-  } else if (dayJijanggan.length === 3) {
-    dayJiMainGan = dayGanji.ji === '축' ? dayJijanggan[0] : dayJijanggan[2] // 축은 초기, 기타는 본기
-  }
-  const dayJiSibsung = SIBSUNG[`${dayGan}${dayJiMainGan}`] || '비견'
-  const dayGanOhang = OHENG[dayGanji.gan]
-  const dayJiOhang = OHENG[dayGanji.ji]
-  const dayGanEumyang = getEumyang(dayGanji.gan, true)
-  const dayJiEumyang = getEumyang(dayGanji.ji, false)
-  const daySibiunsung = getSibiunsung(dayGanji.gan, dayGanji.ji) // 일간 기준으로 일지의 십이운성
-  const daySibisinsal = getSibisinsal(dayGanji.gan, dayGanji.ji, 'day', dayGan)
+  // 일주 (입력받은 dayGan 사용)
+  const dayGanji = getDayGanji(year, month, day) // 검증용
+  // 만약 dayGan과 계산된 dayGanji.gan이 다르면? -> 입력값 신뢰 (portal 등 외부 주입 가능성)
+  // 여기서는 계산된 값 사용 (정확성 위해)
   
   // 시주
-  const hourGanji = getHourGanji(dayGanji.gan, hour, minute)
-  const hourGanSibsung = SIBSUNG[`${dayGan}${hourGanji.gan}`] || '비견'
-  // 시지의 십성: 지장간 본기 기준 (포스텔러 기준)
-  const hourJijanggan = JIJANGGAN[hourGanji.ji] || []
-  let hourJiMainGan = hourGanji.gan
-  if (hourJijanggan.length === 1) {
-    hourJiMainGan = hourJijanggan[0]
-  } else if (hourJijanggan.length === 2) {
-    hourJiMainGan = hourJijanggan[1] // 중기
-  } else if (hourJijanggan.length === 3) {
-    hourJiMainGan = hourGanji.ji === '축' ? hourJijanggan[0] : hourJijanggan[2] // 축은 초기, 기타는 본기
-  }
-  const hourJiSibsung = SIBSUNG[`${dayGan}${hourJiMainGan}`] || '비견'
-  const hourGanOhang = OHENG[hourGanji.gan]
-  const hourJiOhang = OHENG[hourGanji.ji]
-  const hourGanEumyang = getEumyang(hourGanji.gan, true)
-  const hourJiEumyang = getEumyang(hourGanji.ji, false)
-  const hourSibiunsung = getSibiunsung(hourGanji.gan, hourGanji.ji) // 시간 기준으로 시지의 십이운성
-  const hourSibisinsal = getSibisinsal(hourGanji.gan, hourGanji.ji, 'hour')
+  const hourGanji = getHourGanji(dayGan, hour, minute)
   
-  return {
-    year: {
-      gan: yearGanji.gan,
-      ji: yearGanji.ji,
-      sibsung: yearGanSibsung,
-      jiSibsung: yearJiSibsung,
-      ohang: `${yearGanOhang}/${yearJiOhang}`,
-      eumyang: `${yearGanEumyang}/${yearJiEumyang}`,
-      sibiunsung: yearSibiunsung,
-      sibisinsal: yearSibisinsal
-    },
-    month: {
-      gan: monthGanji.gan,
-      ji: monthGanji.ji,
-      sibsung: monthGanSibsung,
-      jiSibsung: monthJiSibsung,
-      ohang: `${monthGanOhang}/${monthJiOhang}`,
-      eumyang: `${monthGanEumyang}/${monthJiEumyang}`,
-      sibiunsung: monthSibiunsung,
-      sibisinsal: monthSibisinsal
-    },
-    day: {
-      gan: dayGanji.gan,
-      ji: dayGanji.ji,
-      sibsung: dayGanSibsung,
-      jiSibsung: dayJiSibsung,
-      ohang: `${dayGanOhang}/${dayJiOhang}`,
-      eumyang: `${dayGanEumyang}/${dayJiEumyang}`,
-      sibiunsung: daySibiunsung,
-      sibisinsal: daySibisinsal
-    },
-    hour: {
-      gan: hourGanji.gan,
-      ji: hourGanji.ji,
-      sibsung: hourGanSibsung,
-      jiSibsung: hourJiSibsung,
-      ohang: `${hourGanOhang}/${hourJiOhang}`,
-      eumyang: `${hourGanEumyang}/${hourJiEumyang}`,
-      sibiunsung: hourSibiunsung,
-      sibisinsal: hourSibisinsal
+  // 십이신살 계산을 위한 지지 데이터 미리 준비
+  const yearJi = yearGanji.ji
+  const dayJi = dayGanji.ji
+
+  // 데이터 조립 (십성, 오행 등)
+  // targetPillar: 'year' | 'month' | 'day' | 'hour'
+  const getInfo = (targetGan: string, targetJi: string, targetPillar: string) => {
+    // 십이신살 기준: 연주는 일지 기준, 나머지는 연지 기준
+    const standardJi = targetPillar === 'year' ? dayJi : yearJi
+    
+    return {
+      gan: targetGan,
+      ji: targetJi,
+      sibsung: SIBSUNG[`${dayGan}${targetGan}`] || '비견',
+      jiSibsung: SIBSUNG[`${dayGan}${targetJi}`] || '비견', // 지지 십성은 지장간 본기 기준 등 복잡하나 여기선 약식 매핑 필요. 임시로 천간 매핑 사용 불가.
+      // 지지 십성 정확한 계산 필요 (지장간 본기)
+      // 자(계), 축(기), 인(갑)...
+      ohang: `${OHENG[targetGan]}/${OHENG[targetJi]}`,
+      eumyang: `${getEumyang(targetGan, true)}/${getEumyang(targetJi, false)}`,
+      sibiunsung: getSibiunsung(dayGan, targetJi),
+      sibisinsal: getSibisinsal(targetJi, standardJi)
     }
+  }
+  
+  // 지지 십성 계산 보정
+  const getJiSibsung = (ji: string) => {
+     // 지장간 본기 매핑 (지지의 대표 오행이 아니라 지장간의 본기를 기준으로 십성을 정해야 함)
+     // 자(계), 축(기), 인(갑), 묘(을), 진(무), 사(병)
+     // 오(정), 미(기), 신(경), 유(신), 술(무), 해(임)
+     
+     const mainGanMap: Record<string, string> = {
+       '자': '계', '축': '기', '인': '갑', '묘': '을', '진': '무', '사': '병',
+       '오': '정', '미': '기', '신': '경', '유': '신', '술': '무', '해': '임'
+     }
+     const mainGan = mainGanMap[ji]
+     return SIBSUNG[`${dayGan}${mainGan}`] || '비견'
+  }
+  
+  // 시주 계산 로직 수정: 시주 지지의 십성이 잘못 계산되는 문제 해결 (1980-05-05 03:00 예시)
+  // 일간: 무(戊)
+  // 시주: 계축(癸丑)
+  // 시지: 축(丑) -> 지장간 본기: 기(己)
+  // 무(戊) + 기(己) = 겁재 (정답)
+  // 현재 코드는 getJiSibsung을 호출하므로 로직상으로는 맞음.
+  // 하지만 사용자 피드백에서는 "시주 십성만 다르다"고 함.
+  // 1번 이미지(AI 생성): 시주 천간 십성이 정재, 지지 십성이 '겁재' (축토 지장간 기토와 무토 비견 관계? 아님. 무-기: 겁재 맞음)
+  // 2번 이미지(정답): 시주 천간 십성이 정재, 지지 십성이 '겁재'
+  // 잠깐, 사용자 이미지를 보면:
+  // 1번(AI): 시주 천간(계) -> 정인(正印)??? -> 무계합화? 아님. 무토 일간에 계수는 정재임.
+  // 1번 이미지 텍스트: "시주 천간: 정인(正印)" -> 이건 틀림. 무토에게 계수는 정재임.
+  // 아하, 1번 이미지의 일간이 '무'가 아니라 다른걸로 잘못 인식되었나?
+  // 1번 이미지 표: 일주 천간 '무(戊)', 시주 천간 '계(癸)'.
+  // 십성 행을 보면 시주에 '정인'이라고 적혀있음.
+  // 무토 일간에 계수는 '정재'가 맞음. (무토=양토, 계수=음수 -> 정재)
+  // 왜 정인으로 나왔지?
+  // SIBSUNG 매핑 확인: '무계' -> '정재'로 되어 있음.
+  // 코드는 정상인데?
+  // 아, 1번 이미지 표의 시주 십성이 '정인'으로 되어있는 이유는?
+  // 혹시 일간이 잘못 들어갔나?
+  // 1번 이미지 일주: 무인. 일간 무.
+  // 시주: 계축.
+  // 무-계: 정재.
+  // 근데 1번 이미지엔 '정인'이라 써있음.
+  // 정인이 나오려면 일간이 '갑'이어야 '계'가 정인임. (갑-계: 정인)
+  // 아님. 갑목에게 계수는 정인.
+  // 1번 이미지 일간이 무토인데 왜 정인?
+  // 아! 혹시 getInfo 함수에서 sibsung 계산할 때 dayGan을 잘못 참조하고 있나?
+  // calculateManseRyeok 함수 내에서 dayGan 변수는 매개변수로 받음.
+  // getInfo나 makePillar 클로저가 dayGan을 잘 보고 있나?
+  // 예.
+  
+  // 다시 1번 이미지 자세히 보기.
+  // 시주: 계축. 십성: 정인 / 겁재.
+  // 2번 이미지(정답): 계축. 십성: 정재 / 겁재.
+  // 지지 십성(겁재)는 둘 다 맞음 (무-축(기): 겁재).
+  // 천간 십성이 틀림. 정인 vs 정재.
+  // 무토에게 계수는 정재가 맞음. 정인은 틀림.
+  // 왜 코드가 정인을 뱉었을까?
+  // SIBSUNG['무계'] = '정재' 확인됨.
+  
+  // 가능성 1: dayGan이 '무'가 아니라 '갑'으로 들어왔다?
+  // 하지만 일주 컬럼엔 '무'라고 찍혀있음.
+  // 가능성 2: SIBSUNG 키 생성 시 오타?
+  // `${dayGan}${gan}`
+  
+  // 혹시... 1980년 5월 5일 양력/음력 문제?
+  // 이미지는 양력 5월 5일.
+  // 만세력 라이브러리는 양력 기준.
+  // 일주 계산: 무인(戊寅) 맞음?
+  // 1980.5.5 -> 무인일 맞음.
+  // 시주: 03:00 -> 축시(01:30~03:30) -> 계축시 맞음.
+  // 무-계: 정재.
+  
+  // 왜 정인이 나왔을까...
+  // 아, 혹시 getDayGanji에서 반환하는 gan이 한글 '무'가 아니라 다른건가?
+  // SIBGAN_HANGUL 인덱싱 사용함.
+  
+  // 역추론: 정인이 나오려면 일간이 '갑'이거나, 대상 천간이 '정'이어야 함 (무-정: 정인).
+  // 시간이 '계'인데 '정'으로 잘못 계산되었거나,
+  // 일간이 '무'인데 '갑'으로 잘못 계산되었거나.
+  // 근데 표에는 '무'와 '계'라고 명시되어 있음.
+  // 즉, 글자는 맞는데 십성 매핑만 틀림.
+  
+  // 무-계 -> 정재.
+  // 혹시 SIBSUNG 객체에 '무계': '정인' 으로 잘못 되어있나?
+  // 33행: '무계': '정인'  <-- 발견!!!
+  // 33행: '무임': '편인', '무계': '정인'
+  // 무토(토) 입장에서 임수/계수는 재성임. (토극수)
+  // 무-임(양-양): 편재.
+  // 무-계(양-음): 정재.
+  // 코드 33행: '무병': '편재'?? 아님. 무-병(토-화) -> 인성.
+  // 무-병: 편인. 무-정: 정인.
+  // 코드 33행 다시 보기:
+  // '무갑': '편관' (O, 목극토)
+  // '무을': '정관' (O)
+  // '무병': '편재' (X) -> 편인이어야 함. 화생토.
+  // '무정': '정재' (X) -> 정인이어야 함.
+  // '무무': '비견' (O)
+  // '무기': '겁재' (O)
+  // '무경': '식신' (O, 토생금)
+  // '무신': '상관' (O)
+  // '무임': '편인' (X) -> 편재이어야 함. 토극수.
+  // '무계': '정인' (X) -> 정재이어야 함.
+  
+  // 33행 (무토 일간) 매핑이 엉망임.
+  // '무병': '편인', '무정': '정인'
+  // '무임': '편재', '무계': '정재'
+  
+  // 다른 행도 점검 필요.
+  // 갑(목): 병(화)-식신, 정-상관, 무(토)-편재, 기-정재, 경(금)-편관, 신-정관, 임(수)-편인, 계-정인. (맞음)
+  // 을(목): 병-상관, 정-식신, 무-정재, 기-편재, 경-정관, 신-편관, 임-정인, 계-편인. (맞음)
+  // 병(화): 무(토)-식신, 기-상관, 경(금)-편재, 신-정재, 임(수)-편관, 계-정관, 갑(목)-편인, 을-정인. (맞음)
+  // 정(화): 무-상관, 기-식신, 경-정재, 신-편재, 임-정관, 계-편관, 갑-정인, 을-편인. (맞음)
+  // 무(토): 
+  //   갑(목): 편관
+  //   을(목): 정관
+  //   병(화): 편인 (코드엔 편재로 되어있음 -> 수정 필요)
+  //   정(화): 정인 (코드엔 정재로 되어있음 -> 수정 필요)
+  //   무(토): 비견
+  //   기(토): 겁재
+  //   경(금): 식신
+  //   신(금): 상관
+  //   임(수): 편재 (코드엔 편인으로 되어있음 -> 수정 필요)
+  //   계(수): 정재 (코드엔 정인으로 되어있음 -> 수정 필요)
+  
+  // 기(토):
+  //   갑: 정관
+  //   을: 편관
+  //   병: 정인 (코드: 정재 -> 수정 필요)
+  //   정: 편인 (코드: 편재 -> 수정 필요)
+  //   무: 겁재
+  //   기: 비견
+  //   경: 상관
+  //   신: 식신
+  //   임: 정재 (코드: 정인 -> 수정 필요)
+  //   계: 편재 (코드: 편인 -> 수정 필요)
+  
+  // 경(금):
+  //   갑: 편재
+  //   을: 정재
+  //   병: 편관
+  //   정: 정관
+  //   무: 편인
+  //   기: 정인
+  //   경: 비견
+  //   신: 겁재
+  //   임: 식신
+  //   계: 상관
+  //   (경금은 대체로 맞아보임)
+  
+  // 신(금):
+  //   갑: 정재
+  //   을: 편재
+  //   병: 정관
+  //   정: 편관
+  //   무: 정인
+  //   기: 편인
+  //   경: 겁재
+  //   신: 비견
+  //   임: 상관
+  //   계: 식신
+  //   (신금도 맞아보임)
+  
+  // 임(수):
+  //   갑: 식신
+  //   을: 상관
+  //   병: 편재
+  //   정: 정재 (코드: 편인 -> 수정 필요?? 37행 확인)
+  //   37행: '임병': '정인'(X)->편재, '임정': '편인'(X)->정재
+  //   '임무': 비견? 아님. 토극수. 임-무: 편관.
+  //   '임기': 겁재? 아님. 임-기: 정관.
+  //   '임경': 편재? 아님. 금생수. 임-경: 편인.
+  //   '임신': 정재? 아님. 임-신: 정인.
+  //   '임임': 비견.
+  //   '임계': 겁재.
+  
+  // 계(수):
+  //   갑: 상관
+  //   을: 식신
+  //   병: 정재 (코드: 편인 -> 수정)
+  //   정: 편재 (코드: 정인 -> 수정)
+  //   무: 정관 (코드: 겁재 -> 수정)
+  //   기: 편관 (코드: 비견 -> 수정)
+  //   경: 정인 (코드: 정재 -> 수정)
+  //   신: 편인 (코드: 편재 -> 수정)
+  //   임: 겁재
+  //   계: 비견
+  
+  // 총체적 난국이었음. 무토, 기토, 임수, 계수 일간의 십성 매핑이 대거 틀려있었음.
+  // 이를 전면 수정해야 함.
+
+  
+  const makePillar = (gan: string, ji: string, pillarType: string) => ({
+    gan, ji,
+    sibsung: SIBSUNG[`${dayGan}${gan}`] || '비견',
+    jiSibsung: getJiSibsung(ji),
+    ohang: `${OHENG[gan]}/${OHENG[ji]}`,
+    eumyang: `${getEumyang(gan, true)}/${getEumyang(ji, false)}`,
+    sibiunsung: getSibiunsung(dayGan, ji),
+    sibisinsal: getSibisinsal(ji, pillarType === 'year' ? dayJi : yearJi)
+  })
+
+  return {
+    year: makePillar(yearGanji.gan, yearGanji.ji, 'year'),
+    month: makePillar(monthGanji.gan, monthGanji.ji, 'month'),
+    day: makePillar(dayGan, dayGanji.ji, 'day'), // 일간은 입력값 유지
+    hour: makePillar(hourGanji.gan, hourGanji.ji, 'hour')
   }
 }
 
-// 만세력 테이블 HTML 생성
 export function generateManseRyeokTable(data: ManseRyeokData, userName?: string): string {
   // 천간의 음양오행과 지지의 음양오행 분리
   const yearGanEumyang = data.year.eumyang.split('/')[0]
@@ -610,55 +639,7 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
   const dayJiEumyang = data.day.eumyang.split('/')[1]
   const hourGanEumyang = data.hour.eumyang.split('/')[0]
   const hourJiEumyang = data.hour.eumyang.split('/')[1]
-  
-  // 한자 매핑
-  const SIBSUNG_HANJA: Record<string, string> = {
-    '비견': '比肩', '겁재': '劫財', '식신': '食神', '상관': '傷官',
-    '편재': '偏財', '정재': '正財', '편관': '偏官', '정관': '正官',
-    '편인': '偏印', '정인': '正印'
-  }
-  const OHANG_HANJA: Record<string, string> = {
-    '목': '木', '화': '火', '토': '土', '금': '金', '수': '水'
-  }
-  const SIBIUNSUNG_HANJA: Record<string, string> = {
-    '장생': '長生', '목욕': '沐浴', '관대': '冠帶', '건록': '建祿',
-    '제왕': '帝王', '쇠': '衰', '병': '病', '사': '死',
-    '묘': '墓', '절': '絶', '태': '胎', '양': '養'
-  }
-  const SIBISINSAL_HANJA: Record<string, string> = {
-    '백호': '白虎', '지살': '地殺', '화개': '華蓋', '도화': '桃花',
-    '역마': '驛馬', '천을': '天乙', '홍염': '紅艶', '천덕': '天德',
-    '월덕': '月德', '천덕합': '天德合', '월덕합': '月德合', '공망': '空亡'
-  }
 
-  const formatWithHanja = (value: string, map: Record<string, string>) => {
-    const trimmed = value?.trim()
-    if (!trimmed) return ''
-    const hanja = map[trimmed]
-    return hanja ? `${trimmed}(${hanja})` : trimmed
-  }
-
-  const formatOhang = (value: string) => {
-    return value
-      .split('/')
-      .map(v => {
-        const t = v.trim()
-        const hanja = OHANG_HANJA[t]
-        return hanja ? `${t}(${hanja})` : t
-      })
-      .join('/')
-  }
-
-  // 한자 변환 함수
-  const getGanHanja = (gan: string) => {
-    const index = SIBGAN_HANGUL.indexOf(gan)
-    return index >= 0 ? SIBGAN[index] : gan
-  }
-  const getJiHanja = (ji: string) => {
-    const index = SIBIJI_HANGUL.indexOf(ji)
-    return index >= 0 ? SIBIJI[index] : ji
-  }
-  
   const rows = [
     { label: '십성', year: formatWithHanja(data.year.sibsung, SIBSUNG_HANJA), month: formatWithHanja(data.month.sibsung, SIBSUNG_HANJA), day: formatWithHanja(data.day.sibsung, SIBSUNG_HANJA), hour: formatWithHanja(data.hour.sibsung, SIBSUNG_HANJA) },
     { label: '음양오행', year: formatOhang(data.year.ohang), month: formatOhang(data.month.ohang), day: formatOhang(data.day.ohang), hour: formatOhang(data.hour.ohang) },
@@ -671,13 +652,6 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
   ]
   
   let html = ''
-  
-  // 제목 추가 (이름이 있는 경우)
-  if (userName) {
-    html += `<div style="text-align: center; margin: 20px 0 10px 0;">
-      <strong style="font-weight: bold; font-size: 1.1em;">&lt;${userName}님의 사주명식은 다음과 같아요&gt;</strong>
-    </div>`
-  }
   
   html += '<table class="manse-ryeok-table" style="width: 100%; border-collapse: collapse; margin: 20px 0;">'
   html += '<thead><tr>'
@@ -704,9 +678,7 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
   return html
 }
 
-// 만세력 데이터를 텍스트 형식으로 변환 (제미나이 프롬프트용)
 export function generateManseRyeokText(data: ManseRyeokData): string {
-  // 한자 변환 함수
   const getGanHanja = (gan: string) => {
     const index = SIBGAN_HANGUL.indexOf(gan)
     return index >= 0 ? SIBGAN[index] : gan
@@ -716,41 +688,23 @@ export function generateManseRyeokText(data: ManseRyeokData): string {
     return index >= 0 ? SIBIJI[index] : ji
   }
   
-  // 천간의 음양오행과 지지의 음양오행 분리
-  const yearGanEumyang = data.year.eumyang.split('/')[0]
-  const yearJiEumyang = data.year.eumyang.split('/')[1]
-  const monthGanEumyang = data.month.eumyang.split('/')[0]
-  const monthJiEumyang = data.month.eumyang.split('/')[1]
-  const dayGanEumyang = data.day.eumyang.split('/')[0]
-  const dayJiEumyang = data.day.eumyang.split('/')[1]
-  const hourGanEumyang = data.hour.eumyang.split('/')[0]
-  const hourJiEumyang = data.hour.eumyang.split('/')[1]
-  
   let text = ''
   
-  // 십성 (천간 기준)
-  text += `십성 시주=${data.hour.sibsung}, 일주=${data.day.sibsung}, 월주=${data.month.sibsung}, 연주=${data.year.sibsung}\n`
+  text += `=== 시주 (Hour Pillar) ===\n`
+  text += `천간: ${data.hour.gan}(${getGanHanja(data.hour.gan)}) | 지지: ${data.hour.ji}(${getJiHanja(data.hour.ji)}) | 합쳐서: ${data.hour.gan}${data.hour.ji}(${getGanHanja(data.hour.gan)}${getJiHanja(data.hour.ji)})\n`
+  text += `십성(천간): ${data.hour.sibsung} | 십성(지지): ${data.hour.jiSibsung}\n`
   
-  // 음양오행 (천간/지지 통합)
-  text += `음양오행 시주=${data.hour.ohang}, 일주=${data.day.ohang}, 월주=${data.month.ohang}, 연주=${data.year.ohang}\n`
+  text += `=== 일주 (Day Pillar) ===\n`
+  text += `천간(일간): ${data.day.gan}(${getGanHanja(data.day.gan)}) | 지지: ${data.day.ji}(${getJiHanja(data.day.ji)}) | 합쳐서: ${data.day.gan}${data.day.ji}(${getGanHanja(data.day.gan)}${getJiHanja(data.day.ji)})\n`
+  text += `십성(천간): ${data.day.sibsung} | 십성(지지): ${data.day.jiSibsung}\n`
   
-  // 천간
-  text += `천간 시주=${data.hour.gan}(${getGanHanja(data.hour.gan)}), 일주=${data.day.gan}(${getGanHanja(data.day.gan)}), 월주=${data.month.gan}(${getGanHanja(data.month.gan)}), 연주=${data.year.gan}(${getGanHanja(data.year.gan)})\n`
+  text += `=== 월주 (Month Pillar) ===\n`
+  text += `천간: ${data.month.gan}(${getGanHanja(data.month.gan)}) | 지지: ${data.month.ji}(${getJiHanja(data.month.ji)}) | 합쳐서: ${data.month.gan}${data.month.ji}(${getGanHanja(data.month.gan)}${getJiHanja(data.month.ji)})\n`
+  text += `십성(천간): ${data.month.sibsung} | 십성(지지): ${data.month.jiSibsung}\n`
   
-  // 지지
-  text += `지지 시주=${data.hour.ji}(${getJiHanja(data.hour.ji)}), 일주=${data.day.ji}(${getJiHanja(data.day.ji)}), 월주=${data.month.ji}(${getJiHanja(data.month.ji)}), 연주=${data.year.ji}(${getJiHanja(data.year.ji)})\n`
-  
-  // 음양오행 (천간/지지 분리)
-  text += `음양오행(천간/지지) 시주=${hourGanEumyang}/${hourJiEumyang}, 일주=${dayGanEumyang}/${dayJiEumyang}, 월주=${monthGanEumyang}/${monthJiEumyang}, 연주=${yearGanEumyang}/${yearJiEumyang}\n`
-  
-  // 십성 (지지 기준)
-  text += `십성(지지) 시주=${data.hour.jiSibsung}, 일주=${data.day.jiSibsung}, 월주=${data.month.jiSibsung}, 연주=${data.year.jiSibsung}\n`
-  
-  // 십이운성
-  text += `십이운성 시주=${data.hour.sibiunsung}, 일주=${data.day.sibiunsung}, 월주=${data.month.sibiunsung}, 연주=${data.year.sibiunsung}\n`
-  
-  // 십이신살
-  text += `십이신살 시주=${data.hour.sibisinsal}, 일주=${data.day.sibisinsal}, 월주=${data.month.sibisinsal}, 연주=${data.year.sibisinsal}`
+  text += `=== 연주 (Year Pillar) ===\n`
+  text += `천간: ${data.year.gan}(${getGanHanja(data.year.gan)}) | 지지: ${data.year.ji}(${getJiHanja(data.year.ji)}) | 합쳐서: ${data.year.gan}${data.year.ji}(${getGanHanja(data.year.gan)}${getJiHanja(data.year.ji)})\n`
+  text += `십성(천간): ${data.year.sibsung} | 십성(지지): ${data.year.jiSibsung}`
   
   return text
 }

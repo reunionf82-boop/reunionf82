@@ -534,11 +534,20 @@ function FormContent() {
           const birthMonth = parseInt(month)
           const birthDay = parseInt(day)
           // 태어난 시를 숫자로 변환 (예: "23-01" -> 23)
-          let birthHourNum = 12 // 기본값 12시
+          let birthHourNum = 12 // 기본값 12시 (오시)
           if (birthHour) {
-            const hourMatch = birthHour.match(/^(\d+)/)
-            if (hourMatch) {
-              birthHourNum = parseInt(hourMatch[1])
+            // 지지 문자인 경우 시간 매핑
+            const hourMap: { [key: string]: number } = {
+              '子': 0, '丑': 2, '寅': 4, '卯': 6, '辰': 8, '巳': 10,
+              '午': 12, '未': 14, '申': 16, '酉': 18, '戌': 20, '亥': 22
+            }
+            if (hourMap[birthHour] !== undefined) {
+              birthHourNum = hourMap[birthHour]
+            } else {
+              const hourMatch = birthHour.match(/(\d+)/)
+              if (hourMatch) {
+                birthHourNum = parseInt(hourMatch[1])
+              }
             }
           }
           
