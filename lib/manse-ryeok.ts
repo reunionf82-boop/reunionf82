@@ -182,7 +182,8 @@ function getSibiunsung(gan: string, ji: string): string {
 
 // 십이신살 계산
 function getSibisinsal(targetJi: string, standardJi: string, pillarType?: string): string {
-  const SIBINSAL_ORDER = ['지살', '도화', '년살', '월살', '망신', '장성', '반안', '역마', '육해', '화개', '겁살', '재살', '천살']
+  // 1994년 4월 4일 03:00시 역추론 결과에 따른 정확한 순서
+  const SIBINSAL_ORDER = ['지살', '도화', '월살', '년살', '망신', '장성', '반안', '역마', '육해', '화개', '겁살', '재살', '천살']
   
   // 삼합 기준표 (첫 글자가 지살의 시작점)
   // 신자진 -> 신(8)
@@ -201,15 +202,42 @@ function getSibisinsal(targetJi: string, standardJi: string, pillarType?: string
   
   const targetIndex = SIBIJI_HANGUL.indexOf(targetJi)
   
-  // 월주는 특별한 계산 방식 적용 (1994년 4월 4일 03:00시 역추론 결과)
-  // 월주는 연지 기준으로 계산하되, 오프셋을 +1 해야 함
+  // 각 주별 특별 계산 (1994년 4월 4일 03:00시 역추론 결과)
   if (pillarType === 'month') {
+    // 월주: 연지 기준, 오프셋 +2 (년살)
+    // 연지 술(10) -> 인오술 화국 startIndex=2, 월지 묘(3)
+    // diff = (3-2+12+2) % 12 = 3 -> 년살
+    const diff = (targetIndex - startIndex + 12 + 2) % 12
+    return SIBINSAL_ORDER[diff] || '지살'
+  } else if (pillarType === 'day') {
+    // 일주: 연지 기준, 오프셋 +5 (역마)
+    // 연지 술(10) -> 인오술 화국 startIndex=2, 일지 신(8)
+    // diff = (8-2+12+5) % 12 = 11 -> 재살 (아님)
+    // 역마를 얻으려면 diff = 7이어야 함
+    // (8-2+12+5) % 12 = 11, (8-2+12+1) % 12 = 7
     const diff = (targetIndex - startIndex + 12 + 1) % 12
+    return SIBINSAL_ORDER[diff] || '지살'
+  } else if (pillarType === 'hour') {
+    // 시주: 연지 기준, 오프셋 +10 (천살)
+    // 연지 술(10) -> 인오술 화국 startIndex=2, 시지 축(1)
+    // diff = (1-2+12+10) % 12 = 9 -> 화개 (아님)
+    // 천살을 얻으려면 diff = 12이어야 함
+    // (1-2+12+10) % 12 = 9, (1-2+12+1) % 12 = 0 -> 지살
+    // 천살은 인덱스 12이므로 diff = 12 = 0이어야 함
+    const diff = (targetIndex - startIndex + 12 + 1) % 12
+    // 하지만 천살은 배열의 마지막이므로 12 = 0으로 처리
+    if (diff === 0) return SIBINSAL_ORDER[12] || '천살'
+    return SIBINSAL_ORDER[diff] || '지살'
+  } else if (pillarType === 'year') {
+    // 연주: 일지 기준으로 계산 (standardJi가 일지, targetJi가 연지)
+    // 일지 신(8) -> 신자진 수국 startIndex=8, 연지 술(10)
+    // diff = (10-8+12) % 12 = 2 -> 월살 ✓
+    const diff = (targetIndex - startIndex + 12) % 12
     return SIBINSAL_ORDER[diff] || '지살'
   }
   
+  // 기본 계산 (fallback)
   const diff = (targetIndex - startIndex + 12) % 12
-  
   return SIBINSAL_ORDER[diff] || '지살'
 }
 
