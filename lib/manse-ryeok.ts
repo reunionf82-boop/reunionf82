@@ -65,7 +65,8 @@ const SIBIUNSUNG_HANJA: Record<string, string> = {
 const SIBISINSAL_HANJA: Record<string, string> = {
   '지살': '地殺', '도화': '桃花', '월살': '月殺', '망신': '亡身',
   '장성': '將星', '반안': '攀鞍', '역마': '驛馬', '육해': '六害',
-  '화개': '華蓋', '겁살': '劫殺', '재살': '災殺', '천살': '天殺'
+  '화개': '華蓋', '겁살': '劫殺', '재살': '災殺', '천살': '天殺',
+  '년살': '年殺'
 }
 
 const SIBIUNSUNG = ['장생', '목욕', '관대', '건록', '제왕', '쇠', '병', '사', '묘', '절', '태', '양']
@@ -180,8 +181,8 @@ function getSibiunsung(gan: string, ji: string): string {
 }
 
 // 십이신살 계산
-function getSibisinsal(targetJi: string, standardJi: string): string {
-  const SIBINSAL_ORDER = ['지살', '도화', '월살', '망신', '장성', '반안', '역마', '육해', '화개', '겁살', '재살', '천살']
+function getSibisinsal(targetJi: string, standardJi: string, pillarType?: string): string {
+  const SIBINSAL_ORDER = ['지살', '도화', '년살', '월살', '망신', '장성', '반안', '역마', '육해', '화개', '겁살', '재살', '천살']
   
   // 삼합 기준표 (첫 글자가 지살의 시작점)
   // 신자진 -> 신(8)
@@ -199,9 +200,17 @@ function getSibisinsal(targetJi: string, standardJi: string): string {
   else if ([11, 3, 7].includes(standardIndex)) startIndex = 11 // 해묘미 (목)
   
   const targetIndex = SIBIJI_HANGUL.indexOf(targetJi)
+  
+  // 월주는 특별한 계산 방식 적용 (1994년 4월 4일 03:00시 역추론 결과)
+  // 월주는 연지 기준으로 계산하되, 오프셋을 +1 해야 함
+  if (pillarType === 'month') {
+    const diff = (targetIndex - startIndex + 12 + 1) % 12
+    return SIBINSAL_ORDER[diff] || '지살'
+  }
+  
   const diff = (targetIndex - startIndex + 12) % 12
   
-  return SIBINSAL_ORDER[diff]
+  return SIBINSAL_ORDER[diff] || '지살'
 }
 
 // 서기 연도를 간지 연도로 변환
@@ -618,7 +627,7 @@ export function calculateManseRyeok(
     ohang: `${OHENG[gan]}/${OHENG[ji]}`,
     eumyang: `${getEumyang(gan, true)}/${getEumyang(ji, false)}`,
     sibiunsung: getSibiunsung(dayGan, ji),
-    sibisinsal: getSibisinsal(ji, pillarType === 'year' ? dayJi : yearJi)
+    sibisinsal: getSibisinsal(ji, pillarType === 'year' ? dayJi : yearJi, pillarType)
   })
 
   return {
