@@ -25,6 +25,12 @@ function ResultContent() {
   const [error, setError] = useState<string | null>(null)
   const [savedResults, setSavedResults] = useState<any[]>([])
   const [streamingProgress, setStreamingProgress] = useState(0)
+
+  // savedResults 변경 시 로깅
+  useEffect(() => {
+    console.log('결과 페이지: savedResults 변경됨, 길이:', savedResults.length)
+    console.log('결과 페이지: savedResults 내용:', savedResults)
+  }, [savedResults])
   
   // 추가 질문 횟수 관리 (메뉴별 카운트)
   const [usedQuestionCounts, setUsedQuestionCounts] = useState<Record<string, number>>({})
@@ -47,18 +53,34 @@ function ResultContent() {
   const loadSavedResults = async () => {
     if (typeof window === 'undefined') return
     try {
+      console.log('=== 저장된 결과 목록 로드 시작 (결과 페이지) ===')
       const response = await fetch('/api/saved-results/list')
+      console.log('API 응답 상태:', response.status, response.statusText)
+      
       if (!response.ok) {
-        throw new Error('저장된 결과 목록 조회 실패')
+        const errorText = await response.text()
+        console.error('API 응답 실패:', response.status, errorText)
+        throw new Error(`저장된 결과 목록 조회 실패: ${response.status}`)
       }
+      
       const result = await response.json()
+      console.log('API 응답 데이터:', result)
+      console.log('result.success:', result.success)
+      console.log('result.data:', result.data)
+      console.log('result.data 길이:', result.data?.length || 0)
+      
       if (result.success) {
-        setSavedResults(result.data || [])
+        const data = result.data || []
+        console.log('저장된 결과 설정:', data.length, '개')
+        setSavedResults(data)
       } else {
+        console.warn('API 응답에서 success가 false:', result.error || result.details)
         setSavedResults([])
       }
+      console.log('=== 저장된 결과 목록 로드 완료 (결과 페이지) ===')
     } catch (e) {
       console.error('저장된 결과 불러오기 실패:', e)
+      console.error('에러 상세:', e instanceof Error ? e.stack : e)
       setSavedResults([])
     }
   }
@@ -158,6 +180,7 @@ function ResultContent() {
         setResultData(parsedData)
         
         // 저장된 결과 목록 로드
+        console.log('결과 페이지: loadSavedResults 호출')
         loadSavedResults()
         
         // 사용 후 세션 스토리지에서 삭제하지 않음 (저장 기능을 위해 유지)
@@ -2487,11 +2510,16 @@ function ResultContent() {
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8 mt-8">
           <h3 className="text-lg font-bold text-gray-900 mb-4">저장된 결과</h3>
           <div className="space-y-3">
-            {savedResults.length === 0 ? (
+            {!savedResults || !Array.isArray(savedResults) || savedResults.length === 0 ? (
               <p className="text-sm text-gray-600">저장된 결과가 없습니다.</p>
             ) : (
               <div className="space-y-2">
-                {savedResults.map((saved: any) => (
+                {savedResults.map((saved: any) => {
+                  if (!saved || !saved.id) {
+                    console.warn('저장된 결과 항목에 id가 없음:', saved)
+                    return null
+                  }
+                  return (
                     <div key={saved.id} className="bg-white rounded-lg p-4 border border-gray-200">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
@@ -2527,7 +2555,8 @@ function ResultContent() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  )
+                })}
                 </div>
             )}
           </div>

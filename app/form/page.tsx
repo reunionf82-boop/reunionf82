@@ -154,18 +154,34 @@ function FormContent() {
   const loadSavedResults = async () => {
     if (typeof window === 'undefined') return
     try {
+      console.log('=== 저장된 결과 목록 로드 시작 ===')
       const response = await fetch('/api/saved-results/list')
+      console.log('API 응답 상태:', response.status, response.statusText)
+      
       if (!response.ok) {
-        throw new Error('저장된 결과 목록 조회 실패')
+        const errorText = await response.text()
+        console.error('API 응답 실패:', response.status, errorText)
+        throw new Error(`저장된 결과 목록 조회 실패: ${response.status}`)
       }
+      
       const result = await response.json()
+      console.log('API 응답 데이터:', result)
+      console.log('result.success:', result.success)
+      console.log('result.data:', result.data)
+      console.log('result.data 길이:', result.data?.length || 0)
+      
       if (result.success) {
-        setSavedResults(result.data || [])
+        const data = result.data || []
+        console.log('저장된 결과 설정:', data.length, '개')
+        setSavedResults(data)
       } else {
+        console.warn('API 응답에서 success가 false:', result.error || result.details)
         setSavedResults([])
       }
+      console.log('=== 저장된 결과 목록 로드 완료 ===')
     } catch (e) {
       console.error('저장된 결과 불러오기 실패:', e)
+      console.error('에러 상세:', e instanceof Error ? e.stack : e)
       setSavedResults([])
     }
   }
@@ -364,8 +380,15 @@ function FormContent() {
 
   // 저장된 결과는 컴포넌트 마운트 시와 title 변경 시 모두 로드
   useEffect(() => {
+    console.log('Form 페이지: useEffect에서 loadSavedResults 호출')
     loadSavedResults()
   }, [])
+
+  // savedResults 변경 시 로깅
+  useEffect(() => {
+    console.log('Form 페이지: savedResults 변경됨, 길이:', savedResults.length)
+    console.log('Form 페이지: savedResults 내용:', savedResults)
+  }, [savedResults])
 
   const loadContent = async () => {
     try {
@@ -1594,11 +1617,16 @@ function FormContent() {
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
           <h3 className="text-lg font-bold text-gray-900 mb-4">서버에 저장된 결과</h3>
           <div className="space-y-3">
-            {savedResults.length === 0 ? (
+            {!savedResults || !Array.isArray(savedResults) || savedResults.length === 0 ? (
               <p className="text-sm text-gray-600">저장된 결과가 없습니다.</p>
             ) : (
               <div className="space-y-2">
-                {savedResults.map((saved: any) => (
+                {savedResults.map((saved: any) => {
+                  if (!saved || !saved.id) {
+                    console.warn('저장된 결과 항목에 id가 없음:', saved)
+                    return null
+                  }
+                  return (
                   <div key={saved.id} className="bg-white rounded-lg p-4 border border-gray-200">
                     <div className="flex items-center justify-between">
                       <div>
@@ -2838,11 +2866,12 @@ function FormContent() {
                         >
                           삭제
                         </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  )
+                })}
+                </div>
             )}
           </div>
         </div>

@@ -13,6 +13,10 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 
 export async function GET(request: NextRequest) {
   try {
+    console.log('=== 저장된 결과 목록 조회 API 호출 ===')
+    console.log('Supabase URL:', supabaseUrl ? '설정됨' : '없음')
+    console.log('Supabase Service Key:', supabaseServiceKey ? '설정됨' : '없음')
+    
     // 저장된 결과 목록 조회 (최신순, 최대 50개)
     const { data, error } = await supabase
       .from('saved_results')
@@ -23,10 +27,12 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error('저장된 결과 목록 조회 실패:', error)
       return NextResponse.json(
-        { error: '저장된 결과 목록 조회에 실패했습니다.', details: error.message },
+        { success: false, error: '저장된 결과 목록 조회에 실패했습니다.', details: error.message },
         { status: 500 }
       )
     }
+
+    console.log('저장된 결과 개수:', data?.length || 0)
 
     // 데이터 형식 변환
     const results = (data || []).map((item: any) => ({
@@ -40,6 +46,9 @@ export async function GET(request: NextRequest) {
       userName: item.user_name
     }))
 
+    console.log('변환된 결과 개수:', results.length)
+    console.log('=== 저장된 결과 목록 조회 완료 ===')
+
     return NextResponse.json({
       success: true,
       data: results
@@ -47,11 +56,14 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('저장된 결과 목록 조회 API 오류:', error)
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다.', details: error.message },
+      { success: false, error: '서버 오류가 발생했습니다.', details: error.message },
       { status: 500 }
     )
   }
 }
+
+
+
 
 
 
