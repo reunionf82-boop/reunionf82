@@ -629,11 +629,26 @@ export function calculateManseRyeok(
   }
 }
 
+// 오행에 따른 색상 매핑
+const OHANG_COLOR: Record<string, string> = {
+  '화': '#ff0000',  // 빨간색
+  '목': '#0000ff',  // 파란색
+  '토': '#ff8800',  // 주황색
+  '금': '#808080',  // 그레이
+  '수': '#000000'   // 검정색
+}
+
 // 음양과 오행을 결합하여 포맷팅하는 함수 (예: -화(火))
 const formatEumyangOhang = (eumyang: string, ohang: string): string => {
   const eumyangSymbol = eumyang === '양' ? '+' : '-'
   const ohangHanja = OHANG_HANJA[ohang] || ''
   return `${eumyangSymbol}${ohang}${ohangHanja ? `(${ohangHanja})` : ''}`
+}
+
+// 오행에 따른 색상 스타일 생성
+const getOhangColorStyle = (ohang: string): string => {
+  const color = OHANG_COLOR[ohang] || '#000000'
+  return `color: ${color};`
 }
 
 export function generateManseRyeokTable(data: ManseRyeokData, userName?: string): string {
@@ -657,15 +672,64 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
   const hourGanOhang = data.hour.ohang.split('/')[0]
   const hourJiOhang = data.hour.ohang.split('/')[1]
 
+  // 행 데이터 준비 (색상 정보 포함)
   const rows = [
-    { label: '십성', year: formatWithHanja(data.year.sibsung, SIBSUNG_HANJA), month: formatWithHanja(data.month.sibsung, SIBSUNG_HANJA), day: formatWithHanja(data.day.sibsung, SIBSUNG_HANJA), hour: formatWithHanja(data.hour.sibsung, SIBSUNG_HANJA) },
-    { label: '음양오행', year: formatEumyangOhang(yearGanEumyang, yearGanOhang), month: formatEumyangOhang(monthGanEumyang, monthGanOhang), day: formatEumyangOhang(dayGanEumyang, dayGanOhang), hour: formatEumyangOhang(hourGanEumyang, hourGanOhang) },
-    { label: '천간', year: `${data.year.gan}(${getGanHanja(data.year.gan)})`, month: `${data.month.gan}(${getGanHanja(data.month.gan)})`, day: `${data.day.gan}(${getGanHanja(data.day.gan)})`, hour: `${data.hour.gan}(${getGanHanja(data.hour.gan)})` },
-    { label: '지지', year: `${data.year.ji}(${getJiHanja(data.year.ji)})`, month: `${data.month.ji}(${getJiHanja(data.month.ji)})`, day: `${data.day.ji}(${getJiHanja(data.day.ji)})`, hour: `${data.hour.ji}(${getJiHanja(data.hour.ji)})` },
-    { label: '음양오행', year: formatEumyangOhang(yearJiEumyang, yearJiOhang), month: formatEumyangOhang(monthJiEumyang, monthJiOhang), day: formatEumyangOhang(dayJiEumyang, dayJiOhang), hour: formatEumyangOhang(hourJiEumyang, hourJiOhang) },
-    { label: '십성', year: formatWithHanja(data.year.jiSibsung, SIBSUNG_HANJA), month: formatWithHanja(data.month.jiSibsung, SIBSUNG_HANJA), day: formatWithHanja(data.day.jiSibsung, SIBSUNG_HANJA), hour: formatWithHanja(data.hour.jiSibsung, SIBSUNG_HANJA) },
-    { label: '십이운성', year: formatWithHanja(data.year.sibiunsung, SIBIUNSUNG_HANJA), month: formatWithHanja(data.month.sibiunsung, SIBIUNSUNG_HANJA), day: formatWithHanja(data.day.sibiunsung, SIBIUNSUNG_HANJA), hour: formatWithHanja(data.hour.sibiunsung, SIBIUNSUNG_HANJA) },
-    { label: '십이신살', year: formatWithHanja(data.year.sibisinsal, SIBISINSAL_HANJA), month: formatWithHanja(data.month.sibisinsal, SIBISINSAL_HANJA), day: formatWithHanja(data.day.sibisinsal, SIBISINSAL_HANJA), hour: formatWithHanja(data.hour.sibisinsal, SIBISINSAL_HANJA) }
+    { 
+      label: '십성', 
+      year: { text: formatWithHanja(data.year.sibsung, SIBSUNG_HANJA), color: '' },
+      month: { text: formatWithHanja(data.month.sibsung, SIBSUNG_HANJA), color: '' },
+      day: { text: formatWithHanja(data.day.sibsung, SIBSUNG_HANJA), color: '' },
+      hour: { text: formatWithHanja(data.hour.sibsung, SIBSUNG_HANJA), color: '' }
+    },
+    { 
+      label: '음양오행', 
+      year: { text: formatEumyangOhang(yearGanEumyang, yearGanOhang), color: getOhangColorStyle(yearGanOhang) },
+      month: { text: formatEumyangOhang(monthGanEumyang, monthGanOhang), color: getOhangColorStyle(monthGanOhang) },
+      day: { text: formatEumyangOhang(dayGanEumyang, dayGanOhang), color: getOhangColorStyle(dayGanOhang) },
+      hour: { text: formatEumyangOhang(hourGanEumyang, hourGanOhang), color: getOhangColorStyle(hourGanOhang) }
+    },
+    { 
+      label: '천간', 
+      year: { text: `${data.year.gan}(${getGanHanja(data.year.gan)})`, color: getOhangColorStyle(yearGanOhang) },
+      month: { text: `${data.month.gan}(${getGanHanja(data.month.gan)})`, color: getOhangColorStyle(monthGanOhang) },
+      day: { text: `${data.day.gan}(${getGanHanja(data.day.gan)})`, color: getOhangColorStyle(dayGanOhang) },
+      hour: { text: `${data.hour.gan}(${getGanHanja(data.hour.gan)})`, color: getOhangColorStyle(hourGanOhang) }
+    },
+    { 
+      label: '지지', 
+      year: { text: `${data.year.ji}(${getJiHanja(data.year.ji)})`, color: getOhangColorStyle(yearJiOhang) },
+      month: { text: `${data.month.ji}(${getJiHanja(data.month.ji)})`, color: getOhangColorStyle(monthJiOhang) },
+      day: { text: `${data.day.ji}(${getJiHanja(data.day.ji)})`, color: getOhangColorStyle(dayJiOhang) },
+      hour: { text: `${data.hour.ji}(${getJiHanja(data.hour.ji)})`, color: getOhangColorStyle(hourJiOhang) }
+    },
+    { 
+      label: '음양오행', 
+      year: { text: formatEumyangOhang(yearJiEumyang, yearJiOhang), color: getOhangColorStyle(yearJiOhang) },
+      month: { text: formatEumyangOhang(monthJiEumyang, monthJiOhang), color: getOhangColorStyle(monthJiOhang) },
+      day: { text: formatEumyangOhang(dayJiEumyang, dayJiOhang), color: getOhangColorStyle(dayJiOhang) },
+      hour: { text: formatEumyangOhang(hourJiEumyang, hourJiOhang), color: getOhangColorStyle(hourJiOhang) }
+    },
+    { 
+      label: '십성', 
+      year: { text: formatWithHanja(data.year.jiSibsung, SIBSUNG_HANJA), color: '' },
+      month: { text: formatWithHanja(data.month.jiSibsung, SIBSUNG_HANJA), color: '' },
+      day: { text: formatWithHanja(data.day.jiSibsung, SIBSUNG_HANJA), color: '' },
+      hour: { text: formatWithHanja(data.hour.jiSibsung, SIBSUNG_HANJA), color: '' }
+    },
+    { 
+      label: '십이운성', 
+      year: { text: formatWithHanja(data.year.sibiunsung, SIBIUNSUNG_HANJA), color: '' },
+      month: { text: formatWithHanja(data.month.sibiunsung, SIBIUNSUNG_HANJA), color: '' },
+      day: { text: formatWithHanja(data.day.sibiunsung, SIBIUNSUNG_HANJA), color: '' },
+      hour: { text: formatWithHanja(data.hour.sibiunsung, SIBIUNSUNG_HANJA), color: '' }
+    },
+    { 
+      label: '십이신살', 
+      year: { text: formatWithHanja(data.year.sibisinsal, SIBISINSAL_HANJA), color: '' },
+      month: { text: formatWithHanja(data.month.sibisinsal, SIBISINSAL_HANJA), color: '' },
+      day: { text: formatWithHanja(data.day.sibisinsal, SIBISINSAL_HANJA), color: '' },
+      hour: { text: formatWithHanja(data.hour.sibisinsal, SIBISINSAL_HANJA), color: '' }
+    }
   ]
   
   let html = ''
@@ -683,10 +747,13 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
   rows.forEach(row => {
     html += '<tr>'
     html += `<td style="border: 1px solid #ddd; padding: 8px; font-weight: bold; font-size: 14px;">${row.label}</td>`
-    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: 14px;">${row.hour}</td>`
-    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: 14px;">${row.day}</td>`
-    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: 14px;">${row.month}</td>`
-    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: 14px;">${row.year}</td>`
+    // 천간, 지지 행은 폰트 크기 2배 (28px), 나머지는 기본 크기
+    const isGanjiRow = row.label === '천간' || row.label === '지지'
+    const cellFontSize = isGanjiRow ? '28px' : '14px'
+    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: ${cellFontSize}; ${row.hour.color}">${row.hour.text}</td>`
+    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: ${cellFontSize}; ${row.day.color}">${row.day.text}</td>`
+    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: ${cellFontSize}; ${row.month.color}">${row.month.text}</td>`
+    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: ${cellFontSize}; ${row.year.color}">${row.year.text}</td>`
     html += '</tr>'
   })
   
