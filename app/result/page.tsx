@@ -2601,20 +2601,21 @@ function ResultContent() {
                   // 디버깅: saved 객체 전체 확인
                   console.log(`저장된 결과 ${saved.id} 전체 데이터:`, saved)
                   
-                  // 12시간 경과 여부 확인 (한국 시간 기준)
+                  // 12시간 경과 여부 확인 (한국 시간 기준으로 계산)
                   const isExpired = saved.savedAtISO ? (() => {
-                    const savedDate = new Date(saved.savedAtISO)
-                    const now = new Date()
+                    // savedAtISO는 UTC로 저장된 시간
+                    const savedDateUTC = new Date(saved.savedAtISO)
+                    const nowUTC = new Date()
                     
-                    // 한국 시간대(UTC+9)로 변환하여 비교
-                    const savedDateKST = new Date(savedDate.getTime() + (9 * 60 * 60 * 1000)) // UTC+9
-                    const nowKST = new Date(now.getTime() + (9 * 60 * 60 * 1000)) // UTC+9
-                    
-                    // 시간 포함하여 12시간(밀리초) 경과 여부 확인
-                    const diffTime = nowKST.getTime() - savedDateKST.getTime()
+                    // UTC 기준으로 시간 차이 계산 (한국 시간 기준 12시간 = UTC 기준 12시간)
+                    const diffTime = nowUTC.getTime() - savedDateUTC.getTime()
                     const diffHours = diffTime / (1000 * 60 * 60) // 밀리초를 시간으로 변환
                     const expired = diffHours >= 12
-                    console.log(`[12시간 체크] 저장된 결과 ${saved.id}: savedAtISO=${saved.savedAtISO}, savedDateKST=${savedDateKST.toISOString()}, nowKST=${nowKST.toISOString()}, diffHours=${diffHours.toFixed(2)}, isExpired=${expired}`)
+                    
+                    // 로그용: 한국 시간으로 변환하여 표시
+                    const savedDateKST = new Date(savedDateUTC.getTime() + (9 * 60 * 60 * 1000))
+                    const nowKST = new Date(nowUTC.getTime() + (9 * 60 * 60 * 1000))
+                    console.log(`[12시간 체크 - 한국시간 기준] 저장된 결과 ${saved.id}: savedAtISO=${saved.savedAtISO}, savedDateKST=${savedDateKST.toISOString()}, nowKST=${nowKST.toISOString()}, diffHours=${diffHours.toFixed(2)}, isExpired=${expired}`)
                     return expired
                   })() : (() => {
                     console.error(`[에러] 저장된 결과 ${saved.id}: savedAtISO가 없음! saved 객체:`, saved)

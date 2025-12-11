@@ -23,7 +23,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 저장된 결과를 Supabase에 저장
+    // UTC로 현재 시간 저장 (표준 방식)
+    const savedAtUTC = new Date().toISOString()
+
+    // 저장된 결과를 Supabase에 저장 (UTC로 저장)
     const { data, error } = await supabase
       .from('saved_results')
       .insert({
@@ -33,7 +36,7 @@ export async function POST(request: NextRequest) {
         model: model || 'gemini-2.5-flash',
         processing_time: processingTime || null,
         user_name: userName || null,
-        saved_at: new Date().toISOString()
+        saved_at: savedAtUTC
       })
       .select()
       .single()
@@ -46,14 +49,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 저장된 UTC 시간을 한국 시간(UTC+9)으로 변환하여 표시
+    const savedDateUTC = new Date(data.saved_at)
+    const savedDateKST = new Date(savedDateUTC.getTime() + (9 * 60 * 60 * 1000)) // UTC+9
+    
+    // 한국 시간을 포맷팅 (서버 환경과 무관하게 일관된 형식)
+    const year = savedDateKST.getUTCFullYear()
+    const month = String(savedDateKST.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(savedDateKST.getUTCDate()).padStart(2, '0')
+    const hour = String(savedDateKST.getUTCHours()).padStart(2, '0')
+    const minute = String(savedDateKST.getUTCMinutes()).padStart(2, '0')
+    const second = String(savedDateKST.getUTCSeconds()).padStart(2, '0')
+    const savedAtKST = `${year}. ${month}. ${day}. ${hour}:${minute}:${second}`
+
     return NextResponse.json({
       success: true,
       data: {
         id: data.id.toString(),
         title: data.title,
         html: data.html,
-        savedAt: new Date(data.saved_at).toLocaleString('ko-KR'),
-        savedAtISO: data.saved_at, // 12시간 경과 여부 확인용 원본 날짜
+        savedAt: savedAtKST,
+        savedAtISO: data.saved_at, // UTC로 저장된 원본 날짜 (12시간 경과 여부 확인용)
         content: data.content,
         model: data.model,
         processingTime: data.processing_time,
