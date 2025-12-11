@@ -17,12 +17,11 @@ export async function GET(request: NextRequest) {
     console.log('Supabase URL:', supabaseUrl ? '설정됨' : '없음')
     console.log('Supabase Service Key:', supabaseServiceKey ? '설정됨' : '없음')
     
-    // 저장된 결과 목록 조회 (최신순, 최대 50개)
+    // 저장된 결과 목록 조회 (최신순, 제한 없음)
     const { data, error } = await supabase
       .from('saved_results')
       .select('*')
       .order('saved_at', { ascending: false })
-      .limit(50)
 
     if (error) {
       console.error('저장된 결과 목록 조회 실패:', error)
@@ -33,6 +32,7 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('저장된 결과 개수:', data?.length || 0)
+    console.log('저장된 결과 ID 목록:', data?.map((item: any) => item.id) || [])
 
     // 데이터 형식 변환
     const results = (data || []).map((item: any) => {
