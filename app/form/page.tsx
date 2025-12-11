@@ -212,8 +212,12 @@ function FormContent() {
       
       const result = await response.json()
       if (result.success) {
-        // 목록 다시 로드
-        await loadSavedResults()
+        // 즉시 로컬 상태에서 제거 (UI 즉시 업데이트)
+        setSavedResults((prev) => prev.filter((item: any) => item.id !== resultId))
+        // 백그라운드에서 서버와 동기화
+        setTimeout(async () => {
+          await loadSavedResults()
+        }, 100)
         // 성공 메시지 (선택적)
         console.log('저장된 결과가 삭제되었습니다.')
       } else {

@@ -1162,8 +1162,12 @@ function ResultContent() {
       }
       const result = await response.json()
       if (result.success) {
-        // 목록 다시 로드
-        await loadSavedResults()
+        // 즉시 로컬 상태에서 제거 (UI 즉시 업데이트)
+        setSavedResults((prev) => prev.filter((item: any) => item.id !== resultId))
+        // 백그라운드에서 서버와 동기화
+        setTimeout(async () => {
+          await loadSavedResults()
+        }, 100)
       } else {
         throw new Error('저장된 결과 삭제에 실패했습니다.')
       }
