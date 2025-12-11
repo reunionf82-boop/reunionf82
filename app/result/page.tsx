@@ -72,6 +72,11 @@ function ResultContent() {
       if (result.success) {
         const data = result.data || []
         console.log('저장된 결과 설정:', data.length, '개')
+        // 디버깅: 첫 번째 항목의 savedAtISO 확인
+        if (data.length > 0) {
+          console.log('첫 번째 저장된 결과 샘플:', data[0])
+          console.log('첫 번째 항목의 savedAtISO:', data[0].savedAtISO)
+        }
         setSavedResults(data)
       } else {
         console.warn('API 응답에서 success가 false:', result.error || result.details)
@@ -2519,13 +2524,39 @@ function ResultContent() {
                     console.warn('저장된 결과 항목에 id가 없음:', saved)
                     return null
                   }
+                  
+                  // 디버깅: saved 객체 전체 확인
+                  console.log(`저장된 결과 ${saved.id} 전체 데이터:`, saved)
+                  
+                  // 12시간 경과 여부 확인 (한국 시간 기준)
+                  const isExpired = saved.savedAtISO ? (() => {
+                    const savedDate = new Date(saved.savedAtISO)
+                    const now = new Date()
+                    
+                    // 한국 시간대(UTC+9)로 변환하여 비교
+                    const savedDateKST = new Date(savedDate.getTime() + (9 * 60 * 60 * 1000)) // UTC+9
+                    const nowKST = new Date(now.getTime() + (9 * 60 * 60 * 1000)) // UTC+9
+                    
+                    // 시간 포함하여 12시간(밀리초) 경과 여부 확인
+                    const diffTime = nowKST.getTime() - savedDateKST.getTime()
+                    const diffHours = diffTime / (1000 * 60 * 60) // 밀리초를 시간으로 변환
+                    const expired = diffHours >= 12
+                    console.log(`[12시간 체크] 저장된 결과 ${saved.id}: savedAtISO=${saved.savedAtISO}, savedDateKST=${savedDateKST.toISOString()}, nowKST=${nowKST.toISOString()}, diffHours=${diffHours.toFixed(2)}, isExpired=${expired}`)
+                    return expired
+                  })() : (() => {
+                    console.error(`[에러] 저장된 결과 ${saved.id}: savedAtISO가 없음! saved 객체:`, saved)
+                    return false
+                  })()
+                  
+                  console.log(`[최종] 저장된 결과 ${saved.id}: isExpired=${isExpired}, 보기 버튼 표시=${!isExpired}`)
+                  
                   return (
                     <div key={saved.id} className="bg-white rounded-lg p-4 border border-gray-200">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <p 
-                            className="font-semibold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
-                            onClick={() => viewSavedResult(saved.id)}
+                            className={`font-semibold ${isExpired ? 'text-gray-400' : 'text-gray-900 cursor-pointer hover:text-blue-600 transition-colors'}`}
+                            onClick={!isExpired ? () => viewSavedResult(saved.id) : undefined}
                           >
                             {saved.title}
                           </p>
@@ -2540,12 +2571,14 @@ function ResultContent() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
+                          {!isExpired && (
                           <button
                             onClick={() => viewSavedResult(saved.id)}
                             className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
                           >
                             보기
                           </button>
+                          )}
                           <button
                             onClick={() => deleteSavedResult(saved.id)}
                             className="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors duration-200"

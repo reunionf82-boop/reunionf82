@@ -35,16 +35,21 @@ export async function GET(request: NextRequest) {
     console.log('저장된 결과 개수:', data?.length || 0)
 
     // 데이터 형식 변환
-    const results = (data || []).map((item: any) => ({
-      id: item.id.toString(),
-      title: item.title,
-      html: item.html,
-      savedAt: new Date(item.saved_at).toLocaleString('ko-KR'),
-      content: item.content,
-      model: item.model,
-      processingTime: item.processing_time,
-      userName: item.user_name
-    }))
+    const results = (data || []).map((item: any) => {
+      const result = {
+        id: item.id.toString(),
+        title: item.title,
+        html: item.html,
+        savedAt: new Date(item.saved_at).toLocaleString('ko-KR'),
+        savedAtISO: item.saved_at, // 1일 경과 여부 확인용 원본 날짜
+        content: item.content,
+        model: item.model,
+        processingTime: item.processing_time,
+        userName: item.user_name
+      }
+      console.log(`저장된 결과 ${result.id}: saved_at=${item.saved_at}, savedAtISO=${result.savedAtISO}`)
+      return result
+    })
 
     console.log('변환된 결과 개수:', results.length)
     console.log('=== 저장된 결과 목록 조회 완료 ===')
