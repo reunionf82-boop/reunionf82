@@ -9,10 +9,14 @@
 DROP POLICY IF EXISTS "Allow public read access to app_settings" ON public.app_settings;
 DROP POLICY IF EXISTS "Allow authenticated users to update app_settings" ON public.app_settings;
 DROP POLICY IF EXISTS "Allow authenticated users to insert app_settings" ON public.app_settings;
+DROP POLICY IF EXISTS "Allow authenticated users to delete app_settings" ON public.app_settings;
 DROP POLICY IF EXISTS "Allow authenticated users to modify app_settings" ON public.app_settings;
 
 -- contents 테이블 정책 삭제
 DROP POLICY IF EXISTS "Allow public read access to contents" ON public.contents;
+DROP POLICY IF EXISTS "Allow authenticated users to insert contents" ON public.contents;
+DROP POLICY IF EXISTS "Allow authenticated users to update contents" ON public.contents;
+DROP POLICY IF EXISTS "Allow authenticated users to delete contents" ON public.contents;
 DROP POLICY IF EXISTS "Allow authenticated users to modify contents" ON public.contents;
 
 -- portal_results 테이블 정책 삭제
@@ -43,12 +47,25 @@ FOR SELECT
 TO public
 USING (true);
 
-CREATE POLICY "Allow authenticated users to modify app_settings"
+-- 각 액션별로 별도 정책 생성 (SELECT 제외하여 중복 경고 방지)
+CREATE POLICY "Allow authenticated users to insert app_settings"
 ON public.app_settings
-FOR ALL
+FOR INSERT
+TO authenticated
+WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated users to update app_settings"
+ON public.app_settings
+FOR UPDATE
 TO authenticated
 USING (true)
 WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated users to delete app_settings"
+ON public.app_settings
+FOR DELETE
+TO authenticated
+USING (true);
 
 -- contents 테이블 정책
 CREATE POLICY "Allow public read access to contents"
@@ -57,12 +74,25 @@ FOR SELECT
 TO public
 USING (true);
 
-CREATE POLICY "Allow authenticated users to modify contents"
+-- 각 액션별로 별도 정책 생성 (SELECT 제외하여 중복 경고 방지)
+CREATE POLICY "Allow authenticated users to insert contents"
 ON public.contents
-FOR ALL
+FOR INSERT
+TO authenticated
+WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated users to update contents"
+ON public.contents
+FOR UPDATE
 TO authenticated
 USING (true)
 WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated users to delete contents"
+ON public.contents
+FOR DELETE
+TO authenticated
+USING (true);
 
 -- portal_results 테이블 정책
 CREATE POLICY "Allow service role access to portal_results"
@@ -85,6 +115,11 @@ FROM pg_policies
 WHERE schemaname = 'public'
   AND tablename IN ('app_settings', 'contents', 'portal_results')
 ORDER BY tablename, policyname;
+
+
+
+
+
 
 
 

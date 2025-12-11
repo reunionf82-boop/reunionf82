@@ -16,3 +16,5 @@ END $$;
 -- 확인: 남아있는 cron job 목록 확인 (선택사항)
 -- SELECT * FROM cron.job WHERE jobname = 'delete-old-saved-results';
 
+
+

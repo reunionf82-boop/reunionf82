@@ -1123,8 +1123,21 @@ function ResultContent() {
         console.log('저장된 결과:', result.data)
         console.log('저장할 컨텐츠의 tts_speaker:', content?.tts_speaker)
         
-        // 저장된 결과 목록 다시 로드
-        await loadSavedResults()
+        // 저장된 결과를 리스트 맨 위에 추가 (즉시 반영)
+        if (result.data) {
+          setSavedResults((prev) => {
+            // 중복 제거 (같은 ID가 있으면 제거)
+            const filtered = prev.filter((item: any) => item.id !== result.data.id)
+            // 새 데이터를 맨 위에 추가
+            return [result.data, ...filtered]
+          })
+        }
+        
+        // 저장된 결과 목록 다시 로드 (백그라운드에서 최신 데이터 동기화)
+        setTimeout(async () => {
+          await loadSavedResults()
+        }, 500)
+        
         alert('결과가 저장되었습니다.')
       } else {
         throw new Error('결과 저장에 실패했습니다.')

@@ -12,6 +12,7 @@ ALTER TABLE IF EXISTS public.app_settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public read access to app_settings" ON public.app_settings;
 DROP POLICY IF EXISTS "Allow authenticated users to update app_settings" ON public.app_settings;
 DROP POLICY IF EXISTS "Allow authenticated users to insert app_settings" ON public.app_settings;
+DROP POLICY IF EXISTS "Allow authenticated users to delete app_settings" ON public.app_settings;
 DROP POLICY IF EXISTS "Allow authenticated users to modify app_settings" ON public.app_settings;
 
 -- 읽기: 모든 사용자 허용
@@ -21,13 +22,27 @@ FOR SELECT
 TO public
 USING (true);
 
--- 쓰기: 인증된 사용자 허용 (서버 사이드에서 서비스 롤 키 사용 시 RLS 우회됨)
-CREATE POLICY "Allow authenticated users to modify app_settings"
+-- 쓰기: 인증된 사용자 허용 (SELECT 제외하여 중복 정책 경고 방지)
+-- SELECT는 위의 "Allow public read access" 정책으로 처리됨
+-- 각 액션별로 별도 정책 생성
+CREATE POLICY "Allow authenticated users to insert app_settings"
 ON public.app_settings
-FOR ALL
+FOR INSERT
+TO authenticated
+WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated users to update app_settings"
+ON public.app_settings
+FOR UPDATE
 TO authenticated
 USING (true)
 WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated users to delete app_settings"
+ON public.app_settings
+FOR DELETE
+TO authenticated
+USING (true);
 
 -- ============================================
 -- contents 테이블
@@ -38,6 +53,9 @@ ALTER TABLE IF EXISTS public.contents ENABLE ROW LEVEL SECURITY;
 
 -- 기존 정책 삭제 (있는 경우)
 DROP POLICY IF EXISTS "Allow public read access to contents" ON public.contents;
+DROP POLICY IF EXISTS "Allow authenticated users to insert contents" ON public.contents;
+DROP POLICY IF EXISTS "Allow authenticated users to update contents" ON public.contents;
+DROP POLICY IF EXISTS "Allow authenticated users to delete contents" ON public.contents;
 DROP POLICY IF EXISTS "Allow authenticated users to modify contents" ON public.contents;
 
 -- 읽기: 모든 사용자 허용 (공개 컨텐츠)
@@ -47,13 +65,27 @@ FOR SELECT
 TO public
 USING (true);
 
--- 쓰기: 인증된 사용자 허용 (서버 사이드에서 서비스 롤 키 사용 시 RLS 우회됨)
-CREATE POLICY "Allow authenticated users to modify contents"
+-- 쓰기: 인증된 사용자 허용 (SELECT 제외하여 중복 정책 경고 방지)
+-- SELECT는 위의 "Allow public read access" 정책으로 처리됨
+-- 각 액션별로 별도 정책 생성
+CREATE POLICY "Allow authenticated users to insert contents"
 ON public.contents
-FOR ALL
+FOR INSERT
+TO authenticated
+WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated users to update contents"
+ON public.contents
+FOR UPDATE
 TO authenticated
 USING (true)
 WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated users to delete contents"
+ON public.contents
+FOR DELETE
+TO authenticated
+USING (true);
 
 -- ============================================
 -- portal_results 테이블

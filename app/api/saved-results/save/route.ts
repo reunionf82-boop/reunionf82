@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
         title: data.title,
         html: data.html,
         savedAt: new Date(data.saved_at).toLocaleString('ko-KR'),
+        savedAtISO: data.saved_at, // 12시간 경과 여부 확인용 원본 날짜
         content: data.content,
         model: data.model,
         processingTime: data.processing_time,
@@ -67,6 +68,12 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+
+
+
+
+
 
 
 
