@@ -394,6 +394,31 @@ function FormContent() {
     loadSavedResults()
   }, [])
 
+  // 페이지 포커스 시 저장된 결과 동기화
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('Form 페이지: 페이지 포커스 감지, 저장된 결과 동기화')
+        loadSavedResults()
+      }
+    }
+
+    const handleFocus = () => {
+      console.log('Form 페이지: window focus 감지, 저장된 결과 동기화')
+      loadSavedResults()
+    }
+
+    // visibilitychange 이벤트: 탭 전환 시
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    // focus 이벤트: 창 포커스 시
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [])
+
   // savedResults 변경 시 로깅
   useEffect(() => {
     console.log('Form 페이지: savedResults 변경됨, 길이:', savedResults.length)
@@ -1683,6 +1708,9 @@ function FormContent() {
                           onClick={() => {
                             if (typeof window === 'undefined') return
                             try {
+                              // userName을 안전하게 처리 (템플릿 리터럴 중첩 방지)
+                              const userNameForScript = saved.userName ? JSON.stringify(saved.userName) : "''"
+                              
                               const newWindow = window.open('', '_blank')
                               if (newWindow) {
                                 const savedMenuFontSize = saved.content?.menu_font_size || 16
@@ -1921,11 +1949,39 @@ function FormContent() {
                                       .question-popup-prompt {
                                         font-size: 16px;
                                         color: #4b5563;
-                                        margin-bottom: 6px;
+                                        margin-bottom: 12px;
+                                        display: flex;
+                                        justify-content: space-between;
+                                        align-items: flex-start;
+                                      }
+                                      .question-popup-prompt-text {
+                                        flex: 1;
                                       }
                                       .question-popup-prompt strong {
                                         font-weight: 600;
                                         color: #111827;
+                                      }
+                                      .question-remaining-badge {
+                                        background: #f3f4f6;
+                                        padding: 4px 12px;
+                                        border-radius: 9999px;
+                                        font-size: 12px;
+                                        font-weight: 500;
+                                        color: #4b5563;
+                                        white-space: nowrap;
+                                        margin-left: 8px;
+                                      }
+                                      .question-remaining-badge .remaining-count {
+                                        color: #ec4899;
+                                        font-weight: bold;
+                                      }
+                                      .question-remaining-badge .remaining-count.limit-reached {
+                                        color: #ef4444;
+                                      }
+                                      .question-hint-text {
+                                        font-size: 12px;
+                                        color: #9ca3af;
+                                        margin-top: 4px;
                                       }
                                       .question-textarea {
                                         width: 100%;
@@ -1965,6 +2021,11 @@ function FormContent() {
                                         border: 1px solid #ec4899;
                                         padding-right: 18px;
                                         outline: none;
+                                      }
+                                      .question-textarea:disabled {
+                                        background: #f3f4f6;
+                                        cursor: not-allowed;
+                                        color: #9ca3af;
                                       }
                                       .question-char-count {
                                         margin-top: 4px;
@@ -2027,6 +2088,24 @@ function FormContent() {
                                         gap: 10px;
                                         margin-top: 12px;
                                       }
+                                      .question-button-container {
+                                        margin-top: 24px;
+                                        margin-bottom: 16px;
+                                        text-align: center;
+                                      }
+                                      .question-button {
+                                        background: #ec4899;
+                                        color: white;
+                                        font-weight: 600;
+                                        padding: 8px 24px;
+                                        border-radius: 8px;
+                                        border: none;
+                                        cursor: pointer;
+                                        transition: background-color 0.2s;
+                                      }
+                                      .question-button:hover {
+                                        background: #db2777;
+                                      }
                                       .question-submit-btn {
                                         flex: 1;
                                         background: #ec4899;
@@ -2043,8 +2122,10 @@ function FormContent() {
                                         background: #db2777;
                                       }
                                       .question-submit-btn:disabled {
-                                        background: #d1d5db;
-                                        cursor: not-allowed;
+                                        background: #d1d5db !important;
+                                        color: #9ca3af !important;
+                                        cursor: not-allowed !important;
+                                        opacity: 1;
                                       }
                                       .question-close-btn {
                                         background: #e5e7eb;
@@ -2095,18 +2176,26 @@ function FormContent() {
                                         </div>
                                         <div class="question-popup-body">
                                           <div class="question-popup-prompt">
-                                            <strong id="questionMenuTitle"></strong>에 대한 추가 질문이 있으신가요?
+                                            <div class="question-popup-prompt-text">
+                                              <strong id="questionMenuTitle"></strong>에 대한 추가 질문이 있으신가요?
+                                            </div>
+                                            <div class="question-remaining-badge">
+                                              남은 질문: <span id="questionRemainingCount" class="remaining-count">3</span> / <span id="questionMaxCount">3</span>회
+                                            </div>
                                           </div>
                                           <form id="questionForm" onsubmit="handleQuestionSubmit(event)">
                                             <textarea
                                               id="questionTextarea"
                                               class="question-textarea"
-                                              placeholder="예: 이 부분에 대해 더 자세히 알려주세요"
-                                              maxlength="100"
+                                              placeholder="예: 이 부분에 대해 더 자세히 알려주세요 (50자 이내)"
+                                              maxlength="50"
                                               rows="2"
                                             ></textarea>
-                                            <div class="question-char-count">
-                                              <span id="questionCharCount">0</span>/100
+                                            <div style="margin-top: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
+                                              <span class="question-hint-text">한 번에 하나의 질문만 가능합니다.</span>
+                                              <div class="question-char-count" style="margin-top: 0;">
+                                                <span id="questionCharCount">0</span>/50
+                                              </div>
                                             </div>
                                             <div id="questionError" class="question-error" style="display: none;"></div>
                                             <div id="questionAnswer" class="question-answer" style="display: none;">
@@ -2567,6 +2656,19 @@ function FormContent() {
                                       
                                       // 추가 질문하기 기능
                                       let currentQuestionData = null;
+                                      const MAX_QUESTIONS = 3;
+                                      let usedQuestionCounts = {};
+                                      
+                                      // localStorage에서 질문 횟수 로드
+                                      try {
+                                        const savedCounts = localStorage.getItem('question_counts_' + ${JSON.stringify(saved.id)});
+                                        if (savedCounts) {
+                                          usedQuestionCounts = JSON.parse(savedCounts);
+                                        }
+                                      } catch (e) {
+                                        console.error('질문 횟수 로드 실패:', e);
+                                        usedQuestionCounts = {};
+                                      }
                                       
                                       // 질문하기 버튼 추가 함수
                                       function addQuestionButtons() {
@@ -2649,12 +2751,64 @@ function FormContent() {
                                           menuTitleEl.textContent = menuTitle;
                                           overlay.classList.add('show');
                                           
+                                          // 남은 질문 수 업데이트
+                                          const currentMenuTitle = menuTitle;
+                                          const currentCount = usedQuestionCounts[currentMenuTitle] || 0;
+                                          const remaining = Math.max(0, MAX_QUESTIONS - currentCount);
+                                          const remainingCountEl = document.getElementById('questionRemainingCount');
+                                          const maxCountEl = document.getElementById('questionMaxCount');
+                                          
+                                          if (remainingCountEl) {
+                                            remainingCountEl.textContent = remaining;
+                                            if (remaining === 0) {
+                                              remainingCountEl.classList.add('limit-reached');
+                                            } else {
+                                              remainingCountEl.classList.remove('limit-reached');
+                                            }
+                                          }
+                                          if (maxCountEl) {
+                                            maxCountEl.textContent = MAX_QUESTIONS;
+                                          }
+                                          
                                           // 폼 초기화
-                                          document.getElementById('questionTextarea').value = '';
-                                          document.getElementById('questionCharCount').textContent = '0';
-                                          document.getElementById('questionError').style.display = 'none';
-                                          document.getElementById('questionAnswer').style.display = 'none';
-                                          document.getElementById('questionLoading').style.display = 'none';
+                                          const textarea = document.getElementById('questionTextarea');
+                                          const submitBtn = document.getElementById('questionSubmitBtn');
+                                          const errorEl = document.getElementById('questionError');
+                                          
+                                          if (textarea) {
+                                            textarea.value = '';
+                                            textarea.disabled = remaining === 0;
+                                          }
+                                          const charCountEl = document.getElementById('questionCharCount');
+                                          if (charCountEl) {
+                                            charCountEl.textContent = '0';
+                                          }
+                                          const answerEl = document.getElementById('questionAnswer');
+                                          if (answerEl) {
+                                            answerEl.style.display = 'none';
+                                          }
+                                          const loadingEl = document.getElementById('questionLoading');
+                                          if (loadingEl) {
+                                            loadingEl.style.display = 'none';
+                                          }
+                                          
+                                          // 질문 횟수 소진 시 에러 메시지 표시 및 버튼 비활성화
+                                          if (remaining === 0) {
+                                            if (errorEl) {
+                                              errorEl.textContent = '이 메뉴에 대한 질문 횟수를 모두 소진했습니다.';
+                                              errorEl.style.display = 'block';
+                                            }
+                                            if (submitBtn) {
+                                              submitBtn.disabled = true;
+                                            }
+                                          } else {
+                                            if (errorEl) {
+                                              errorEl.style.display = 'none';
+                                            }
+                                            if (submitBtn) {
+                                              submitBtn.disabled = false;
+                                            }
+                                          }
                                         }
                                       }
                                       
@@ -2666,11 +2820,27 @@ function FormContent() {
                                           currentQuestionData = null;
                                           
                                           // 폼 초기화
-                                          document.getElementById('questionTextarea').value = '';
-                                          document.getElementById('questionCharCount').textContent = '0';
-                                          document.getElementById('questionError').style.display = 'none';
-                                          document.getElementById('questionAnswer').style.display = 'none';
-                                          document.getElementById('questionLoading').style.display = 'none';
+                                          const textarea = document.getElementById('questionTextarea');
+                                          const charCountEl = document.getElementById('questionCharCount');
+                                          const errorEl = document.getElementById('questionError');
+                                          const answerEl = document.getElementById('questionAnswer');
+                                          const loadingEl = document.getElementById('questionLoading');
+                                          
+                                          if (textarea) {
+                                            textarea.value = '';
+                                          }
+                                          if (charCountEl) {
+                                            charCountEl.textContent = '0';
+                                          }
+                                          if (errorEl) {
+                                            errorEl.style.display = 'none';
+                                          }
+                                          if (answerEl) {
+                                            answerEl.style.display = 'none';
+                                          }
+                                          if (loadingEl) {
+                                            loadingEl.style.display = 'none';
+                                          }
                                         }
                                       }
                                       
@@ -2682,26 +2852,47 @@ function FormContent() {
                                         // 기본 2줄 높이 계산 (font-size: 17px, line-height: 1.4, padding: 10px)
                                         const baseHeight = 17 * 1.4 * 2 + 10 * 2; // 약 67.6px
                                         
-                                        // 초기 높이 및 스크롤 설정
-                                        textarea.style.height = baseHeight + 'px';
-                                        textarea.style.overflowY = 'hidden';
-                                        
                                         textarea.addEventListener('input', function() {
+                                          // 50자 제한
+                                          if (this.value.length > 50) {
+                                            this.value = this.value.substring(0, 50);
+                                          }
+                                          
                                           // 문자 수 업데이트
                                           if (charCount) {
                                             charCount.textContent = this.value.length;
                                           }
                                           
-                                          // 높이는 기본 2줄로 고정
-                                          this.style.height = baseHeight + 'px';
+                                          // 버튼 활성화/비활성화
+                                          const submitBtn = document.getElementById('questionSubmitBtn');
+                                          const errorEl = document.getElementById('questionError');
+                                          const currentMenuTitle = currentQuestionData?.menuTitle;
+                                          const currentCount = currentMenuTitle ? (usedQuestionCounts[currentMenuTitle] || 0) : 0;
+                                          const remaining = Math.max(0, MAX_QUESTIONS - currentCount);
                                           
-                                          // 내용이 많으면 스크롤 표시, 아니면 숨김
-                                          if (this.scrollHeight > baseHeight) {
-                                            this.style.overflowY = 'auto';
-                                          } else {
-                                            this.style.overflowY = 'hidden';
+                                          if (submitBtn && errorEl) {
+                                            if (remaining === 0) {
+                                              submitBtn.disabled = true;
+                                              errorEl.textContent = '이 메뉴에 대한 질문 횟수를 모두 소진했습니다.';
+                                              errorEl.style.display = 'block';
+                                              this.disabled = true;
+                                            } else {
+                                              submitBtn.disabled = !this.value.trim();
+                                              // 에러 메시지가 "질문 횟수 소진" 메시지가 아닐 때만 숨김
+                                              if (errorEl.textContent === '이 메뉴에 대한 질문 횟수를 모두 소진했습니다.') {
+                                                errorEl.style.display = 'none';
+                                              }
+                                              this.disabled = false;
+                                            }
                                           }
+                                          
+                                          // 높이는 기본 2줄로 고정하고 내용이 많으면 스크롤 표시
+                                          this.style.height = baseHeight + 'px';
+                                          this.style.overflowY = 'auto';
                                         });
+                                        
+                                        // 초기 높이 설정
+                                        textarea.style.height = baseHeight + 'px';
                                       }
                                       
                                       // 질문 제출
@@ -2709,6 +2900,17 @@ function FormContent() {
                                         event.preventDefault();
                                         
                                         if (!currentQuestionData) return;
+                                        
+                                        const currentMenuTitle = currentQuestionData.menuTitle;
+                                        const currentCount = usedQuestionCounts[currentMenuTitle] || 0;
+                                        
+                                        // 질문 횟수 제한 체크
+                                        if (currentCount >= MAX_QUESTIONS) {
+                                          const errorEl = document.getElementById('questionError');
+                                          errorEl.textContent = '이 메뉴에 대한 질문 횟수를 모두 소진했습니다.';
+                                          errorEl.style.display = 'block';
+                                          return;
+                                        }
                                         
                                         const textarea = document.getElementById('questionTextarea');
                                         const question = textarea.value.trim();
@@ -2729,9 +2931,44 @@ function FormContent() {
                                         errorEl.style.display = 'none';
                                         answerEl.style.display = 'none';
                                         loadingEl.style.display = 'block';
-                                        submitBtn.disabled = true;
+                                        
+                                        // 이번 질문 제출 후 남은 질문이 0이 되는지 미리 계산
+                                        const newCount = currentCount + 1;
+                                        const remainingAfterSubmit = Math.max(0, MAX_QUESTIONS - newCount);
+                                        
+                                        // 남은 질문이 0이 되면 즉시 버튼 비활성화 및 UI 업데이트
+                                        if (remainingAfterSubmit === 0) {
+                                          // 남은 질문 수 즉시 업데이트
+                                          const remainingCountEl = document.getElementById('questionRemainingCount');
+                                          if (remainingCountEl) {
+                                            remainingCountEl.textContent = '0';
+                                            remainingCountEl.classList.add('limit-reached');
+                                          }
+                                          
+                                          // 에러 메시지 표시
+                                          errorEl.textContent = '이 메뉴에 대한 질문 횟수를 모두 소진했습니다.';
+                                          errorEl.style.display = 'block';
+                                          
+                                          // 버튼 즉시 비활성화 (회색 딤 처리)
+                                          submitBtn.disabled = true;
+                                          
+                                          // 텍스트 영역 비활성화
+                                          if (textarea) {
+                                            textarea.disabled = true;
+                                          }
+                                        } else {
+                                          // 로딩 중에는 일시적으로 비활성화 (답변 받으면 다시 활성화)
+                                          submitBtn.disabled = true;
+                                        }
                                         
                                         try {
+                                          console.log('질문 제출 API 호출 시작:', {
+                                            question,
+                                            menuTitle: currentQuestionData.menuTitle,
+                                            subtitles: currentQuestionData.subtitles,
+                                            subtitlesContent: currentQuestionData.subtitlesContent,
+                                          });
+                                          
                                           const response = await fetch('/api/question', {
                                             method: 'POST',
                                             headers: {
@@ -2742,19 +2979,67 @@ function FormContent() {
                                               menuTitle: currentQuestionData.menuTitle,
                                               subtitles: currentQuestionData.subtitles,
                                               subtitlesContent: currentQuestionData.subtitlesContent,
-                                              userName: ${saved.userName ? JSON.stringify(saved.userName) : "''"},
+                                              userName: ${userNameForScript},
                                             }),
                                           });
                                           
+                                          console.log('API 응답 상태:', response.status, response.statusText);
+                                          
                                           if (!response.ok) {
                                             const error = await response.json();
+                                            console.error('API 오류:', error);
+                                            
+                                            // 재미나이 응답 디버그 정보 표시
+                                            if (error.debug) {
+                                              console.error('=== 재미나이 응답 디버그 정보 ===');
+                                              console.error('Finish Reason:', error.debug.finishReason);
+                                              console.error('Candidates 개수:', error.debug.candidatesCount);
+                                              console.error('첫 번째 Candidate 정보:', error.debug.firstCandidate);
+                                              console.error('Response 전체 구조:', error.debug);
+                                            }
+                                            
                                             throw new Error(error.error || '답변 생성에 실패했습니다.');
                                           }
                                           
                                           const data = await response.json();
+                                          console.log('API 응답 데이터:', data);
                                           
                                           if (!data.answer) {
+                                            console.error('답변이 없습니다:', data);
                                             throw new Error('답변을 받지 못했습니다.');
+                                          }
+                                          
+                                          // 질문 횟수 증가 및 저장 (메뉴별)
+                                          const newCount = currentCount + 1;
+                                          usedQuestionCounts[currentMenuTitle] = newCount;
+                                          
+                                          try {
+                                            localStorage.setItem('question_counts_' + ${JSON.stringify(saved.id)}, JSON.stringify(usedQuestionCounts));
+                                          } catch (e) {
+                                            console.error('질문 횟수 저장 실패:', e);
+                                          }
+                                          
+                                          // 남은 질문 수는 이미 제출 시점에 업데이트했으므로 여기서는 확인만
+                                          const remaining = Math.max(0, MAX_QUESTIONS - newCount);
+                                          
+                                          // 남은 질문이 0이면 버튼은 이미 비활성화되어 있음 (제출 시점에 처리)
+                                          // 답변 표시 후에도 버튼 상태 유지
+                                          if (remaining === 0) {
+                                            // 버튼은 이미 비활성화되어 있으므로 상태 유지
+                                            if (submitBtn) {
+                                              submitBtn.disabled = true;
+                                            }
+                                            if (textarea) {
+                                              textarea.disabled = true;
+                                            }
+                                          } else {
+                                            // 남은 질문이 있으면 버튼 다시 활성화 (다음 질문 가능)
+                                            if (submitBtn) {
+                                              submitBtn.disabled = false;
+                                            }
+                                            if (textarea) {
+                                              textarea.disabled = false;
+                                            }
                                           }
                                           
                                           // 답변 표시
@@ -2765,7 +3050,13 @@ function FormContent() {
                                           errorEl.style.display = 'block';
                                         } finally {
                                           loadingEl.style.display = 'none';
-                                          submitBtn.disabled = false;
+                                          
+                                          // 남은 질문이 0이 아니면 버튼 다시 활성화
+                                          const finalRemaining = Math.max(0, MAX_QUESTIONS - (usedQuestionCounts[currentMenuTitle] || 0));
+                                          if (finalRemaining > 0) {
+                                            submitBtn.disabled = false;
+                                          }
+                                          // 남은 질문이 0이면 버튼은 이미 비활성화되어 있으므로 그대로 유지
                                         }
                                       }
                                       
