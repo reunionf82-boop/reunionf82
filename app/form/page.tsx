@@ -225,6 +225,11 @@ function FormContent() {
     if (typeof window === 'undefined') return ''
     const tempDiv = document.createElement('div')
     tempDiv.innerHTML = htmlString
+    
+    // 테이블 요소 제거 (manse-ryeok-table 클래스를 가진 테이블 및 모든 table 요소)
+    const tables = tempDiv.querySelectorAll('table, .manse-ryeok-table')
+    tables.forEach(table => table.remove())
+    
     return tempDiv.textContent || tempDiv.innerText || ''
   }
 
@@ -2122,6 +2127,11 @@ function FormContent() {
                                       function extractTextFromHtml(htmlString) {
                                         const tempDiv = document.createElement('div');
                                         tempDiv.innerHTML = htmlString;
+                                        
+                                        // 테이블 요소 제거 (manse-ryeok-table 클래스를 가진 테이블 및 모든 table 요소)
+                                        const tables = tempDiv.querySelectorAll('table, .manse-ryeok-table');
+                                        tables.forEach(table => table.remove());
+                                        
                                         return tempDiv.textContent || tempDiv.innerText || '';
                                       }
 
