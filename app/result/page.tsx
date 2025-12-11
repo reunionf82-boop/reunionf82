@@ -2163,6 +2163,19 @@ function ResultContent() {
                 
                 // 추가 질문하기 기능
                 let currentQuestionData = null;
+                const MAX_QUESTIONS = 3;
+                let usedQuestionCounts = {};
+                
+                // localStorage에서 질문 횟수 로드
+                try {
+                  const savedCounts = localStorage.getItem('question_counts_' + ${JSON.stringify(saved.id)});
+                  if (savedCounts) {
+                    usedQuestionCounts = JSON.parse(savedCounts);
+                  }
+                } catch (e) {
+                  console.error('질문 횟수 로드 실패:', e);
+                  usedQuestionCounts = {};
+                }
                 
                 // 질문하기 버튼 추가 함수
                 function addQuestionButtons() {
@@ -2299,6 +2312,17 @@ function ResultContent() {
                   
                   if (!currentQuestionData) return;
                   
+                  const currentMenuTitle = currentQuestionData.menuTitle;
+                  const currentCount = usedQuestionCounts[currentMenuTitle] || 0;
+                  
+                  // 질문 횟수 제한 체크
+                  if (currentCount >= MAX_QUESTIONS) {
+                    const errorEl = document.getElementById('questionError');
+                    errorEl.textContent = '이 메뉴에 대한 질문 횟수를 모두 소진했습니다.';
+                    errorEl.style.display = 'block';
+                    return;
+                  }
+                  
                   const textarea = document.getElementById('questionTextarea');
                   const question = textarea.value.trim();
                   
@@ -2321,6 +2345,13 @@ function ResultContent() {
                   submitBtn.disabled = true;
                   
                   try {
+                    console.log('질문 제출 API 호출 시작:', {
+                      question,
+                      menuTitle: currentQuestionData.menuTitle,
+                      subtitles: currentQuestionData.subtitles,
+                      subtitlesContent: currentQuestionData.subtitlesContent,
+                    });
+                    
                     const response = await fetch('/api/question', {
                       method: 'POST',
                       headers: {
@@ -2335,15 +2366,40 @@ function ResultContent() {
                       }),
                     });
                     
+                    console.log('API 응답 상태:', response.status, response.statusText);
+                    
                     if (!response.ok) {
                       const error = await response.json();
+                      console.error('API 오류:', error);
+                      
+                      // 재미나이 응답 디버그 정보 표시
+                      if (error.debug) {
+                        console.error('=== 재미나이 응답 디버그 정보 ===');
+                        console.error('Finish Reason:', error.debug.finishReason);
+                        console.error('Candidates 개수:', error.debug.candidatesCount);
+                        console.error('첫 번째 Candidate 정보:', error.debug.firstCandidate);
+                        console.error('Response 전체 구조:', error.debug);
+                      }
+                      
                       throw new Error(error.error || '답변 생성에 실패했습니다.');
                     }
                     
                     const data = await response.json();
+                    console.log('API 응답 데이터:', data);
                     
                     if (!data.answer) {
+                      console.error('답변이 없습니다:', data);
                       throw new Error('답변을 받지 못했습니다.');
+                    }
+                    
+                    // 질문 횟수 증가 및 저장 (메뉴별)
+                    const newCount = currentCount + 1;
+                    usedQuestionCounts[currentMenuTitle] = newCount;
+                    
+                    try {
+                      localStorage.setItem('question_counts_' + ${JSON.stringify(saved.id)}, JSON.stringify(usedQuestionCounts));
+                    } catch (e) {
+                      console.error('질문 횟수 저장 실패:', e);
                     }
                     
                     // 답변 표시
