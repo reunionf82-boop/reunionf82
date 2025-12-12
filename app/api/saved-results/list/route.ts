@@ -26,11 +26,12 @@ export async function GET(request: NextRequest) {
     
     console.log('=== DB 실제 레코드 수 (count only):', totalCount)
     
-    // 전체 데이터 조회
+    // 전체 데이터 조회 (명시적으로 limit 제거)
     const { data, error, count } = await supabase
       .from('saved_results')
       .select('*', { count: 'exact' })
       .order('saved_at', { ascending: false })
+      .limit(1000) // Supabase 기본 limit은 1000개이지만 명시적으로 설정
     
     console.log('Supabase 쿼리 결과 - count:', count)
     console.log('Supabase 쿼리 결과 - data 길이:', data?.length || 0)
@@ -51,6 +52,15 @@ export async function GET(request: NextRequest) {
     
     console.log('Supabase 쿼리 성공 - 실제 반환된 데이터 개수:', data?.length || 0)
     console.log('Supabase 쿼리 성공 - count와 data 길이 비교:', { count, dataLength: data?.length || 0 })
+    console.log('Supabase 쿼리 성공 - totalCount와 count 비교:', { totalCount, count, dataLength: data?.length || 0 })
+    
+    // count와 실제 반환된 데이터가 다른 경우 경고
+    if (count && count !== (data?.length || 0)) {
+      console.warn(`⚠️ 경고: count(${count})와 실제 반환된 데이터(${data?.length || 0})가 다릅니다!`)
+    }
+    if (totalCount && totalCount !== (data?.length || 0)) {
+      console.warn(`⚠️ 경고: totalCount(${totalCount})와 실제 반환된 데이터(${data?.length || 0})가 다릅니다!`)
+    }
     
     // 모든 데이터의 ID와 saved_at 로그
     if (data && Array.isArray(data)) {
