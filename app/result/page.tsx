@@ -187,7 +187,7 @@ function ResultContent() {
         // 저장된 결과 목록 로드
         console.log('결과 페이지: loadSavedResults 호출')
         loadSavedResults()
-        
+
         // 사용 후 세션 스토리지에서 삭제하지 않음 (저장 기능을 위해 유지)
         console.log('결과 페이지: 데이터 로드 완료')
       } catch (e) {
@@ -202,7 +202,30 @@ function ResultContent() {
     const timer = setTimeout(loadData, 50)
     
     return () => clearTimeout(timer)
-  }, [storageKey, isStreaming])
+  }, [storageKey])
+
+  // 페이지 포커스 시 저장된 결과 동기화
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('결과 페이지: 페이지가 보이게 됨, 저장된 결과 동기화')
+        loadSavedResults()
+      }
+    }
+
+    const handleFocus = () => {
+      console.log('결과 페이지: 윈도우 포커스, 저장된 결과 동기화')
+      loadSavedResults()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleFocus)
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [])
 
   // 질문 횟수 로드 (localStorage)
   useEffect(() => {
@@ -2601,36 +2624,31 @@ function ResultContent() {
                   // 디버깅: saved 객체 전체 확인
                   console.log(`저장된 결과 ${saved.id} 전체 데이터:`, saved)
                   
-                  // 12시간 경과 여부 확인 (한국 시간 기준으로 계산)
-                  const isExpired = saved.savedAtISO ? (() => {
-                    // savedAtISO는 UTC로 저장된 시간
-                    const savedDateUTC = new Date(saved.savedAtISO)
+                  // 60일 경과 여부 확인 (텍스트 딤처리 및 보기 버튼 숨김용, 한국 시간 기준)
+                  const isExpired60d = saved.savedAtISO ? (() => {
+                    // savedAtISO는 한국 시간으로 저장된 시간
+                    const savedDateKST = new Date(saved.savedAtISO)
                     const nowUTC = new Date()
+                    const nowKST = new Date(nowUTC.getTime() + (9 * 60 * 60 * 1000)) // UTC+9
                     
-                    // UTC 기준으로 시간 차이 계산 (한국 시간 기준 12시간 = UTC 기준 12시간)
-                    const diffTime = nowUTC.getTime() - savedDateUTC.getTime()
-                    const diffHours = diffTime / (1000 * 60 * 60) // 밀리초를 시간으로 변환
-                    const expired = diffHours >= 12
+                    // 한국 시간 기준으로 시간 차이 계산
+                    const diffTime = nowKST.getTime() - savedDateKST.getTime()
+                    const diffDays = diffTime / (1000 * 60 * 60 * 24) // 밀리초를 일로 변환
+                    const expired = diffDays >= 60
                     
-                    // 로그용: 한국 시간으로 변환하여 표시
-                    const savedDateKST = new Date(savedDateUTC.getTime() + (9 * 60 * 60 * 1000))
-                    const nowKST = new Date(nowUTC.getTime() + (9 * 60 * 60 * 1000))
-                    console.log(`[12시간 체크 - 한국시간 기준] 저장된 결과 ${saved.id}: savedAtISO=${saved.savedAtISO}, savedDateKST=${savedDateKST.toISOString()}, nowKST=${nowKST.toISOString()}, diffHours=${diffHours.toFixed(2)}, isExpired=${expired}`)
+                    console.log(`[60일 체크 - 텍스트 딤처리 및 보기 버튼 숨김] 저장된 결과 ${saved.id}: savedAtISO=${saved.savedAtISO}, diffDays=${diffDays.toFixed(2)}, isExpired=${expired}`)
                     return expired
-                  })() : (() => {
-                    console.error(`[에러] 저장된 결과 ${saved.id}: savedAtISO가 없음! saved 객체:`, saved)
-                    return false
-                  })()
+                  })() : false
                   
-                  console.log(`[최종] 저장된 결과 ${saved.id}: isExpired=${isExpired}, 보기 버튼 표시=${!isExpired}`)
+                  console.log(`[최종] 저장된 결과 ${saved.id}: isExpired60d=${isExpired60d}, 텍스트 딤처리=${isExpired60d}, 보기 버튼 표시=${!isExpired60d}`)
                   
                   return (
                     <div key={saved.id} className="bg-white rounded-lg p-4 border border-gray-200">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <p 
-                            className={`font-semibold ${isExpired ? 'text-gray-400' : 'text-gray-900 cursor-pointer hover:text-blue-600 transition-colors'}`}
-                            onClick={!isExpired ? () => viewSavedResult(saved.id) : undefined}
+                            className={`font-semibold ${isExpired60d ? 'text-gray-400' : 'text-gray-900 cursor-pointer hover:text-blue-600 transition-colors'}`}
+                            onClick={!isExpired60d ? () => viewSavedResult(saved.id) : undefined}
                           >
                             {saved.title}
                           </p>
@@ -2645,7 +2663,7 @@ function ResultContent() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          {!isExpired && (
+                          {!isExpired60d && (
                           <button
                             onClick={() => viewSavedResult(saved.id)}
                             className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors duration-200"

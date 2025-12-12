@@ -36,9 +36,8 @@ export async function GET(request: NextRequest) {
 
     // 데이터 형식 변환
     const results = (data || []).map((item: any) => {
-      // DB에 저장된 UTC 시간을 한국 시간(UTC+9)으로 변환하여 표시
-      const savedDateUTC = new Date(item.saved_at)
-      const savedDateKST = new Date(savedDateUTC.getTime() + (9 * 60 * 60 * 1000)) // UTC+9
+      // DB에 저장된 한국 시간을 포맷팅하여 표시
+      const savedDateKST = new Date(item.saved_at)
       
       // 한국 시간을 포맷팅 (서버 환경과 무관하게 일관된 형식)
       const year = savedDateKST.getUTCFullYear()
@@ -54,7 +53,7 @@ export async function GET(request: NextRequest) {
         title: item.title,
         html: item.html,
         savedAt: savedAtKST,
-        savedAtISO: item.saved_at, // UTC로 저장된 원본 날짜 (12시간 경과 여부 확인용)
+        savedAtISO: item.saved_at, // 한국 시간으로 저장된 원본 날짜 (12시간/60일 경과 여부 확인용)
         content: item.content,
         model: item.model,
         processingTime: item.processing_time,
