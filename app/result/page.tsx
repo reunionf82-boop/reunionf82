@@ -54,7 +54,9 @@ function ResultContent() {
     if (typeof window === 'undefined') return
     try {
       console.log('=== 저장된 결과 목록 로드 시작 (결과 페이지) ===')
-      const response = await fetch('/api/saved-results/list')
+      const response = await fetch('/api/saved-results/list', {
+        cache: 'no-store' // 프로덕션 환경에서 캐싱 방지
+      })
       console.log('API 응답 상태:', response.status, response.statusText)
       
       if (!response.ok) {
@@ -1122,6 +1124,7 @@ function ResultContent() {
     try {
       const response = await fetch('/api/saved-results/save', {
         method: 'POST',
+        cache: 'no-store', // 프로덕션 환경에서 캐싱 방지
         headers: {
           'Content-Type': 'application/json',
         },
@@ -1197,7 +1200,8 @@ function ResultContent() {
     
     try {
       const response = await fetch(`/api/saved-results/delete?id=${resultId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        cache: 'no-store' // 프로덕션 환경에서 캐싱 방지
       })
       if (!response.ok) {
         throw new Error('저장된 결과 삭제 실패')

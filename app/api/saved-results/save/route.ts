@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+// Next.js 캐싱 방지 설정 (프로덕션 환경에서 항상 최신 데이터 가져오기)
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
@@ -63,20 +67,30 @@ export async function POST(request: NextRequest) {
     const second = String(savedDateKST.getUTCSeconds()).padStart(2, '0')
     const savedAtKSTFormatted = `${year}. ${month}. ${day}. ${hour}:${minute}:${second}`
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        id: data.id.toString(),
-        title: data.title,
-        html: data.html,
-        savedAt: savedAtKSTFormatted,
-        savedAtISO: data.saved_at, // 한국 시간으로 저장된 원본 날짜 (12시간/60일 경과 여부 확인용)
-        content: data.content,
-        model: data.model,
-        processingTime: data.processing_time,
-        userName: data.user_name
+    // 캐싱 방지 헤더 설정 (프로덕션 환경에서 브라우저/CDN 캐싱 방지)
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          id: data.id.toString(),
+          title: data.title,
+          html: data.html,
+          savedAt: savedAtKSTFormatted,
+          savedAtISO: data.saved_at, // 한국 시간으로 저장된 원본 날짜 (12시간/60일 경과 여부 확인용)
+          content: data.content,
+          model: data.model,
+          processingTime: data.processing_time,
+          userName: data.user_name
+        }
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        }
       }
-    })
+    )
   } catch (error: any) {
     console.error('저장된 결과 저장 API 오류:', error)
     return NextResponse.json(
