@@ -1146,6 +1146,9 @@ function ResultContent() {
         console.log('저장된 결과:', result.data)
         console.log('저장할 컨텐츠의 tts_speaker:', content?.tts_speaker)
         
+        // 저장된 결과 ID 저장 (동기화 확인용)
+        const savedResultId = result.data?.id
+        
         // 저장된 결과를 리스트 맨 위에 추가 (즉시 반영)
         if (result.data) {
           setSavedResults((prev) => {
@@ -1156,12 +1159,28 @@ function ResultContent() {
           })
         }
         
-        // 저장된 결과 목록 다시 로드 (백그라운드에서 최신 데이터 동기화)
-        setTimeout(async () => {
-          await loadSavedResults()
-        }, 500)
-        
         alert('결과가 저장되었습니다.')
+        
+        // 저장된 결과 목록 다시 로드 (DB 동기화를 위해 충분한 시간 대기)
+        // DB에 저장 후 인덱싱/캐싱 시간을 고려하여 1.5초 후 조회
+        setTimeout(async () => {
+          console.log('저장 후 리스트 동기화 시작, 저장된 ID:', savedResultId)
+          await loadSavedResults()
+          
+          // 동기화 후 새로 저장된 항목이 포함되어 있는지 확인
+          setSavedResults((prev) => {
+            const hasNewItem = prev.some((item: any) => item.id === savedResultId)
+            if (!hasNewItem && result.data) {
+              console.warn('⚠️ 동기화 후 새로 저장된 항목이 없음, 다시 추가')
+              // 새로 저장된 항목이 없으면 다시 추가
+              const filtered = prev.filter((item: any) => item.id !== result.data.id)
+              return [result.data, ...filtered]
+            }
+            return prev
+          })
+          
+          console.log('저장 후 리스트 동기화 완료')
+        }, 1500)
       } else {
         throw new Error('결과 저장에 실패했습니다.')
       }
