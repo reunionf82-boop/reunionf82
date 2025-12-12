@@ -14,25 +14,39 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 export async function GET(request: NextRequest) {
   try {
     console.log('=== 저장된 결과 목록 조회 API 호출 ===')
-    console.log('Supabase URL:', supabaseUrl ? '설정됨' : '없음')
-    console.log('Supabase Service Key:', supabaseServiceKey ? '설정됨' : '없음')
+    console.log('Supabase URL:', supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : '없음')
+    console.log('Supabase Service Key:', supabaseServiceKey ? `${supabaseServiceKey.substring(0, 20)}...` : '없음')
+    console.log('환경:', process.env.NODE_ENV || 'unknown')
     
     // 저장된 결과 목록 조회 (최신순, 제한 없음)
-    const { data, error } = await supabase
+    const { data, error, count } = await supabase
       .from('saved_results')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('saved_at', { ascending: false })
+    
+    console.log('Supabase 쿼리 결과 - count:', count)
+    console.log('Supabase 쿼리 결과 - data 길이:', data?.length || 0)
 
     if (error) {
       console.error('저장된 결과 목록 조회 실패:', error)
+      console.error('에러 상세:', JSON.stringify(error, null, 2))
       return NextResponse.json(
         { success: false, error: '저장된 결과 목록 조회에 실패했습니다.', details: error.message },
         { status: 500 }
       )
     }
+    
+    console.log('Supabase 쿼리 성공 - 실제 반환된 데이터 개수:', data?.length || 0)
 
     console.log('저장된 결과 개수:', data?.length || 0)
     console.log('저장된 결과 ID 목록:', data?.map((item: any) => item.id) || [])
+    console.log('저장된 결과 원본 데이터 샘플:', data?.[0] ? {
+      id: data[0].id,
+      title: data[0].title,
+      saved_at: data[0].saved_at,
+      created_at: data[0].created_at,
+      updated_at: data[0].updated_at
+    } : '데이터 없음')
 
     // 데이터 형식 변환
     const results = (data || []).map((item: any) => {
