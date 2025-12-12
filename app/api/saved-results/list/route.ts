@@ -57,17 +57,27 @@ export async function GET(request: NextRequest) {
     // count와 실제 반환된 데이터가 다른 경우 경고
     if (count && count !== (data?.length || 0)) {
       console.warn(`⚠️ 경고: count(${count})와 실제 반환된 데이터(${data?.length || 0})가 다릅니다!`)
+      console.warn(`⚠️ ${count - (data?.length || 0)}개의 레코드가 누락되었습니다!`)
     }
     if (totalCount && totalCount !== (data?.length || 0)) {
       console.warn(`⚠️ 경고: totalCount(${totalCount})와 실제 반환된 데이터(${data?.length || 0})가 다릅니다!`)
+      console.warn(`⚠️ ${totalCount - (data?.length || 0)}개의 레코드가 누락되었습니다!`)
+      console.warn(`⚠️ 누락된 레코드 수: ${totalCount - (data?.length || 0)}`)
     }
     
     // 모든 데이터의 ID와 saved_at 로그
     if (data && Array.isArray(data)) {
       console.log('=== 조회된 모든 저장된 결과 ===')
+      console.log(`총 ${data.length}개 조회됨 (DB에는 ${totalCount || count || '알 수 없음'}개 있음)`)
       data.forEach((item: any, index: number) => {
         console.log(`[${index + 1}] ID: ${item.id}, saved_at: ${item.saved_at}, title: ${item.title?.substring(0, 30) || '제목 없음'}`)
       })
+      
+      // 누락된 레코드가 있는 경우 추가 정보
+      if (totalCount && totalCount > data.length) {
+        console.warn(`⚠️ 누락된 레코드: DB에는 ${totalCount}개가 있지만 ${data.length}개만 조회되었습니다.`)
+        console.warn(`⚠️ 누락된 레코드 수: ${totalCount - data.length}`)
+      }
     } else {
       console.log('=== data가 배열이 아님 ===')
       console.log('data:', data)
