@@ -19,6 +19,14 @@ export async function GET(request: NextRequest) {
     console.log('환경:', process.env.NODE_ENV || 'unknown')
     
     // 저장된 결과 목록 조회 (최신순, 제한 없음)
+    // 먼저 count만 조회하여 실제 레코드 수 확인
+    const { count: totalCount } = await supabase
+      .from('saved_results')
+      .select('*', { count: 'exact', head: true })
+    
+    console.log('=== DB 실제 레코드 수 (count only):', totalCount)
+    
+    // 전체 데이터 조회
     const { data, error, count } = await supabase
       .from('saved_results')
       .select('*', { count: 'exact' })
@@ -26,6 +34,11 @@ export async function GET(request: NextRequest) {
     
     console.log('Supabase 쿼리 결과 - count:', count)
     console.log('Supabase 쿼리 결과 - data 길이:', data?.length || 0)
+    console.log('Supabase 쿼리 결과 - count와 data 길이 불일치:', count !== (data?.length || 0))
+    console.log('Supabase 쿼리 결과 - data가 null인가?', data === null)
+    console.log('Supabase 쿼리 결과 - data가 undefined인가?', data === undefined)
+    console.log('Supabase 쿼리 결과 - data 타입:', typeof data)
+    console.log('Supabase 쿼리 결과 - Array.isArray(data):', Array.isArray(data))
 
     if (error) {
       console.error('저장된 결과 목록 조회 실패:', error)
@@ -37,6 +50,18 @@ export async function GET(request: NextRequest) {
     }
     
     console.log('Supabase 쿼리 성공 - 실제 반환된 데이터 개수:', data?.length || 0)
+    console.log('Supabase 쿼리 성공 - count와 data 길이 비교:', { count, dataLength: data?.length || 0 })
+    
+    // 모든 데이터의 ID와 saved_at 로그
+    if (data && Array.isArray(data)) {
+      console.log('=== 조회된 모든 저장된 결과 ===')
+      data.forEach((item: any, index: number) => {
+        console.log(`[${index + 1}] ID: ${item.id}, saved_at: ${item.saved_at}, title: ${item.title?.substring(0, 30) || '제목 없음'}`)
+      })
+    } else {
+      console.log('=== data가 배열이 아님 ===')
+      console.log('data:', data)
+    }
 
     console.log('저장된 결과 개수:', data?.length || 0)
     console.log('저장된 결과 ID 목록:', data?.map((item: any) => item.id) || [])
