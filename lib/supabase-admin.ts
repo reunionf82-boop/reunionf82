@@ -38,6 +38,7 @@ export interface ContentData {
   menu_font_size?: number
   subtitle_font_size?: number
   body_font_size?: number
+  font_face?: string // 웹폰트 CSS (@font-face)
   menu_items?: Array<{ id: number; value: string; thumbnail?: string }>
   is_new?: boolean
   tts_speaker?: string // TTS 화자 (nara, jinho, mijin, nhajun, ndain)

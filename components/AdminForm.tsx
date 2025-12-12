@@ -33,6 +33,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     menuFontSize: '16',
     subtitleFontSize: '14',
     bodyFontSize: '11',
+    fontFace: '',
     ttsSpeaker: speakerParam || 'nara', // URL 파라미터 또는 기본값: nara
   })
   const [menuFields, setMenuFields] = useState<Array<{ id: number; value: string; thumbnail?: string }>>([])
@@ -78,6 +79,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_font_size: parseInt(formData.menuFontSize) || 16,
         subtitle_font_size: parseInt(formData.subtitleFontSize) || 14,
         body_font_size: parseInt(formData.bodyFontSize) || 11,
+        font_face: formData.fontFace || '',
         menu_items: currentMenuItems,
         is_new: formData.showNew,
         tts_speaker: formData.ttsSpeaker || 'nara',
@@ -100,6 +102,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_font_size: initialData.menu_font_size || 16,
         subtitle_font_size: initialData.subtitle_font_size || 14,
         body_font_size: initialData.body_font_size || 11,
+        font_face: initialData.font_face || '',
         menu_items: initialData.menu_items || [],
         is_new: initialData.is_new || false,
         tts_speaker: initialData.tts_speaker || 'nara',
@@ -144,6 +147,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         formData.recommendation ||
         formData.menuSubtitle ||
         formData.interpretationTool ||
+        formData.fontFace ||
         firstMenuField.value ||
         firstMenuField.thumbnail ||
         menuFields.length > 0 ||
@@ -176,6 +180,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menuFontSize: String(data.menu_font_size || '16'),
         subtitleFontSize: String(data.subtitle_font_size || '14'),
         bodyFontSize: String(data.body_font_size || '11'),
+        fontFace: data.font_face || '',
         ttsSpeaker: data.tts_speaker || 'nara',
       })
       if (data.menu_items && data.menu_items.length > 0) {
@@ -216,6 +221,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_font_size: parseInt(formData.menuFontSize) || 16,
         subtitle_font_size: parseInt(formData.subtitleFontSize) || 14,
         body_font_size: parseInt(formData.bodyFontSize) || 11,
+        font_face: formData.fontFace || '',
         menu_items: [
           ...(firstMenuField.value || firstMenuField.thumbnail ? [{ id: 0, value: firstMenuField.value, thumbnail: firstMenuField.thumbnail }] : []),
           ...menuFields
@@ -571,58 +577,102 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             />
           </div>
         </div>
-        <div className="grid grid-cols-4 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1">
-              소제목당 글자수
-            </label>
-            <input
-              type="text"
-              name="subtitleCharCount"
-              value={formData.subtitleCharCount}
+
+        {/* 폰트 설정 섹션 */}
+        <div className="border-t border-gray-600 pt-4 mt-4">
+          <h3 className="text-lg font-semibold text-gray-200 mb-4">폰트 설정</h3>
+          
+          {/* 웹폰트 CSS 입력 */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-300">
+                웹폰트 설정
+              </label>
+              {formData.fontFace && (
+                <div className="flex items-center gap-2">
+                  <style dangerouslySetInnerHTML={{ __html: formData.fontFace }} />
+                  <span 
+                    style={{
+                      fontFamily: (() => {
+                        // @font-face에서 font-family 추출 (여러 패턴 지원)
+                        const match = formData.fontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/);
+                        return match ? (match[1] || match[2]?.trim()) : 'inherit';
+                      })(),
+                      fontSize: '14px',
+                      color: '#fff'
+                    }}
+                  >
+                    이 폰트는 이렇게 표시됩니다.
+                  </span>
+                </div>
+              )}
+            </div>
+            <textarea
+              name="fontFace"
+              value={formData.fontFace}
               onChange={handleChange}
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
-              placeholder="입력하세요"
+              rows={2}
+              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y text-sm"
+              placeholder="여기에 웹폰트 코드를 붙여 넣으세요"
             />
+            <p className="text-xs text-gray-400 mt-1">
+              @font-face CSS를 입력하세요. 여러 폰트를 정의할 수 있습니다.
+            </p>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1">
-              메뉴 폰트크기
-            </label>
-            <input
-              type="text"
-              name="menuFontSize"
-              value={formData.menuFontSize}
-              onChange={handleChange}
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
-              placeholder="입력하세요"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1">
-              소제목 폰트크기
-            </label>
-            <input
-              type="text"
-              name="subtitleFontSize"
-              value={formData.subtitleFontSize}
-              onChange={handleChange}
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
-              placeholder="입력하세요"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1">
-              본문 폰트크기
-            </label>
-            <input
-              type="text"
-              name="bodyFontSize"
-              value={formData.bodyFontSize}
-              onChange={handleChange}
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
-              placeholder="입력하세요"
-            />
+          
+          <div className="grid grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-300 mb-1">
+                소제목당 글자수
+              </label>
+              <input
+                type="text"
+                name="subtitleCharCount"
+                value={formData.subtitleCharCount}
+                onChange={handleChange}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
+                placeholder="입력하세요"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-300 mb-1">
+                메뉴 폰트크기
+              </label>
+              <input
+                type="text"
+                name="menuFontSize"
+                value={formData.menuFontSize}
+                onChange={handleChange}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
+                placeholder="입력하세요"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-300 mb-1">
+                소제목 폰트크기
+              </label>
+              <input
+                type="text"
+                name="subtitleFontSize"
+                value={formData.subtitleFontSize}
+                onChange={handleChange}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
+                placeholder="입력하세요"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-300 mb-1">
+                본문 폰트크기
+              </label>
+              <input
+                type="text"
+                name="bodyFontSize"
+                value={formData.bodyFontSize}
+                onChange={handleChange}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
+                placeholder="입력하세요"
+              />
+            </div>
           </div>
         </div>
 

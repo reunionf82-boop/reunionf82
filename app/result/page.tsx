@@ -459,9 +459,48 @@ function ResultContent() {
   const menuFontSize = content?.menu_font_size || 16
   const subtitleFontSize = content?.subtitle_font_size || 14
   const bodyFontSize = content?.body_font_size || 11
+  
+  // 웹폰트 설정 (관리자 페이지에서 설정한 값 사용)
+  const fontFace = content?.font_face || ''
+  
+  // 디버깅: font_face 확인
+  console.log('결과 페이지: content 객체:', content)
+  console.log('결과 페이지: font_face 값:', fontFace)
+  
+  // @font-face에서 font-family 추출
+  const extractFontFamily = (fontFaceCss: string): string | null => {
+    if (!fontFaceCss) {
+      console.log('결과 페이지: fontFaceCss가 비어있음')
+      return null
+    }
+    // 여러 패턴 지원: font-family: 'FontName' 또는 font-family: FontName
+    const match = fontFaceCss.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
+    if (match) {
+      const fontFamily = (match[1] || match[2]?.trim()) || null
+      console.log('결과 페이지: 추출된 font-family:', fontFamily)
+      return fontFamily
+    }
+    console.log('결과 페이지: font-family 추출 실패')
+    return null
+  }
+  
+  const fontFamilyName = extractFontFamily(fontFace)
+  console.log('결과 페이지: 최종 fontFamilyName:', fontFamilyName)
 
   // 동적 스타일 생성
   const dynamicStyles = `
+    ${fontFace ? fontFace : ''}
+    ${fontFamilyName ? `
+    .result-title {
+      font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+    }
+    .jeminai-results {
+      font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+    }
+    .jeminai-results * {
+      font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+    }
+    ` : ''}
     .jeminai-results .menu-title {
       font-size: ${menuFontSize}px !important;
     }
@@ -1122,6 +1161,39 @@ function ResultContent() {
     }
     
     try {
+      // HTML에 웹폰트 스타일 포함하여 저장
+      let htmlWithFont = html || ''
+      if (fontFace) {
+        // font-family 추출
+        const match = fontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
+        const extractedFontFamily = match ? (match[1] || match[2]?.trim()) : null
+        
+        // HTML 앞부분에 웹폰트 스타일 추가
+        const fontStyle = `
+<style>
+${fontFace}
+${extractedFontFamily ? `
+* {
+  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
+  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+.jeminai-results, .jeminai-results * {
+  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+.menu-section, .menu-section * {
+  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+.menu-title, .subtitle-title, .subtitle-content {
+  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+` : ''}
+</style>
+`
+        htmlWithFont = fontStyle + htmlWithFont
+      }
+      
       const response = await fetch('/api/saved-results/save', {
         method: 'POST',
         cache: 'no-store', // 프로덕션 환경에서 캐싱 방지
@@ -1130,7 +1202,7 @@ function ResultContent() {
         },
         body: JSON.stringify({
           title: content?.content_name || '재회 결과',
-          html: html || '',
+          html: htmlWithFont, // 웹폰트가 포함된 HTML 저장
           content: content, // content 객체 전체 저장 (tts_speaker 포함)
           model: model || 'gemini-2.5-flash', // 모델 정보 저장
           processingTime: currentTime, // 처리 시간 저장
@@ -1231,10 +1303,37 @@ function ResultContent() {
       const saved = savedResults.find((r: any) => r.id === resultId)
       
       if (saved) {
+        // content가 문자열인 경우 파싱
+        let contentObj = saved.content
+        if (typeof saved.content === 'string') {
+          try {
+            contentObj = JSON.parse(saved.content)
+          } catch (e) {
+            console.error('content 파싱 실패:', e)
+            contentObj = saved.content
+          }
+        }
+        
         // userName을 안전하게 처리 (템플릿 리터럴 중첩 방지)
         const userNameForScript = saved.userName ? JSON.stringify(saved.userName) : "''"
         
+        // contentObj를 JSON 문자열로 변환 (템플릿 리터럴에서 사용)
+        const contentObjJson = JSON.stringify(contentObj || {})
+        
+        // HTML에서 <style> 태그 추출하여 <head>에 넣고, 나머지는 본문에 표시
+        let htmlContent = saved.html || ''
+        let styleContent = ''
+        
+        // HTML에 <style> 태그가 포함되어 있는지 확인
+        const styleMatch = htmlContent.match(/<style[^>]*>([\s\S]*?)<\/style>/i)
+        if (styleMatch) {
+          styleContent = styleMatch[1]
+          // HTML에서 <style> 태그 제거
+          htmlContent = htmlContent.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        }
+        
         // 새 창으로 결과 표시
+        // HTML에 이미 웹폰트 스타일이 포함되어 있으므로 그대로 표시
         const newWindow = window.open('', '_blank')
         if (newWindow) {
           newWindow.document.write(`
@@ -1243,6 +1342,7 @@ function ResultContent() {
             <head>
               <meta charset="UTF-8">
               <title>${saved.title}</title>
+              ${styleContent ? `<style>${styleContent}</style>` : ''}
               <style>
                 body {
                   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -1603,9 +1703,9 @@ function ResultContent() {
                 <div class="title-container">
                   <h1>${saved.title}</h1>
                 </div>
-                ${saved.content?.thumbnail_url ? `
+                ${contentObj?.thumbnail_url ? `
                 <div class="thumbnail-container">
-                  <img src="${saved.content.thumbnail_url}" alt="${saved.title}" />
+                  <img src="${contentObj.thumbnail_url}" alt="${saved.title}" />
                 </div>
                 ` : ''}
                 <div class="tts-button-container">
@@ -1618,7 +1718,7 @@ function ResultContent() {
                   사용 모델: <span style="font-weight: 600; color: #374151;">${saved.model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : saved.model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : saved.model || 'Gemini 2.5 Flash'}</span>
                   ${saved.processingTime ? ` · 처리 시간: <span style="font-weight: 600; color: #374151;">${saved.processingTime}</span>` : ''}
                 </div>
-                <div id="contentHtml">${saved.html ? saved.html.replace(/\*\*/g, '') : ''}</div>
+                <div id="contentHtml">${htmlContent ? htmlContent.replace(/\*\*/g, '') : ''}</div>
               </div>
               
               <!-- 추가 질문하기 팝업 -->
@@ -1665,12 +1765,14 @@ function ResultContent() {
               <script>
                 // 저장된 컨텐츠의 화자 정보를 전역 변수로 설정 (초기값)
                 console.log('=== 새 창: 페이지 로드 ===');
-                console.log('저장된 content 객체:', ${JSON.stringify(saved.content)});
-                console.log('저장된 content.id:', ${saved.content?.id ? saved.content.id : 'null'});
-                console.log('저장된 content.tts_speaker:', ${saved.content?.tts_speaker ? `'${saved.content.tts_speaker}'` : "'없음'"});
+                const contentObj = ${contentObjJson};
+                console.log('저장된 content 객체:', contentObj);
+                console.log('저장된 content.id:', contentObj?.id ? contentObj.id : 'null');
+                console.log('저장된 content.tts_speaker:', contentObj?.tts_speaker ? contentObj.tts_speaker : '없음');
+                console.log('저장된 content.font_face:', contentObj?.font_face || '없음');
                 
-                window.savedContentSpeaker = ${saved.content?.tts_speaker ? `'${saved.content.tts_speaker}'` : "'nara'"};
-                window.savedContentId = ${saved.content?.id ? saved.content.id : 'null'};
+                window.savedContentSpeaker = ${contentObj?.tts_speaker ? `'${contentObj.tts_speaker.replace(/'/g, "\\'")}'` : "'nara'"};
+                window.savedContentId = ${contentObj?.id ? contentObj.id : 'null'};
                 
                 console.log('초기 window.savedContentSpeaker:', window.savedContentSpeaker);
                 console.log('초기 window.savedContentId:', window.savedContentId);
@@ -2578,7 +2680,7 @@ function ResultContent() {
       <main className="container mx-auto px-4 py-8 max-w-4xl">
         {/* 제목 */}
         <div className="mb-8 text-center">
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4 text-center">
+          <h1 className="result-title text-3xl md:text-4xl font-bold text-gray-900 mb-4 text-center">
             {content?.content_name || '결과 생성 중...'}
           </h1>
           
@@ -2666,7 +2768,10 @@ function ResultContent() {
                   console.log(`[최종] 저장된 결과 ${saved.id}: isExpired60d=${isExpired60d}, 텍스트 딤처리=${isExpired60d}, 보기 버튼 표시=${!isExpired60d}`)
                   
                   return (
-                    <div key={saved.id} className="bg-white rounded-lg p-4 border border-gray-200">
+                    <div 
+                      key={saved.id} 
+                      className="bg-white rounded-lg p-4 border border-gray-200"
+                    >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <p 
