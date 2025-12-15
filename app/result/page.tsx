@@ -302,7 +302,7 @@ function ResultContent() {
         setFirstSubtitleReady(false)
         setStreamingFinished(false)
 
-        // 가짜 진행률: 1초에 1%씩 97%까지 증가 (첫 소제목 준비 전까지)
+        // 가짜 진행률: 1초에 2%씩 97%까지 증가 (첫 소제목 준비 전까지)
         fakeProgressInterval = setInterval(() => {
           if (firstSubtitleReadyRef.current) {
             if (fakeProgressInterval) {
@@ -314,7 +314,7 @@ function ResultContent() {
 
           setStreamingProgress((prev) => {
             if (prev >= 97) return prev
-            const next = prev + 1
+            const next = prev + 2
             return next > 97 ? 97 : next
           })
         }, 1000)
@@ -594,11 +594,14 @@ function ResultContent() {
     setRevealedCount(revealed)
 
     // 첫 번째 소제목이 "점사를 준비중입니다." 상태로라도 화면에 표시되는 순간(=cursor > 0)에
-    // 가짜 로딩 팝업을 즉시 종료 + 진행률 100%
+    // 진행률을 100%로 설정하고 500ms 후 팝업 닫기
     if (!firstSubtitleReadyRef.current && cursor > 0) {
       setFirstSubtitleReady(true)
       setStreamingProgress(100)
-      setShowRealtimePopup(false)
+      // 500ms 후 팝업 닫기
+      setTimeout(() => {
+        setShowRealtimePopup(false)
+      }, 500)
     }
 
     if (cursor > 0) {
