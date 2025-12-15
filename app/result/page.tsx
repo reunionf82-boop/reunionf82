@@ -1,10 +1,9 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { Suspense, useEffect, useState, useRef } from 'react'
+import { Suspense, useEffect, useState, useRef, useMemo, memo } from 'react'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
-import { getContentById, getSelectedSpeaker } from '@/lib/supabase-admin'
-import QuestionPopup from '@/components/QuestionPopup'
+import { getContentById, getSelectedSpeaker, getFortuneViewMode } from '@/lib/supabase-admin'
 
 interface ResultData {
   content: any
@@ -14,40 +13,91 @@ interface ResultData {
   userName?: string // 사용자 이름
 }
 
+interface ParsedSubtitle {
+  title: string
+  contentHtml: string
+}
+
+interface ParsedMenu {
+  title: string
+  subtitles: ParsedSubtitle[]
+  startIndex: number
+  thumbnailHtml?: string
+  manseHtml?: string
+}
+
+// 썸네일 컴포넌트 (메모이제이션으로 깜빡임 방지)
+const ThumbnailDisplay = memo(({ html, menuIndex }: { html: string; menuIndex: number }) => {
+  return (
+    <div
+      key={`thumbnail-${menuIndex}`}
+      className="mt-2"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+})
+ThumbnailDisplay.displayName = 'ThumbnailDisplay'
+
 function ResultContent() {
   const searchParams = useSearchParams()
   const storageKey = searchParams.get('key')
+  const requestKey = searchParams.get('requestKey')
   const isStreaming = searchParams.get('stream') === 'true'
+  const isRealtime = isStreaming && !!requestKey
   const [resultData, setResultData] = useState<ResultData | null>(null)
   const [streamingHtml, setStreamingHtml] = useState('')
   const [isStreamingActive, setIsStreamingActive] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [savedResults, setSavedResults] = useState<any[]>([])
-  const [streamingProgress, setStreamingProgress] = useState(0)
+  const [streamingProgress, setStreamingProgress] = useState(0) // realtime 가짜 로딩/진행률
+  const [fortuneViewMode, setFortuneViewMode] = useState<'batch' | 'realtime'>('batch')
+  const [parsedMenus, setParsedMenus] = useState<ParsedMenu[]>([])
+  const [totalSubtitles, setTotalSubtitles] = useState(0)
+  const [revealedCount, setRevealedCount] = useState(0)
+  const [showRealtimeLoading, setShowRealtimeLoading] = useState(false) // 기존 플래그(사용 안함)
+  const [showRealtimePopup, setShowRealtimePopup] = useState(false) // realtime 전용 로딩 팝업
+  const [firstSubtitleReady, setFirstSubtitleReady] = useState(false) // 1-1 소제목 준비 여부
+  const firstSubtitleReadyRef = useRef(false)
+  const [streamingFinished, setStreamingFinished] = useState(false) // 스트리밍 완료 여부 (realtime)
+  const thumbnailHtmlCacheRef = useRef<Map<number, string>>(new Map()) // 썸네일 HTML 캐시 (메뉴 인덱스별)
+  const manseHtmlCacheRef = useRef<Map<number, string>>(new Map()) // 만세력 HTML 캐시 (메뉴 인덱스별)
 
   // savedResults 변경 시 로깅
   useEffect(() => {
     console.log('결과 페이지: savedResults 변경됨, 길이:', savedResults.length)
     console.log('결과 페이지: savedResults 내용:', savedResults)
   }, [savedResults])
-  
-  // 추가 질문 횟수 관리 (메뉴별 카운트)
-  const [usedQuestionCounts, setUsedQuestionCounts] = useState<Record<string, number>>({})
-  const MAX_QUESTIONS = 3
 
-  // 추가 질문 팝업 상태
-  const [questionPopup, setQuestionPopup] = useState<{
-    isOpen: boolean
-    menuTitle: string
-    subtitles: string[]
-    subtitlesContent: Array<{ title: string; content: string }>
-  }>({
-    isOpen: false,
-    menuTitle: '',
-    subtitles: [],
-    subtitlesContent: [],
-  })
+  // firstSubtitleReady ref 동기화 (타이머/인터벌에서 최신 값 사용)
+  useEffect(() => {
+    firstSubtitleReadyRef.current = firstSubtitleReady
+  }, [firstSubtitleReady])
+
+  // 점사 모드 로드
+  useEffect(() => {
+    const loadMode = async () => {
+      try {
+        const mode = await getFortuneViewMode()
+        setFortuneViewMode(mode === 'realtime' ? 'realtime' : 'batch')
+        console.log('결과 페이지: 점사 모드 로드', mode)
+        // 결제 성공 진입 시 팝업 없이 바로 결과 화면으로 전환
+        setShowRealtimeLoading(false)
+      } catch (e) {
+        console.error('결과 페이지: 점사 모드 로드 실패, 기본 batch 사용', e)
+        setFortuneViewMode('batch')
+        setShowRealtimeLoading(false)
+      }
+    }
+    loadMode()
+
+    // 결제 성공 진입 플래그가 있는 경우 팝업 강제 비활성화
+    const paid = searchParams.get('paid')
+    if (paid === 'true') {
+      setShowRealtimeLoading(false)
+    }
+  }, [searchParams])
+  
 
   // 저장된 결과 목록 로드 함수 (useEffect 위에 정의)
   const loadSavedResults = async () => {
@@ -153,10 +203,10 @@ function ResultContent() {
     }
   }, [])
 
+  // batch 모드: 기존 방식으로 완료된 결과 로드 (key 기반)
   useEffect(() => {
-    if (!storageKey) {
-      setError('결과 데이터 키가 없습니다.')
-      setLoading(false)
+    if (!storageKey || isRealtime) {
+      // realtime 모드이거나 key가 없으면 이 경로는 사용하지 않음
       return
     }
 
@@ -204,20 +254,206 @@ function ResultContent() {
     const timer = setTimeout(loadData, 50)
     
     return () => clearTimeout(timer)
-  }, [storageKey])
+  }, [storageKey, isRealtime])
+
+  // realtime 모드: requestKey 기반으로 스트리밍 수행
+  useEffect(() => {
+    if (!isRealtime || !requestKey) return
+    if (typeof window === 'undefined') return
+
+    console.log('결과 페이지: realtime 모드 진입, requestKey:', requestKey)
+
+    let cancelled = false
+    let fakeProgressInterval: NodeJS.Timeout | null = null
+
+    const startStreaming = async () => {
+      try {
+        const payloadStr = sessionStorage.getItem(requestKey)
+        if (!payloadStr) {
+          console.error('결과 페이지: requestKey에 대한 요청 데이터가 없습니다.', requestKey)
+          if (!cancelled) {
+            setError('결과 요청 데이터를 찾을 수 없습니다. 다시 시도해주세요.')
+            setLoading(false)
+          }
+          return
+        }
+
+        const payload = JSON.parse(payloadStr)
+        const { requestData, content, startTime, model, userName } = payload
+
+        if (cancelled) return
+
+        // 초기 상태 설정: 화면은 바로 결과 레이아웃으로 전환
+        setResultData({
+          content,
+          html: '',
+          startTime,
+          model,
+          userName,
+        })
+        setStreamingHtml('')
+        setParsedMenus([])
+        setTotalSubtitles(0)
+        setRevealedCount(0)
+        setLoading(false)
+        setIsStreamingActive(true)
+        setStreamingProgress(0)
+        setShowRealtimePopup(true)
+        setFirstSubtitleReady(false)
+        setStreamingFinished(false)
+
+        // 가짜 진행률: 1초에 1%씩 97%까지 증가 (첫 소제목 준비 전까지)
+        fakeProgressInterval = setInterval(() => {
+          if (firstSubtitleReadyRef.current) {
+            if (fakeProgressInterval) {
+              clearInterval(fakeProgressInterval)
+              fakeProgressInterval = null
+            }
+            return
+          }
+
+          setStreamingProgress((prev) => {
+            if (prev >= 97) return prev
+            const next = prev + 1
+            return next > 97 ? 97 : next
+          })
+        }, 1000)
+
+        let accumulatedHtml = ''
+        const manseRyeokTable: string | undefined = payload?.requestData?.manse_ryeok_table
+
+        await callJeminaiAPIStream(requestData, (data) => {
+          if (cancelled) return
+
+          console.log('결과 페이지: realtime 스트리밍 콜백:', data.type)
+
+          if (data.type === 'start') {
+            accumulatedHtml = ''
+          } else if (data.type === 'chunk') {
+            accumulatedHtml += data.text || ''
+
+            // 스트리밍 중에도 만세력 테이블을 가능한 한 빨리 삽입
+            if (manseRyeokTable && !accumulatedHtml.includes('manse-ryeok-table')) {
+              const firstMenuSectionMatch = accumulatedHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+              if (firstMenuSectionMatch) {
+                const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+
+                if (thumbnailMatch) {
+                  accumulatedHtml = accumulatedHtml.replace(
+                    /(<img[^>]*class="menu-thumbnail"[^>]*\/>)/,
+                    `$1\n${manseRyeokTable}`
+                  )
+                } else {
+                  const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                  if (menuTitleMatch) {
+                    accumulatedHtml = accumulatedHtml.replace(
+                      /(<h2 class="menu-title">[^<]*<\/h2>)/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  } else {
+                    accumulatedHtml = accumulatedHtml.replace(
+                      /(<div class="menu-section">)/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  }
+                }
+              }
+            }
+
+            setStreamingHtml(accumulatedHtml)
+          } else if (data.type === 'done') {
+            let finalHtml = data.html || accumulatedHtml
+
+            // 만세력 테이블이 있고 첫 번째 menu-section에 없으면 삽입 (batch 모드와 동일한 위치 규칙, 중복 방지)
+            if (manseRyeokTable && !finalHtml.includes('manse-ryeok-table')) {
+              const firstMenuSectionMatch = finalHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+              if (firstMenuSectionMatch) {
+                const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+
+                if (thumbnailMatch) {
+                  // 썸네일 바로 다음에 삽입
+                  finalHtml = finalHtml.replace(
+                    /(<img[^>]*class="menu-thumbnail"[^>]*\/>)/,
+                    `$1\n${manseRyeokTable}`
+                  )
+                } else {
+                  // 썸네일이 없으면 메뉴 제목 다음에 삽입
+                  const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                  if (menuTitleMatch) {
+                    finalHtml = finalHtml.replace(
+                      /(<h2 class="menu-title">[^<]*<\/h2>)/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  } else {
+                    // 메뉴 제목도 없으면 첫 번째 menu-section 시작 부분에 삽입
+                    finalHtml = finalHtml.replace(
+                      /(<div class="menu-section">)/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  }
+                }
+              }
+            }
+
+            setStreamingHtml(finalHtml)
+
+            const finalResult: ResultData = {
+              content,
+              html: finalHtml,
+              startTime,
+              model,
+              userName,
+            }
+            setResultData(finalResult)
+
+            // 세션에도 저장해서 이후 재사용/저장 기능 유지
+            const resultStorageKey = `result_${Date.now()}`
+            sessionStorage.setItem(resultStorageKey, JSON.stringify(finalResult))
+            console.log('결과 페이지: realtime 모드, 최종 결과 저장 키:', resultStorageKey)
+
+            setIsStreamingActive(false)
+            setStreamingFinished(true)
+            setStreamingProgress(100)
+          } else if (data.type === 'error') {
+            console.error('결과 페이지: realtime 스트리밍 에러:', data.error)
+            setError(data.error || '결과를 생성하는 중 오류가 발생했습니다.')
+            setIsStreamingActive(false)
+            setStreamingFinished(true)
+          }
+        })
+      } catch (e) {
+        if (cancelled) return
+        console.error('결과 페이지: realtime 스트리밍 중 예외 발생:', e)
+        setError('결과를 생성하는 중 오류가 발생했습니다.')
+        setIsStreamingActive(false)
+        setLoading(false)
+      }
+    }
+
+    startStreaming()
+
+    return () => {
+      cancelled = true
+      if (fakeProgressInterval) {
+        clearInterval(fakeProgressInterval)
+      }
+    }
+  }, [isRealtime, requestKey])
 
   // 페이지 포커스 시 저장된 결과 동기화
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!document.hidden) {
+      if (!document.hidden && !isRealtime) {
         console.log('결과 페이지: 페이지가 보이게 됨, 저장된 결과 동기화')
         loadSavedResults()
       }
     }
 
     const handleFocus = () => {
-      console.log('결과 페이지: 윈도우 포커스, 저장된 결과 동기화')
-      loadSavedResults()
+      if (!isRealtime) {
+        console.log('결과 페이지: 윈도우 포커스, 저장된 결과 동기화')
+        loadSavedResults()
+      }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -227,25 +463,7 @@ function ResultContent() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('focus', handleFocus)
     }
-  }, [])
-
-  // 질문 횟수 로드 (localStorage)
-  useEffect(() => {
-    if (storageKey) {
-      try {
-        const savedCounts = localStorage.getItem(`question_counts_${storageKey}`)
-        if (savedCounts) {
-          setUsedQuestionCounts(JSON.parse(savedCounts))
-        } else {
-          // 하위 호환성: 기존 단일 카운트가 있다면 초기화 (또는 무시)
-          setUsedQuestionCounts({})
-        }
-      } catch (e) {
-        console.error('질문 횟수 로드 실패:', e)
-        setUsedQuestionCounts({})
-      }
-    }
-  }, [storageKey])
+  }, [isRealtime])
 
   // 경과 시간 계산 (완료된 결과만 표시)
   useEffect(() => {
@@ -257,166 +475,136 @@ function ResultContent() {
     }
   }, [resultData?.startTime])
 
-  // 버튼 추가 함수 (재사용 가능하도록 분리)
-  const addQuestionButtons = useRef<(() => void) | null>(null)
 
-  // HTML 렌더링 후 각 menu-section 끝에 버튼 추가
+  // 점진적 점사 모드: 섹션 파싱 및 순차 공개
   useEffect(() => {
-    if (!resultData?.html || typeof window === 'undefined') return
-
-    const addButtons = () => {
-      const resultsContainer = document.querySelector('.jeminai-results')
-      if (!resultsContainer) {
-        console.log('jeminai-results 컨테이너를 찾을 수 없습니다.')
-        return false
-      }
-
-      const menuSections = resultsContainer.querySelectorAll('.menu-section')
-      
-      if (menuSections.length === 0) {
-        console.log('menu-section을 찾을 수 없습니다.')
-        return false
-      }
-      
-      console.log(`발견된 menu-section 개수: ${menuSections.length}`)
-      
-      let buttonsAdded = 0
-      menuSections.forEach((menuSection, index) => {
-        // 이미 버튼이 추가되어 있는지 확인
-        const existingButton = menuSection.querySelector('.question-button-container')
-        if (existingButton) {
-          console.log(`메뉴 ${index + 1}: 버튼이 이미 존재합니다.`)
-          return
-        }
-
-        const menuTitleEl = menuSection.querySelector('.menu-title')
-        const menuTitle = menuTitleEl?.textContent?.trim() || `메뉴 ${index + 1}`
-        
-        console.log(`메뉴 ${index + 1}: ${menuTitle}에 버튼 추가 중...`)
-        
-        // 소제목 정보 추출
-        const subtitlesContent: Array<{ title: string; content: string }> = []
-        const subtitleSections = menuSection.querySelectorAll('.subtitle-section')
-        
-        subtitleSections.forEach((section) => {
-          const titleEl = section.querySelector('.subtitle-title')
-          const contentEl = section.querySelector('.subtitle-content')
-          
-          if (titleEl && contentEl) {
-            subtitlesContent.push({
-              title: titleEl.textContent?.trim() || '',
-              content: contentEl.textContent?.trim() || '',
-            })
-          }
-        })
-        
-        const subtitles = subtitlesContent.map(sub => sub.title)
-
-        // 버튼 컨테이너 생성
-        const buttonContainer = document.createElement('div')
-        buttonContainer.className = 'question-button-container mt-6 mb-4 text-center'
-        
-        const button = document.createElement('button')
-        button.className = 'bg-pink-500 hover:bg-pink-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors duration-200'
-        button.textContent = '추가 질문하기'
-        button.onclick = () => {
-          setQuestionPopup({
-            isOpen: true,
-            menuTitle,
-            subtitles,
-            subtitlesContent,
-          })
-        }
-        
-        buttonContainer.appendChild(button)
-        menuSection.appendChild(buttonContainer)
-        buttonsAdded++
-        
-        console.log(`메뉴 ${index + 1}: 버튼 추가 완료`)
-      })
-      
-      return buttonsAdded > 0
+    if (fortuneViewMode !== 'realtime' || typeof window === 'undefined') {
+      setParsedMenus([])
+      setTotalSubtitles(0)
+      setRevealedCount(0)
+      setShowRealtimeLoading(false)
+      // 캐시 초기화
+      thumbnailHtmlCacheRef.current.clear()
+      manseHtmlCacheRef.current.clear()
+      return
     }
 
-    // 함수를 ref에 저장하여 나중에 재사용 가능하도록
-    addQuestionButtons.current = addButtons
+    const sourceHtml = streamingHtml || resultData?.html
+    if (!sourceHtml) {
+      setParsedMenus([])
+      setTotalSubtitles(0)
+      setRevealedCount(0)
+      setShowRealtimeLoading(false) // 팝업 없이 바로 화면 유지
+      return
+    }
 
-    // requestAnimationFrame을 사용하여 DOM 렌더링 완료 후 실행
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (!addButtons()) {
-          // 첫 시도 실패 시 약간의 지연 후 재시도
-          setTimeout(() => {
-            addButtons()
-          }, 200)
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(sourceHtml, 'text/html')
+    const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
+
+    // 썸네일/만세력은 ref 캐시에서 가져오거나 새로 추출 (깜빡임 완전 방지)
+    let cursor = 0
+    const parsed: ParsedMenu[] = menuSections.map((section, index) => {
+      const titleEl = section.querySelector('.menu-title')
+      const titleText = titleEl?.textContent?.trim() || '메뉴'
+
+      // 썸네일: 캐시에 있으면 재사용, 없으면 새로 추출 후 캐시에 저장
+      let thumbnailHtml: string | undefined = undefined
+      if (thumbnailHtmlCacheRef.current.has(index)) {
+        thumbnailHtml = thumbnailHtmlCacheRef.current.get(index)
+      } else {
+        const thumbnailEl = section.querySelector('.menu-thumbnail')
+        if (thumbnailEl) {
+          thumbnailHtml = thumbnailEl.outerHTML
+          thumbnailHtmlCacheRef.current.set(index, thumbnailHtml)
         }
-      })
+      }
+
+      // 만세력: 캐시에 있으면 재사용, 없으면 새로 추출 후 캐시에 저장
+      let manseHtml: string | undefined = undefined
+      if (manseHtmlCacheRef.current.has(index)) {
+        manseHtml = manseHtmlCacheRef.current.get(index)
+      } else {
+        const manseEl = section.querySelector('.manse-ryeok-table')
+        if (manseEl) {
+          manseHtml = manseEl.outerHTML
+          manseHtmlCacheRef.current.set(index, manseHtml)
+        }
+      }
+
+      const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'))
+      const subtitles: ParsedSubtitle[] = subtitleSections.map((sub) => ({
+        title: sub.querySelector('.subtitle-title')?.textContent?.trim() || '',
+        contentHtml: sub.querySelector('.subtitle-content')?.innerHTML || ''
+      }))
+      const startIndex = cursor
+      cursor += subtitles.length
+
+      return {
+        title: titleText,
+        subtitles,
+        startIndex,
+        thumbnailHtml,
+        manseHtml,
+      }
     })
-  }, [resultData?.html])
 
-  // 팝업이 닫힐 때 버튼이 있는지 확인하고 없으면 다시 추가
-  useEffect(() => {
-    if (!questionPopup.isOpen && resultData?.html && typeof window !== 'undefined') {
-      // 팝업이 닫힌 후 약간의 지연을 두고 버튼 확인
-      const timer = setTimeout(() => {
-        const resultsContainer = document.querySelector('.jeminai-results')
-        if (!resultsContainer) return
-
-        const menuSections = resultsContainer.querySelectorAll('.menu-section')
-        let needsReAdd = false
-
-        menuSections.forEach((menuSection) => {
-          const existingButton = menuSection.querySelector('.question-button-container')
-          if (!existingButton) {
-            needsReAdd = true
-          }
-        })
-
-        if (needsReAdd && addQuestionButtons.current) {
-          console.log('팝업 닫힘 후 버튼이 사라진 것을 감지, 버튼 다시 추가')
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              addQuestionButtons.current?.()
-            })
-          })
-        }
-      }, 100)
-
-      return () => clearTimeout(timer)
-    }
-  }, [questionPopup.isOpen, resultData?.html])
-
-  // TTS 재생 중에도 버튼이 유지되도록 주기적으로 확인
-  useEffect(() => {
-    if (!resultData?.html || typeof window === 'undefined') return
-
-    // TTS 재생 중일 때 주기적으로 버튼 확인
-    const checkInterval = setInterval(() => {
-      const resultsContainer = document.querySelector('.jeminai-results')
-      if (!resultsContainer) return
-
-      const menuSections = resultsContainer.querySelectorAll('.menu-section')
-      let needsReAdd = false
-
-      menuSections.forEach((menuSection) => {
-        const existingButton = menuSection.querySelector('.question-button-container')
-        if (!existingButton) {
-          needsReAdd = true
-        }
-      })
-
-      if (needsReAdd && addQuestionButtons.current) {
-        console.log('TTS 재생 중 버튼이 사라진 것을 감지, 버튼 다시 추가')
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            addQuestionButtons.current?.()
-          })
-        })
+    // 썸네일/만세력 HTML이 변경되지 않았으면 기존 parsedMenus의 값을 유지 (깜빡임 방지)
+    setParsedMenus((prevParsedMenus) => {
+      // 첫 번째 파싱이거나 메뉴 개수가 변경된 경우 새로 설정
+      if (prevParsedMenus.length === 0 || prevParsedMenus.length !== parsed.length) {
+        return parsed
       }
-    }, 500) // 0.5초마다 확인
 
-    return () => clearInterval(checkInterval)
-  }, [resultData?.html, isPlaying, playingResultId]) // isPlaying과 playingResultId도 의존성에 추가
+      // 기존 parsedMenus와 새로 파싱한 parsed를 비교하여 썸네일/만세력 HTML 유지
+      const updated = parsed.map((newMenu, index) => {
+        const prevMenu = prevParsedMenus[index]
+        // 썸네일 HTML이 캐시에 있고 기존과 동일하면 기존 값 유지 (객체 참조 유지로 리렌더링 방지)
+        if (prevMenu && prevMenu.thumbnailHtml && thumbnailHtmlCacheRef.current.has(index)) {
+          const cachedThumbnail = thumbnailHtmlCacheRef.current.get(index)
+          if (cachedThumbnail === prevMenu.thumbnailHtml) {
+            newMenu.thumbnailHtml = prevMenu.thumbnailHtml
+          }
+        }
+        // 만세력 HTML이 캐시에 있고 기존과 동일하면 기존 값 유지
+        if (prevMenu && prevMenu.manseHtml && manseHtmlCacheRef.current.has(index)) {
+          const cachedManse = manseHtmlCacheRef.current.get(index)
+          if (cachedManse === prevMenu.manseHtml) {
+            newMenu.manseHtml = prevMenu.manseHtml
+          }
+        }
+        return newMenu
+      })
+      
+      return updated
+    })
+    setTotalSubtitles(cursor)
+
+    // 소제목별 단위로 한 번에 표시:
+    // - 스트리밍 중: 항상 마지막 소제목 하나는 "점사중입니다..." 상태로 숨김
+    // - 스트리밍 완료: 모든 소제목을 한 번에 표시
+    let revealed = 0
+    if (cursor === 0) {
+      revealed = 0
+    } else if (streamingFinished || !isStreamingActive) {
+      revealed = cursor
+    } else {
+      revealed = Math.max(0, cursor - 1)
+    }
+    setRevealedCount(revealed)
+
+    // 첫 번째 소제목이 "점사를 준비중입니다." 상태로라도 화면에 표시되는 순간(=cursor > 0)에
+    // 가짜 로딩 팝업을 즉시 종료 + 진행률 100%
+    if (!firstSubtitleReadyRef.current && cursor > 0) {
+      setFirstSubtitleReady(true)
+      setStreamingProgress(100)
+      setShowRealtimePopup(false)
+    }
+
+    if (cursor > 0) {
+      setShowRealtimeLoading(false) // (기존 플래그, 현재는 사용 안 함)
+    }
+  }, [fortuneViewMode, resultData?.html, streamingHtml, isStreamingActive, streamingFinished])
 
   if (loading) {
     return (
@@ -429,7 +617,7 @@ function ResultContent() {
     )
   }
 
-  if (error || !resultData) {
+  if (error || !resultData || !resultData.content) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center text-gray-500">
@@ -439,12 +627,12 @@ function ResultContent() {
     )
   }
 
-  // 완료된 결과 표시
+  // 가드 통과 후 안전 분해
   const content = resultData.content
   const html = resultData.html || ''
   const startTime = resultData.startTime
   const model = resultData.model
-  
+
   // 모델 이름 표시용
   const modelDisplayName = model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : model || 'Unknown'
 
@@ -510,7 +698,32 @@ function ResultContent() {
     .jeminai-results .subtitle-content {
       font-size: ${bodyFontSize}px !important;
     }
+    .loading-dots {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+    }
+    .loading-dots .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 9999px;
+      background: #ec4899;
+      opacity: 0.3;
+      animation: dot-bounce 1s infinite;
+    }
+    .loading-dots .dot:nth-child(2) { animation-delay: 0.15s; }
+    .loading-dots .dot:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes dot-bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.3; }
+      40% { transform: translateY(-4px); opacity: 1; }
+    }
   `
+
+  // 모델 이름 표시용 (실제 값으로 덮어쓰기)
+  const resolvedModelDisplayName = model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : model || 'Unknown'
+
+  // 경과 시간 계산 (실제 값으로 덮어쓰기)
+  const resolvedElapsedTime = startTime ? Date.now() - startTime : 0
 
   // HTML에서 텍스트 추출 (태그 제거, 테이블 제외)
   const extractTextFromHtml = (htmlString: string): string => {
@@ -523,75 +736,6 @@ function ResultContent() {
     tables.forEach(table => table.remove())
     
     return tempDiv.textContent || tempDiv.innerText || ''
-  }
-
-  // 질문 제출 핸들러
-  const handleQuestionSubmit = async (question: string): Promise<string> => {
-    const currentMenuTitle = questionPopup.menuTitle
-    const currentCount = usedQuestionCounts[currentMenuTitle] || 0
-
-    // 클라이언트 사이드 방어 코드
-    if (currentCount >= MAX_QUESTIONS) {
-      throw new Error('이 메뉴에 대한 질문 횟수를 모두 소진했습니다.')
-    }
-
-    console.log('질문 제출 API 호출 시작:', {
-      question,
-      menuTitle: currentMenuTitle,
-      subtitles: questionPopup.subtitles,
-      subtitlesContent: questionPopup.subtitlesContent,
-    })
-
-    const response = await fetch('/api/question', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        question,
-        menuTitle: questionPopup.menuTitle,
-        subtitles: questionPopup.subtitles,
-        subtitlesContent: questionPopup.subtitlesContent,
-        userName: resultData?.userName || '', // 사용자 이름 전달
-      }),
-    })
-
-    console.log('API 응답 상태:', response.status, response.statusText)
-
-    if (!response.ok) {
-      const error = await response.json()
-      console.error('API 오류:', error)
-      
-      // 재미나이 응답 디버그 정보 표시
-      if (error.debug) {
-        console.error('=== 재미나이 응답 디버그 정보 ===')
-        console.error('Finish Reason:', error.debug.finishReason)
-        console.error('Candidates 개수:', error.debug.candidatesCount)
-        console.error('첫 번째 Candidate 정보:', error.debug.firstCandidate)
-        console.error('Response 전체 구조:', error.debug)
-      }
-      
-      throw new Error(error.error || '답변 생성에 실패했습니다.')
-    }
-
-    const data = await response.json()
-    console.log('API 응답 데이터:', data)
-    
-    if (!data.answer) {
-      console.error('답변이 없습니다:', data)
-      throw new Error('답변을 받지 못했습니다.')
-    }
-    
-    // 질문 횟수 증가 및 저장 (메뉴별)
-    const newCount = currentCount + 1
-    const newCounts = { ...usedQuestionCounts, [currentMenuTitle]: newCount }
-    
-    setUsedQuestionCounts(newCounts)
-    if (storageKey) {
-      localStorage.setItem(`question_counts_${storageKey}`, JSON.stringify(newCounts))
-    }
-
-    return data.answer
   }
 
   // 텍스트를 청크로 분할하는 함수
@@ -1469,233 +1613,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                   line-height: 1.8;
                   white-space: pre-line;
                 }
-                .question-button-container {
-                  margin-top: 24px;
-                  margin-bottom: 16px;
-                  text-align: center;
-                }
-                .question-button {
-                  background: #ec4899;
-                  color: white;
-                  font-weight: 600;
-                  padding: 8px 24px;
-                  border-radius: 8px;
-                  border: none;
-                  cursor: pointer;
-                  transition: background-color 0.2s;
-                }
-                .question-button:hover {
-                  background: #db2777;
-                }
-                .question-popup-overlay {
-                  position: fixed;
-                  inset: 0;
-                  background: rgba(0, 0, 0, 0.5);
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  z-index: 50;
-                  padding: 16px;
-                  opacity: 0;
-                  visibility: hidden;
-                  pointer-events: none;
-                  transition: opacity 0.2s, visibility 0.2s;
-                }
-                .question-popup-overlay.show {
-                  opacity: 1;
-                  visibility: visible;
-                  pointer-events: auto;
-                }
-                .question-popup {
-                  background: white;
-                  border-radius: 20px;
-                  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-                  max-width: 32rem;
-                  width: 100%;
-                  max-height: auto;
-                  overflow: visible;
-                  transform: scale(0.95);
-                  transition: transform 0.2s;
-                }
-                .question-popup-overlay.show .question-popup {
-                  transform: scale(1);
-                }
-                .question-popup-header {
-                  position: relative;
-                  background: white;
-                  border-bottom: 1px solid #e5e7eb;
-                  padding: 12px 20px;
-                  border-radius: 20px 20px 0 0;
-                  display: flex;
-                  align-items: center;
-                  justify-content: space-between;
-                }
-                .question-popup-title {
-                  font-size: 20px;
-                  font-weight: bold;
-                  color: #111827;
-                }
-                .question-popup-close {
-                  color: #9ca3af;
-                  font-size: 24px;
-                  font-weight: bold;
-                  background: none;
-                  border: none;
-                  cursor: pointer;
-                  padding: 0;
-                  width: 32px;
-                  height: 32px;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                }
-                .question-popup-close:hover {
-                  color: #4b5563;
-                }
-                .question-popup-body {
-                  padding: 16px 20px;
-                }
-                .question-popup-prompt {
-                  font-size: 16px;
-                  color: #4b5563;
-                  margin-bottom: 6px;
-                }
-                .question-popup-prompt strong {
-                  font-weight: 600;
-                  color: #111827;
-                }
-                .question-textarea {
-                  width: 100%;
-                  padding: 10px 14px;
-                  padding-right: 18px;
-                  border: 1px solid #d1d5db;
-                  border-radius: 2px;
-                  font-family: inherit;
-                  font-size: 17px;
-                  resize: none;
-                  min-height: calc(17px * 1.4 * 2 + 10px * 2);
-                  line-height: 1.4;
-                  overflow-y: auto;
-                  outline: none;
-                }
-                .question-textarea:not(:focus) {
-                  padding-right: 18px;
-                }
-                .question-textarea::-webkit-scrollbar {
-                  width: 6px;
-                }
-                .question-textarea::-webkit-scrollbar-track {
-                  background: transparent;
-                  margin: 2px 0;
-                  border-radius: 0;
-                }
-                .question-textarea::-webkit-scrollbar-thumb {
-                  background: #d1d5db;
-                  border-radius: 3px;
-                }
-                .question-textarea::-webkit-scrollbar-thumb:hover {
-                  background: #9ca3af;
-                }
-                .question-textarea:focus {
-                  ring: 2px;
-                  ring-color: #ec4899;
-                  border-color: transparent;
-                  padding-right: 18px;
-                }
-                .question-char-count {
-                  margin-top: 4px;
-                  text-align: right;
-                  font-size: 14px;
-                  color: #6b7280;
-                }
-                .question-error {
-                  background: #fef2f2;
-                  border: 1px solid #fecaca;
-                  color: #991b1b;
-                  padding: 10px 14px;
-                  border-radius: 12px;
-                  font-size: 16px;
-                  margin-top: 10px;
-                }
-                .question-answer {
-                  background: #eff6ff;
-                  border: 1px solid #bfdbfe;
-                  border-radius: 12px;
-                  padding: 12px;
-                  margin-top: 10px;
-                  max-height: 200px;
-                  overflow-y: auto;
-                }
-                .question-answer p {
-                  color: #1e40af;
-                  white-space: pre-line;
-                  line-height: 1.6;
-                  margin: 0;
-                  font-size: 16px;
-                }
-                .question-loading {
-                  background: #f9fafb;
-                  border: 1px solid #e5e7eb;
-                  border-radius: 12px;
-                  padding: 12px;
-                  text-align: center;
-                  margin-top: 10px;
-                }
-                .question-loading-content {
-                  display: inline-flex;
-                  align-items: center;
-                  gap: 8px;
-                }
-                .question-spinner {
-                  width: 20px;
-                  height: 20px;
-                  border: 2px solid #ec4899;
-                  border-top-color: transparent;
-                  border-radius: 50%;
-                  animation: spin 0.8s linear infinite;
-                }
-                .question-loading-text {
-                  color: #4b5563;
-                  font-size: 16px;
-                }
-                .question-popup-buttons {
-                  display: flex;
-                  gap: 10px;
-                  margin-top: 12px;
-                }
-                .question-submit-btn {
-                  flex: 1;
-                  background: #ec4899;
-                  color: white;
-                  font-weight: 600;
-                  padding: 10px 20px;
-                  border-radius: 12px;
-                  border: none;
-                  cursor: pointer;
-                  transition: background-color 0.2s;
-                  font-size: 17px;
-                }
-                .question-submit-btn:hover:not(:disabled) {
-                  background: #db2777;
-                }
-                .question-submit-btn:disabled {
-                  background: #d1d5db;
-                  cursor: not-allowed;
-                }
-                .question-close-btn {
-                  background: #e5e7eb;
-                  color: #1f2937;
-                  font-weight: 600;
-                  padding: 10px 20px;
-                  border-radius: 12px;
-                  border: none;
-                  cursor: pointer;
-                  transition: background-color 0.2s;
-                  font-size: 17px;
-                }
-                .question-close-btn:hover {
-                  background: #d1d5db;
-                }
               </style>
             </head>
             <body>
@@ -1719,47 +1636,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                   ${saved.processingTime ? ` · 처리 시간: <span style="font-weight: 600; color: #374151;">${saved.processingTime}</span>` : ''}
                 </div>
                 <div id="contentHtml">${htmlContent ? htmlContent.replace(/\*\*/g, '') : ''}</div>
-              </div>
-              
-              <!-- 추가 질문하기 팝업 -->
-              <div id="questionPopupOverlay" class="question-popup-overlay">
-                <div class="question-popup">
-                  <div class="question-popup-header">
-                    <h2 class="question-popup-title">추가 질문하기</h2>
-                    <button class="question-popup-close" onclick="closeQuestionPopup()">×</button>
-                  </div>
-                  <div class="question-popup-body">
-                    <div class="question-popup-prompt">
-                      <strong id="questionMenuTitle"></strong>에 대한 추가 질문이 있으신가요?
-                    </div>
-                    <form id="questionForm" onsubmit="handleQuestionSubmit(event)">
-                      <textarea
-                        id="questionTextarea"
-                        class="question-textarea"
-                        placeholder="예: 이 부분에 대해 더 자세히 알려주세요"
-                        maxlength="100"
-                        rows="2"
-                      ></textarea>
-                      <div class="question-char-count">
-                        <span id="questionCharCount">0</span>/100
-                      </div>
-                      <div id="questionError" class="question-error" style="display: none;"></div>
-                      <div id="questionAnswer" class="question-answer" style="display: none;">
-                        <p id="questionAnswerText"></p>
-                      </div>
-                      <div id="questionLoading" class="question-loading" style="display: none;">
-                        <div class="question-loading-content">
-                          <div class="question-spinner"></div>
-                          <span class="question-loading-text">점사 중입니다...</span>
-                        </div>
-                      </div>
-                      <div class="question-popup-buttons">
-                        <button type="submit" id="questionSubmitBtn" class="question-submit-btn">질문하기</button>
-                        <button type="button" onclick="closeQuestionPopup()" class="question-close-btn">닫기</button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
               </div>
               
               <script>
@@ -2312,340 +2188,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 }
                 
                 initTTSButton();
-                
-                // 추가 질문하기 기능
-                let currentQuestionData = null;
-                const MAX_QUESTIONS = 3;
-                let usedQuestionCounts = {};
-                
-                // localStorage에서 질문 횟수 로드
-                try {
-                  const savedCounts = localStorage.getItem('question_counts_' + ${JSON.stringify(saved.id)});
-                  if (savedCounts) {
-                    usedQuestionCounts = JSON.parse(savedCounts);
-                  }
-                } catch (e) {
-                  console.error('질문 횟수 로드 실패:', e);
-                  usedQuestionCounts = {};
-                }
-                
-                // 질문하기 버튼 추가 함수
-                function addQuestionButtons() {
-                  const contentHtml = document.getElementById('contentHtml');
-                  if (!contentHtml) {
-                    console.log('contentHtml을 찾을 수 없습니다.');
-                    return false;
-                  }
-                  
-                  // 실제 DOM에서 menu-section 찾기
-                  const menuSections = contentHtml.querySelectorAll('.menu-section');
-                  
-                  if (menuSections.length === 0) {
-                    console.log('menu-section을 찾을 수 없습니다.');
-                    return false;
-                  }
-                  
-                  console.log('발견된 menu-section 개수:', menuSections.length);
-                  
-                  let buttonsAdded = 0;
-                  menuSections.forEach((menuSection, index) => {
-                    // 이미 버튼이 있으면 건너뛰기
-                    if (menuSection.querySelector('.question-button-container')) {
-                      console.log('메뉴', index + 1, ': 버튼이 이미 존재합니다.');
-                      return;
-                    }
-                    
-                    const menuTitleEl = menuSection.querySelector('.menu-title');
-                    const menuTitle = menuTitleEl?.textContent?.trim() || '';
-                    
-                    console.log('메뉴', index + 1, ':', menuTitle, '에 버튼 추가 중...');
-                    
-                    // 소제목 정보 추출
-                    const subtitlesContent = [];
-                    const subtitleSections = menuSection.querySelectorAll('.subtitle-section');
-                    
-                    subtitleSections.forEach((section) => {
-                      const titleEl = section.querySelector('.subtitle-title');
-                      const contentEl = section.querySelector('.subtitle-content');
-                      
-                      if (titleEl && contentEl) {
-                        subtitlesContent.push({
-                          title: titleEl.textContent?.trim() || '',
-                          content: contentEl.textContent?.trim() || '',
-                        });
-                      }
-                    });
-                    
-                    const subtitles = subtitlesContent.map(sub => sub.title);
-                    
-                    // 버튼 컨테이너 생성
-                    const buttonContainer = document.createElement('div');
-                    buttonContainer.className = 'question-button-container';
-                    
-                    const button = document.createElement('button');
-                    button.className = 'question-button';
-                    button.textContent = '추가 질문하기';
-                    button.onclick = () => {
-                      openQuestionPopup(menuTitle, subtitles, subtitlesContent);
-                    };
-                    
-                    buttonContainer.appendChild(button);
-                    menuSection.appendChild(buttonContainer);
-                    buttonsAdded++;
-                    
-                    console.log('메뉴', index + 1, ': 버튼 추가 완료');
-                  });
-                  
-                  return buttonsAdded > 0;
-                }
-                
-                // 팝업 열기
-                function openQuestionPopup(menuTitle, subtitles, subtitlesContent) {
-                  currentQuestionData = { menuTitle, subtitles, subtitlesContent };
-                  
-                  const overlay = document.getElementById('questionPopupOverlay');
-                  const menuTitleEl = document.getElementById('questionMenuTitle');
-                  
-                  if (overlay && menuTitleEl) {
-                    menuTitleEl.textContent = menuTitle;
-                    overlay.classList.add('show');
-                    
-                    // 폼 초기화
-                    document.getElementById('questionTextarea').value = '';
-                    document.getElementById('questionCharCount').textContent = '0';
-                    document.getElementById('questionError').style.display = 'none';
-                    document.getElementById('questionAnswer').style.display = 'none';
-                    document.getElementById('questionLoading').style.display = 'none';
-                  }
-                }
-                
-                // 팝업 닫기
-                function closeQuestionPopup() {
-                  const overlay = document.getElementById('questionPopupOverlay');
-                  if (overlay) {
-                    overlay.classList.remove('show');
-                    currentQuestionData = null;
-                    
-                    // 폼 초기화
-                    document.getElementById('questionTextarea').value = '';
-                    document.getElementById('questionCharCount').textContent = '0';
-                    document.getElementById('questionError').style.display = 'none';
-                    document.getElementById('questionAnswer').style.display = 'none';
-                    document.getElementById('questionLoading').style.display = 'none';
-                  }
-                }
-                
-                // 텍스트 영역 높이 조정
-                const textarea = document.getElementById('questionTextarea');
-                const charCount = document.getElementById('questionCharCount');
-                
-                if (textarea) {
-                  // 기본 2줄 높이 계산 (font-size: 17px, line-height: 1.4, padding: 10px)
-                  const baseHeight = 17 * 1.4 * 2 + 10 * 2; // 약 67.6px
-                  
-                  textarea.addEventListener('input', function() {
-                    // 문자 수 업데이트
-                    if (charCount) {
-                      charCount.textContent = this.value.length;
-                    }
-                    
-                    // 높이는 기본 2줄로 고정하고 내용이 많으면 스크롤 표시
-                    this.style.height = baseHeight + 'px';
-                    this.style.overflowY = 'auto';
-                  });
-                  
-                  // 초기 높이 설정
-                  textarea.style.height = baseHeight + 'px';
-                }
-                
-                // 질문 제출
-                async function handleQuestionSubmit(event) {
-                  event.preventDefault();
-                  
-                  if (!currentQuestionData) return;
-                  
-                  const currentMenuTitle = currentQuestionData.menuTitle;
-                  const currentCount = usedQuestionCounts[currentMenuTitle] || 0;
-                  
-                  // 질문 횟수 제한 체크
-                  if (currentCount >= MAX_QUESTIONS) {
-                    const errorEl = document.getElementById('questionError');
-                    errorEl.textContent = '이 메뉴에 대한 질문 횟수를 모두 소진했습니다.';
-                    errorEl.style.display = 'block';
-                    return;
-                  }
-                  
-                  const textarea = document.getElementById('questionTextarea');
-                  const question = textarea.value.trim();
-                  
-                  if (!question) {
-                    const errorEl = document.getElementById('questionError');
-                    errorEl.textContent = '질문을 입력해주세요.';
-                    errorEl.style.display = 'block';
-                    return;
-                  }
-                  
-                  // UI 업데이트
-                  const errorEl = document.getElementById('questionError');
-                  const answerEl = document.getElementById('questionAnswer');
-                  const loadingEl = document.getElementById('questionLoading');
-                  const submitBtn = document.getElementById('questionSubmitBtn');
-                  
-                  errorEl.style.display = 'none';
-                  answerEl.style.display = 'none';
-                  loadingEl.style.display = 'block';
-                  submitBtn.disabled = true;
-                  
-                  try {
-                    console.log('질문 제출 API 호출 시작:', {
-                      question,
-                      menuTitle: currentQuestionData.menuTitle,
-                      subtitles: currentQuestionData.subtitles,
-                      subtitlesContent: currentQuestionData.subtitlesContent,
-                    });
-                    
-                    const response = await fetch('/api/question', {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({
-                        question,
-                        menuTitle: currentQuestionData.menuTitle,
-                        subtitles: currentQuestionData.subtitles,
-                        subtitlesContent: currentQuestionData.subtitlesContent,
-                        userName: ${userNameForScript},
-                      }),
-                    });
-                    
-                    console.log('API 응답 상태:', response.status, response.statusText);
-                    
-                    if (!response.ok) {
-                      const error = await response.json();
-                      console.error('API 오류:', error);
-                      
-                      // 재미나이 응답 디버그 정보 표시
-                      if (error.debug) {
-                        console.error('=== 재미나이 응답 디버그 정보 ===');
-                        console.error('Finish Reason:', error.debug.finishReason);
-                        console.error('Candidates 개수:', error.debug.candidatesCount);
-                        console.error('첫 번째 Candidate 정보:', error.debug.firstCandidate);
-                        console.error('Response 전체 구조:', error.debug);
-                      }
-                      
-                      throw new Error(error.error || '답변 생성에 실패했습니다.');
-                    }
-                    
-                    const data = await response.json();
-                    console.log('API 응답 데이터:', data);
-                    
-                    if (!data.answer) {
-                      console.error('답변이 없습니다:', data);
-                      throw new Error('답변을 받지 못했습니다.');
-                    }
-                    
-                    // 질문 횟수 증가 및 저장 (메뉴별)
-                    const newCount = currentCount + 1;
-                    usedQuestionCounts[currentMenuTitle] = newCount;
-                    
-                    try {
-                      localStorage.setItem('question_counts_' + ${JSON.stringify(saved.id)}, JSON.stringify(usedQuestionCounts));
-                    } catch (e) {
-                      console.error('질문 횟수 저장 실패:', e);
-                    }
-                    
-                    // 답변 표시
-                    document.getElementById('questionAnswerText').textContent = data.answer;
-                    answerEl.style.display = 'block';
-                  } catch (err) {
-                    errorEl.textContent = err.message || '답변을 생성하는 중 오류가 발생했습니다.';
-                    errorEl.style.display = 'block';
-                  } finally {
-                    loadingEl.style.display = 'none';
-                    submitBtn.disabled = false;
-                  }
-                }
-                
-                // 오버레이 클릭 시 닫기
-                const overlay = document.getElementById('questionPopupOverlay');
-                if (overlay) {
-                  overlay.addEventListener('click', function(e) {
-                    if (e.target === overlay) {
-                      closeQuestionPopup();
-                    }
-                  });
-                }
-                
-                // 페이지 로드 후 버튼 추가
-                function initQuestionButtons() {
-                  console.log('버튼 추가 초기화 시작');
-                  
-                  // 여러 번 재시도하는 함수
-                  let retryCount = 0;
-                  const maxRetries = 10;
-                  
-                  const tryAddButtons = () => {
-                    console.log('버튼 추가 시도:', retryCount + 1);
-                    const success = addQuestionButtons();
-                    
-                    if (!success && retryCount < maxRetries) {
-                      retryCount++;
-                      // 점진적으로 지연 시간 증가 (200ms, 400ms, 600ms, ...)
-                      setTimeout(tryAddButtons, 200 * retryCount);
-                    } else if (success) {
-                      console.log('버튼 추가 성공');
-                    } else {
-                      console.log('버튼 추가 실패: 최대 재시도 횟수 초과');
-                    }
-                  };
-                  
-                  // requestAnimationFrame을 사용하여 DOM 렌더링 완료 후 실행
-                  requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                      tryAddButtons();
-                    });
-                  });
-                }
-                
-                // 여러 이벤트에서 버튼 추가 시도
-                // 1. DOMContentLoaded
-                if (document.readyState === 'loading') {
-                  document.addEventListener('DOMContentLoaded', function() {
-                    console.log('DOMContentLoaded 이벤트 발생');
-                    setTimeout(initQuestionButtons, 100);
-                  });
-                }
-                
-                // 2. window.onload
-                window.addEventListener('load', function() {
-                  console.log('window.onload 이벤트 발생');
-                  setTimeout(initQuestionButtons, 100);
-                });
-                
-                // 3. 즉시 실행 시도 (이미 로드된 경우)
-                if (document.readyState !== 'loading') {
-                  console.log('문서가 이미 로드됨, 즉시 실행');
-                  setTimeout(initQuestionButtons, 300);
-                }
-                
-                // 4. 추가 안전장치: 일정 시간 후에도 재시도
-                setTimeout(function() {
-                  console.log('추가 안전장치: 버튼 확인');
-                  const resultsContainer = document.getElementById('contentHtml');
-                  if (resultsContainer) {
-                    const menuSections = resultsContainer.querySelectorAll('.menu-section');
-                    let hasButtons = true;
-                    menuSections.forEach((section) => {
-                      if (!section.querySelector('.question-button-container')) {
-                        hasButtons = false;
-                      }
-                    });
-                    if (!hasButtons) {
-                      console.log('추가 안전장치: 버튼이 없어서 다시 추가');
-                      initQuestionButtons();
-                    }
-                  }
-                }, 2000); // 2초 후 확인
               </script>
             </body>
             </html>
@@ -2663,17 +2205,41 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* 추가 질문 팝업 */}
-      <QuestionPopup
-        isOpen={questionPopup.isOpen}
-        onClose={() => setQuestionPopup({ ...questionPopup, isOpen: false })}
-        menuTitle={questionPopup.menuTitle}
-        subtitles={questionPopup.subtitles}
-        onQuestionSubmit={handleQuestionSubmit}
-        usedQuestions={usedQuestionCounts[questionPopup.menuTitle] || 0}
-        maxQuestions={MAX_QUESTIONS}
-      />
-      
+      {/* realtime 전용 로딩 팝업 (batch 폼 팝업과 동일한 UI) */}
+      {fortuneViewMode === 'realtime' && isRealtime && showRealtimePopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="text-center">
+              <h3 className="text-xl font-bold text-gray-900 mb-6">결과 생성 중...</h3>
+              
+              {/* 진행률 표시 */}
+              <div className="mb-6">
+                <div className="w-full bg-gray-200 rounded-full h-3 mb-3">
+                  <div 
+                    className="bg-gradient-to-r from-pink-500 to-pink-600 h-3 rounded-full transition-all duration-300"
+                    style={{ width: `${streamingProgress}%` }}
+                  ></div>
+                </div>
+                <p className="text-sm text-gray-600">
+                  {Math.round(streamingProgress)}%
+                </p>
+              </div>
+              
+              {/* 안내 문구 */}
+              <div className="mb-4">
+                <p className="text-gray-700 font-medium">
+                  <span className="text-pink-600">내담자님의 사주명식을 자세히 분석중이에요</span>
+                </p>
+              </div>
+              
+              {/* 로딩 스피너 */}
+              <div className="flex justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* 동적 스타일 주입 */}
       <style dangerouslySetInnerHTML={{ __html: dynamicStyles }} />
       
@@ -2726,11 +2292,79 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           )}
         </div>
 
-        {/* 결과 출력 - HTML 그대로 표시 */}
-        <div 
-          className="jeminai-results"
-          dangerouslySetInnerHTML={{ __html: html ? html.replace(/\*\*/g, '') : '' }}
-        />
+        {/* 결과 출력 */}
+        {fortuneViewMode === 'realtime' ? (
+          parsedMenus.length > 0 ? (
+            <div className="jeminai-results space-y-6">
+              {parsedMenus.map((menu, menuIndex) => (
+                <div key={`menu-${menuIndex}`} className="menu-section space-y-3">
+                  <div className="menu-title font-bold text-lg text-gray-900">{menu.title}</div>
+
+                  {/* 대제목별 썸네일 */}
+                  {menu.thumbnailHtml && (
+                    <ThumbnailDisplay html={menu.thumbnailHtml} menuIndex={menuIndex} />
+                  )}
+
+                  {/* 첫 번째 대제목 아래 만세력 테이블 (1-1 소제목 준비 이후에만 표시) */}
+                  {menuIndex === 0 && menu.manseHtml && firstSubtitleReady && (
+                    <div
+                      className="mt-4"
+                      dangerouslySetInnerHTML={{ __html: menu.manseHtml }}
+                    />
+                  )}
+
+                  <div className="space-y-4">
+                    {menu.subtitles.map((sub, subIndex) => {
+                      const globalIndex = menu.startIndex + subIndex
+                      const isRevealed = globalIndex < revealedCount
+                      return (
+                        <div key={`subtitle-${menuIndex}-${subIndex}`} className="subtitle-section space-y-2">
+                          {sub.title && (
+                            <div className="subtitle-title font-semibold text-gray-900">
+                              {sub.title}
+                            </div>
+                          )}
+                          {isRevealed ? (
+                            <div
+                              className="subtitle-content text-gray-800"
+                              dangerouslySetInnerHTML={{ __html: sub.contentHtml }}
+                            />
+                          ) : (
+                            <div className="subtitle-content text-gray-400 flex items-center gap-2">
+                              점사중입니다
+                              <span className="loading-dots">
+                                <span className="dot" />
+                                <span className="dot" />
+                                <span className="dot" />
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="jeminai-results space-y-4 text-center text-gray-500">
+              <div className="flex justify-center items-center gap-2 text-gray-600">
+              점사를 준비중이에요
+                <span className="loading-dots">
+                  <span className="dot" />
+                  <span className="dot" />
+                  <span className="dot" />
+                </span>
+              </div>
+            <div className="text-sm text-gray-400">곧 점사내용이 순차적으로 표시되요.</div>
+            </div>
+          )
+        ) : (
+          <div 
+            className="jeminai-results"
+            dangerouslySetInnerHTML={{ __html: html ? html.replace(/\*\*/g, '') : '' }}
+          />
+        )}
 
         {/* 저장된 파일 보기 */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8 mt-8">

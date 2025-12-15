@@ -16,12 +16,12 @@ export async function POST(req: NextRequest) {
     
     const supabase = getAdminSupabaseClient()
     const body = await req.json()
-    const { model, speaker } = body
+    const { model, speaker, fortune_view_mode } = body
 
     // 기존 레코드 조회
     const { data: existing, error: existingError } = await supabase
       .from('app_settings')
-      .select('id, selected_model, selected_speaker')
+      .select('id, selected_model, selected_speaker, fortune_view_mode')
       .eq('id', 1)
       .maybeSingle()
 
@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
       updated_at: string
       selected_model?: string
       selected_speaker?: string
+      fortune_view_mode?: string
     } = {
       updated_at: new Date().toISOString()
     }
@@ -61,6 +62,15 @@ export async function POST(req: NextRequest) {
       updateData.selected_speaker = 'nara'
     }
 
+    // fortune_view_mode 업데이트
+    if (fortune_view_mode !== undefined && fortune_view_mode !== null) {
+      updateData.fortune_view_mode = String(fortune_view_mode).trim()
+    } else if (existing) {
+      updateData.fortune_view_mode = (existing as any).fortune_view_mode || 'batch'
+    } else {
+      updateData.fortune_view_mode = 'batch'
+    }
+
     let savedData: any = null
 
     if (existing) {
@@ -69,7 +79,7 @@ export async function POST(req: NextRequest) {
         .from('app_settings')
         .update(updateData)
         .eq('id', 1)
-        .select('id, selected_model, selected_speaker')
+        .select('id, selected_model, selected_speaker, fortune_view_mode')
       
       if (updateError) {
         console.error('업데이트 에러:', updateError)
@@ -89,7 +99,7 @@ export async function POST(req: NextRequest) {
           id: 1,
           ...updateData
         })
-        .select('id, selected_model, selected_speaker')
+        .select('id, selected_model, selected_speaker, fortune_view_mode')
       
       if (insertError) {
         console.error('생성 에러:', insertError)
@@ -106,7 +116,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       model: savedData.selected_model || updateData.selected_model,
-      speaker: savedData.selected_speaker || updateData.selected_speaker
+      speaker: savedData.selected_speaker || updateData.selected_speaker,
+      fortune_view_mode: (savedData as any).fortune_view_mode || updateData.fortune_view_mode
     })
   } catch (error: any) {
     console.error('설정 저장 에러:', error)

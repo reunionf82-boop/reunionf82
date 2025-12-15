@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     // 직접 모든 필드를 조회하여 실제 DB 값을 확인
     const { data, error } = await supabase
       .from('app_settings')
-      .select('id, selected_model, selected_speaker, updated_at')
+      .select('id, selected_model, selected_speaker, fortune_view_mode, updated_at')
       .eq('id', 1)
       .maybeSingle() // 레코드가 없어도 에러가 아닌 null 반환
     
@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
     // DB 값 사용
     const modelValue = data.selected_model
     const speakerValue = data.selected_speaker
+    const fortuneModeValue = (data as any).fortune_view_mode
     
     const finalModel = (modelValue != null && String(modelValue).trim() !== '') 
       ? String(modelValue).trim() 
@@ -64,10 +65,15 @@ export async function GET(req: NextRequest) {
     const finalSpeaker = (speakerValue != null && String(speakerValue).trim() !== '') 
       ? String(speakerValue).trim() 
       : 'nara'
+    
+    const finalFortuneMode = (fortuneModeValue != null && String(fortuneModeValue).trim() !== '')
+      ? String(fortuneModeValue).trim()
+      : 'batch'
 
     return NextResponse.json({
       model: finalModel,
-      speaker: finalSpeaker
+      speaker: finalSpeaker,
+      fortune_view_mode: finalFortuneMode
     }, {
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',

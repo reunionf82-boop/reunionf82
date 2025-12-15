@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai'
 
+// Vercel Serverless Function의 타임아웃을 5분(300초)으로 설정
+export const maxDuration = 300
+
 export async function POST(req: NextRequest) {
         try {
           const body = await req.json()

@@ -11,6 +11,7 @@ export default function AdminPage() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
   const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash')
   const [selectedSpeaker, setSelectedSpeaker] = useState<string>('nara')
+  const [fortuneViewMode, setFortuneViewMode] = useState<'batch' | 'realtime'>('batch')
 
   useEffect(() => {
     checkAuth()
@@ -69,6 +70,7 @@ export default function AdminPage() {
       console.log('전체 응답:', data)
       console.log('모델:', data.model)
       console.log('화자:', data.speaker)
+      console.log('점사 모드:', data.fortune_view_mode)
       
       // 디버그 정보 확인
       if (data._debug) {
@@ -83,7 +85,7 @@ export default function AdminPage() {
         console.log('DB speaker === null:', data._debug.dbSpeaker === null)
         console.log('DB speaker === undefined:', data._debug.dbSpeaker === undefined)
       }
-      console.log('현재 상태 - 모델:', selectedModel, '화자:', selectedSpeaker)
+      console.log('현재 상태 - 모델:', selectedModel, '화자:', selectedSpeaker, '점사 모드:', fortuneViewMode)
       
       // 모델 설정 (DB에서 가져온 값으로 무조건 업데이트)
       const loadedModel = data.model || 'gemini-2.5-flash'
@@ -106,10 +108,14 @@ export default function AdminPage() {
       console.log('  - ndain: 다인 (여성)')
       console.log('  - jinho: 진호 (남성)')
       console.log('==========================================')
+
+      const loadedFortuneMode = data.fortune_view_mode === 'realtime' ? 'realtime' : 'batch'
+      console.log('로드된 점사 모드:', loadedFortuneMode)
+      setFortuneViewMode(loadedFortuneMode)
     } catch (error) {
       console.error('설정 로드 실패:', error)
       // 에러 발생 시에도 기본값으로 변경하지 않고 현재 값 유지
-      console.log('에러 발생, 현재 설정 유지 - 모델:', selectedModel, '화자:', selectedSpeaker)
+      console.log('에러 발생, 현재 설정 유지 - 모델:', selectedModel, '화자:', selectedSpeaker, '점사 모드:', fortuneViewMode)
     }
   }
 
@@ -165,6 +171,30 @@ export default function AdminPage() {
     router.push(`/admin/form?speaker=${selectedSpeaker}`)
   }
 
+  const handleFortuneModeChange = async (mode: 'batch' | 'realtime') => {
+    try {
+      const response = await fetch('/api/admin/settings/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ fortune_view_mode: mode }),
+      })
+
+      if (!response.ok) {
+        throw new Error('점사 모드 저장 실패')
+      }
+
+      const result = await response.json()
+      const savedMode = result.fortune_view_mode === 'realtime' ? 'realtime' : 'batch'
+      setFortuneViewMode(savedMode)
+      console.log('점사 모드 저장 완료:', savedMode)
+    } catch (error) {
+      console.error('점사 모드 저장 실패:', error)
+      alert('점사 모드 저장에 실패했습니다. 콘솔을 확인해주세요.')
+    }
+  }
+
   const handleContentClick = (content: any) => {
     router.push(`/admin/form?id=${content.id}`)
   }
@@ -199,90 +229,114 @@ export default function AdminPage() {
         </div>
 
         {/* 버튼들 */}
-        <div className="flex items-center gap-3 mb-6">
-          <button
-            onClick={handleAdd}
-            className="bg-pink-500 hover:bg-pink-600 text-white font-semibold px-6 py-3 rounded-lg transition-colors duration-200"
-          >
-            추가
-          </button>
+        <div className="flex flex-col gap-3 mb-6">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleAdd}
+              className="bg-pink-500 hover:bg-pink-600 text-white font-semibold px-6 py-3 rounded-lg transition-colors duration-200"
+            >
+              추가
+            </button>
+          </div>
           
-          {/* 모델 선택 토글 */}
-          <div className="flex items-center gap-2 ml-auto bg-gray-800 rounded-lg p-1 border border-gray-700">
-            {/* TTS 화자 선택 드롭다운 */}
-            <select
-              value={selectedSpeaker}
-              onChange={async (e) => {
-                const speaker = e.target.value
-                const speakerNames: { [key: string]: string } = {
-                  'nara': '나라 (여성)',
-                  'mijin': '미진 (여성)',
-                  'nhajun': '나준 (여성)',
-                  'ndain': '다인 (여성)',
-                  'jinho': '진호 (남성)'
-                }
-                const speakerDisplayName = speakerNames[speaker] || speaker
-                
-                console.log('=== 관리자 컨텐츠 리스트: 화자 변경 ===')
-                console.log('이전 화자:', selectedSpeaker, `(${speakerNames[selectedSpeaker] || selectedSpeaker})`)
-                console.log('새 화자:', speaker, `(${speakerDisplayName})`)
-                
-                try {
-                  const response = await fetch('/api/admin/settings/save', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ speaker }),
-                  })
-                  
-                  if (!response.ok) {
-                    throw new Error('화자 저장 실패')
+          {/* 모델/화자/점사모드/모델 선택 토글 */}
+          <div className="flex flex-col items-end gap-2 ml-auto">
+            <div className="flex items-center gap-3 bg-gray-800 rounded-lg p-2 border border-gray-700">
+              {/* 점사 모드 토글 */}
+              <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1">
+                <button
+                  onClick={() => handleFortuneModeChange('batch')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-200 ${
+                    fortuneViewMode === 'batch' ? 'bg-pink-500 text-white' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  한번에 점사
+                </button>
+                <button
+                  onClick={() => handleFortuneModeChange('realtime')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-200 ${
+                    fortuneViewMode === 'realtime' ? 'bg-pink-500 text-white' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  점진적 점사
+                </button>
+              </div>
+
+              {/* TTS 화자 선택 드롭다운 */}
+              <select
+                value={selectedSpeaker}
+                onChange={async (e) => {
+                  const speaker = e.target.value
+                  const speakerNames: { [key: string]: string } = {
+                    'nara': '나라 (여성)',
+                    'mijin': '미진 (여성)',
+                    'nhajun': '나준 (여성)',
+                    'ndain': '다인 (여성)',
+                    'jinho': '진호 (남성)'
                   }
+                  const speakerDisplayName = speakerNames[speaker] || speaker
                   
-                  const result = await response.json()
-                  console.log('저장 응답:', result)
+                  console.log('=== 관리자 컨텐츠 리스트: 화자 변경 ===')
+                  console.log('이전 화자:', selectedSpeaker, `(${speakerNames[selectedSpeaker] || selectedSpeaker})`)
+                  console.log('새 화자:', speaker, `(${speakerDisplayName})`)
                   
-                  // 저장 응답에서 실제 저장된 값으로 상태 업데이트
-                  if (result.speaker) {
-                    setSelectedSpeaker(result.speaker)
-                    console.log('저장된 화자로 상태 업데이트:', result.speaker)
-                    console.log('Supabase에 화자 저장 완료:', result.speaker, `(${speakerDisplayName})`)
-                    console.log('==============================')
+                  try {
+                    const response = await fetch('/api/admin/settings/save', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({ speaker }),
+                    })
+                    
+                    if (!response.ok) {
+                      throw new Error('화자 저장 실패')
+                    }
+                    
+                    const result = await response.json()
+                    console.log('저장 응답:', result)
+                    
+                    // 저장 응답에서 실제 저장된 값으로 상태 업데이트
+                    if (result.speaker) {
+                      setSelectedSpeaker(result.speaker)
+                      console.log('저장된 화자로 상태 업데이트:', result.speaker)
+                      console.log('Supabase에 화자 저장 완료:', result.speaker, `(${speakerDisplayName})`)
+                      console.log('==============================')
+                    }
+                  } catch (error) {
+                    console.error('화자 저장 실패:', error)
+                    alert('화자 저장에 실패했습니다. 콘솔을 확인해주세요.')
                   }
-                } catch (error) {
-                  console.error('화자 저장 실패:', error)
-                  alert('화자 저장에 실패했습니다. 콘솔을 확인해주세요.')
-                }
-              }}
-              className="bg-gray-800 border border-gray-700 rounded-md px-4 py-2 text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-pink-500 h-[36px] mr-2"
-            >
-              <option value="nara">나라 (여성)</option>
-              <option value="mijin">미진 (여성)</option>
-              <option value="nhajun">나준 (여성)</option>
-              <option value="ndain">다인 (여성)</option>
-              <option value="jinho">진호 (남성)</option>
-            </select>
-            <button
-              onClick={() => handleModelChange('gemini-2.5-flash')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
-                selectedModel === 'gemini-2.5-flash'
-                  ? 'bg-pink-500 text-white'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Gemini 2.5 Flash
-            </button>
-            <button
-              onClick={() => handleModelChange('gemini-2.5-pro')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
-                selectedModel === 'gemini-2.5-pro'
-                  ? 'bg-pink-500 text-white'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Gemini 2.5 Pro
-            </button>
+                }}
+                className="bg-gray-800 border border-gray-700 rounded-md px-4 py-2 text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-pink-500 h-[36px] mr-2"
+              >
+                <option value="nara">나라 (여성)</option>
+                <option value="mijin">미진 (여성)</option>
+                <option value="nhajun">나준 (여성)</option>
+                <option value="ndain">다인 (여성)</option>
+                <option value="jinho">진호 (남성)</option>
+              </select>
+              <button
+                onClick={() => handleModelChange('gemini-2.5-flash')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+                  selectedModel === 'gemini-2.5-flash'
+                    ? 'bg-pink-500 text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Gemini 2.5 Flash
+              </button>
+              <button
+                onClick={() => handleModelChange('gemini-2.5-pro')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+                  selectedModel === 'gemini-2.5-pro'
+                    ? 'bg-pink-500 text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Gemini 2.5 Pro
+              </button>
+            </div>
           </div>
         </div>
 

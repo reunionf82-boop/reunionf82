@@ -410,4 +410,68 @@ export async function saveSelectedSpeaker(speaker: string) {
   }
 }
 
+// 점사 모드 조회 (batch | realtime)
+export async function getFortuneViewMode(): Promise<'batch' | 'realtime'> {
+  try {
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('fortune_view_mode')
+      .eq('id', 1)
+      .single()
+
+    if (error) {
+      console.log('점사 모드 조회 실패, 기본값 사용:', error.message)
+      return 'batch'
+    }
+
+    const mode = (data as any)?.fortune_view_mode
+    return mode === 'realtime' ? 'realtime' : 'batch'
+  } catch (e) {
+    console.error('점사 모드 조회 에러:', e)
+    return 'batch'
+  }
+}
+
+// 점사 모드 저장
+export async function saveFortuneViewMode(mode: 'batch' | 'realtime') {
+  try {
+    const { data: existing } = await supabase
+      .from('app_settings')
+      .select('id')
+      .eq('id', 1)
+      .single()
+
+    const payload = {
+      fortune_view_mode: mode,
+      updated_at: new Date().toISOString()
+    }
+
+    if (existing) {
+      const { error } = await supabase
+        .from('app_settings')
+        .update(payload)
+        .eq('id', 1)
+
+      if (error) {
+        console.error('점사 모드 업데이트 에러:', error)
+        throw error
+      }
+    } else {
+      const { error } = await supabase
+        .from('app_settings')
+        .insert({ id: 1, ...payload })
+
+      if (error) {
+        console.error('점사 모드 생성 에러:', error)
+        throw error
+      }
+    }
+
+    return true
+  } catch (e) {
+    console.error('점사 모드 저장 에러:', e)
+    throw e
+  }
+}
+
 

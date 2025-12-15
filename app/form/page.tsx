@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
-import { getContents, getSelectedModel, getSelectedSpeaker } from '@/lib/supabase-admin'
+import { getContents, getSelectedModel, getSelectedSpeaker, getFortuneViewMode } from '@/lib/supabase-admin'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { calculateManseRyeok, generateManseRyeokTable, generateManseRyeokText, getDayGanji } from '@/lib/manse-ryeok'
 import TermsPopup from '@/components/TermsPopup'
@@ -596,7 +596,7 @@ function FormContent() {
           const birthMonth = parseInt(month)
           const birthDay = parseInt(day)
           // 태어난 시를 숫자로 변환 (예: "23-01" -> 23)
-          let birthHourNum = 12 // 기본값 12시 (오시)
+          let birthHourNum = 10 // 기본값 10시 (오전 10시)
           if (birthHour) {
             // 지지 문자인 경우 시간 매핑
             const hourMap: { [key: string]: number } = {
@@ -689,6 +689,39 @@ function FormContent() {
         day_gan_info: dayGanInfo // 일간 정보 추가
       }
 
+      // 점사 모드 확인
+      let fortuneViewMode: 'batch' | 'realtime' = 'batch'
+      try {
+        fortuneViewMode = await getFortuneViewMode()
+        console.log('Form 페이지: 점사 모드 확인:', fortuneViewMode)
+      } catch (error) {
+        console.error('Form 페이지: 점사 모드 로드 실패, 기본 batch 사용:', error)
+        fortuneViewMode = 'batch'
+      }
+
+      // realtime 모드일 경우 즉시 result 페이지로 리다이렉트
+      if (fortuneViewMode === 'realtime') {
+        console.log('Form 페이지: realtime 모드 감지, result 페이지로 리다이렉트')
+        
+        // requestKey 생성 및 sessionStorage에 저장
+        const requestKey = `request_${Date.now()}`
+        const payload = {
+          requestData,
+          content,
+          startTime,
+          model: currentModel,
+          userName: name
+        }
+        sessionStorage.setItem(requestKey, JSON.stringify(payload))
+        console.log('Form 페이지: requestKey 저장 완료:', requestKey)
+        
+        // result 페이지로 리다이렉트 (realtime 모드)
+        setSubmitting(false)
+        router.push(`/result?requestKey=${requestKey}&stream=true`)
+        return
+      }
+
+      // batch 모드: 기존 로직 유지 (로딩 팝업 표시 후 스트리밍 수행)
       // 로딩 팝업 표시
       setShowLoadingPopup(true)
       setStreamingProgress(0)
@@ -924,7 +957,45 @@ function FormContent() {
   // 년도, 월, 일 옵션 생성
   const years = Array.from({ length: 76 }, (_, i) => 2025 - i)
   const months = Array.from({ length: 12 }, (_, i) => i + 1)
-  const days = Array.from({ length: 31 }, (_, i) => i + 1)
+  
+  // 유효한 일자 계산 함수 (양력/음력/음력윤달 모두 지원)
+  const getValidDays = (yearStr: string, monthStr: string, calendarType: 'solar' | 'lunar' | 'lunar-leap'): number[] => {
+    if (!yearStr || !monthStr) {
+      return Array.from({ length: 31 }, (_, i) => i + 1)
+    }
+    
+    const year = parseInt(yearStr)
+    const month = parseInt(monthStr)
+    
+    if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+      return Array.from({ length: 31 }, (_, i) => i + 1)
+    }
+    
+    // 양력의 경우
+    if (calendarType === 'solar') {
+      const daysInMonth = new Date(year, month, 0).getDate()
+      return Array.from({ length: daysInMonth }, (_, i) => i + 1)
+    }
+    
+    // 음력의 경우 (간단한 근사치 사용)
+    // 음력은 복잡하므로, 양력과 유사하게 처리하되 윤달은 별도 처리
+    if (calendarType === 'lunar' || calendarType === 'lunar-leap') {
+      // 음력 월의 일수는 대략 29일 또는 30일
+      // 실제로는 음력 변환 라이브러리가 필요하지만, 여기서는 양력 기준으로 근사치 사용
+      // 음력 윤달의 경우도 동일하게 처리
+      const daysInMonth = new Date(year, month, 0).getDate()
+      // 음력은 보통 29일 또는 30일이지만, 양력 기준으로 계산
+      return Array.from({ length: daysInMonth }, (_, i) => i + 1)
+    }
+    
+    return Array.from({ length: 31 }, (_, i) => i + 1)
+  }
+  
+  // 본인 정보의 유효한 일자
+  const validDays = getValidDays(year, month, calendarType)
+  
+  // 이성 정보의 유효한 일자 (궁합형인 경우)
+  const partnerValidDays = getValidDays(partnerYear, partnerMonth, partnerCalendarType)
   
   const birthHours = [
     { value: '', label: '태어난 시 - 모름' },
@@ -1259,6 +1330,13 @@ function FormContent() {
                   value={year}
                   onChange={(e) => {
                     setYear(e.target.value)
+                    // 년도가 변경되면 일자가 유효 범위를 벗어날 수 있으므로 초기화
+                    if (e.target.value && month) {
+                      const newValidDays = getValidDays(e.target.value, month, calendarType)
+                      if (day && parseInt(day) > newValidDays.length) {
+                        setDay('')
+                      }
+                    }
                     if (fieldErrors.birthDate && e.target.value && month && day) {
                       setFieldErrors(prev => ({ ...prev, birthDate: undefined }))
                     }
@@ -1279,6 +1357,13 @@ function FormContent() {
                   value={month}
                   onChange={(e) => {
                     setMonth(e.target.value)
+                    // 월이 변경되면 일자가 유효 범위를 벗어날 수 있으므로 초기화
+                    if (e.target.value && year) {
+                      const newValidDays = getValidDays(year, e.target.value, calendarType)
+                      if (day && parseInt(day) > newValidDays.length) {
+                        setDay('')
+                      }
+                    }
                     if (fieldErrors.birthDate && year && e.target.value && day) {
                       setFieldErrors(prev => ({ ...prev, birthDate: undefined }))
                     }
@@ -1309,7 +1394,7 @@ function FormContent() {
                   required
                 >
                   <option value="">일</option>
-                  {days.map((d) => (
+                  {validDays.map((d) => (
                     <option key={d} value={d}>{d}일</option>
                   ))}
                 </select>
@@ -1477,6 +1562,13 @@ function FormContent() {
                       value={partnerYear}
                       onChange={(e) => {
                         setPartnerYear(e.target.value)
+                        // 년도가 변경되면 일자가 유효 범위를 벗어날 수 있으므로 초기화
+                        if (e.target.value && partnerMonth) {
+                          const newValidDays = getValidDays(e.target.value, partnerMonth, partnerCalendarType)
+                          if (partnerDay && parseInt(partnerDay) > newValidDays.length) {
+                            setPartnerDay('')
+                          }
+                        }
                         if (fieldErrors.partnerBirthDate && e.target.value && partnerMonth && partnerDay) {
                           setFieldErrors(prev => ({ ...prev, partnerBirthDate: undefined }))
                         }
@@ -1497,6 +1589,13 @@ function FormContent() {
                       value={partnerMonth}
                       onChange={(e) => {
                         setPartnerMonth(e.target.value)
+                        // 월이 변경되면 일자가 유효 범위를 벗어날 수 있으므로 초기화
+                        if (e.target.value && partnerYear) {
+                          const newValidDays = getValidDays(partnerYear, e.target.value, partnerCalendarType)
+                          if (partnerDay && parseInt(partnerDay) > newValidDays.length) {
+                            setPartnerDay('')
+                          }
+                        }
                         if (fieldErrors.partnerBirthDate && partnerYear && e.target.value && partnerDay) {
                           setFieldErrors(prev => ({ ...prev, partnerBirthDate: undefined }))
                         }
@@ -1527,7 +1626,7 @@ function FormContent() {
                       required
                     >
                       <option value="">일</option>
-                      {days.map((d) => (
+                      {partnerValidDays.map((d) => (
                         <option key={d} value={d}>{d}일</option>
                       ))}
                     </select>
@@ -1855,11 +1954,12 @@ function FormContent() {
                                       @keyframes spin {
                                         to { transform: rotate(360deg); }
                                       }
-                                      .question-button-container {
-                                        margin-top: 24px;
-                                        margin-bottom: 16px;
-                                        text-align: center;
-                                      }
+                                     .question-button-container {
+                                       margin-top: 24px;
+                                       margin-bottom: 16px;
+                                       text-align: center;
+                                       display: none; /* 추가 질문하기 버튼 숨김 */
+                                     }
                                       .question-button {
                                         background: #ec4899;
                                         color: white;
@@ -2219,6 +2319,7 @@ function FormContent() {
                                     <script>
                                       // 저장된 컨텐츠의 화자 정보를 전역 변수로 설정
                                       window.savedContentSpeaker = ${saved.content?.tts_speaker ? `'${saved.content.tts_speaker}'` : "'nara'"};
+                                      window.savedContentId = ${saved.content?.id ? saved.content.id : 'null'};
                                       
                                       let isPlaying = false;
                                       let currentAudio = null;
@@ -2244,16 +2345,40 @@ function FormContent() {
                                         }
                                       });
 
-                                      // HTML에서 텍스트 추출
+                                      // HTML에서 텍스트 추출 (화면에 보이는 텍스트만)
                                       function extractTextFromHtml(htmlString) {
-                                        const tempDiv = document.createElement('div');
-                                        tempDiv.innerHTML = htmlString;
+                                        // 실제 DOM에서 contentHtml 요소를 사용 (렌더링된 상태에서 추출)
+                                        const contentHtml = document.getElementById('contentHtml');
+                                        if (!contentHtml) {
+                                          // 폴백: 임시 div 사용
+                                          const tempDiv = document.createElement('div');
+                                          tempDiv.innerHTML = htmlString;
+                                          
+                                          // 테이블 요소 제거
+                                          const tables = tempDiv.querySelectorAll('table, .manse-ryeok-table');
+                                          tables.forEach(table => table.remove());
+                                          
+                                          // style, script 태그 제거
+                                          const hiddenTags = tempDiv.querySelectorAll('style, script');
+                                          hiddenTags.forEach(tag => tag.remove());
+                                          
+                                          return tempDiv.innerText || '';
+                                        }
                                         
-                                        // 테이블 요소 제거 (manse-ryeok-table 클래스를 가진 테이블 및 모든 table 요소)
-                                        const tables = tempDiv.querySelectorAll('table, .manse-ryeok-table');
+                                        // 실제 DOM에서 클론 생성 (렌더링된 상태 유지)
+                                        const clone = contentHtml.cloneNode(true);
+                                        
+                                        // 테이블 요소 제거
+                                        const tables = clone.querySelectorAll('table, .manse-ryeok-table');
                                         tables.forEach(table => table.remove());
                                         
-                                        return tempDiv.textContent || tempDiv.innerText || '';
+                                        // style, script 태그 제거
+                                        const hiddenTags = clone.querySelectorAll('style, script');
+                                        hiddenTags.forEach(tag => tag.remove());
+                                        
+                                        // innerText 사용 (화면에 보이는 텍스트만 추출)
+                                        // innerText는 CSS로 숨겨진 요소의 텍스트를 자동으로 제외함
+                                        return clone.innerText || '';
                                       }
 
                                       // 텍스트를 청크로 분할하는 함수
@@ -2303,7 +2428,7 @@ function FormContent() {
                                         // 모든 오디오 즉시 중지
                                         if (currentAudio) {
                                           try {
-                                            console.log('오디오 중지 시도:', currentAudio.src);
+                                            console.log('새 창: 오디오 중지 시도:', currentAudio.src);
                                             currentAudio.pause();
                                             currentAudio.currentTime = 0;
                                             const url = currentAudio.src;
@@ -2311,15 +2436,28 @@ function FormContent() {
                                               URL.revokeObjectURL(url);
                                             }
                                             currentAudio = null;
-                                            console.log('오디오 중지 완료');
+                                            console.log('새 창: 오디오 중지 완료');
                                           } catch (e) {
-                                            console.error('오디오 중지 중 오류:', e);
+                                            console.error('새 창: 오디오 중지 중 오류:', e);
                                             currentAudio = null;
                                           }
                                         }
                                         
+                                        // 모든 오디오 요소 찾아서 중지 (안전장치)
+                                        try {
+                                          const allAudios = document.querySelectorAll('audio');
+                                          allAudios.forEach(audio => {
+                                            if (!audio.paused) {
+                                              console.log('새 창: 추가 오디오 요소 중지:', audio.src);
+                                              audio.pause();
+                                              audio.currentTime = 0;
+                                            }
+                                          });
+                                        } catch (e) {
+                                          console.error('새 창: 추가 오디오 중지 중 오류:', e);
+                                        }
+                                        
                                         isPlaying = false;
-                                        isProcessing = false;
                                         
                                         // 버튼 상태 복원
                                         const button = document.getElementById('ttsButton');
@@ -2338,218 +2476,360 @@ function FormContent() {
                                         stopAndResetAudio();
                                       }
 
-                                      // 음성으로 듣기 기능 - 청크 단위로 나누어 재생
-                                      let isProcessing = false; // 중복 실행 방지 플래그
+                                      // 음성으로 듣기 기능 - 청크 단위로 나누어 재생 (result 페이지와 동일한 로직)
                                       async function handleTextToSpeech() {
-                                        // 중복 실행 방지
-                                        if (isProcessing) {
-                                          console.log('이미 처리 중입니다.');
-                                          return;
-                                        }
-                                        
-                                        // 재생 중이면 중지
+                                        // 재생 중이면 중지 (즉시 체크)
                                         if (isPlaying) {
                                           stopTextToSpeech();
                                           return;
                                         }
 
-                                        isProcessing = true;
+                                        // 즉시 플래그 설정 및 버튼 상태 변경 (중복 실행 방지)
+                                        isPlaying = true;
+                                        shouldStop = false; // 새 재생 시작 시에만 false로 초기화
                                         
+                                        const button = document.getElementById('ttsButton');
+                                        const icon = document.getElementById('ttsIcon');
+                                        const text = document.getElementById('ttsText');
+                                        
+                                        if (!button || !icon || !text) {
+                                          isPlaying = false;
+                                          alert('버튼을 찾을 수 없습니다.');
+                                          return;
+                                        }
+                                        
+                                        button.disabled = false;
+                                        icon.textContent = '⏹️';
+                                        text.textContent = '듣기 종료';
+
                                         try {
                                           const contentHtml = document.getElementById('contentHtml');
                                           if (!contentHtml) {
+                                            isPlaying = false;
+                                            button.disabled = false;
+                                            icon.textContent = '🔊';
+                                            text.textContent = '점사 듣기';
                                             alert('내용을 찾을 수 없습니다.');
-                                            isProcessing = false;
                                             return;
                                           }
                                           
                                           const textContent = extractTextFromHtml(contentHtml.innerHTML);
 
                                           if (!textContent.trim()) {
+                                            isPlaying = false;
+                                            button.disabled = false;
+                                            icon.textContent = '🔊';
+                                            text.textContent = '점사 듣기';
                                             alert('읽을 내용이 없습니다.');
-                                            isProcessing = false;
-                                            return;
-                                          }
-
-                                          // 버튼 상태 변경
-                                          const button = document.getElementById('ttsButton');
-                                          const icon = document.getElementById('ttsIcon');
-                                          const text = document.getElementById('ttsText');
-                                          
-                                          if (!button || !icon || !text) {
-                                            alert('버튼을 찾을 수 없습니다.');
-                                            isProcessing = false;
                                             return;
                                           }
                                           
-                                          button.disabled = false;
-                                          icon.textContent = '⏹️';
-                                          text.textContent = '듣기 종료';
-                                          isPlaying = true;
-                                          shouldStop = false;
+                                          // 화자 정보 가져오기 (result 페이지와 동일한 로직)
+                                          let speaker = window.savedContentSpeaker || 'nara';
+                                          
+                                          // content.id가 있으면 Supabase에서 최신 화자 정보 조회
+                                          if (window.savedContentId) {
+                                            try {
+                                              console.log('새 창: Supabase에서 화자 정보 조회 시작');
+                                              const response = await fetch('/api/content/' + window.savedContentId);
+                                              
+                                              if (response.ok) {
+                                                const data = await response.json();
+                                                if (data.tts_speaker) {
+                                                  speaker = data.tts_speaker;
+                                                  window.savedContentSpeaker = speaker; // 전역 변수 업데이트
+                                                  console.log('새 창: Supabase에서 조회한 화자:', speaker);
+                                                }
+                                              }
+                                            } catch (error) {
+                                              console.error('새 창: Supabase에서 화자 조회 실패:', error);
+                                              // 조회 실패 시 기존 값 사용
+                                              speaker = window.savedContentSpeaker || 'nara';
+                                            }
+                                          }
 
                                           // 텍스트를 2000자 단위로 분할
                                           const maxLength = 2000;
                                           const chunks = splitTextIntoChunks(textContent, maxLength);
                                           
-                                          console.log('음성 변환 시작, 전체 텍스트 길이:', textContent.length, '자, 청크 수:', chunks.length);
+                                          console.log('음성 변환 시작, 전체 텍스트 길이:', textContent.length, '자, 청크 수:', chunks.length, ', 화자:', speaker);
 
-                                          // 각 청크를 순차적으로 변환하고 재생
+                                          // 다음 청크를 미리 로드하는 함수 (result 페이지와 동일)
+                                          const preloadNextChunk = async (chunkIndex) => {
+                                            if (chunkIndex >= chunks.length || shouldStop) {
+                                              return null;
+                                            }
+
+                                            try {
+                                              const chunk = chunks[chunkIndex];
+                                              
+                                              // 로드 전에 shouldStop 재확인
+                                              if (shouldStop) {
+                                                console.log('새 창: 미리 로드 중지 (shouldStop)');
+                                                return null;
+                                              }
+                                              
+                                              console.log('새 창: 청크', chunkIndex + 1, '/', chunks.length, '미리 로드 중, 길이:', chunk.length, '자');
+
+                                              const response = await fetch('/api/tts', {
+                                                method: 'POST',
+                                                headers: {
+                                                  'Content-Type': 'application/json',
+                                                },
+                                                body: JSON.stringify({ text: chunk, speaker }),
+                                              });
+
+                                              // 응답 받은 후에도 shouldStop 재확인
+                                              if (shouldStop) {
+                                                console.log('새 창: 미리 로드 중지 (응답 후 shouldStop)');
+                                                return null;
+                                              }
+
+                                              if (!response.ok) {
+                                                const error = await response.json();
+                                                throw new Error(error.error || '청크 ' + (chunkIndex + 1) + ' 음성 변환에 실패했습니다.');
+                                              }
+
+                                              const audioBlob = await response.blob();
+                                              
+                                              // Blob 생성 후에도 shouldStop 재확인
+                                              if (shouldStop) {
+                                                console.log('새 창: 미리 로드 중지 (Blob 생성 후 shouldStop)');
+                                                return null;
+                                              }
+                                              
+                                              const url = URL.createObjectURL(audioBlob);
+                                              const audio = new Audio(url);
+                                              
+                                              // 오디오가 로드될 때까지 대기 (타임아웃 추가)
+                                              await new Promise((resolve, reject) => {
+                                                // 로드 중에도 shouldStop 체크
+                                                const stopCheckInterval = setInterval(() => {
+                                                  if (shouldStop) {
+                                                    clearInterval(stopCheckInterval);
+                                                    clearTimeout(timeout);
+                                                    URL.revokeObjectURL(url);
+                                                    reject(new Error('중지됨'));
+                                                  }
+                                                }, 100);
+                                                
+                                                const timeout = setTimeout(() => {
+                                                  clearInterval(stopCheckInterval);
+                                                  reject(new Error('청크 ' + (chunkIndex + 1) + ' 로드 타임아웃'));
+                                                }, 30000); // 30초 타임아웃
+                                                
+                                                audio.oncanplaythrough = () => {
+                                                  clearInterval(stopCheckInterval);
+                                                  clearTimeout(timeout);
+                                                  resolve();
+                                                };
+                                                audio.onerror = (e) => {
+                                                  clearInterval(stopCheckInterval);
+                                                  clearTimeout(timeout);
+                                                  console.error('새 창: 청크 ' + (chunkIndex + 1) + ' 오디오 로드 에러:', e);
+                                                  reject(new Error('청크 ' + (chunkIndex + 1) + ' 로드 실패'));
+                                                };
+                                                audio.load();
+                                              });
+
+                                              // 로드 완료 후에도 shouldStop 재확인
+                                              if (shouldStop) {
+                                                console.log('새 창: 미리 로드 중지 (로드 완료 후 shouldStop)');
+                                                URL.revokeObjectURL(url);
+                                                return null;
+                                              }
+
+                                              console.log('새 창: 청크', chunkIndex + 1, '미리 로드 완료');
+                                              return { url, audio };
+                                            } catch (error) {
+                                              console.error('새 창: 청크', chunkIndex + 1, '미리 로드 실패:', error);
+                                              return null;
+                                            }
+                                          };
+
+                                          // 각 청크를 순차적으로 재생 (다음 청크는 미리 로드)
+                                          let preloadedChunk = null;
+
                                           for (let i = 0; i < chunks.length; i++) {
                                             // 중지 플래그 확인
                                             if (shouldStop) {
                                               console.log('재생 중지됨');
+                                              if (preloadedChunk) {
+                                                URL.revokeObjectURL(preloadedChunk.url);
+                                              }
                                               break;
                                             }
 
                                             const chunk = chunks[i];
-                                            console.log('청크', i + 1, '/', chunks.length, '처리 중, 길이:', chunk.length, '자');
+                                            console.log('새 창: 청크', i + 1, '/', chunks.length, '재생 시작, 길이:', chunk.length, '자');
 
-                                            // TTS API 호출 (화자 정보 포함)
-                                            const speaker = window.savedContentSpeaker || 'nara';
-                                            const response = await fetch('/api/tts', {
-                                              method: 'POST',
-                                              headers: {
-                                                'Content-Type': 'application/json',
-                                              },
-                                              body: JSON.stringify({ text: chunk, speaker }),
-                                            });
+                                            // 다음 청크를 미리 로드 (현재 청크 재생 중에)
+                                            const nextChunkPromise = i < chunks.length - 1 ? preloadNextChunk(i + 1) : Promise.resolve(null);
 
-                                            if (!response.ok) {
-                                              const error = await response.json();
-                                              throw new Error(error.error || '청크 ' + (i + 1) + ' 음성 변환에 실패했습니다.');
+                                            // 현재 청크 재생
+                                            let currentAudioElement;
+                                            let currentUrl;
+
+                                            if (preloadedChunk) {
+                                              // 미리 로드된 청크 사용
+                                              currentAudioElement = preloadedChunk.audio;
+                                              currentUrl = preloadedChunk.url;
+                                              preloadedChunk = null;
+                                              console.log('새 창: 청크', i + 1, '미리 로드된 오디오 사용');
+                                            } else {
+                                              // 첫 번째 청크이거나 미리 로드 실패한 경우 즉시 요청
+                                              const response = await fetch('/api/tts', {
+                                                method: 'POST',
+                                                headers: {
+                                                  'Content-Type': 'application/json',
+                                                },
+                                                body: JSON.stringify({ text: chunk, speaker }),
+                                              });
+
+                                              if (!response.ok) {
+                                                const error = await response.json();
+                                                throw new Error(error.error || '청크 ' + (i + 1) + ' 음성 변환에 실패했습니다.');
+                                              }
+
+                                              const audioBlob = await response.blob();
+                                              currentUrl = URL.createObjectURL(audioBlob);
+                                              currentAudioElement = new Audio(currentUrl);
                                             }
 
-                                            // 중지 플래그 재확인
-                                            if (shouldStop) {
-                                              console.log('재생 중지됨 (API 호출 후)');
-                                              break;
-                                            }
-
-                                            // 오디오 데이터를 Blob으로 변환
-                                            const audioBlob = await response.blob();
-                                            const url = URL.createObjectURL(audioBlob);
-
-                                            // 오디오 재생 (Promise로 대기)
+                                            // 오디오 재생 (Promise로 대기, 타임아웃 및 에러 처리 개선)
                                             await new Promise((resolve, reject) => {
                                               // 중지 플래그 재확인
                                               if (shouldStop) {
-                                                URL.revokeObjectURL(url);
+                                                URL.revokeObjectURL(currentUrl);
                                                 resolve();
                                                 return;
                                               }
 
-                                              const audio = new Audio(url);
+                                              currentAudio = currentAudioElement; // 현재 오디오 저장
                                               
-                                              // 이전 오디오가 있으면 먼저 정리
-                                              if (currentAudio && currentAudio !== audio) {
-                                                try {
-                                                  currentAudio.pause();
-                                                  currentAudio.currentTime = 0;
-                                                  const oldUrl = currentAudio.src;
-                                                  if (oldUrl && oldUrl.startsWith('blob:')) {
-                                                    URL.revokeObjectURL(oldUrl);
-                                                  }
-                                                } catch (e) {
-                                                  console.error('이전 오디오 정리 중 오류:', e);
-                                                }
-                                              }
+                                              // 타임아웃 설정 (5분)
+                                              const timeout = setTimeout(() => {
+                                                console.error('새 창: 청크 ' + (i + 1) + ' 재생 타임아웃');
+                                                currentAudioElement.pause();
+                                                URL.revokeObjectURL(currentUrl);
+                                                currentAudio = null;
+                                                reject(new Error('청크 ' + (i + 1) + ' 재생 타임아웃'));
+                                              }, 300000); // 5분
                                               
-                                              currentAudio = audio; // 현재 오디오 저장
-                                              
-                                              // shouldStop 체크를 위한 인터벌
+                                              // shouldStop 체크를 위한 인터벌 (재생 중 주기적으로 체크)
                                               const stopCheckInterval = setInterval(() => {
                                                 if (shouldStop) {
-                                                  console.log('shouldStop 감지, 오디오 중지');
+                                                  console.log('새 창: shouldStop 감지, 오디오 즉시 중지');
                                                   clearInterval(stopCheckInterval);
+                                                  clearTimeout(timeout);
                                                   try {
-                                                    audio.pause();
-                                                    audio.currentTime = 0;
-                                                    URL.revokeObjectURL(url);
-                                                    if (currentAudio === audio) {
-                                                      currentAudio = null;
-                                                    }
-                                                    resolve();
+                                                    currentAudioElement.pause();
+                                                    currentAudioElement.currentTime = 0;
                                                   } catch (e) {
-                                                    console.error('인터벌에서 오디오 중지 오류:', e);
-                                                    resolve();
+                                                    console.error('오디오 중지 중 오류:', e);
                                                   }
+                                                  URL.revokeObjectURL(currentUrl);
+                                                  currentAudio = null;
+                                                  isPlaying = false;
+                                                  button.disabled = false;
+                                                  icon.textContent = '🔊';
+                                                  text.textContent = '점사 듣기';
+                                                  resolve();
                                                 }
                                               }, 100); // 100ms마다 체크
                                               
-                                              audio.onended = () => {
+                                              const cleanup = () => {
                                                 clearInterval(stopCheckInterval);
-                                                if (currentAudio === audio && !shouldStop) {
-                                                  URL.revokeObjectURL(url);
-                                                  currentAudio = null;
-                                                }
+                                                clearTimeout(timeout);
+                                                URL.revokeObjectURL(currentUrl);
+                                                currentAudio = null;
+                                              };
+                                              
+                                              currentAudioElement.onended = () => {
+                                                console.log('새 창: 청크 ' + (i + 1) + ' 재생 완료');
+                                                cleanup();
                                                 resolve();
                                               };
                                               
-                                              audio.onerror = (e) => {
-                                                clearInterval(stopCheckInterval);
-                                                console.error('오디오 재생 오류:', e);
-                                                if (currentAudio === audio) {
-                                                  URL.revokeObjectURL(url);
-                                                  currentAudio = null;
-                                                }
-                                                reject(new Error('청크 ' + (i + 1) + ' 재생 중 오류가 발생했습니다.'));
+                                              currentAudioElement.onerror = (e) => {
+                                                console.error('새 창: 청크 ' + (i + 1) + ' 재생 중 오류:', e, currentAudioElement.error);
+                                                cleanup();
+                                                // 에러가 발생해도 다음 청크로 계속 진행
+                                                console.warn('새 창: 청크 ' + (i + 1) + ' 재생 실패, 다음 청크로 진행');
+                                                resolve();
                                               };
                                               
-                                              audio.onpause = () => {
-                                                clearInterval(stopCheckInterval);
+                                              currentAudioElement.onpause = () => {
                                                 // 사용자가 일시정지하거나 페이지가 비활성화된 경우
                                                 if (document.hidden || shouldStop) {
-                                                  if (currentAudio === audio) {
-                                                    currentAudio = null;
-                                                  }
+                                                  cleanup();
                                                   isPlaying = false;
-                                                  isProcessing = false;
-                                                  if (button && icon && text) {
-                                                    button.disabled = false;
-                                                    icon.textContent = '🔊';
-                                                    text.textContent = '점사 듣기';
-                                                  }
+                                                  button.disabled = false;
+                                                  icon.textContent = '🔊';
+                                                  text.textContent = '점사 듣기';
                                                 }
                                               };
                                               
-                                              audio.play().catch((err) => {
-                                                clearInterval(stopCheckInterval);
-                                                console.error('오디오 play 오류:', err);
-                                                if (currentAudio === audio) {
-                                                  URL.revokeObjectURL(url);
-                                                  currentAudio = null;
-                                                }
-                                                reject(err);
+                                              currentAudioElement.play().catch((err) => {
+                                                console.error('새 창: 청크 ' + (i + 1) + ' play() 실패:', err);
+                                                cleanup();
+                                                // play 실패해도 다음 청크로 계속 진행
+                                                console.warn('새 창: 청크 ' + (i + 1) + ' play 실패, 다음 청크로 진행');
+                                                resolve();
                                               });
                                             });
+
+                                            // 다음 청크 미리 로드 완료 대기 및 저장
+                                            if (i < chunks.length - 1) {
+                                              try {
+                                                preloadedChunk = await nextChunkPromise;
+                                                if (preloadedChunk) {
+                                                  console.log('새 창: 청크 ' + (i + 2) + ' 미리 로드 완료');
+                                                } else {
+                                                  console.warn('새 창: 청크 ' + (i + 2) + ' 미리 로드 실패 (null 반환)');
+                                                }
+                                              } catch (err) {
+                                                console.error('새 창: 청크 ' + (i + 2) + ' 미리 로드 중 에러:', err);
+                                                preloadedChunk = null;
+                                              }
+                                            }
 
                                             // 중지 플래그 재확인
                                             if (shouldStop) {
                                               console.log('재생 중지됨 (재생 후)');
+                                              if (preloadedChunk) {
+                                                URL.revokeObjectURL(preloadedChunk.url);
+                                              }
                                               break;
                                             }
                                           }
 
                                           if (!shouldStop) {
-                                            console.log('모든 청크 재생 완료');
+                                            console.log('새 창: 모든 청크 재생 완료');
+                                          } else {
+                                            console.log('새 창: 재생이 중지되었습니다');
                                           }
                                           isPlaying = false;
                                           shouldStop = false;
-                                          isProcessing = false;
                                           button.disabled = false;
                                           icon.textContent = '🔊';
                                           text.textContent = '점사 듣기';
                                         } catch (error) {
-                                          console.error('음성 변환 실패:', error);
+                                          console.error('=== 음성 변환 실패 ===');
+                                          console.error('에러 객체:', error);
+                                          console.error('에러 메시지:', error?.message);
+                                          console.error('에러 스택:', error?.stack);
+                                          console.error('===================');
+                                          
                                           alert(error?.message || '음성 변환에 실패했습니다.');
+                                          
                                           const button = document.getElementById('ttsButton');
                                           const icon = document.getElementById('ttsIcon');
                                           const text = document.getElementById('ttsText');
-                                          isPlaying = false;
-                                          shouldStop = false;
-                                          isProcessing = false;
+                                          
                                           if (button && icon && text) {
+                                            isPlaying = false;
+                                            shouldStop = false;
                                             button.disabled = false;
                                             icon.textContent = '🔊';
                                             text.textContent = '점사 듣기';
@@ -2560,29 +2840,30 @@ function FormContent() {
                                       // 함수를 전역 스코프에 명시적으로 할당 (onclick 핸들러가 작동하도록)
                                       window.handleTextToSpeech = handleTextToSpeech;
                                       window.stopTextToSpeech = stopTextToSpeech;
-                                      console.log('handleTextToSpeech, stopTextToSpeech 함수를 전역 스코프에 할당 완료');
+                                      window.stopAndResetAudio = stopAndResetAudio;
+                                      console.log('handleTextToSpeech, stopTextToSpeech, stopAndResetAudio 함수를 전역 스코프에 할당 완료');
                                       
-                                      // 버튼에 이벤트 리스너 추가 (중복 방지)
-                                      let ttsButtonHandler = null;
+                                      // 버튼에 이벤트 리스너 연결
                                       function connectTTSButton() {
                                         const ttsButton = document.getElementById('ttsButton');
                                         if (ttsButton) {
-                                          // 기존 핸들러가 있으면 제거
-                                          if (ttsButtonHandler) {
-                                            ttsButton.removeEventListener('click', ttsButtonHandler);
-                                            ttsButtonHandler = null;
-                                          }
+                                          console.log('TTS 버튼 발견, 이벤트 리스너 추가');
                                           
-                                          // 새 핸들러 생성 및 등록
-                                          ttsButtonHandler = function(e) {
+                                          // 기존 onclick 핸들러 제거 (있다면)
+                                          ttsButton.onclick = null;
+                                          
+                                          // 새 핸들러 설정
+                                          ttsButton.onclick = function(e) {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            console.log('TTS 버튼 클릭 이벤트 발생, isPlaying:', isPlaying, 'shouldStop:', shouldStop);
+                                            console.log('TTS 버튼 클릭 이벤트 발생, isPlaying:', isPlaying);
                                             
                                             // 재생 중이면 중지
                                             if (isPlaying) {
                                               console.log('재생 중지 요청');
-                                              if (typeof window.stopTextToSpeech === 'function') {
+                                              if (typeof stopTextToSpeech === 'function') {
+                                                stopTextToSpeech();
+                                              } else if (typeof window.stopTextToSpeech === 'function') {
                                                 window.stopTextToSpeech();
                                               } else {
                                                 console.error('stopTextToSpeech 함수를 찾을 수 없습니다.');
@@ -2592,13 +2873,10 @@ function FormContent() {
                                               return;
                                             }
                                             
-                                            // 중복 실행 방지
-                                            if (isProcessing) {
-                                              console.log('이미 처리 중입니다.');
-                                              return;
-                                            }
-                                            
-                                            if (typeof window.handleTextToSpeech === 'function') {
+                                            // 함수 호출 (버튼 상태는 handleTextToSpeech 내부에서 관리)
+                                            if (typeof handleTextToSpeech === 'function') {
+                                              handleTextToSpeech();
+                                            } else if (typeof window.handleTextToSpeech === 'function') {
                                               window.handleTextToSpeech();
                                             } else {
                                               console.error('handleTextToSpeech 함수를 찾을 수 없습니다.');
@@ -2606,8 +2884,7 @@ function FormContent() {
                                             }
                                           };
                                           
-                                          ttsButton.addEventListener('click', ttsButtonHandler);
-                                          console.log('TTS 버튼 이벤트 리스너 연결 완료 (중복 방지)');
+                                          console.log('TTS 버튼 이벤트 리스너 연결 완료');
                                           return true;
                                         } else {
                                           console.warn('TTS 버튼을 찾을 수 없습니다.');
@@ -2615,21 +2892,14 @@ function FormContent() {
                                         }
                                       }
                                       
-                                      // DOM 로드 후 버튼 연결 시도 (한 번만 실행)
-                                      let ttsButtonInitialized = false;
+                                      // DOM 로드 후 버튼 연결 시도 (여러 번 재시도)
                                       function initTTSButton() {
-                                        if (ttsButtonInitialized) {
-                                          console.log('TTS 버튼이 이미 초기화되었습니다.');
-                                          return;
-                                        }
-                                        
                                         let retryCount = 0;
                                         const maxRetries = 5;
                                         
                                         const tryConnect = () => {
                                           if (connectTTSButton()) {
                                             console.log('TTS 버튼 연결 성공');
-                                            ttsButtonInitialized = true;
                                           } else if (retryCount < maxRetries) {
                                             retryCount++;
                                             console.log('TTS 버튼 연결 재시도:', retryCount);
@@ -2647,6 +2917,15 @@ function FormContent() {
                                           // 이미 로드된 경우 즉시 실행
                                           setTimeout(tryConnect, 100);
                                         }
+                                        
+                                        // 추가 안전장치: 일정 시간 후에도 재시도
+                                        setTimeout(function() {
+                                          const ttsButton = document.getElementById('ttsButton');
+                                          if (ttsButton) {
+                                            console.log('추가 안전장치: 버튼 확인 및 재연결');
+                                            connectTTSButton();
+                                          }
+                                        }, 1000);
                                       }
                                       
                                       initTTSButton();
