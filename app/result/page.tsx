@@ -342,6 +342,8 @@ function ResultContent() {
               .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
               // 테이블 앞의 공백 문자 제거 (줄바꿈 없이 바로 붙이기)
               .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+              // ** 문자 제거 (마크다운 강조 표시 제거)
+              .replace(/\*\*/g, '')
 
             // 스트리밍 중에도 만세력 테이블을 가능한 한 빨리 삽입
             if (manseRyeokTable && !accumulatedHtml.includes('manse-ryeok-table')) {
@@ -387,6 +389,8 @@ function ResultContent() {
               .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
               // 테이블 앞의 공백 문자 제거 (줄바꿈 없이 바로 붙이기)
               .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+              // ** 문자 제거 (마크다운 강조 표시 제거)
+              .replace(/\*\*/g, '')
 
             // 만세력 테이블이 있고 첫 번째 menu-section에 없으면 삽입 (batch 모드와 동일한 위치 규칙, 중복 방지)
             if (manseRyeokTable && !finalHtml.includes('manse-ryeok-table')) {
