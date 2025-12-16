@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { getContents, getSelectedModel, getSelectedSpeaker, getFortuneViewMode } from '@/lib/supabase-admin'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
-import { calculateManseRyeok, generateManseRyeokTable, generateManseRyeokText, getDayGanji } from '@/lib/manse-ryeok'
+import { calculateManseRyeok, generateManseRyeokTable, generateManseRyeokText, getDayGanji, type ManseRyeokCaptionInfo, convertSolarToLunarAccurate, convertLunarToSolarAccurate } from '@/lib/manse-ryeok'
 import TermsPopup from '@/components/TermsPopup'
 import PrivacyPopup from '@/components/PrivacyPopup'
 
@@ -638,7 +638,34 @@ function FormContent() {
           
           // 만세력 계산 (일간 기준)
           manseRyeokData = calculateManseRyeok(birthYear, birthMonth, birthDay, birthHourNum, dayGan)
-          manseRyeokTable = generateManseRyeokTable(manseRyeokData, name) // HTML 테이블 (화면 표시용)
+          
+          // 캡션 정보 생성
+          // 음력/양력 변환
+          let convertedDate: { year: number; month: number; day: number } | null = null
+          try {
+            if (calendarType === 'solar') {
+              // 양력인 경우 음력으로 변환
+              convertedDate = convertSolarToLunarAccurate(birthYear, birthMonth, birthDay)
+            } else if (calendarType === 'lunar' || calendarType === 'lunar-leap') {
+              // 음력 또는 음력(윤달)인 경우 양력으로 변환
+              convertedDate = convertLunarToSolarAccurate(birthYear, birthMonth, birthDay, calendarType === 'lunar-leap')
+            }
+          } catch (error) {
+            console.error('음력/양력 변환 오류:', error)
+            convertedDate = null
+          }
+          
+          const captionInfo: ManseRyeokCaptionInfo = {
+            name: name || '',
+            year: birthYear,
+            month: birthMonth,
+            day: birthDay,
+            hour: birthHour || null,
+            calendarType: calendarType,
+            convertedDate: convertedDate
+          }
+          
+          manseRyeokTable = generateManseRyeokTable(manseRyeokData, name, captionInfo) // HTML 테이블 (화면 표시용)
           manseRyeokText = generateManseRyeokText(manseRyeokData) // 텍스트 형식 (제미나이 프롬프트용)
           console.log('만세력 테이블 생성 완료, 일간:', dayGanInfo.fullName)
         } catch (error) {
@@ -801,6 +828,47 @@ function FormContent() {
           } else if (data.type === 'chunk') {
             accumulatedHtml += data.text || ''
             
+            // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
+            // 테이블 태그 앞의 모든 줄바꿈을 제거하고 CSS로 간격 조정
+            accumulatedHtml = accumulatedHtml
+              // 이전 태그 닫기(>)와 테이블 사이의 모든 줄바꿈/공백 제거
+              .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+              // 줄 시작부터 테이블까지의 모든 줄바꿈/공백 제거
+              .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+              // 테이블 앞의 공백 문자 제거 (줄바꿈 없이 바로 붙이기)
+              .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+            
+            // 스트리밍 중에도 만세력 테이블을 가능한 한 빨리 삽입 (소제목 단위로 보여질 때)
+            if (manseRyeokTable && !accumulatedHtml.includes('manse-ryeok-table')) {
+              const firstMenuSectionMatch = accumulatedHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+              if (firstMenuSectionMatch) {
+                const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+                
+                if (thumbnailMatch) {
+                  // 썸네일 바로 다음에 삽입 (줄바꿈 한 줄만)
+                  accumulatedHtml = accumulatedHtml.replace(
+                    /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
+                    `$1\n${manseRyeokTable}`
+                  )
+                } else {
+                  const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                  if (menuTitleMatch) {
+                    // 메뉴 제목 다음에 삽입 (줄바꿈 한 줄만)
+                    accumulatedHtml = accumulatedHtml.replace(
+                      /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  } else {
+                    // 첫 번째 menu-section 시작 부분에 삽입 (줄바꿈 한 줄만)
+                    accumulatedHtml = accumulatedHtml.replace(
+                      /(<div class="menu-section">)\s*/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  }
+                }
+              }
+            }
+            
             // 현재 생성 중인 소제목 추출 및 완료된 소제목 수 계산
             // HTML에서 subtitle-title 클래스를 가진 요소 찾기
             const subtitleMatch = accumulatedHtml.match(/<h3[^>]*class="subtitle-title"[^>]*>([^<]+)<\/h3>/g)
@@ -855,6 +923,16 @@ function FormContent() {
               throw new Error('생성된 결과가 없습니다.')
             }
             
+            // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
+            // 테이블 태그 앞의 모든 줄바꿈을 제거하고 CSS로 간격 조정
+            finalHtml = finalHtml
+              // 이전 태그 닫기(>)와 테이블 사이의 모든 줄바꿈/공백 제거
+              .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+              // 줄 시작부터 테이블까지의 모든 줄바꿈/공백 제거
+              .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+              // 테이블 앞의 공백 문자 제거 (줄바꿈 없이 바로 붙이기)
+              .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+            
             // 만세력 테이블이 있고 첫 번째 menu-section에 없으면 삽입
             if (manseRyeokTable && !finalHtml.includes('manse-ryeok-table')) {
               // 첫 번째 menu-section 찾기
@@ -865,23 +943,23 @@ function FormContent() {
                 const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
                 
                 if (thumbnailMatch) {
-                  // 썸네일 바로 다음에 삽입 (빨간 박스 영역)
+                  // 썸네일 바로 다음에 삽입 (줄바꿈 한 줄만)
                   finalHtml = finalHtml.replace(
-                    /(<img[^>]*class="menu-thumbnail"[^>]*\/>)/,
+                    /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
                     `$1\n${manseRyeokTable}`
                   )
                 } else {
-                  // 썸네일이 없으면 메뉴 제목 다음에 삽입
+                  // 썸네일이 없으면 메뉴 제목 다음에 삽입 (줄바꿈 한 줄만)
                   const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
                   if (menuTitleMatch) {
                     finalHtml = finalHtml.replace(
-                      /(<h2 class="menu-title">[^<]*<\/h2>)/,
+                      /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
                       `$1\n${manseRyeokTable}`
                     )
                   } else {
-                    // 메뉴 제목도 없으면 첫 번째 menu-section 시작 부분에 삽입
+                    // 메뉴 제목도 없으면 첫 번째 menu-section 시작 부분에 삽입 (줄바꿈 한 줄만)
                     finalHtml = finalHtml.replace(
-                      /(<div class="menu-section">)/,
+                      /(<div class="menu-section">)\s*/,
                       `$1\n${manseRyeokTable}`
                     )
                   }

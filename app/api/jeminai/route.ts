@@ -377,6 +377,15 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
           // <br> 태그 처리: 불필요한 연속 <br> 제거
           cleanHtml = cleanHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
 
+          // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
+          // 테이블 태그 앞의 모든 줄바꿈을 제거하고 CSS로 간격 조정
+          cleanHtml = cleanHtml
+            // 이전 태그 닫기(>)와 테이블 사이의 모든 줄바꿈/공백 제거
+            .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+            // 줄 시작부터 테이블까지의 모든 줄바꿈/공백 제거
+            .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+            // 테이블 앞의 공백 문자 제거 (줄바꿈 없이 바로 붙이기)
+            .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
           
           // ** 문자 제거 (마크다운 강조 표시 제거)
           cleanHtml = cleanHtml.replace(/\*\*/g, '')

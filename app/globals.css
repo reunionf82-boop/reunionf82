@@ -63,6 +63,16 @@
   padding-top: 0 !important;
 }
 
+/* 점사 결과 HTML의 모든 테이블 스타일 (위쪽 반 줄만 띄우기) */
+.jeminai-results table {
+  margin-top: 0.5em !important;
+  margin-bottom: 20px !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  width: 100%;
+  border-collapse: collapse;
+}
+
 * {
   box-sizing: border-box;
   padding: 0;

@@ -1,7 +1,7 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { Suspense, useEffect, useState, useRef, useMemo, memo } from 'react'
+import { Suspense, useEffect, useState, useRef, useMemo, memo, useCallback } from 'react'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { getContentById, getSelectedSpeaker, getFortuneViewMode } from '@/lib/supabase-admin'
 
@@ -62,6 +62,7 @@ function ResultContent() {
   const [streamingFinished, setStreamingFinished] = useState(false) // 스트리밍 완료 여부 (realtime)
   const thumbnailHtmlCacheRef = useRef<Map<number, string>>(new Map()) // 썸네일 HTML 캐시 (메뉴 인덱스별)
   const manseHtmlCacheRef = useRef<Map<number, string>>(new Map()) // 만세력 HTML 캐시 (메뉴 인덱스별)
+  const autoSavedRef = useRef(false) // 자동 저장 여부 (중복 저장 방지)
 
   // savedResults 변경 시 로깅
   useEffect(() => {
@@ -332,6 +333,16 @@ function ResultContent() {
           } else if (data.type === 'chunk') {
             accumulatedHtml += data.text || ''
 
+            // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
+            // 테이블 태그 앞의 모든 줄바꿈을 제거하고 CSS로 간격 조정
+            accumulatedHtml = accumulatedHtml
+              // 이전 태그 닫기(>)와 테이블 사이의 모든 줄바꿈/공백 제거
+              .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+              // 줄 시작부터 테이블까지의 모든 줄바꿈/공백 제거
+              .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+              // 테이블 앞의 공백 문자 제거 (줄바꿈 없이 바로 붙이기)
+              .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+
             // 스트리밍 중에도 만세력 테이블을 가능한 한 빨리 삽입
             if (manseRyeokTable && !accumulatedHtml.includes('manse-ryeok-table')) {
               const firstMenuSectionMatch = accumulatedHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
@@ -339,20 +350,23 @@ function ResultContent() {
                 const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
 
                 if (thumbnailMatch) {
+                  // 썸네일 바로 다음에 삽입 (줄바꿈 한 줄만)
                   accumulatedHtml = accumulatedHtml.replace(
-                    /(<img[^>]*class="menu-thumbnail"[^>]*\/>)/,
+                    /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
                     `$1\n${manseRyeokTable}`
                   )
                 } else {
                   const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
                   if (menuTitleMatch) {
+                    // 메뉴 제목 다음에 삽입 (줄바꿈 한 줄만)
                     accumulatedHtml = accumulatedHtml.replace(
-                      /(<h2 class="menu-title">[^<]*<\/h2>)/,
+                      /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
                       `$1\n${manseRyeokTable}`
                     )
                   } else {
+                    // 첫 번째 menu-section 시작 부분에 삽입 (줄바꿈 한 줄만)
                     accumulatedHtml = accumulatedHtml.replace(
-                      /(<div class="menu-section">)/,
+                      /(<div class="menu-section">)\s*/,
                       `$1\n${manseRyeokTable}`
                     )
                   }
@@ -364,6 +378,16 @@ function ResultContent() {
           } else if (data.type === 'done') {
             let finalHtml = data.html || accumulatedHtml
 
+            // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
+            // 테이블 태그 앞의 모든 줄바꿈을 제거하고 CSS로 간격 조정
+            finalHtml = finalHtml
+              // 이전 태그 닫기(>)와 테이블 사이의 모든 줄바꿈/공백 제거
+              .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+              // 줄 시작부터 테이블까지의 모든 줄바꿈/공백 제거
+              .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+              // 테이블 앞의 공백 문자 제거 (줄바꿈 없이 바로 붙이기)
+              .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+
             // 만세력 테이블이 있고 첫 번째 menu-section에 없으면 삽입 (batch 모드와 동일한 위치 규칙, 중복 방지)
             if (manseRyeokTable && !finalHtml.includes('manse-ryeok-table')) {
               const firstMenuSectionMatch = finalHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
@@ -371,23 +395,23 @@ function ResultContent() {
                 const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
 
                 if (thumbnailMatch) {
-                  // 썸네일 바로 다음에 삽입
+                  // 썸네일 바로 다음에 삽입 (줄바꿈 한 줄만)
                   finalHtml = finalHtml.replace(
-                    /(<img[^>]*class="menu-thumbnail"[^>]*\/>)/,
+                    /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
                     `$1\n${manseRyeokTable}`
                   )
                 } else {
-                  // 썸네일이 없으면 메뉴 제목 다음에 삽입
+                  // 썸네일이 없으면 메뉴 제목 다음에 삽입 (줄바꿈 한 줄만)
                   const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
                   if (menuTitleMatch) {
                     finalHtml = finalHtml.replace(
-                      /(<h2 class="menu-title">[^<]*<\/h2>)/,
+                      /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
                       `$1\n${manseRyeokTable}`
                     )
                   } else {
-                    // 메뉴 제목도 없으면 첫 번째 menu-section 시작 부분에 삽입
+                    // 메뉴 제목도 없으면 첫 번째 menu-section 시작 부분에 삽입 (줄바꿈 한 줄만)
                     finalHtml = finalHtml.replace(
-                      /(<div class="menu-section">)/,
+                      /(<div class="menu-section">)\s*/,
                       `$1\n${manseRyeokTable}`
                     )
                   }
@@ -464,6 +488,165 @@ function ResultContent() {
       window.removeEventListener('focus', handleFocus)
     }
   }, [isRealtime])
+
+  // 결과를 서버에 저장 (자동 저장용, alert 없음) - early return 이전에 정의
+  const saveResultToLocal = useCallback(async (showAlert: boolean = true) => {
+    if (typeof window === 'undefined' || !resultData) {
+      console.error('결과 저장 실패: resultData가 없습니다.')
+      if (showAlert) {
+        alert('결과 저장에 실패했습니다. (데이터 없음)')
+      }
+      return
+    }
+    
+    try {
+      // resultData에서 필요한 값들 가져오기
+      const content = resultData.content
+      const html = resultData.html || ''
+      const model = resultData.model
+      const fontFace = content?.font_face || ''
+      
+      // HTML에 웹폰트 스타일 포함하여 저장
+      let htmlWithFont = html || ''
+      if (fontFace) {
+        // font-family 추출
+        const match = fontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
+        const extractedFontFamily = match ? (match[1] || match[2]?.trim()) : null
+        
+        // HTML 앞부분에 웹폰트 스타일 추가
+        const fontStyle = `
+<style>
+${fontFace}
+${extractedFontFamily ? `
+* {
+  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
+  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+.jeminai-results, .jeminai-results * {
+  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+.menu-section, .menu-section * {
+  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+.menu-title, .subtitle-title, .subtitle-content {
+  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+}
+` : ''}
+</style>
+`
+        htmlWithFont = fontStyle + htmlWithFont
+      }
+      
+      // currentTime 계산 (resultData.startTime이 있으면)
+      let processingTime = '0:00'
+      if (resultData.startTime) {
+        const elapsed = Date.now() - resultData.startTime
+        const mins = Math.floor(elapsed / 60000)
+        const secs = Math.floor((elapsed % 60000) / 1000)
+        processingTime = `${mins}:${secs.toString().padStart(2, '0')}`
+      }
+      
+      const response = await fetch('/api/saved-results/save', {
+        method: 'POST',
+        cache: 'no-store', // 프로덕션 환경에서 캐싱 방지
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: content?.content_name || '재회 결과',
+          html: htmlWithFont, // 웹폰트가 포함된 HTML 저장
+          content: content, // content 객체 전체 저장 (tts_speaker 포함)
+          model: model || 'gemini-2.5-flash', // 모델 정보 저장
+          processingTime: processingTime, // 처리 시간 저장
+          userName: resultData?.userName || '' // 사용자 이름 저장
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || '결과 저장에 실패했습니다.')
+      }
+
+      const result = await response.json()
+      
+      if (result.success) {
+        console.log('저장된 결과:', result.data)
+        console.log('저장할 컨텐츠의 tts_speaker:', content?.tts_speaker)
+        
+        // 저장된 결과 ID 저장 (동기화 확인용)
+        const savedResultId = result.data?.id
+        
+        // 저장된 결과를 리스트 맨 위에 추가 (즉시 반영)
+        if (result.data) {
+          setSavedResults((prev) => {
+            // 중복 제거 (같은 ID가 있으면 제거)
+            const filtered = prev.filter((item: any) => item.id !== result.data.id)
+            // 새 데이터를 맨 위에 추가
+            return [result.data, ...filtered]
+          })
+        }
+        
+        if (showAlert) {
+          alert('결과가 저장되었습니다.')
+        } else {
+          console.log('점사 완료: 결과가 자동으로 저장되었습니다.')
+        }
+        
+        // 저장된 결과 목록 다시 로드 (DB 동기화를 위해 충분한 시간 대기)
+        // DB에 저장 후 인덱싱/캐싱 시간을 고려하여 1.5초 후 조회
+        setTimeout(async () => {
+          console.log('저장 후 리스트 동기화 시작, 저장된 ID:', savedResultId)
+          await loadSavedResults()
+          
+          // 동기화 후 새로 저장된 항목이 포함되어 있는지 확인
+          setSavedResults((prev) => {
+            const hasNewItem = prev.some((item: any) => item.id === savedResultId)
+            if (!hasNewItem && result.data) {
+              console.warn('⚠️ 동기화 후 새로 저장된 항목이 없음, 다시 추가')
+              // 새로 저장된 항목이 없으면 다시 추가
+              const filtered = prev.filter((item: any) => item.id !== result.data.id)
+              return [result.data, ...filtered]
+            }
+            return prev
+          })
+          
+          console.log('저장 후 리스트 동기화 완료')
+        }, 1500)
+      } else {
+        throw new Error('결과 저장에 실패했습니다.')
+      }
+    } catch (e) {
+      console.error('결과 저장 실패:', e)
+      console.error('에러 상세:', e instanceof Error ? e.stack : e)
+      if (showAlert) {
+        alert('결과 저장에 실패했습니다.\n\n개발자 도구 콘솔을 확인해주세요.')
+      }
+    }
+  }, [resultData, loadSavedResults, setSavedResults])
+
+  // 점사 완료 시 자동 저장 - early return 이전에 정의
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    // 이미 자동 저장했으면 건너뛰기
+    if (autoSavedRef.current) return
+    
+    // html 값 가져오기 (resultData에서 직접)
+    const htmlContent = resultData?.html || ''
+    
+    // 점사 완료 조건 확인
+    const isCompleted = 
+      (fortuneViewMode === 'realtime' && streamingFinished && resultData && htmlContent) ||
+      (fortuneViewMode === 'batch' && resultData && htmlContent && !isStreamingActive)
+    
+    if (isCompleted && resultData && htmlContent) {
+      console.log('점사 완료 감지: 자동 저장 시작')
+      autoSavedRef.current = true
+      saveResultToLocal(false) // alert 없이 자동 저장
+    }
+  }, [fortuneViewMode, streamingFinished, resultData, isStreamingActive, saveResultToLocal])
 
   // 경과 시간 계산 (완료된 결과만 표시)
   useEffect(() => {
@@ -602,6 +785,12 @@ function ResultContent() {
       setTimeout(() => {
         setShowRealtimePopup(false)
       }, 500)
+    }
+    
+    // 두 번째 소제목이 진행될 때 (cursor >= 2) 진행률을 100%로 설정하고 팝업 닫기
+    if (cursor >= 2 && showRealtimePopup) {
+      setStreamingProgress(100)
+      setShowRealtimePopup(false)
     }
 
     if (cursor > 0) {
@@ -1299,120 +1488,6 @@ function ResultContent() {
     }
   }
 
-  // 결과를 서버에 저장
-  const saveResultToLocal = async () => {
-    if (typeof window === 'undefined' || !resultData) {
-      console.error('결과 저장 실패: resultData가 없습니다.')
-      alert('결과 저장에 실패했습니다. (데이터 없음)')
-      return
-    }
-    
-    try {
-      // HTML에 웹폰트 스타일 포함하여 저장
-      let htmlWithFont = html || ''
-      if (fontFace) {
-        // font-family 추출
-        const match = fontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
-        const extractedFontFamily = match ? (match[1] || match[2]?.trim()) : null
-        
-        // HTML 앞부분에 웹폰트 스타일 추가
-        const fontStyle = `
-<style>
-${fontFace}
-${extractedFontFamily ? `
-* {
-  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-}
-body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
-  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-}
-.jeminai-results, .jeminai-results * {
-  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-}
-.menu-section, .menu-section * {
-  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-}
-.menu-title, .subtitle-title, .subtitle-content {
-  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-}
-` : ''}
-</style>
-`
-        htmlWithFont = fontStyle + htmlWithFont
-      }
-      
-      const response = await fetch('/api/saved-results/save', {
-        method: 'POST',
-        cache: 'no-store', // 프로덕션 환경에서 캐싱 방지
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title: content?.content_name || '재회 결과',
-          html: htmlWithFont, // 웹폰트가 포함된 HTML 저장
-          content: content, // content 객체 전체 저장 (tts_speaker 포함)
-          model: model || 'gemini-2.5-flash', // 모델 정보 저장
-          processingTime: currentTime, // 처리 시간 저장
-          userName: resultData?.userName || '' // 사용자 이름 저장
-        })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || '결과 저장에 실패했습니다.')
-      }
-
-      const result = await response.json()
-      
-      if (result.success) {
-        console.log('저장된 결과:', result.data)
-        console.log('저장할 컨텐츠의 tts_speaker:', content?.tts_speaker)
-        
-        // 저장된 결과 ID 저장 (동기화 확인용)
-        const savedResultId = result.data?.id
-        
-        // 저장된 결과를 리스트 맨 위에 추가 (즉시 반영)
-        if (result.data) {
-          setSavedResults((prev) => {
-            // 중복 제거 (같은 ID가 있으면 제거)
-            const filtered = prev.filter((item: any) => item.id !== result.data.id)
-            // 새 데이터를 맨 위에 추가
-            return [result.data, ...filtered]
-          })
-        }
-        
-        alert('결과가 저장되었습니다.')
-        
-        // 저장된 결과 목록 다시 로드 (DB 동기화를 위해 충분한 시간 대기)
-        // DB에 저장 후 인덱싱/캐싱 시간을 고려하여 1.5초 후 조회
-        setTimeout(async () => {
-          console.log('저장 후 리스트 동기화 시작, 저장된 ID:', savedResultId)
-          await loadSavedResults()
-          
-          // 동기화 후 새로 저장된 항목이 포함되어 있는지 확인
-          setSavedResults((prev) => {
-            const hasNewItem = prev.some((item: any) => item.id === savedResultId)
-            if (!hasNewItem && result.data) {
-              console.warn('⚠️ 동기화 후 새로 저장된 항목이 없음, 다시 추가')
-              // 새로 저장된 항목이 없으면 다시 추가
-              const filtered = prev.filter((item: any) => item.id !== result.data.id)
-              return [result.data, ...filtered]
-            }
-            return prev
-          })
-          
-          console.log('저장 후 리스트 동기화 완료')
-        }, 1500)
-      } else {
-        throw new Error('결과 저장에 실패했습니다.')
-      }
-    } catch (e) {
-      console.error('결과 저장 실패:', e)
-      console.error('에러 상세:', e instanceof Error ? e.stack : e)
-      alert('결과 저장에 실패했습니다.\n\n개발자 도구 콘솔을 확인해주세요.')
-    }
-  }
-
   // 저장된 결과 삭제
   const deleteSavedResult = async (resultId: string) => {
     if (typeof window === 'undefined') return
@@ -1633,10 +1708,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                     <span id="ttsIcon">🔊</span>
                     <span id="ttsText">점사 듣기</span>
                   </button>
-                </div>
-                <div class="saved-at">
-                  사용 모델: <span style="font-weight: 600; color: #374151;">${saved.model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : saved.model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : saved.model || 'Gemini 2.5 Flash'}</span>
-                  ${saved.processingTime ? ` · 처리 시간: <span style="font-weight: 600; color: #374151;">${saved.processingTime}</span>` : ''}
                 </div>
                 <div id="contentHtml">${htmlContent ? htmlContent.replace(/\*\*/g, '') : ''}</div>
               </div>
@@ -2286,13 +2357,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               </button>
             </div>
           )}
-          {startTime && (
-            <div className="text-sm text-gray-500">
-              사용 모델: <span className="font-semibold text-gray-700">{modelDisplayName}</span>
-              {' · '}
-              처리 시간: <span className="font-semibold text-gray-700">{currentTime}</span>
-            </div>
-          )}
         </div>
 
         {/* 결과 출력 */}
@@ -2365,108 +2429,24 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         ) : (
           <div 
             className="jeminai-results"
-            dangerouslySetInnerHTML={{ __html: html ? html.replace(/\*\*/g, '') : '' }}
+            dangerouslySetInnerHTML={{ 
+              __html: html 
+                ? (() => {
+                    let processedHtml = html.replace(/\*\*/g, '')
+                    // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
+                    processedHtml = processedHtml
+                      // 이전 태그 닫기(>)와 테이블 사이의 모든 줄바꿈/공백 제거
+                      .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                      // 줄 시작부터 테이블까지의 모든 줄바꿈/공백 제거
+                      .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                      // 테이블 앞의 공백 문자 제거 (줄바꿈 없이 바로 붙이기)
+                      .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                    return processedHtml
+                  })()
+                : '' 
+            }}
           />
         )}
-
-        {/* 저장된 파일 보기 */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8 mt-8">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">저장된 결과</h3>
-          <div className="space-y-3">
-            {!savedResults || !Array.isArray(savedResults) || savedResults.length === 0 ? (
-              <p className="text-sm text-gray-600">저장된 결과가 없습니다.</p>
-            ) : (
-              <div className="space-y-2">
-                {savedResults.map((saved: any) => {
-                  if (!saved || !saved.id) {
-                    console.warn('저장된 결과 항목에 id가 없음:', saved)
-                    return null
-                  }
-                  
-                  // 디버깅: saved 객체 전체 확인
-                  console.log(`저장된 결과 ${saved.id} 전체 데이터:`, saved)
-                  
-                  // 60일 경과 여부 확인 (텍스트 딤처리 및 보기 버튼 숨김용, 한국 시간 기준)
-                  const isExpired60d = saved.savedAtISO ? (() => {
-                    // savedAtISO는 한국 시간으로 저장된 시간
-                    const savedDateKST = new Date(saved.savedAtISO)
-                    const nowUTC = new Date()
-                    const nowKST = new Date(nowUTC.getTime() + (9 * 60 * 60 * 1000)) // UTC+9
-                    
-                    // 한국 시간 기준으로 시간 차이 계산
-                    const diffTime = nowKST.getTime() - savedDateKST.getTime()
-                    const diffDays = diffTime / (1000 * 60 * 60 * 24) // 밀리초를 일로 변환
-                    const expired = diffDays >= 60
-                    
-                    console.log(`[60일 체크 - 텍스트 딤처리 및 보기 버튼 숨김] 저장된 결과 ${saved.id}: savedAtISO=${saved.savedAtISO}, diffDays=${diffDays.toFixed(2)}, isExpired=${expired}`)
-                    return expired
-                  })() : false
-                  
-                  console.log(`[최종] 저장된 결과 ${saved.id}: isExpired60d=${isExpired60d}, 텍스트 딤처리=${isExpired60d}, 보기 버튼 표시=${!isExpired60d}`)
-                  
-                  return (
-                    <div 
-                      key={saved.id} 
-                      className="bg-white rounded-lg p-4 border border-gray-200"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <p 
-                            className={`font-semibold ${isExpired60d ? 'text-gray-400' : 'text-gray-900 cursor-pointer hover:text-blue-600 transition-colors'}`}
-                            onClick={!isExpired60d ? () => viewSavedResult(saved.id) : undefined}
-                          >
-                            {saved.title}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {saved.savedAt}
-                            {saved.model && (
-                              <> · 모델: {saved.model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : saved.model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : saved.model}</>
-                            )}
-                            {saved.processingTime && (
-                              <> · 처리 시간: {saved.processingTime}</>
-                            )}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {!isExpired60d && (
-                          <button
-                            onClick={() => viewSavedResult(saved.id)}
-                            className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
-                          >
-                            보기
-                          </button>
-                          )}
-                          <button
-                            onClick={() => deleteSavedResult(saved.id)}
-                            className="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
-                          >
-                            삭제
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-                </div>
-            )}
-          </div>
-        </div>
-
-        {/* 하단 버튼 */}
-        <div className="mt-8 text-center space-x-4">
-          <button
-            onClick={() => saveResultToLocal()}
-            className="bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-8 rounded-xl transition-colors duration-200"
-          >
-            결과 저장
-          </button>
-          <button
-            onClick={() => window.history.back()}
-            className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 px-8 rounded-xl transition-colors duration-200"
-          >
-            이전으로
-          </button>
-        </div>
       </main>
     </div>
   )

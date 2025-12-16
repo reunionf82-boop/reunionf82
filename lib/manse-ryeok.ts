@@ -651,7 +651,60 @@ const getOhangColorStyle = (ohang: string): string => {
   return `color: ${color};`
 }
 
-export function generateManseRyeokTable(data: ManseRyeokData, userName?: string): string {
+export interface ManseRyeokCaptionInfo {
+  name: string
+  year: number
+  month: number
+  day: number
+  hour?: string | null
+  calendarType: 'solar' | 'lunar' | 'lunar-leap'
+  convertedDate?: { year: number; month: number; day: number } | null
+}
+
+// kor-lunar 라이브러리를 사용한 정확한 음력/양력 변환
+import korLunar from 'kor-lunar'
+
+// 음력->양력 변환 (kor-lunar 사용)
+export function convertLunarToSolarAccurate(year: number, month: number, day: number, isLeap: boolean = false): { year: number; month: number; day: number } | null {
+  try {
+    const solarDate = korLunar.toSolar(year, month, day, isLeap)
+    if (!solarDate) {
+      return null
+    }
+    return {
+      year: solarDate.year,
+      month: solarDate.month,
+      day: solarDate.day
+    }
+  } catch (error) {
+    console.error('음력->양력 변환 오류:', error)
+    return null
+  }
+}
+
+// 양력->음력 변환 (kor-lunar 사용)
+export function convertSolarToLunarAccurate(year: number, month: number, day: number): { year: number; month: number; day: number } | null {
+  try {
+    const lunarDate = korLunar.toLunar(year, month, day)
+    if (!lunarDate) {
+      return null
+    }
+    return {
+      year: lunarDate.year,
+      month: lunarDate.month,
+      day: lunarDate.day
+    }
+  } catch (error) {
+    console.error('양력->음력 변환 오류:', error)
+    return null
+  }
+}
+
+export function generateManseRyeokTable(
+  data: ManseRyeokData, 
+  userName?: string,
+  captionInfo?: ManseRyeokCaptionInfo
+): string {
   // 천간의 음양오행과 지지의 음양오행 분리
   const yearGanEumyang = data.year.eumyang.split('/')[0]
   const yearJiEumyang = data.year.eumyang.split('/')[1]
@@ -671,6 +724,70 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
   const dayJiOhang = data.day.ohang.split('/')[1]
   const hourGanOhang = data.hour.ohang.split('/')[0]
   const hourJiOhang = data.hour.ohang.split('/')[1]
+  
+  // 캡션 생성
+  // 형식: [이름 : 양력/음력 2008년 7월 11일 (양력/음력 2008년 5월 10일) 시]
+  let caption = ''
+  if (captionInfo) {
+    const { name, year, month, day, hour, calendarType, convertedDate } = captionInfo
+    
+    // 캘린더 타입에 따른 날짜 표시
+    const calendarTypeStr = calendarType === 'solar' ? '양력' : '음력'
+    const dateStr = `${calendarTypeStr} ${year}년 ${month}월 ${day}일`
+    
+    // 변환된 날짜 표시
+    let convertedDateStr = ''
+    if (convertedDate) {
+      if (calendarType === 'solar') {
+        // 양력을 체크했으면 뒤 괄호 내용은 음력
+        convertedDateStr = ` (음력 ${convertedDate.year}년 ${convertedDate.month}월 ${convertedDate.day}일)`
+      } else if (calendarType === 'lunar' || calendarType === 'lunar-leap') {
+        // 음력을 체크했으면 뒤 괄호 내용은 양력
+        convertedDateStr = ` (양력 ${convertedDate.year}년 ${convertedDate.month}월 ${convertedDate.day}일)`
+      }
+    }
+    
+    // 시간 처리
+    let timeStr = ''
+    if (!hour || hour === '') {
+      // 태어난 시 모름(디폴트)일 때 시간을 표시하지 말고 '모름'으로 표시
+      timeStr = ' 모름'
+    } else {
+      // 지지 문자를 시간으로 변환
+      const hourMap: { [key: string]: string } = {
+        '子': '23:30 ~ 01:29',
+        '丑': '01:30 ~ 03:29',
+        '寅': '03:30 ~ 05:29',
+        '卯': '05:30 ~ 07:29',
+        '辰': '07:30 ~ 09:29',
+        '巳': '09:30 ~ 11:29',
+        '午': '11:30 ~ 13:29',
+        '未': '13:30 ~ 15:29',
+        '申': '15:30 ~ 17:29',
+        '酉': '17:30 ~ 19:29',
+        '戌': '19:30 ~ 21:29',
+        '亥': '21:30 ~ 23:29'
+      }
+      
+      // 숫자 시간인 경우 (예: "23-01")
+      const hourMatch = hour.match(/(\d+)/)
+      if (hourMatch) {
+        const hourNum = parseInt(hourMatch[1])
+        timeStr = ` ${hourNum}시`
+      } else if (hourMap[hour]) {
+        // 지지 문자인 경우
+        timeStr = ` ${hour}시(${hourMap[hour]})`
+      } else {
+        timeStr = ` ${hour}시`
+      }
+    }
+    
+    // 형식: [이름 : 양력/음력 2008년 7월 11일 (양력/음력 2008년 5월 10일) 시]
+    caption = `[${name} : ${dateStr}${convertedDateStr}${timeStr}]`
+  } else if (userName) {
+    // 기존 호환성을 위해 userName만 있는 경우
+    caption = userName
+  }
 
   // 행 데이터 준비 (색상 정보 포함)
   const rows = [
@@ -734,7 +851,13 @@ export function generateManseRyeokTable(data: ManseRyeokData, userName?: string)
   
   let html = ''
   
-  html += '<table class="manse-ryeok-table" style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px;">'
+  html += '<table class="manse-ryeok-table" style="width: 100%; border-collapse: collapse; margin: 0 0 20px 0; font-size: 14px;">'
+  
+  // 캡션 추가 (테이블 상단 중앙정렬)
+  if (caption) {
+    html += `<caption style="caption-side: top; text-align: center; font-size: 16px; font-weight: bold; padding: 10px 0; margin-bottom: 10px;">${caption}</caption>`
+  }
+  
   html += '<thead><tr>'
   html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">구분</th>'
   html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">시주</th>'
