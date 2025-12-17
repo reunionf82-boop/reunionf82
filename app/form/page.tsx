@@ -1390,15 +1390,9 @@ function FormContent() {
               
               const distance = modalTouchStartX - modalTouchEndX
               const minSwipeDistance = 50
-              // 화면 너비의 50% 계산
-              const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 0
-              const halfScreenWidth = screenWidth * 0.5
-              
-              // 스와이프 거리가 50px 이상이거나 화면 너비의 50% 이상이면 이동
-              const shouldMove = Math.abs(distance) >= minSwipeDistance || Math.abs(distance) >= halfScreenWidth
               
               // 경계 체크: 첫 번째에서 이전으로, 마지막에서 다음으로 가는 것 방지
-              if (distance > 0 && shouldMove) {
+              if (distance > minSwipeDistance) {
                 // 왼쪽으로 스와이프 → 다음 이미지로 이동
                 // 마지막이 아니면만 이동
                 if (modalCurrentIndex < validThumbnails.length - 1) {
@@ -1410,7 +1404,7 @@ function FormContent() {
                   setModalSwipeOffset(0)
                   setTimeout(() => setModalIsAnimating(false), 300)
                 }
-              } else if (distance < 0 && shouldMove) {
+              } else if (distance < -minSwipeDistance) {
                 // 오른쪽으로 스와이프 → 이전 이미지로 이동
                 // 첫 번째가 아니면만 이동
                 if (modalCurrentIndex > 0) {
