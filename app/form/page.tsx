@@ -1499,11 +1499,27 @@ function FormContent() {
                         >
                           {validThumbnails.map((thumbnail: string, index: number) => (
                             <div key={index} className="min-w-full flex flex-col items-center">
-                              <img
-                                src={thumbnail}
-                                alt={`재회상품 미리보기 ${index + 1}`}
-                                className="max-w-full max-h-[90vh] object-contain"
-                              />
+                              {/* 이미지 컨테이너 (닫기 버튼 위치 기준) */}
+                              <div className="relative inline-block">
+                                {/* 플로팅 닫기 버튼 (우측 상단) */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setShowPreviewModal(false)
+                                  }}
+                                  className="absolute top-2 md:top-[18px] right-2 bg-black bg-opacity-60 hover:bg-opacity-80 text-white rounded-full w-10 h-10 flex items-center justify-center z-20 transition-all duration-200 shadow-lg"
+                                  aria-label="닫기"
+                                >
+                                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                                <img
+                                  src={thumbnail}
+                                  alt={`재회상품 미리보기 ${index + 1}`}
+                                  className="max-w-full max-h-[90vh] object-contain"
+                                />
+                              </div>
                               {/* 인디케이터 (2개 이상일 때만 표시, 썸네일 바로 아래) */}
                               {validThumbnails.length > 1 && (
                                 <div className="flex justify-center gap-2 mt-4">
@@ -1522,16 +1538,6 @@ function FormContent() {
                                   ))}
                                 </div>
                               )}
-                              {/* 닫기 버튼 (인디케이터 바로 아래) */}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setShowPreviewModal(false)
-                                }}
-                                className="mt-2 bg-white hover:bg-gray-100 text-gray-800 font-semibold px-6 py-2 rounded-lg shadow-lg transition-colors"
-                              >
-                                닫기
-                              </button>
                             </div>
                           ))}
                         </div>
