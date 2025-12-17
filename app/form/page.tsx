@@ -1399,11 +1399,11 @@ function FormContent() {
               
               // 경계 체크: 첫 번째에서 이전으로, 마지막에서 다음으로 가는 것 방지
               if (distance > 0 && shouldMove) {
-                // 왼쪽으로 스와이프 → 이미지도 왼쪽으로 이동 (이전)
-                // 첫 번째가 아니면만 이동
-                if (modalCurrentIndex > 0) {
+                // 왼쪽으로 스와이프 → 다음 이미지로 이동
+                // 마지막이 아니면만 이동
+                if (modalCurrentIndex < validThumbnails.length - 1) {
                   setModalSwipeOffset(0) // 오프셋 초기화
-                  handleModalPrev()
+                  handleModalNext()
                 } else {
                   // 경계에서 튕기는 애니메이션
                   setModalIsAnimating(true)
@@ -1411,11 +1411,11 @@ function FormContent() {
                   setTimeout(() => setModalIsAnimating(false), 300)
                 }
               } else if (distance < 0 && shouldMove) {
-                // 오른쪽으로 스와이프 → 이미지도 오른쪽으로 이동 (다음)
-                // 마지막이 아니면만 이동
-                if (modalCurrentIndex < validThumbnails.length - 1) {
+                // 오른쪽으로 스와이프 → 이전 이미지로 이동
+                // 첫 번째가 아니면만 이동
+                if (modalCurrentIndex > 0) {
                   setModalSwipeOffset(0) // 오프셋 초기화
-                  handleModalNext()
+                  handleModalPrev()
                 } else {
                   // 경계에서 튕기는 애니메이션
                   setModalIsAnimating(true)
