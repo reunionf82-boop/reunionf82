@@ -35,13 +35,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     bodyFontSize: '11',
     fontFace: '',
     ttsSpeaker: speakerParam || 'nara', // URL 파라미터 또는 기본값: nara
+    previewThumbnails: ['', '', ''], // 재회상품 미리보기 썸네일 3개
   })
   const [menuFields, setMenuFields] = useState<Array<{ id: number; value: string; thumbnail?: string }>>([])
   const [firstMenuField, setFirstMenuField] = useState({ value: '', thumbnail: '' })
   const [initialData, setInitialData] = useState<any>(null)
   const [hasChanges, setHasChanges] = useState(false)
   const [showThumbnailModal, setShowThumbnailModal] = useState(false)
-  const [currentThumbnailField, setCurrentThumbnailField] = useState<'main' | 'firstMenu' | number>('main')
+  const [currentThumbnailField, setCurrentThumbnailField] = useState<'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | number>('main')
   const [showCancelWarning, setShowCancelWarning] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showDeleteMenuConfirm, setShowDeleteMenuConfirm] = useState(false)
@@ -83,6 +84,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_items: currentMenuItems,
         is_new: formData.showNew,
         tts_speaker: formData.ttsSpeaker || 'nara',
+        preview_thumbnails: formData.previewThumbnails || ['', '', ''],
       }
       
       // initialData도 정규화 (menu_items 배열 처리)
@@ -106,6 +108,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_items: initialData.menu_items || [],
         is_new: initialData.is_new || false,
         tts_speaker: initialData.tts_speaker || 'nara',
+        preview_thumbnails: initialData.preview_thumbnails || ['', '', ''],
       }
       
       // menu_items 배열 정규화 (id 제거하고 value와 thumbnail만 비교)
@@ -151,7 +154,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         firstMenuField.value ||
         firstMenuField.thumbnail ||
         menuFields.length > 0 ||
-        menuFields.some(f => f.value || f.thumbnail)
+        menuFields.some(f => f.value || f.thumbnail) ||
+        formData.previewThumbnails.some(thumb => thumb && thumb.trim())
       )
       
       setHasChanges(hasAnyValue)
@@ -182,6 +186,32 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         bodyFontSize: String(data.body_font_size || '11'),
         fontFace: data.font_face || '',
         ttsSpeaker: data.tts_speaker || 'nara',
+        previewThumbnails: (() => {
+          let thumbnails = data.preview_thumbnails
+          // 문자열인 경우 파싱
+          if (typeof thumbnails === 'string') {
+            try {
+              thumbnails = JSON.parse(thumbnails)
+            } catch (e) {
+              console.error('loadContent: preview_thumbnails 파싱 에러:', e)
+              thumbnails = []
+            }
+          }
+          // 배열이 아니거나 길이가 3이 아니면 기본값 사용
+          if (!Array.isArray(thumbnails) || thumbnails.length !== 3) {
+            // 배열이지만 길이가 다르면 3개로 맞춤
+            if (Array.isArray(thumbnails)) {
+              while (thumbnails.length < 3) {
+                thumbnails.push('')
+              }
+              thumbnails = thumbnails.slice(0, 3)
+            } else {
+              thumbnails = ['', '', '']
+            }
+          }
+          console.log('loadContent: previewThumbnails 로드됨:', thumbnails)
+          return thumbnails
+        })(),
       })
       if (data.menu_items && data.menu_items.length > 0) {
         setFirstMenuField({
@@ -228,9 +258,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         ],
         is_new: formData.showNew,
         tts_speaker: formData.ttsSpeaker || 'nara',
+        preview_thumbnails: formData.previewThumbnails || ['', '', ''],
       }
       
       console.log('저장할 contentData.tts_speaker:', contentData.tts_speaker);
+      console.log('저장할 contentData.preview_thumbnails:', contentData.preview_thumbnails);
       console.log('==============================');
       
       // API 라우트를 통해 저장 (서버 사이드에서 서비스 롤 키 사용)
@@ -276,7 +308,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     }
   }
 
-  const handleThumbnailClick = (field: 'main' | 'firstMenu' | number) => {
+  const handleThumbnailClick = (field: 'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | number) => {
     setCurrentThumbnailField(field)
     setShowThumbnailModal(true)
   }
@@ -290,6 +322,13 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       ))
     } else if (currentThumbnailField === 'firstMenu') {
       setFirstMenuField(prev => ({ ...prev, thumbnail: url }))
+    } else if (currentThumbnailField === 'preview-0' || currentThumbnailField === 'preview-1' || currentThumbnailField === 'preview-2') {
+      const index = parseInt(currentThumbnailField.split('-')[1])
+      setFormData(prev => {
+        const newThumbnails = [...prev.previewThumbnails]
+        newThumbnails[index] = url
+        return { ...prev, previewThumbnails: newThumbnails }
+      })
     }
   }
 
@@ -378,6 +417,36 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           </div>
         </div>
 
+        {/* 재회상품 미리보기 섹션 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            재회상품 미리보기
+          </label>
+          <div className="flex gap-2">
+            {[0, 1, 2].map((index) => (
+              <button
+                key={index}
+                type="button"
+                onClick={() => {
+                  setCurrentThumbnailField(`preview-${index}` as any)
+                  setShowThumbnailModal(true)
+                }}
+                className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-36 h-64 flex items-center justify-center"
+              >
+                {formData.previewThumbnails[index] ? (
+                  <img 
+                    src={formData.previewThumbnails[index]} 
+                    alt={`미리보기 ${index + 1}`} 
+                    className="absolute inset-0 w-full h-full object-contain"
+                  />
+                ) : (
+                  <span className="text-xs">+</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* 컨텐츠명 섹션 */}
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -395,18 +464,23 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             <button
               type="button"
               onClick={() => handleThumbnailClick('main')}
-              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-6 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden min-w-[120px] h-[48px] flex items-center justify-center"
+              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-6 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
             >
               {formData.thumbnailUrl ? (
                 <img 
                   src={formData.thumbnailUrl} 
                   alt="썸네일" 
-                  className="absolute inset-0 w-full h-full object-cover"
+                  className="absolute inset-0 w-full h-full object-contain"
                 />
               ) : (
                 <span>썸네일</span>
               )}
             </button>
+          </div>
+          <div className="mt-3 text-sm text-gray-400 space-y-1">
+            <p>1. 썸네일을 16:9로 생성하세요</p>
+            <p>2. 썸네일을 포토스케이프에서 가로를 680 픽셀로 줄이고 jpg 저장품질을 100으로 저장하세요</p>
+            <p>3. <a href="https://compresspng.com/ko/" target="_blank" rel="noopener noreferrer" className="text-pink-400 hover:text-pink-300 underline">https://compresspng.com/ko/</a> 사이트에서 JPEG 탭을 선택하고 2번에서 저장된 파일을 드래그&드랍해서 파일용량을 최적화하세요</p>
           </div>
         </div>
 
@@ -484,13 +558,13 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             <button
               type="button"
               onClick={() => handleThumbnailClick('firstMenu')}
-              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-6 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden min-w-[120px] h-[48px] flex items-center justify-center"
+              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-6 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
             >
               {firstMenuField.thumbnail ? (
                 <img 
                   src={firstMenuField.thumbnail} 
                   alt="썸네일" 
-                  className="absolute inset-0 w-full h-full object-cover"
+                  className="absolute inset-0 w-full h-full object-contain"
                 />
               ) : (
                 <span>썸네일</span>
@@ -521,13 +595,13 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 <button
                   type="button"
                   onClick={() => handleThumbnailClick(field.id)}
-                  className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-6 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden min-w-[120px] h-[48px] flex items-center justify-center"
+                  className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-6 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
                 >
                   {field.thumbnail ? (
                     <img 
                       src={field.thumbnail} 
                       alt="썸네일" 
-                      className="absolute inset-0 w-full h-full object-cover"
+                      className="absolute inset-0 w-full h-full object-contain"
                     />
                   ) : (
                     <span>썸네일</span>
@@ -716,6 +790,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             ? firstMenuField.thumbnail
             : typeof currentThumbnailField === 'number'
             ? menuFields.find(f => f.id === currentThumbnailField)?.thumbnail
+            : (currentThumbnailField === 'preview-0' || currentThumbnailField === 'preview-1' || currentThumbnailField === 'preview-2')
+            ? formData.previewThumbnails[parseInt(currentThumbnailField.split('-')[1])]
             : undefined
         }
       />

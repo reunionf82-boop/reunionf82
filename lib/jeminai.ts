@@ -96,25 +96,43 @@ export async function callJeminaiAPIStream(
     console.log('=== 재미나이 API 스트리밍 호출 시작 ===')
     console.log('선택된 모델:', modelDisplayName, `(${selectedModel})`)
     
-    const response = await fetch('/api/jeminai', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        role_prompt: request.role_prompt,
-        restrictions: request.restrictions,
-        menu_subtitles: request.menu_subtitles,
-        menu_items: request.menu_items || [],
-        user_info: request.user_info,
-        partner_info: request.partner_info,
+    // fetch 타임아웃 설정 (290초, 서버 타임아웃 300초보다 짧게)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 290000) // 290초
+    
+    let response: Response
+    try {
+      response = await fetch('/api/jeminai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          role_prompt: request.role_prompt,
+          restrictions: request.restrictions,
+          menu_subtitles: request.menu_subtitles,
+          menu_items: request.menu_items || [],
+          user_info: request.user_info,
+          partner_info: request.partner_info,
         model: request.model || 'gemini-2.5-flash',
-        manse_ryeok_table: request.manse_ryeok_table,
-        manse_ryeok_text: request.manse_ryeok_text,
-        manse_ryeok_json: request.manse_ryeok_json,
-        day_gan_info: request.day_gan_info
-      }),
-    })
+          manse_ryeok_table: request.manse_ryeok_table,
+          manse_ryeok_text: request.manse_ryeok_text,
+          manse_ryeok_json: request.manse_ryeok_json,
+          day_gan_info: request.day_gan_info
+        }),
+        signal: controller.signal
+      })
+      clearTimeout(timeoutId)
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId)
+      if (fetchError.name === 'AbortError') {
+        const errorMsg = '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
+        console.error(errorMsg)
+        onChunk({ type: 'error', error: errorMsg })
+        throw new Error(errorMsg)
+      }
+      throw fetchError
+    }
 
     console.log('API 응답 상태:', response.status, response.statusText)
     console.log('Content-Type:', response.headers.get('content-type'))
@@ -128,9 +146,24 @@ export async function callJeminaiAPIStream(
       } catch {
         errorMessage = errorText || errorMessage
       }
-      console.error('API 에러:', errorMessage)
-      onChunk({ type: 'error', error: errorMessage })
-      throw new Error(errorMessage)
+      
+      // 사용자 친화적 에러 메시지 생성
+      let userFriendlyMessage = '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
+      if (response.status === 429) {
+        // 429 에러는 점사중... 메시지가 이미 떠 있으므로 에러 메시지 전송하지 않음
+        // 서버에서 재시도가 모두 실패한 경우이지만, 조용히 실패 처리
+        console.error('API 에러: 429 Rate Limit (재시도 모두 실패)')
+        // 에러 메시지 전송하지 않고 조용히 실패
+        throw new Error('429 Rate Limit')
+      } else if (response.status === 500 || response.status === 503) {
+        userFriendlyMessage = '서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+      } else if (response.status >= 400 && response.status < 500) {
+        userFriendlyMessage = '요청 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+      }
+      
+      console.error('API 에러:', errorMessage, '상태:', response.status)
+      onChunk({ type: 'error', error: userFriendlyMessage })
+      throw new Error(userFriendlyMessage)
     }
 
     // 스트림 읽기
@@ -138,8 +171,8 @@ export async function callJeminaiAPIStream(
     const decoder = new TextDecoder()
     
     if (!reader) {
-      const errorMsg = '스트림을 읽을 수 없습니다.'
-      console.error(errorMsg)
+      const errorMsg = '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
+      console.error('스트림을 읽을 수 없습니다.')
       onChunk({ type: 'error', error: errorMsg })
       throw new Error(errorMsg)
     }
@@ -148,13 +181,122 @@ export async function callJeminaiAPIStream(
     let buffer = ''
     let finalResponse: JeminaiResponse | null = null
     let chunkCount = 0
+    let accumulatedHtml = '' // done 타입을 받지 못한 경우를 위한 fallback
+    let hasReceivedStart = false // start 타입 수신 여부 추적
+    let lastChunkTime = Date.now() // 마지막 청크 수신 시간
+    const STREAM_TIMEOUT = 300000 // 5분 (300초)
+    
+    // 백그라운드에서도 스트림이 계속 읽히도록 보장
+    // visibilitychange 이벤트 리스너 추가 (백그라운드 복귀 시 스트림 상태 확인)
+    // 모바일에서 전화가 와도 스트림이 계속 읽히도록 보장
+    let visibilityHandler: (() => void) | null = null
+    let lastVisibilityChangeTime = Date.now()
+    let isInBackground = false // 백그라운드 상태 추적
+    let backgroundStartTime = 0 // 백그라운드 시작 시간
+    if (typeof document !== 'undefined') {
+      visibilityHandler = () => {
+        const now = Date.now()
+        if (document.hidden) {
+          // 페이지가 백그라운드로 갔을 때 (전화 수신, 메신저 알림 탭, 다른 앱으로 이동 등)
+          isInBackground = true
+          backgroundStartTime = now
+          lastVisibilityChangeTime = now
+          console.log('페이지가 백그라운드로 전환됨 (전화/메신저/다른 앱 등), 스트림은 계속 진행됩니다.')
+        } else {
+          // 페이지가 다시 보이게 되면 (전화 종료, 메신저 닫고 복귀 등)
+          const timeInBackground = now - lastVisibilityChangeTime
+          isInBackground = false
+          console.log(`페이지가 다시 보이게 됨 (백그라운드 시간: ${Math.round(timeInBackground / 1000)}초), 스트림 상태 확인`)
+          
+          // 백그라운드에 있었던 시간만큼 lastChunkTime 보정
+          // 백그라운드에 있는 동안에는 타임아웃이 발생하지 않도록 보정
+          if (backgroundStartTime > 0) {
+            const backgroundDuration = now - backgroundStartTime
+            lastChunkTime = Date.now() // 복귀 시점을 기준으로 갱신
+            console.log(`백그라운드 시간 보정: ${Math.round(backgroundDuration / 1000)}초 동안 백그라운드에 있었음`)
+          } else {
+            lastChunkTime = Date.now()
+          }
+          
+          // 백그라운드에 오래 있었으면 스트림이 끊겼을 수 있으므로 확인
+          if (timeInBackground > 60000) { // 1분 이상 백그라운드에 있었으면
+            console.warn('백그라운드에 오래 있었음, 스트림 상태 확인 필요')
+          }
+        }
+      }
+      document.addEventListener('visibilitychange', visibilityHandler)
+      
+      // 모바일에서 전화 수신, 메신저 알림 등으로 백그라운드로 전환되어도 스트림이 계속 읽히도록 보장
+      // fetch와 ReadableStream은 백그라운드에서도 계속 작동하므로
+      // 별도의 처리는 필요 없지만, 로깅을 통해 상태 확인
+    }
 
     try {
       while (true) {
+        // 스트림 타임아웃 체크 (백그라운드에서는 타임아웃 체크 건너뛰기)
+        // 백그라운드에 있는 동안에는 타임아웃이 발생하지 않도록 처리
+        // 전화 통화 중에도 스트림이 계속 읽히므로 타임아웃 체크 불필요
+        if (!isInBackground) {
+          const now = Date.now()
+          if (now - lastChunkTime > STREAM_TIMEOUT) {
+            // 타임아웃이지만 부분 데이터가 있으면 fallback 처리
+            if (accumulatedHtml.trim() && accumulatedHtml.trim().length > 100) {
+              console.warn('스트림 타임아웃 발생했지만 부분 데이터가 충분함. fallback 처리합니다.')
+              break // 루프 종료하여 fallback 처리로 이동
+            }
+            throw new Error('응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.')
+          }
+        } else {
+          // 백그라운드에 있는 동안에는 타임아웃 체크 건너뛰기
+          // 전화 통화 중에도 스트림은 계속 읽히므로 타임아웃 발생하지 않음
+        }
+        
+        // 백그라운드에서도 스트림 읽기가 계속되도록 보장
+        // reader.read()는 백그라운드에서도 정상 작동 (모바일 전화 수신 시에도 계속 진행)
+        // Promise가 해결될 때까지 기다리므로 백그라운드에서도 정상 작동
         const { done, value } = await reader.read()
+        
+        // 모바일에서 전화가 와서 백그라운드로 갔다가 복귀한 경우에도
+        // reader.read()는 계속 작동하며 데이터를 받을 수 있음
         
         if (done) {
           console.log('스트림 읽기 완료, 총 청크:', chunkCount)
+          // 스트림 종료 시 버퍼에 남은 데이터 처리
+          if (buffer.trim()) {
+            console.log('버퍼에 남은 데이터 처리:', buffer.substring(0, 200))
+            const lines = buffer.split('\n')
+            for (const line of lines) {
+              if (line.trim() && line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6))
+                  console.log('버퍼에서 스트림 데이터 수신:', data.type)
+                  
+                  if (data.type === 'done') {
+                    finalResponse = {
+                      html: data.html,
+                      isTruncated: data.isTruncated,
+                      finishReason: data.finishReason,
+                      usage: data.usage
+                    }
+                    onChunk({
+                      type: 'done',
+                      html: data.html,
+                      isTruncated: data.isTruncated,
+                      finishReason: data.finishReason,
+                      usage: data.usage
+                    })
+                  } else if (data.type === 'error') {
+                    const errorMsg = data.error || '스트리밍 중 오류가 발생했습니다.'
+                    console.error('버퍼에서 스트림 에러:', errorMsg)
+                    onChunk({ type: 'error', error: errorMsg })
+                    throw new Error(errorMsg)
+                  }
+                } catch (e) {
+                  console.error('버퍼 데이터 파싱 에러:', e, '라인:', line.substring(0, 100))
+                }
+              }
+            }
+          }
           break
         }
         
@@ -170,50 +312,161 @@ export async function callJeminaiAPIStream(
               console.log('스트림 데이터 수신:', data.type, data.accumulatedLength || 'N/A')
               
               if (data.type === 'start') {
+                hasReceivedStart = true
+                lastChunkTime = Date.now() // start 수신 시 시간 갱신
                 onChunk({ type: 'start' })
               } else if (data.type === 'chunk') {
-                onChunk({
-                  type: 'chunk',
-                  text: data.text,
-                  accumulatedLength: data.accumulatedLength
-                })
-              } else if (data.type === 'done') {
-                finalResponse = {
-                  html: data.html,
-                  isTruncated: data.isTruncated,
-                  finishReason: data.finishReason,
-                  usage: data.usage
+                lastChunkTime = Date.now() // chunk 수신 시 시간 갱신
+                if (data.text) {
+                  accumulatedHtml += data.text
+                  onChunk({
+                    type: 'chunk',
+                    text: data.text,
+                    accumulatedLength: data.accumulatedLength
+                  })
                 }
-                onChunk({
-                  type: 'done',
-                  html: data.html,
-                  isTruncated: data.isTruncated,
-                  finishReason: data.finishReason,
-                  usage: data.usage
-                })
+              } else if (data.type === 'done') {
+                lastChunkTime = Date.now() // done 수신 시 시간 갱신
+                if (data.html) {
+                  finalResponse = {
+                    html: data.html,
+                    isTruncated: data.isTruncated,
+                    finishReason: data.finishReason,
+                    usage: data.usage
+                  }
+                  onChunk({
+                    type: 'done',
+                    html: data.html,
+                    isTruncated: data.isTruncated,
+                    finishReason: data.finishReason,
+                    usage: data.usage
+                  })
+                } else {
+                  console.warn('done 타입을 받았지만 html이 없음. accumulatedHtml 사용.')
+                  // done 타입을 받았지만 html이 없는 경우 fallback
+                  if (accumulatedHtml.trim()) {
+                    // fallback 처리로 이동 (아래 로직에서 처리)
+                  }
+                }
               } else if (data.type === 'error') {
-                const errorMsg = data.error || '스트리밍 중 오류가 발생했습니다.'
+                // 서버에서 이미 사용자 친화적 메시지를 보냈으므로 그대로 사용
+                const errorMsg = data.error || '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
                 console.error('스트림 에러:', errorMsg)
                 onChunk({ type: 'error', error: errorMsg })
                 throw new Error(errorMsg)
               }
-            } catch (e) {
-              console.error('스트림 데이터 파싱 에러:', e, '라인:', line.substring(0, 100))
+            } catch (e: any) {
+              // 파싱 에러를 더 상세히 로깅
+              console.error('스트림 데이터 파싱 에러:', e?.message || e, '라인:', line.substring(0, 200))
+              console.error('파싱 에러 스택:', e?.stack)
+              // JSON 파싱 에러인 경우에만 무시하고 계속 진행 (다른 에러는 throw)
+              if (!(e instanceof SyntaxError)) {
+                throw e
+              }
             }
           }
         }
       }
     } catch (streamError: any) {
       console.error('스트림 읽기 중 에러:', streamError)
-      onChunk({ type: 'error', error: streamError?.message || '스트림 읽기 중 오류가 발생했습니다.' })
-      throw streamError
+      
+      // visibilitychange 리스너 제거
+      if (visibilityHandler && typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', visibilityHandler)
+      }
+      
+      // 부분 데이터가 충분하면 에러 대신 성공 처리
+      if (accumulatedHtml.trim() && accumulatedHtml.trim().length > 100) {
+        console.warn('스트림 읽기 중 에러 발생했지만 부분 데이터가 충분함. fallback 처리합니다.')
+        // fallback 처리로 이동 (아래 로직에서 처리)
+      } else {
+        // 사용자 친화적 에러 메시지
+        const errorMsg = streamError?.message?.includes('타임아웃') || streamError?.message?.includes('timeout')
+          ? '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
+          : streamError?.message?.includes('네트워크') || streamError?.message?.includes('network')
+          ? '네트워크 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+          : '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
+        
+        onChunk({ type: 'error', error: errorMsg })
+        throw new Error(errorMsg)
+      }
+    } finally {
+      // visibilitychange 리스너 제거 (정상 종료 시에도)
+      if (visibilityHandler && typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', visibilityHandler)
+      }
     }
     
+    // done 타입을 받지 못한 경우, accumulated HTML로 fallback 시도
     if (!finalResponse) {
-      const errorMsg = '응답을 받지 못했습니다.'
-      console.error(errorMsg)
-      onChunk({ type: 'error', error: errorMsg })
-      throw new Error(errorMsg)
+      // start 타입을 받지 못한 경우 경고
+      if (!hasReceivedStart) {
+        console.warn('start 타입을 받지 못함. 스트림이 제대로 시작되지 않았을 수 있습니다.')
+      }
+      
+      if (accumulatedHtml.trim()) {
+        console.warn('done 타입을 받지 못했지만 accumulated HTML이 있음. fallback 처리.')
+        console.log('accumulatedHtml 길이:', accumulatedHtml.length)
+        
+        // 서버와 동일한 HTML 정리 로직 적용 (텍스트 깨짐 방지)
+        let cleanHtml = accumulatedHtml.trim()
+        
+        // HTML 코드 블록 제거 (있는 경우)
+        const htmlBlockMatch = cleanHtml.match(/```html\s*([\s\S]*?)\s*```/)
+        if (htmlBlockMatch) {
+          cleanHtml = htmlBlockMatch[1].trim()
+          console.log('Fallback: HTML 코드 블록 제거됨')
+        } else {
+          const codeBlockMatch = cleanHtml.match(/```\s*([\s\S]*?)\s*```/)
+          if (codeBlockMatch) {
+            cleanHtml = codeBlockMatch[1].trim()
+            console.log('Fallback: 코드 블록 제거됨')
+          }
+        }
+        
+        // 소제목과 본문 사이의 공백 제거
+        cleanHtml = cleanHtml.replace(/(<\/h3>)\s+(<div class="subtitle-content">)/g, '$1$2')
+        cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content"[^>]*>)/g, '$1$2')
+        
+        // <br> 태그 처리: 불필요한 연속 <br> 제거
+        cleanHtml = cleanHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
+        
+        // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리
+        cleanHtml = cleanHtml
+          .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+          .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+          .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+          .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+          .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+        
+        // ** 문자 제거 (마크다운 강조 표시 제거)
+        cleanHtml = cleanHtml.replace(/\*\*/g, '')
+        
+        finalResponse = {
+          html: cleanHtml
+        }
+        onChunk({
+          type: 'done',
+          html: cleanHtml
+        })
+      } else {
+        // accumulatedHtml이 비어있거나 너무 적은 경우
+        // 네트워크/제미나이 정상일 때는 발생하지 않아야 하지만, 방어적 코딩
+        const errorMsg = accumulatedHtml.length > 0 && accumulatedHtml.length < 100
+          ? '상담 결과 생성이 중단되었습니다. 잠시 후 다시 시도해주세요.'
+          : '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
+        console.error('done 타입을 받지 못하고 accumulatedHtml이 비어있음 - 네트워크/제미나이 정상이면 발생하지 않아야 함')
+        console.error('버퍼 상태:', buffer.substring(0, 500))
+        console.error('accumulatedHtml 길이:', accumulatedHtml.length)
+        console.error('hasReceivedStart:', hasReceivedStart)
+        onChunk({ type: 'error', error: errorMsg })
+        throw new Error(errorMsg)
+      }
+    }
+    
+    // visibilitychange 리스너 제거 (정상 완료 시)
+    if (visibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', visibilityHandler)
     }
     
     console.log('=== 재미나이 API 스트리밍 완료 ===')
@@ -221,8 +474,23 @@ export async function callJeminaiAPIStream(
   } catch (error: any) {
     console.error('=== 재미나이 API 스트리밍 에러 ===')
     console.error('에러:', error)
-    onChunk({ type: 'error', error: error?.message || '오류가 발생했습니다.' })
-    throw error
+    
+    // 429 Rate Limit 에러는 점사중... 메시지가 이미 떠 있으므로 에러 메시지 전송하지 않음
+    if (error?.message?.includes('429 Rate Limit')) {
+      console.error('429 Rate Limit 에러 - 에러 메시지 전송하지 않음 (점사중... 메시지가 이미 표시됨)')
+      // 에러 메시지 전송하지 않고 조용히 실패
+      throw error
+    }
+    
+    // 이미 사용자 친화적 메시지가 설정된 경우 그대로 사용
+    const errorMsg = error?.message && (
+      error.message.includes('잠시 후') || 
+      error.message.includes('대기 중') ||
+      error.message.includes('시도해주세요')
+    ) ? error.message : '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
+    
+    onChunk({ type: 'error', error: errorMsg })
+    throw new Error(errorMsg)
   }
 }
 

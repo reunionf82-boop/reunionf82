@@ -301,17 +301,35 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
               break // 성공하면 루프 종료
             } catch (apiError: any) {
               lastError = apiError
-              console.error(`API 호출 실패 (시도 ${attempt}/${maxRetries}):`, apiError.message)
+              const errorMessage = apiError.message || String(apiError)
+              console.error(`API 호출 실패 (시도 ${attempt}/${maxRetries}):`, errorMessage)
+              console.error('에러 상세:', {
+                name: apiError.name,
+                code: apiError.code,
+                status: apiError.status,
+                stack: apiError.stack?.substring(0, 500)
+              })
               
-              // 500 에러이고 마지막 시도가 아니면 재시도
-              if (attempt < maxRetries && apiError.message?.includes('500')) {
+              // 재시도 가능한 에러 체크
+              const is429Error = errorMessage.includes('429') || apiError.status === 429
+              const isRetryableError = 
+                errorMessage.includes('500') ||
+                errorMessage.includes('503') ||
+                is429Error || // Rate limit
+                errorMessage.includes('timeout') ||
+                errorMessage.includes('ECONNRESET') ||
+                errorMessage.includes('ETIMEDOUT') ||
+                errorMessage.includes('network')
+              
+              // 재시도 가능한 에러이고 마지막 시도가 아니면 재시도
+              if (attempt < maxRetries && isRetryableError) {
                 const waitTime = attempt * 2000 // 2초, 4초, 6초 대기
-                console.log(`${waitTime}ms 대기 후 재시도...`)
+                console.log(`${waitTime}ms 대기 후 재시도... (재시도 가능한 에러: ${errorMessage})`)
                 await new Promise(resolve => setTimeout(resolve, waitTime))
                 continue
               }
               
-              // 마지막 시도이거나 500이 아닌 에러면 throw
+              // 마지막 시도이거나 재시도 불가능한 에러면 throw
               throw apiError
             }
           }
@@ -324,30 +342,73 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
           let isFirstChunk = true
           
           // 스트림 데이터 읽기
-          for await (const chunk of streamResult.stream) {
-            const chunkText = chunk.text()
-            if (chunkText) {
-              fullText += chunkText
-              
-              // 첫 번째 청크인 경우 시작 신호 전송
-              if (isFirstChunk) {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'start' })}\n\n`))
-                isFirstChunk = false
+          try {
+            for await (const chunk of streamResult.stream) {
+              try {
+                const chunkText = chunk.text()
+                if (chunkText) {
+                  fullText += chunkText
+                  
+                  // 첫 번째 청크인 경우 시작 신호 전송
+                  if (isFirstChunk) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'start' })}\n\n`))
+                    isFirstChunk = false
+                  }
+                  
+                  // 청크 데이터 전송
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                    type: 'chunk', 
+                    text: chunkText,
+                    accumulatedLength: fullText.length
+                  })}\n\n`))
+                }
+              } catch (chunkError: any) {
+                console.error('청크 처리 중 에러:', chunkError)
+                // 청크 처리 에러는 로깅만 하고 계속 진행
+                // 전체 스트림이 실패하지 않도록 함
               }
-              
-              // 청크 데이터 전송
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                type: 'chunk', 
-                text: chunkText,
-                accumulatedLength: fullText.length
-              })}\n\n`))
+            }
+          } catch (streamReadError: any) {
+            console.error('스트림 읽기 중 에러:', streamReadError)
+            // 스트림 읽기 에러 발생 시, 지금까지 받은 데이터로 처리 시도
+            if (fullText.trim() && fullText.trim().length > 100) {
+              console.warn('스트림 읽기 중 에러 발생했지만 부분 데이터가 충분함. 계속 처리합니다.')
+              // 부분 데이터가 충분하면 에러를 throw하지 않고 계속 진행
+            } else {
+              // 부분 데이터가 없거나 너무 적으면 에러 throw
+              throw streamReadError
             }
           }
           
           // 응답 완료 처리
-          const response = await streamResult.response
-          const finishReason = response.candidates?.[0]?.finishReason
-          const isTruncated = finishReason === 'MAX_TOKENS'
+          let response: any
+          let finishReason: string | undefined
+          let isTruncated = false
+          
+          try {
+            response = await streamResult.response
+            finishReason = response.candidates?.[0]?.finishReason
+            isTruncated = finishReason === 'MAX_TOKENS'
+          } catch (responseError: any) {
+            console.error('응답 대기 중 에러:', responseError)
+            // 응답 대기 실패해도 지금까지 받은 데이터로 처리
+            if (!fullText.trim() || fullText.trim().length < 100) {
+              throw responseError
+            }
+            console.warn('응답 대기 중 에러 발생했지만 부분 데이터가 충분함. 계속 처리합니다.')
+            // 기본값 설정
+            response = { usageMetadata: null }
+            finishReason = undefined
+            isTruncated = false
+          }
+          
+          // fullText가 비어있는 경우 체크
+          // 네트워크/제미나이 정상일 때는 발생하지 않아야 하지만, 방어적 코딩
+          if (!fullText.trim()) {
+            // 네트워크/제미나이 정상일 때는 발생하지 않아야 함
+            console.error('fullText가 비어있음 - 네트워크/제미나이 정상이면 발생하지 않아야 함')
+            throw new Error('스트림에서 데이터를 받지 못했습니다.')
+          }
           
           // HTML 코드 블록 제거 (있는 경우)
           let cleanHtml = fullText.trim()
@@ -361,6 +422,14 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
               cleanHtml = codeBlockMatch[1].trim()
               console.log('코드 블록 제거됨')
             }
+          }
+          
+          // cleanHtml이 비어있는 경우 체크
+          // 네트워크/제미나이 정상일 때는 발생하지 않아야 하지만, 방어적 코딩
+          if (!cleanHtml.trim()) {
+            // 네트워크/제미나이 정상일 때는 발생하지 않아야 함
+            console.error('cleanHtml이 비어있음 - 네트워크/제미나이 정상이면 발생하지 않아야 함')
+            throw new Error('처리된 HTML이 비어있습니다.')
           }
           
           // 소제목과 본문 사이의 공백 제거
@@ -414,11 +483,53 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
           controller.close()
         } catch (error: any) {
           console.error('스트리밍 중 에러:', error)
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-            type: 'error', 
-            error: error?.message || '스트리밍 중 오류가 발생했습니다.' 
-          })}\n\n`))
-          controller.close()
+          console.error('에러 상세:', {
+            name: error?.name,
+            message: error?.message,
+            code: error?.code,
+            status: error?.status,
+            stack: error?.stack?.substring(0, 1000)
+          })
+          
+          // 사용자 친화적 에러 메시지 생성
+          let userFriendlyMessage: string | null = '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
+          const errorMessage = error?.message || error?.toString() || ''
+          const errorStatus = error?.status || error?.code || ''
+          
+          // 429 Rate Limit 에러 처리 - 점사중... 메시지가 이미 떠 있으므로 에러 메시지 전송하지 않음
+          if (errorMessage.includes('429') || errorStatus === 429 || errorStatus === '429') {
+            userFriendlyMessage = null // 에러 메시지 전송하지 않음 (점사중... 메시지가 이미 표시됨)
+          } 
+          // 500, 503 서버 에러
+          else if (errorMessage.includes('500') || errorMessage.includes('503') || errorStatus === 500 || errorStatus === 503) {
+            userFriendlyMessage = '서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+          }
+          // 타임아웃 에러
+          else if (errorMessage.includes('timeout') || errorMessage.includes('타임아웃')) {
+            userFriendlyMessage = '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
+          }
+          // 네트워크 에러
+          else if (errorMessage.includes('network') || errorMessage.includes('ECONNRESET') || errorMessage.includes('ETIMEDOUT')) {
+            userFriendlyMessage = '네트워크 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+          }
+          
+          // 에러 메시지가 필요한 경우에만 전송
+          if (userFriendlyMessage) {
+            try {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'error', 
+                error: userFriendlyMessage
+              })}\n\n`))
+            } catch (enqueueError: any) {
+              console.error('에러 메시지 전송 실패:', enqueueError)
+            }
+          }
+          
+          try {
+            controller.close()
+          } catch (closeError: any) {
+            console.error('스트림 닫기 실패:', closeError)
+          }
         }
       }
     })

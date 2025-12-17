@@ -41,6 +41,12 @@ function FormContent() {
   const [content, setContent] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   
+  // 재회상품 미리보기 모달 상태
+  const [showPreviewModal, setShowPreviewModal] = useState(false)
+  const [modalCurrentIndex, setModalCurrentIndex] = useState(0)
+  const [modalTouchStartX, setModalTouchStartX] = useState<number | null>(null)
+  const [modalTouchEndX, setModalTouchEndX] = useState<number | null>(null)
+  
   // 본인 정보 폼 상태
   const [name, setName] = useState('')
   const [gender, setGender] = useState<'male' | 'female' | ''>('')
@@ -429,6 +435,7 @@ function FormContent() {
     console.log('Form 페이지: savedResults 내용:', savedResults)
   }, [savedResults])
 
+
   const loadContent = async () => {
     try {
       const data = await getContents()
@@ -442,6 +449,7 @@ function FormContent() {
       const foundContent = data?.find((item: any) => item.content_name === decodedTitle)
       console.log('Form 페이지: 로드된 컨텐츠:', foundContent)
       console.log('Form 페이지: 컨텐츠의 tts_speaker (원본):', foundContent?.tts_speaker)
+      console.log('Form 페이지: 컨텐츠의 preview_thumbnails:', foundContent?.preview_thumbnails)
       
       // tts_speaker가 없거나 'nara'이면 app_settings에서 선택된 화자 사용
       if (foundContent && (!foundContent.tts_speaker || foundContent.tts_speaker === 'nara')) {
@@ -1287,6 +1295,199 @@ function FormContent() {
             </div>
           )}
 
+          {/* 재회상품 미리보기 섹션 */}
+          {(() => {
+            const previewThumbnails = content?.preview_thumbnails
+            console.log('Form 페이지: preview_thumbnails 체크', {
+              previewThumbnails,
+              type: typeof previewThumbnails,
+              isArray: Array.isArray(previewThumbnails),
+              length: previewThumbnails?.length,
+              content: content
+            })
+            
+            // preview_thumbnails가 배열이고, 하나 이상의 유효한 썸네일이 있는지 확인
+            let validThumbnails: string[] = []
+            if (previewThumbnails) {
+              if (Array.isArray(previewThumbnails)) {
+                validThumbnails = previewThumbnails.filter((thumb: any) => {
+                  const thumbStr = String(thumb || '').trim()
+                  return thumbStr && thumbStr.length > 0
+                })
+              } else if (typeof previewThumbnails === 'string') {
+                // 문자열인 경우 파싱 시도
+                try {
+                  const parsed = JSON.parse(previewThumbnails)
+                  if (Array.isArray(parsed)) {
+                    validThumbnails = parsed.filter((thumb: any) => {
+                      const thumbStr = String(thumb || '').trim()
+                      return thumbStr && thumbStr.length > 0
+                    })
+                  }
+                } catch (e) {
+                  console.error('preview_thumbnails 파싱 에러:', e)
+                }
+              }
+            }
+            
+            console.log('Form 페이지: validThumbnails', validThumbnails)
+            
+            if (validThumbnails.length === 0) {
+              console.log('Form 페이지: 재회상품 미리보기 섹션 숨김 (유효한 썸네일 없음)')
+              return null
+            }
+            
+            // 모달 열기 함수
+            const openPreviewModal = (initialIndex: number) => {
+              setModalCurrentIndex(initialIndex)
+              setShowPreviewModal(true)
+            }
+            
+            // 모달 내부 네비게이션 함수
+            const handleModalPrev = () => {
+              setModalCurrentIndex((prev) => (prev > 0 ? prev - 1 : validThumbnails.length - 1))
+            }
+            
+            const handleModalNext = () => {
+              setModalCurrentIndex((prev) => (prev < validThumbnails.length - 1 ? prev + 1 : 0))
+            }
+            
+            // 모달 내부 터치 이벤트 핸들러
+            const handleModalTouchStart = (e: React.TouchEvent) => {
+              setModalTouchStartX(e.touches[0].clientX)
+            }
+            
+            const handleModalTouchMove = (e: React.TouchEvent) => {
+              setModalTouchEndX(e.touches[0].clientX)
+            }
+            
+            const handleModalTouchEnd = () => {
+              if (modalTouchStartX === null || modalTouchEndX === null) return
+              
+              const distance = modalTouchStartX - modalTouchEndX
+              const minSwipeDistance = 50
+              
+              if (distance > minSwipeDistance) {
+                // 왼쪽으로 스와이프 → 이미지도 왼쪽으로 이동 (이전)
+                handleModalPrev()
+              } else if (distance < -minSwipeDistance) {
+                // 오른쪽으로 스와이프 → 이미지도 오른쪽으로 이동 (다음)
+                handleModalNext()
+              }
+              
+              setModalTouchStartX(null)
+              setModalTouchEndX(null)
+            }
+            
+            return (
+              <>
+                <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
+                  <h2 className="text-xl font-bold text-gray-900 mb-4">재회상품 미리보기</h2>
+                  <div className="flex gap-4 flex-wrap">
+                    {validThumbnails.map((thumbnail: string, index: number) => (
+                      <img
+                        key={index}
+                        src={thumbnail}
+                        alt={`재회상품 미리보기 ${index + 1}`}
+                        className="cursor-pointer rounded-lg shadow-md hover:shadow-lg transition-shadow max-h-48 object-contain"
+                        onClick={() => openPreviewModal(index)}
+                      />
+                    ))}
+                  </div>
+                </div>
+                
+                {/* 모달 */}
+                {showPreviewModal && validThumbnails.length > 0 && (
+                  <div
+                    className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+                    onClick={() => setShowPreviewModal(false)}
+                  >
+                    {/* PC용 좌/우 화살표 버튼 (2개 이상일 때만 표시) */}
+                    {validThumbnails.length > 1 && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleModalPrev()
+                          }}
+                          className="hidden md:flex absolute left-4 top-[calc(50%-4px)] -translate-y-0 bg-white hover:bg-gray-100 text-gray-800 font-bold text-2xl w-12 h-12 rounded-full shadow-lg transition-colors z-10 items-center justify-center leading-none"
+                          aria-label="이전 썸네일"
+                        >
+                          <span className="flex items-center justify-center w-full h-full">‹</span>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleModalNext()
+                          }}
+                          className="hidden md:flex absolute right-4 top-[calc(50%-4px)] -translate-y-0 bg-white hover:bg-gray-100 text-gray-800 font-bold text-2xl w-12 h-12 rounded-full shadow-lg transition-colors z-10 items-center justify-center leading-none"
+                          aria-label="다음 썸네일"
+                        >
+                          <span className="flex items-center justify-center w-full h-full">›</span>
+                        </button>
+                      </>
+                    )}
+                    
+                    {/* 모달 컨텐츠 래퍼 */}
+                    <div
+                      className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center"
+                      onClick={(e) => e.stopPropagation()}
+                      onTouchStart={handleModalTouchStart}
+                      onTouchMove={handleModalTouchMove}
+                      onTouchEnd={handleModalTouchEnd}
+                    >
+                      {/* 이미지 캐러셀 */}
+                      <div className="relative overflow-hidden w-full flex items-center justify-center">
+                        <div
+                          className="flex transition-transform duration-300 ease-in-out"
+                          style={{ transform: `translateX(-${modalCurrentIndex * 100}%)` }}
+                        >
+                          {validThumbnails.map((thumbnail: string, index: number) => (
+                            <div key={index} className="min-w-full flex flex-col items-center">
+                              <img
+                                src={thumbnail}
+                                alt={`재회상품 미리보기 ${index + 1}`}
+                                className="max-w-full max-h-[90vh] object-contain"
+                              />
+                              {/* 인디케이터 (2개 이상일 때만 표시, 썸네일 바로 아래) */}
+                              {validThumbnails.length > 1 && (
+                                <div className="flex justify-center gap-2 mt-4">
+                                  {validThumbnails.map((_, idx: number) => (
+                                    <button
+                                      key={idx}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setModalCurrentIndex(idx)
+                                      }}
+                                      className={`w-2 h-2 rounded-full transition-colors ${
+                                        idx === modalCurrentIndex ? 'bg-pink-500' : 'bg-gray-300'
+                                      }`}
+                                      aria-label={`썸네일 ${idx + 1}로 이동`}
+                                    />
+                                  ))}
+                                </div>
+                              )}
+                              {/* 닫기 버튼 (인디케이터 바로 아래) */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setShowPreviewModal(false)
+                                }}
+                                className="mt-2 bg-white hover:bg-gray-100 text-gray-800 font-semibold px-6 py-2 rounded-lg shadow-lg transition-colors"
+                              >
+                                닫기
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          })()}
+
           {/* 본인 정보 및 이성 정보 입력 폼 */}
           <div className="pt-6 mt-6">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">본인 정보</h2>
@@ -1883,12 +2084,6 @@ function FormContent() {
                         <p className={`font-semibold ${isExpired60d ? 'text-gray-400' : 'text-gray-900'}`}>{saved.title}</p>
                         <p className="text-xs text-gray-500 mt-1">
                           {saved.savedAt}
-                          {saved.model && (
-                            <> · 모델: {saved.model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : saved.model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : saved.model}</>
-                          )}
-                          {saved.processingTime && (
-                            <> · 처리 시간: {saved.processingTime}</>
-                          )}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -1948,6 +2143,12 @@ function FormContent() {
                                         width: 100%;
                                         height: auto;
                                         object-fit: cover;
+                                      }
+                                      .thumbnail-container {
+                                        border-radius: 0;
+                                      }
+                                      .thumbnail-container img {
+                                        border-radius: 0;
                                       }
                                       .tts-button-container {
                                         text-align: center;
@@ -2016,7 +2217,6 @@ function FormContent() {
                                         width: 100%;
                                         height: 256px;
                                         object-fit: cover;
-                                        border-radius: 8px;
                                         margin-bottom: 24px;
                                       }
                                       .subtitle-section {
@@ -2349,10 +2549,6 @@ function FormContent() {
                                           <span id="ttsIcon">🔊</span>
                                           <span id="ttsText">점사 듣기</span>
                                         </button>
-                                      </div>
-                                      <div class="saved-at">
-                                        사용 모델: <span style="font-weight: 600; color: #374151;">${saved.model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : saved.model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : saved.model || 'Gemini 2.5 Flash'}</span>
-                                        ${saved.processingTime ? ` · 처리 시간: <span style="font-weight: 600; color: #374151;">${saved.processingTime}</span>` : ''}
                                       </div>
                                       <div id="contentHtml">${saved.html ? saved.html.replace(/\*\*/g, '') : ''}</div>
                                     </div>

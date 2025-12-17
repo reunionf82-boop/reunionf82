@@ -42,6 +42,7 @@ export interface ContentData {
   menu_items?: Array<{ id: number; value: string; thumbnail?: string }>
   is_new?: boolean
   tts_speaker?: string // TTS 화자 (nara, jinho, mijin, nhajun, ndain)
+  preview_thumbnails?: string[] // 재회상품 미리보기 썸네일 배열 (최대 3개)
   created_at?: string
   updated_at?: string
 }
@@ -58,7 +59,7 @@ export async function getContents() {
     throw error
   }
   
-  // menu_items가 JSONB 문자열인 경우 파싱
+  // menu_items와 preview_thumbnails가 JSONB 문자열인 경우 파싱
   if (data) {
     data.forEach((item: any) => {
       if (item.menu_items && typeof item.menu_items === 'string') {
@@ -68,6 +69,23 @@ export async function getContents() {
           console.error('menu_items 파싱 에러:', e)
           item.menu_items = []
         }
+      }
+      // preview_thumbnails 파싱
+      if (item.preview_thumbnails) {
+        if (typeof item.preview_thumbnails === 'string') {
+          try {
+            item.preview_thumbnails = JSON.parse(item.preview_thumbnails)
+          } catch (e) {
+            console.error('preview_thumbnails 파싱 에러:', e)
+            item.preview_thumbnails = []
+          }
+        }
+        // 배열이 아닌 경우 빈 배열로 설정
+        if (!Array.isArray(item.preview_thumbnails)) {
+          item.preview_thumbnails = []
+        }
+      } else {
+        item.preview_thumbnails = []
       }
     })
   }
@@ -88,13 +106,32 @@ export async function getContentById(id: number) {
     throw error
   }
   
-  // menu_items가 JSONB 문자열인 경우 파싱
-  if (data && data.menu_items && typeof data.menu_items === 'string') {
-    try {
-      data.menu_items = JSON.parse(data.menu_items)
-    } catch (e) {
-      console.error('menu_items 파싱 에러:', e)
-      data.menu_items = []
+  // menu_items와 preview_thumbnails가 JSONB 문자열인 경우 파싱
+  if (data) {
+    if (data.menu_items && typeof data.menu_items === 'string') {
+      try {
+        data.menu_items = JSON.parse(data.menu_items)
+      } catch (e) {
+        console.error('menu_items 파싱 에러:', e)
+        data.menu_items = []
+      }
+    }
+    // preview_thumbnails 파싱
+    if (data.preview_thumbnails) {
+      if (typeof data.preview_thumbnails === 'string') {
+        try {
+          data.preview_thumbnails = JSON.parse(data.preview_thumbnails)
+        } catch (e) {
+          console.error('preview_thumbnails 파싱 에러:', e)
+          data.preview_thumbnails = []
+        }
+      }
+      // 배열이 아닌 경우 빈 배열로 설정
+      if (!Array.isArray(data.preview_thumbnails)) {
+        data.preview_thumbnails = []
+      }
+    } else {
+      data.preview_thumbnails = []
     }
   }
   

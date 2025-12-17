@@ -64,6 +64,12 @@ export async function POST(req: NextRequest) {
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
     const filePath = fileName
 
+    console.log('=== 썸네일 업로드 시작 ===')
+    console.log('파일명:', file.name)
+    console.log('파일 크기:', file.size)
+    console.log('파일 타입:', file.type)
+    console.log('저장 경로:', filePath)
+
     // 서비스 롤 키로 업로드 (RLS 우회)
     const supabase = getSupabaseClient()
     const { data: uploadData, error: uploadError } = await supabase.storage
@@ -75,16 +81,22 @@ export async function POST(req: NextRequest) {
 
     if (uploadError) {
       console.error('Supabase 업로드 에러:', uploadError)
+      console.error('에러 메시지:', uploadError.message)
       return NextResponse.json(
         { error: uploadError.message || '파일 업로드에 실패했습니다.' },
         { status: 500 }
       )
     }
 
+    console.log('업로드 성공:', uploadData)
+
     // 공개 URL 생성
     const { data: urlData } = supabase.storage
       .from('thumbnails')
       .getPublicUrl(filePath)
+
+    console.log('공개 URL:', urlData.publicUrl)
+    console.log('=== 썸네일 업로드 완료 ===')
 
     return NextResponse.json({
       success: true,

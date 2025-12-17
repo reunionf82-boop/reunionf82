@@ -22,11 +22,12 @@ export async function POST(req: NextRequest) {
   try {
     const supabase = getSupabaseClient()
     const body = await req.json()
-    const { id, menu_items, ...restData } = body
+    const { id, menu_items, preview_thumbnails, ...restData } = body
 
     const dataToSave = {
       ...restData,
       menu_items: menu_items ? JSON.stringify(menu_items) : null,
+      preview_thumbnails: preview_thumbnails ? (Array.isArray(preview_thumbnails) ? JSON.stringify(preview_thumbnails) : preview_thumbnails) : '[]',
       updated_at: new Date().toISOString(),
     }
 
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
         )
       }
 
-      // menu_items 파싱
+      // menu_items와 preview_thumbnails 파싱
       const result = data[0]
       if (result.menu_items && typeof result.menu_items === 'string') {
         try {
@@ -67,6 +68,22 @@ export async function POST(req: NextRequest) {
           console.error('menu_items 파싱 에러:', e)
           result.menu_items = []
         }
+      }
+      // preview_thumbnails 파싱
+      if (result.preview_thumbnails) {
+        if (typeof result.preview_thumbnails === 'string') {
+          try {
+            result.preview_thumbnails = JSON.parse(result.preview_thumbnails)
+          } catch (e) {
+            console.error('preview_thumbnails 파싱 에러:', e)
+            result.preview_thumbnails = []
+          }
+        }
+        if (!Array.isArray(result.preview_thumbnails)) {
+          result.preview_thumbnails = []
+        }
+      } else {
+        result.preview_thumbnails = []
       }
 
       return NextResponse.json({ data: result })
@@ -97,7 +114,7 @@ export async function POST(req: NextRequest) {
         )
       }
 
-      // menu_items 파싱
+      // menu_items와 preview_thumbnails 파싱
       const result = data[0]
       if (result.menu_items && typeof result.menu_items === 'string') {
         try {
@@ -106,6 +123,22 @@ export async function POST(req: NextRequest) {
           console.error('menu_items 파싱 에러:', e)
           result.menu_items = []
         }
+      }
+      // preview_thumbnails 파싱
+      if (result.preview_thumbnails) {
+        if (typeof result.preview_thumbnails === 'string') {
+          try {
+            result.preview_thumbnails = JSON.parse(result.preview_thumbnails)
+          } catch (e) {
+            console.error('preview_thumbnails 파싱 에러:', e)
+            result.preview_thumbnails = []
+          }
+        }
+        if (!Array.isArray(result.preview_thumbnails)) {
+          result.preview_thumbnails = []
+        }
+      } else {
+        result.preview_thumbnails = []
       }
 
       return NextResponse.json({ data: result })

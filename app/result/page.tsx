@@ -452,15 +452,39 @@ function ResultContent() {
             setStreamingProgress(100)
           } else if (data.type === 'error') {
             console.error('결과 페이지: realtime 스트리밍 에러:', data.error)
-            setError(data.error || '결과를 생성하는 중 오류가 발생했습니다.')
-            setIsStreamingActive(false)
-            setStreamingFinished(true)
+            // 429 Rate Limit 에러는 점사중... 메시지가 이미 떠 있으므로 에러 메시지 표시하지 않음
+            if (data.error && (data.error.includes('429') || data.error.includes('Rate Limit'))) {
+              console.error('429 Rate Limit 에러 - 에러 메시지 표시하지 않음 (점사중... 메시지가 이미 표시됨)')
+              setIsStreamingActive(false)
+              setStreamingFinished(true)
+            } else {
+              // 서버/클라이언트에서 이미 사용자 친화적 메시지를 보냈으므로 그대로 사용
+              setError(data.error || '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.')
+              setIsStreamingActive(false)
+              setStreamingFinished(true)
+            }
           }
         })
-      } catch (e) {
+      } catch (e: any) {
         if (cancelled) return
         console.error('결과 페이지: realtime 스트리밍 중 예외 발생:', e)
-        setError('결과를 생성하는 중 오류가 발생했습니다.')
+        
+        // 429 Rate Limit 에러는 점사중... 메시지가 이미 떠 있으므로 에러 메시지 표시하지 않음
+        if (e?.message && (e.message.includes('429') || e.message.includes('Rate Limit'))) {
+          console.error('429 Rate Limit 에러 - 에러 메시지 표시하지 않음 (점사중... 메시지가 이미 표시됨)')
+          setIsStreamingActive(false)
+          setLoading(false)
+          return
+        }
+        
+        // 에러 메시지가 이미 사용자 친화적이면 그대로 사용
+        const errorMsg = e?.message && (
+          e.message.includes('잠시 후') || 
+          e.message.includes('대기 중') ||
+          e.message.includes('시도해주세요')
+        ) ? e.message : '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
+        
+        setError(errorMsg)
         setIsStreamingActive(false)
         setLoading(false)
       }
@@ -479,9 +503,21 @@ function ResultContent() {
   // 페이지 포커스 시 저장된 결과 동기화
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!document.hidden && !isRealtime) {
-        console.log('결과 페이지: 페이지가 보이게 됨, 저장된 결과 동기화')
-        loadSavedResults()
+      if (!document.hidden) {
+        if (isRealtime) {
+          // 스트리밍 중일 때는 백그라운드 복귀 시 스트림 상태 확인
+          console.log('결과 페이지: 스트리밍 중 페이지가 다시 보이게 됨 (전화/메신저 종료 후 복귀 등)')
+          // 스트림은 백그라운드에서도 계속 진행되므로 별도 처리 불필요
+          // lib/jeminai.ts의 visibilitychange 핸들러가 타임아웃 방지 처리
+        } else {
+          console.log('결과 페이지: 페이지가 보이게 됨, 저장된 결과 동기화')
+          loadSavedResults()
+        }
+      } else {
+        if (isRealtime) {
+          // 스트리밍 중 백그라운드로 전환 (전화 수신, 메신저 알림 탭, 다른 앱으로 이동 등)
+          console.log('결과 페이지: 스트리밍 중 백그라운드로 전환됨 (전화/메신저/다른 앱 등), 스트림은 계속 진행됩니다.')
+        }
       }
     }
 
@@ -489,6 +525,9 @@ function ResultContent() {
       if (!isRealtime) {
         console.log('결과 페이지: 윈도우 포커스, 저장된 결과 동기화')
         loadSavedResults()
+      } else {
+        // 스트리밍 중 포커스 복귀
+        console.log('결과 페이지: 스트리밍 중 윈도우 포커스 복귀')
       }
     }
 
