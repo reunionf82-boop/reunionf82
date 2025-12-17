@@ -46,6 +46,8 @@ function FormContent() {
   const [modalCurrentIndex, setModalCurrentIndex] = useState(0)
   const [modalTouchStartX, setModalTouchStartX] = useState<number | null>(null)
   const [modalTouchEndX, setModalTouchEndX] = useState<number | null>(null)
+  const [modalSwipeOffset, setModalSwipeOffset] = useState(0)
+  const [modalIsAnimating, setModalIsAnimating] = useState(false)
   
   // 본인 정보 폼 상태
   const [name, setName] = useState('')
@@ -1343,22 +1345,44 @@ function FormContent() {
               setShowPreviewModal(true)
             }
             
-            // 모달 내부 네비게이션 함수
+            // 모달 내부 네비게이션 함수 (로테이션 없음)
             const handleModalPrev = () => {
-              setModalCurrentIndex((prev) => (prev > 0 ? prev - 1 : validThumbnails.length - 1))
+              setModalSwipeOffset(0) // 오프셋 초기화
+              setModalCurrentIndex((prev) => (prev > 0 ? prev - 1 : prev))
             }
             
             const handleModalNext = () => {
-              setModalCurrentIndex((prev) => (prev < validThumbnails.length - 1 ? prev + 1 : 0))
+              setModalSwipeOffset(0) // 오프셋 초기화
+              setModalCurrentIndex((prev) => (prev < validThumbnails.length - 1 ? prev + 1 : prev))
             }
             
             // 모달 내부 터치 이벤트 핸들러
             const handleModalTouchStart = (e: React.TouchEvent) => {
               setModalTouchStartX(e.touches[0].clientX)
+              setModalSwipeOffset(0)
+              setModalIsAnimating(false)
             }
             
             const handleModalTouchMove = (e: React.TouchEvent) => {
-              setModalTouchEndX(e.touches[0].clientX)
+              if (modalTouchStartX === null) return
+              
+              const currentX = e.touches[0].clientX
+              const distance = modalTouchStartX - currentX
+              
+              // 스와이프 방향과 반대로 오프셋 적용 (손가락을 따라가도록)
+              let offset = -distance
+              
+              // 경계 체크: 첫 번째에서 오른쪽으로, 마지막에서 왼쪽으로 스와이프 시 제한
+              if (modalCurrentIndex === 0 && distance < 0) {
+                // 첫 번째에서 오른쪽으로 스와이프 (이전으로 가려는 시도) - 제한
+                offset = Math.min(-distance, 30) // 최대 30px까지만
+              } else if (modalCurrentIndex === validThumbnails.length - 1 && distance > 0) {
+                // 마지막에서 왼쪽으로 스와이프 (다음으로 가려는 시도) - 제한
+                offset = Math.max(-distance, -30) // 최대 30px까지만
+              }
+              
+              setModalSwipeOffset(offset)
+              setModalTouchEndX(currentX)
             }
             
             const handleModalTouchEnd = () => {
@@ -1366,13 +1390,41 @@ function FormContent() {
               
               const distance = modalTouchStartX - modalTouchEndX
               const minSwipeDistance = 50
+              // 화면 너비의 50% 계산
+              const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 0
+              const halfScreenWidth = screenWidth * 0.5
               
-              if (distance > minSwipeDistance) {
+              // 스와이프 거리가 50px 이상이거나 화면 너비의 50% 이상이면 이동
+              const shouldMove = Math.abs(distance) >= minSwipeDistance || Math.abs(distance) >= halfScreenWidth
+              
+              // 경계 체크: 첫 번째에서 이전으로, 마지막에서 다음으로 가는 것 방지
+              if (distance > 0 && shouldMove) {
                 // 왼쪽으로 스와이프 → 이미지도 왼쪽으로 이동 (이전)
-                handleModalPrev()
-              } else if (distance < -minSwipeDistance) {
+                // 첫 번째가 아니면만 이동
+                if (modalCurrentIndex > 0) {
+                  setModalSwipeOffset(0) // 오프셋 초기화
+                  handleModalPrev()
+                } else {
+                  // 경계에서 튕기는 애니메이션
+                  setModalIsAnimating(true)
+                  setModalSwipeOffset(0)
+                  setTimeout(() => setModalIsAnimating(false), 300)
+                }
+              } else if (distance < 0 && shouldMove) {
                 // 오른쪽으로 스와이프 → 이미지도 오른쪽으로 이동 (다음)
-                handleModalNext()
+                // 마지막이 아니면만 이동
+                if (modalCurrentIndex < validThumbnails.length - 1) {
+                  setModalSwipeOffset(0) // 오프셋 초기화
+                  handleModalNext()
+                } else {
+                  // 경계에서 튕기는 애니메이션
+                  setModalIsAnimating(true)
+                  setModalSwipeOffset(0)
+                  setTimeout(() => setModalIsAnimating(false), 300)
+                }
+              } else {
+                // 스와이프 거리가 부족하면 원래 위치로
+                setModalSwipeOffset(0)
               }
               
               setModalTouchStartX(null)
@@ -1440,7 +1492,10 @@ function FormContent() {
                       <div className="relative overflow-hidden w-full flex items-center justify-center">
                         <div
                           className="flex transition-transform duration-300 ease-in-out"
-                          style={{ transform: `translateX(-${modalCurrentIndex * 100}%)` }}
+                          style={{ 
+                            transform: `translateX(calc(-${modalCurrentIndex * 100}% + ${modalSwipeOffset}px))`,
+                            transition: modalIsAnimating ? 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' : (modalSwipeOffset === 0 ? 'transform 0.3s ease-in-out' : 'none')
+                          }}
                         >
                           {validThumbnails.map((thumbnail: string, index: number) => (
                             <div key={index} className="min-w-full flex flex-col items-center">

@@ -2335,7 +2335,9 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl">
             <div className="text-center">
-              <h3 className="text-xl font-bold text-gray-900 mb-6">결과 생성 중...</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-6">
+                {resultData?.userName ? `${resultData.userName}님의 사주명식을 자세히 분석중이에요` : '내담자님의 사주명식을 자세히 분석중이에요'}
+              </h3>
               
               {/* 진행률 표시 */}
               <div className="mb-6">
@@ -2353,7 +2355,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               {/* 안내 문구 */}
               <div className="mb-4">
                 <p className="text-gray-700 font-medium">
-                  <span className="text-pink-600">내담자님의 사주명식을 자세히 분석중이에요</span>
+                  <span className="text-pink-600">점사가 모두 완료될때까지 현재 화면에서 나가지 마세요!</span>
                 </p>
               </div>
               
