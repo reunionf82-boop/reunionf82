@@ -473,7 +473,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   className="absolute inset-0 w-full h-full object-contain"
                 />
               ) : (
-                <span>썸네일</span>
+                <span className="text-xs">썸네일</span>
               )}
             </button>
           </div>
@@ -604,7 +604,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       className="absolute inset-0 w-full h-full object-contain"
                     />
                   ) : (
-                    <span>썸네일</span>
+                    <span className="text-xs">썸네일</span>
                   )}
                 </button>
                 <button
