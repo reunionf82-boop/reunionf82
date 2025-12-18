@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
         title,
         html,
         content: content || null,
-        model: model || 'gemini-2.5-flash',
+        model: model || 'gemini-3-flash-preview',
         processing_time: processingTime || null,
         user_name: userName || null,
         saved_at: savedAtKST

@@ -91,8 +91,8 @@ export async function callJeminaiAPIStream(
   }
   
   try {
-    const selectedModel = request.model || 'gemini-2.5-flash'
-    const modelDisplayName = selectedModel === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : selectedModel === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : selectedModel
+    const selectedModel = request.model || 'gemini-3-flash-preview'
+    const modelDisplayName = selectedModel === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : selectedModel === 'gemini-3-flash-preview' ? 'Gemini 3.0 Flash' : selectedModel === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : selectedModel
     console.log('=== 재미나이 API 스트리밍 호출 시작 ===')
     console.log('선택된 모델:', modelDisplayName, `(${selectedModel})`)
     
@@ -114,7 +114,7 @@ export async function callJeminaiAPIStream(
           menu_items: request.menu_items || [],
           user_info: request.user_info,
           partner_info: request.partner_info,
-        model: request.model || 'gemini-2.5-flash',
+        model: request.model || 'gemini-3-flash-preview',
           manse_ryeok_table: request.manse_ryeok_table,
           manse_ryeok_text: request.manse_ryeok_text,
           manse_ryeok_json: request.manse_ryeok_json,

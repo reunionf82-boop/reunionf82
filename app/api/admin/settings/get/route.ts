@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
       console.error('에러:', error)
       // 에러 발생 시 기본값 반환
       return NextResponse.json({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3-flash-preview',
         speaker: 'nara'
       }, {
         headers: {
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     // 데이터가 없으면 기본값 반환
     if (!data) {
       return NextResponse.json({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3-flash-preview',
         speaker: 'nara'
       }, {
         headers: {
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
     
     const finalModel = (modelValue != null && String(modelValue).trim() !== '') 
       ? String(modelValue).trim() 
-      : 'gemini-2.5-flash'
+      : 'gemini-3-flash-preview'
     
     const finalSpeaker = (speakerValue != null && String(speakerValue).trim() !== '') 
       ? String(speakerValue).trim() 
@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       { 
         error: error.message || '설정을 가져오는데 실패했습니다.',
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3-flash-preview',
         speaker: 'nara'
       },
       { status: 500 }

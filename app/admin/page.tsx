@@ -9,7 +9,7 @@ export default function AdminPage() {
   const [contents, setContents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash')
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3-flash-preview')
   const [selectedSpeaker, setSelectedSpeaker] = useState<string>('nara')
   const [fortuneViewMode, setFortuneViewMode] = useState<'batch' | 'realtime'>('batch')
 
@@ -88,7 +88,7 @@ export default function AdminPage() {
       console.log('현재 상태 - 모델:', selectedModel, '화자:', selectedSpeaker, '점사 모드:', fortuneViewMode)
       
       // 모델 설정 (DB에서 가져온 값으로 무조건 업데이트)
-      const loadedModel = data.model || 'gemini-2.5-flash'
+      const loadedModel = data.model || 'gemini-3-flash-preview'
       console.log('로드된 모델:', loadedModel, '현재 모델:', selectedModel)
       console.log('모델 상태 업데이트:', selectedModel, '->', loadedModel)
       setSelectedModel(loadedModel)
@@ -133,7 +133,7 @@ export default function AdminPage() {
   }
 
   const handleModelChange = async (model: string) => {
-    const modelDisplayName = model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : model
+    const modelDisplayName = model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : model === 'gemini-3-flash-preview' ? 'Gemini 3.0 Flash' : model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : model
     console.log('=== 관리자 페이지: 모델 변경 ===')
     console.log('선택된 모델:', modelDisplayName, `(${model})`)
     
@@ -317,14 +317,14 @@ export default function AdminPage() {
                 <option value="jinho">진호 (남성)</option>
               </select>
               <button
-                onClick={() => handleModelChange('gemini-2.5-flash')}
+                onClick={() => handleModelChange('gemini-3-flash-preview')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
-                  selectedModel === 'gemini-2.5-flash'
+                  selectedModel === 'gemini-3-flash-preview'
                     ? 'bg-pink-500 text-white'
                     : 'text-gray-400 hover:text-white'
                 }`}
               >
-                Gemini 2.5 Flash
+                Gemini 3.0 Flash
               </button>
               <button
                 onClick={() => handleModelChange('gemini-2.5-pro')}

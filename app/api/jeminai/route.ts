@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   try {
     console.log('=== 재미나이 API 라우트 시작 ===')
     const body = await req.json()
-    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-2.5-flash', manse_ryeok_table, manse_ryeok_text, manse_ryeok_json, day_gan_info } = body
+    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-3-flash-preview', manse_ryeok_table, manse_ryeok_text, manse_ryeok_json, day_gan_info } = body
     
     console.log('요청 모델:', model)
     console.log('메뉴 소제목 개수:', menu_subtitles?.length)
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     const genAI = new GoogleGenerativeAI(apiKey)
     
     // 모델 선택
-    const selectedModel = model || 'gemini-2.5-flash'
+    const selectedModel = model || 'gemini-3-flash-preview'
     
     // 모델별 최대 출력 토큰 설정
     // Gemini Pro 모델들: 65536

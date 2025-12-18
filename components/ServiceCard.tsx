@@ -39,7 +39,7 @@ export default function ServiceCard({ service }: ServiceCardProps) {
       router.push(`/form?title=${encodedTitle}&model=${selectedModel}`)
     } catch (error) {
       console.error('모델 로드 실패, 기본값 사용:', error)
-      router.push(`/form?title=${encodedTitle}&model=gemini-2.5-flash`)
+      router.push(`/form?title=${encodedTitle}&model=gemini-3-flash-preview`)
     }
   }
 

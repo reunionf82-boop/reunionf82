@@ -15,7 +15,7 @@ function FormContent() {
   const title = searchParams.get('title') || ''
   
   // 모델 상태 관리
-  const [model, setModel] = useState<string>('gemini-2.5-flash')
+  const [model, setModel] = useState<string>('gemini-3-flash-preview')
   
   // URL 파라미터와 Supabase에서 모델 가져오기
   useEffect(() => {
@@ -31,7 +31,7 @@ function FormContent() {
           console.log('Form 페이지: Supabase에서 모델 가져옴:', savedModel)
         } catch (error) {
           console.error('모델 로드 실패, 기본값 사용:', error)
-          setModel('gemini-2.5-flash')
+          setModel('gemini-3-flash-preview')
         }
       }
     }
@@ -581,7 +581,7 @@ function FormContent() {
           console.log('Form 페이지: Supabase에서 모델 가져옴:', currentModel)
         } catch (error) {
           console.error('모델 로드 실패, 기본값 사용:', error)
-          currentModel = 'gemini-2.5-flash'
+          currentModel = 'gemini-3-flash-preview'
         }
       } else {
         console.log('Form 페이지: URL 파라미터 모델:', urlModelParam)

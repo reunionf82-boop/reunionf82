@@ -321,13 +321,13 @@ export async function getSelectedModel(): Promise<string> {
     if (error) {
       // 테이블이 없거나 레코드가 없으면 기본값 반환
       console.log('모델 설정 조회 실패, 기본값 사용:', error.message)
-      return 'gemini-2.5-flash'
+      return 'gemini-3-flash-preview'
     }
     
-    return data?.selected_model || 'gemini-2.5-flash'
+    return data?.selected_model || 'gemini-3-flash-preview'
   } catch (e) {
     console.error('모델 설정 조회 에러:', e)
-    return 'gemini-2.5-flash'
+    return 'gemini-3-flash-preview'
   }
 }
 

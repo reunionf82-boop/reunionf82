@@ -609,7 +609,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           title: content?.content_name || '재회 결과',
           html: htmlWithFont, // 웹폰트가 포함된 HTML 저장
           content: content, // content 객체 전체 저장 (tts_speaker 포함)
-          model: model || 'gemini-2.5-flash', // 모델 정보 저장
+          model: model || 'gemini-3-flash-preview', // 모델 정보 저장
           processingTime: processingTime, // 처리 시간 저장
           userName: resultData?.userName || '' // 사용자 이름 저장
         })
@@ -877,7 +877,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
   const model = resultData.model
 
   // 모델 이름 표시용
-  const modelDisplayName = model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : model || 'Unknown'
+  const modelDisplayName = model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : model === 'gemini-3-flash-preview' ? 'Gemini 3.0 Flash' : model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : model || 'Unknown'
 
   // 경과 시간 계산 (로깅용)
   const elapsedTime = startTime ? Date.now() - startTime : 0
@@ -963,7 +963,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
   `
 
   // 모델 이름 표시용 (실제 값으로 덮어쓰기)
-  const resolvedModelDisplayName = model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : model || 'Unknown'
+  const resolvedModelDisplayName = model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : model === 'gemini-3-flash-preview' ? 'Gemini 3.0 Flash' : model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : model || 'Unknown'
 
   // 경과 시간 계산 (실제 값으로 덮어쓰기)
   const resolvedElapsedTime = startTime ? Date.now() - startTime : 0

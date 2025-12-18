@@ -45,10 +45,10 @@ export async function POST(req: NextRequest) {
       updateData.selected_model = String(model).trim()
     } else if (existing) {
       // model이 제공되지 않으면 기존 값 유지
-      updateData.selected_model = existing.selected_model || 'gemini-2.5-flash'
+      updateData.selected_model = existing.selected_model || 'gemini-3-flash-preview'
     } else {
       // 레코드가 없고 model도 없으면 기본값
-      updateData.selected_model = 'gemini-2.5-flash'
+      updateData.selected_model = 'gemini-3-flash-preview'
     }
 
     // speaker가 제공되면 업데이트
