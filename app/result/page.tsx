@@ -1665,7 +1665,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       const thumbnailImg = doc.createElement('div')
                       thumbnailImg.className = 'subtitle-thumbnail-container'
                       thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;'
-                      thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block;" />`
+                      thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px;" />`
                       titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling)
                       console.log(`저장된 결과: 썸네일 추가 완료 - menu[${menuIndex}] subtitle[${subIndex}]`)
                     } else {
@@ -1855,6 +1855,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                   width: 100%;
                   height: auto;
                   display: block;
+                  border-radius: 8px;
                 }
               </style>
             </head>
@@ -2581,7 +2582,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                               <img 
                                 src={sub.thumbnail} 
                                 alt="소제목 썸네일"
-                                className="w-full h-auto"
+                                className="w-full h-auto rounded-lg"
                                 style={{ display: 'block' }}
                               />
                             </div>
@@ -2660,7 +2661,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                                 const thumbnailImg = doc.createElement('div')
                                 thumbnailImg.className = 'subtitle-thumbnail-container'
                                 thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;'
-                                thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block;" />`
+                                thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px;" />`
                                 titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling)
                               }
                             }

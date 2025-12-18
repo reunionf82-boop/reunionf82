@@ -2175,7 +2175,7 @@ function FormContent() {
                                             const thumbnailImg = doc.createElement('div');
                                             thumbnailImg.className = 'subtitle-thumbnail-container';
                                             thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;';
-                                            thumbnailImg.innerHTML = '<img src="' + subtitle.thumbnail + '" alt="소제목 썸네일" style="width: 100%; height: auto; display: block;" />';
+                                            thumbnailImg.innerHTML = '<img src="' + subtitle.thumbnail + '" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px;" />';
                                             titleDiv.parentNode.insertBefore(thumbnailImg, titleDiv.nextSibling);
                                           }
                                         }
@@ -2348,6 +2348,7 @@ function FormContent() {
                                         width: 100%;
                                         height: auto;
                                         display: block;
+                                        border-radius: 8px;
                                       }
                                       .spinner {
                                         width: 20px;
