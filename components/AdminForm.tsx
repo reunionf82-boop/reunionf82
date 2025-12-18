@@ -1121,14 +1121,45 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('subtitle-')
             ? (() => {
                 const parts = currentThumbnailField.split('-')
+                console.log('ThumbnailModal currentThumbnail 계산:', {
+                  currentThumbnailField,
+                  parts,
+                  menuFieldsLength: menuFields.length,
+                  menuFields: menuFields.map(f => ({ id: f.id, value: f.value, subtitlesCount: f.subtitles.length }))
+                })
                 if (parts[1] === 'first') {
                   const subtitleId = parseInt(parts[2])
-                  return firstMenuField.subtitles.find(s => s.id === subtitleId)?.thumbnail
+                  const thumbnail = firstMenuField.subtitles.find(s => s.id === subtitleId)?.thumbnail
+                  console.log('첫 번째 메뉴 소제목 썸네일:', { subtitleId, thumbnail })
+                  return thumbnail
                 } else if (parts[1] === 'menu') {
                   const menuId = parseInt(parts[2])
-                  const subtitleId = parseInt(parts[3])
-                  const menuField = menuFields.find(f => f.id === menuId)
-                  return menuField?.subtitles.find(s => s.id === subtitleId)?.thumbnail
+                  // subtitleId는 소수점이 있을 수 있으므로 parseFloat 사용
+                  const subtitleIdStr = parts[3] // 문자열로 유지
+                  const subtitleIdNum = parseFloat(parts[3]) // 숫자 비교용
+                  console.log('메뉴 필드 소제목 썸네일 찾기:', { menuId, subtitleIdStr, subtitleIdNum, menuIdType: typeof menuId, subtitleIdType: typeof subtitleIdStr })
+                  const menuField = menuFields.find(f => {
+                    // 숫자 비교 시 타입 변환하여 비교
+                    const fieldIdNum = typeof f.id === 'number' ? f.id : parseInt(String(f.id))
+                    const menuIdNum = typeof menuId === 'number' ? menuId : parseInt(String(menuId))
+                    console.log('메뉴 필드 비교:', { fieldId: f.id, fieldIdNum, menuId, menuIdNum, match: fieldIdNum === menuIdNum })
+                    return fieldIdNum === menuIdNum
+                  })
+                  console.log('찾은 메뉴 필드:', menuField)
+                  if (menuField) {
+                    const subtitle = menuField.subtitles.find(s => {
+                      // ID를 문자열로 변환하여 비교 (소수점 포함 ID 대응)
+                      const sIdStr = String(s.id)
+                      const targetIdStr = String(subtitleIdStr)
+                      console.log('소제목 비교:', { subtitleId: s.id, sIdStr, targetSubtitleId: subtitleIdStr, targetIdStr, match: sIdStr === targetIdStr })
+                      return sIdStr === targetIdStr
+                    })
+                    console.log('찾은 소제목:', subtitle)
+                    const thumbnail = subtitle?.thumbnail
+                    console.log('최종 썸네일:', thumbnail)
+                    return thumbnail
+                  }
+                  return undefined
                 }
                 return undefined
               })()

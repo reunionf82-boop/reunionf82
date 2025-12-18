@@ -12,27 +12,40 @@ interface ThumbnailModalProps {
 
 export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumbnail }: ThumbnailModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null) // 선택한 파일의 미리보기만 저장
   const [isDragging, setIsDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 모달이 열릴 때 현재 썸네일을 미리보기에 표시
+  // 모달이 열릴 때 초기화
   useEffect(() => {
     if (isOpen) {
-      setPreviewUrl(currentThumbnail || null)
+      console.log('ThumbnailModal: 모달 열림, currentThumbnail:', currentThumbnail)
       setSelectedFile(null)
+      setFilePreviewUrl(null)
       setShowDeleteConfirm(false)
     }
-  }, [isOpen, currentThumbnail])
+  }, [isOpen])
+
+  // currentThumbnail이 변경될 때 파일 선택 초기화 (모달이 열려있는 동안)
+  useEffect(() => {
+    if (isOpen && currentThumbnail !== undefined) {
+      console.log('ThumbnailModal: currentThumbnail 변경, 파일 선택 초기화:', currentThumbnail)
+      setSelectedFile(null)
+      setFilePreviewUrl(null)
+    }
+  }, [currentThumbnail, isOpen])
+
+  // previewUrl 계산: 선택한 파일이 있으면 파일 미리보기, 없으면 currentThumbnail 사용
+  const previewUrl = filePreviewUrl || currentThumbnail || null
 
   const handleFileSelect = (file: File) => {
     if (file && file.type.startsWith('image/')) {
       setSelectedFile(file)
       const reader = new FileReader()
       reader.onloadend = () => {
-        setPreviewUrl(reader.result as string)
+        setFilePreviewUrl(reader.result as string)
       }
       reader.readAsDataURL(file)
     }
@@ -84,7 +97,7 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
       onClose()
       // 초기화
       setSelectedFile(null)
-      setPreviewUrl(null)
+      setFilePreviewUrl(null)
     } catch (error: any) {
       console.error('ThumbnailModal: 업로드 실패:', error)
       console.error('에러 상세:', {
@@ -155,7 +168,7 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
       onClose()
       // 초기화
       setSelectedFile(null)
-      setPreviewUrl(null)
+      setFilePreviewUrl(null)
     } catch (error: any) {
       console.error('ThumbnailModal: 수정 실패:', error)
       console.error('에러 상세:', {
@@ -182,7 +195,7 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
           await deleteThumbnail(filePath)
           onSelect('')
           onClose()
-          setPreviewUrl(null)
+          setFilePreviewUrl(null)
           setShowDeleteConfirm(false)
         } else {
           alert('파일 경로를 찾을 수 없습니다.')
@@ -201,7 +214,7 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
 
   const handleClose = () => {
     setSelectedFile(null)
-    setPreviewUrl(currentThumbnail || null)
+    setFilePreviewUrl(null)
     setShowDeleteConfirm(false)
     setIsDragging(false)
     onClose()
