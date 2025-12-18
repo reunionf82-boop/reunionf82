@@ -27,8 +27,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     summary: '',
     introduction: '',
     recommendation: '',
-    menuSubtitle: '',
-    interpretationTool: '',
     subtitleCharCount: '500',
     menuFontSize: '16',
     subtitleFontSize: '14',
@@ -37,12 +35,23 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     ttsSpeaker: speakerParam || 'nara', // URL 파라미터 또는 기본값: nara
     previewThumbnails: ['', '', ''], // 재회상품 미리보기 썸네일 3개
   })
-  const [menuFields, setMenuFields] = useState<Array<{ id: number; value: string; thumbnail?: string }>>([])
-  const [firstMenuField, setFirstMenuField] = useState({ value: '', thumbnail: '' })
+  const [menuFields, setMenuFields] = useState<Array<{ 
+    id: number; 
+    value: string; 
+    thumbnail?: string;
+    subtitles: Array<{ id: number; subtitle: string; interpretation_tool: string; thumbnail?: string }>;
+  }>>([])
+  const [firstMenuField, setFirstMenuField] = useState<{ 
+    value: string; 
+    thumbnail: string;
+    subtitles: Array<{ id: number; subtitle: string; interpretation_tool: string; thumbnail?: string }>;
+  }>({ value: '', thumbnail: '', subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '' }] })
   const [initialData, setInitialData] = useState<any>(null)
   const [hasChanges, setHasChanges] = useState(false)
   const [showThumbnailModal, setShowThumbnailModal] = useState(false)
-  const [currentThumbnailField, setCurrentThumbnailField] = useState<'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | number>('main')
+  const [currentThumbnailField, setCurrentThumbnailField] = useState<'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | number | `menu-${number}` | `subtitle-first-${number}` | `subtitle-menu-${number}-${number}`>('main')
+  const [showDeleteSubtitleConfirm, setShowDeleteSubtitleConfirm] = useState(false)
+  const [subtitleToDelete, setSubtitleToDelete] = useState<{ menuId: number | 'first'; subtitleId: number } | null>(null)
   const [showCancelWarning, setShowCancelWarning] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showDeleteMenuConfirm, setShowDeleteMenuConfirm] = useState(false)
@@ -60,9 +69,22 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   useEffect(() => {
     if (initialData) {
       // 현재 상태를 initialData와 같은 형식으로 변환
-      const currentMenuItems = firstMenuField.value || firstMenuField.thumbnail 
-        ? [firstMenuField, ...menuFields] 
-        : []
+      const allMenuItems = [
+        ...(firstMenuField.value || firstMenuField.thumbnail ? [firstMenuField] : []),
+        ...menuFields
+      ]
+      
+      const allSubtitles: string[] = []
+      const allInterpretationTools: string[] = []
+      
+      allMenuItems.forEach(menuItem => {
+        menuItem.subtitles.forEach(subtitle => {
+          if (subtitle.subtitle.trim()) {
+            allSubtitles.push(subtitle.subtitle.trim())
+            allInterpretationTools.push(subtitle.interpretation_tool.trim() || '')
+          }
+        })
+      })
       
       const currentData = {
         role_prompt: formData.title || '',
@@ -74,14 +96,19 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         summary: formData.summary || '',
         introduction: formData.introduction || '',
         recommendation: formData.recommendation || '',
-        menu_subtitle: formData.menuSubtitle || '',
-        interpretation_tool: formData.interpretationTool || '',
+        menu_subtitle: allSubtitles.join('\n'),
+        interpretation_tool: allInterpretationTools.join('\n'),
         subtitle_char_count: parseInt(formData.subtitleCharCount) || 500,
         menu_font_size: parseInt(formData.menuFontSize) || 16,
         subtitle_font_size: parseInt(formData.subtitleFontSize) || 14,
         body_font_size: parseInt(formData.bodyFontSize) || 11,
         font_face: formData.fontFace || '',
-        menu_items: currentMenuItems,
+        menu_items: allMenuItems.map((item, index) => ({
+          id: index,
+          value: item.value,
+          thumbnail: item.thumbnail,
+          subtitles: item.subtitles || []
+        })),
         is_new: formData.showNew,
         tts_speaker: formData.ttsSpeaker || 'nara',
         preview_thumbnails: formData.previewThumbnails || ['', '', ''],
@@ -111,11 +138,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         preview_thumbnails: initialData.preview_thumbnails || ['', '', ''],
       }
       
-      // menu_items 배열 정규화 (id 제거하고 value와 thumbnail만 비교)
+      // menu_items 배열 정규화 (id 제거하고 value, thumbnail, subtitles 비교)
       const normalizeMenuItems = (items: any[]) => {
         return items.map((item: any) => ({
           value: item.value || '',
           thumbnail: item.thumbnail || '',
+          subtitles: item.subtitles || []
         })).sort((a, b) => {
           // value와 thumbnail을 조합해서 정렬 (일관된 비교를 위해)
           const aKey = `${a.value}|${a.thumbnail}`
@@ -148,13 +176,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         formData.summary ||
         formData.introduction ||
         formData.recommendation ||
-        formData.menuSubtitle ||
-        formData.interpretationTool ||
         formData.fontFace ||
         firstMenuField.value ||
         firstMenuField.thumbnail ||
+        firstMenuField.subtitles.some(s => s.subtitle || s.interpretation_tool) ||
         menuFields.length > 0 ||
-        menuFields.some(f => f.value || f.thumbnail) ||
+        menuFields.some(f => f.value || f.thumbnail || f.subtitles.some(s => s.subtitle || s.interpretation_tool)) ||
         formData.previewThumbnails.some(thumb => thumb && thumb.trim())
       )
       
@@ -178,8 +205,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         summary: data.summary || '',
         introduction: data.introduction || '',
         recommendation: data.recommendation || '',
-        menuSubtitle: data.menu_subtitle || '',
-        interpretationTool: data.interpretation_tool || '',
         subtitleCharCount: String(data.subtitle_char_count || '500'),
         menuFontSize: String(data.menu_font_size || '16'),
         subtitleFontSize: String(data.subtitle_font_size || '14'),
@@ -213,12 +238,72 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           return thumbnails
         })(),
       })
+      // 기존 데이터를 새 구조로 변환
       if (data.menu_items && data.menu_items.length > 0) {
-        setFirstMenuField({
-          value: data.menu_items[0].value || '',
-          thumbnail: data.menu_items[0].thumbnail || '',
-        })
-        setMenuFields(data.menu_items.slice(1))
+        // menu_items에 subtitles가 있는지 확인 (새 구조)
+        const hasSubtitlesInMenuItems = data.menu_items.some((item: any) => item.subtitles && Array.isArray(item.subtitles))
+        
+        if (hasSubtitlesInMenuItems) {
+          // 새 구조: menu_items에 subtitles가 포함되어 있음
+          const firstItem = data.menu_items[0]
+          setFirstMenuField({
+            value: firstItem.value || '',
+            thumbnail: firstItem.thumbnail || '',
+            subtitles: firstItem.subtitles && firstItem.subtitles.length > 0 
+              ? firstItem.subtitles.map((s: any, idx: number) => ({
+                  id: s.id || Date.now() + idx,
+                  subtitle: s.subtitle || '',
+                  interpretation_tool: s.interpretation_tool || '',
+                  thumbnail: s.thumbnail || ''
+                }))
+              : [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
+          })
+          
+          // 나머지 메뉴 항목들
+          setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => ({
+            id: item.id || Date.now() + idx + 1000,
+            value: item.value || '',
+            thumbnail: item.thumbnail || '',
+            subtitles: item.subtitles && item.subtitles.length > 0
+              ? item.subtitles.map((s: any, subIdx: number) => ({
+                  id: s.id || Date.now() + idx * 1000 + subIdx,
+                  subtitle: s.subtitle || '',
+                  interpretation_tool: s.interpretation_tool || '',
+                  thumbnail: s.thumbnail || ''
+                }))
+              : [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '' }]
+          })))
+        } else {
+          // 기존 구조: menu_subtitle과 interpretation_tool을 파싱 (하위 호환성)
+          const menuSubtitles = data.menu_subtitle ? data.menu_subtitle.split('\n').filter((s: string) => s.trim()) : []
+          const interpretationTools = data.interpretation_tool ? data.interpretation_tool.split('\n').filter((s: string) => s.trim()) : []
+          
+          // 각 메뉴 항목에 소제목 할당 (기본적으로 첫 번째 메뉴에 모든 소제목 할당)
+          const firstMenuSubtitles = menuSubtitles.map((subtitle: string, index: number) => ({
+            id: Date.now() + index,
+            subtitle: subtitle.trim(),
+            interpretation_tool: interpretationTools[index] || interpretationTools[0] || '',
+            thumbnail: '' // 기존 데이터에는 소제목 썸네일이 없음
+          }))
+          
+          setFirstMenuField({
+            value: data.menu_items[0].value || '',
+            thumbnail: data.menu_items[0].thumbnail || '',
+            subtitles: firstMenuSubtitles.length > 0 ? firstMenuSubtitles : [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
+          })
+          
+          // 나머지 메뉴 항목들 (소제목 없이)
+          setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => ({
+            id: item.id || Date.now() + idx + 1000,
+            value: item.value || '',
+            thumbnail: item.thumbnail || '',
+            subtitles: [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '' }]
+          })))
+        }
+      } else {
+        // 메뉴 항목이 없으면 기본값
+        setFirstMenuField({ value: '', thumbnail: '', subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '' }] })
+        setMenuFields([])
       }
     } catch (error) {
       console.error('컨텐츠 로드 실패:', error)
@@ -234,6 +319,36 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       console.log('contentId:', contentId);
       console.log('speakerParam:', speakerParam);
       
+      // 모든 메뉴 항목에서 소제목과 해석도구 추출
+      const allMenuItems = [
+        ...(firstMenuField.value || firstMenuField.thumbnail ? [firstMenuField] : []),
+        ...menuFields
+      ]
+      
+      console.log('저장 전 allMenuItems:', allMenuItems.map((item, idx) => ({
+        index: idx,
+        value: item.value,
+        thumbnail: item.thumbnail,
+        subtitles: item.subtitles.map(s => ({
+          id: s.id,
+          subtitle: s.subtitle,
+          interpretation_tool: s.interpretation_tool,
+          thumbnail: s.thumbnail
+        }))
+      })))
+      
+      const allSubtitles: string[] = []
+      const allInterpretationTools: string[] = []
+      
+      allMenuItems.forEach(menuItem => {
+        menuItem.subtitles.forEach(subtitle => {
+          if (subtitle.subtitle.trim()) {
+            allSubtitles.push(subtitle.subtitle.trim())
+            allInterpretationTools.push(subtitle.interpretation_tool.trim() || '')
+          }
+        })
+      })
+      
       const contentData: ContentData = {
         ...(contentId ? { id: parseInt(contentId) } : {}),
         role_prompt: formData.title,
@@ -245,17 +360,19 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         summary: formData.summary,
         introduction: formData.introduction,
         recommendation: formData.recommendation,
-        menu_subtitle: formData.menuSubtitle,
-        interpretation_tool: formData.interpretationTool,
+        menu_subtitle: allSubtitles.join('\n'),
+        interpretation_tool: allInterpretationTools.join('\n'),
         subtitle_char_count: parseInt(formData.subtitleCharCount) || 500,
         menu_font_size: parseInt(formData.menuFontSize) || 16,
         subtitle_font_size: parseInt(formData.subtitleFontSize) || 14,
         body_font_size: parseInt(formData.bodyFontSize) || 11,
         font_face: formData.fontFace || '',
-        menu_items: [
-          ...(firstMenuField.value || firstMenuField.thumbnail ? [{ id: 0, value: firstMenuField.value, thumbnail: firstMenuField.thumbnail }] : []),
-          ...menuFields
-        ],
+        menu_items: allMenuItems.map((item, index) => ({
+          id: index,
+          value: item.value,
+          thumbnail: item.thumbnail,
+          subtitles: item.subtitles || []
+        })),
         is_new: formData.showNew,
         tts_speaker: formData.ttsSpeaker || 'nara',
         preview_thumbnails: formData.previewThumbnails || ['', '', ''],
@@ -263,6 +380,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       
       console.log('저장할 contentData.tts_speaker:', contentData.tts_speaker);
       console.log('저장할 contentData.preview_thumbnails:', contentData.preview_thumbnails);
+      console.log('저장할 menu_items:', JSON.stringify(contentData.menu_items, null, 2));
       console.log('==============================');
       
       // API 라우트를 통해 저장 (서버 사이드에서 서비스 롤 키 사용)
@@ -329,6 +447,73 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         newThumbnails[index] = url
         return { ...prev, previewThumbnails: newThumbnails }
       })
+    } else if (typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('subtitle-')) {
+      const parts = currentThumbnailField.split('-')
+      console.log('썸네일 선택 - currentThumbnailField:', currentThumbnailField, 'parts:', parts)
+      
+      if (parts[1] === 'first') {
+        // subtitle-first-{subtitleId} 형식
+        const subtitleId = parseInt(parts[2])
+        console.log('첫 번째 메뉴의 소제목 썸네일 업데이트:', subtitleId, url)
+        setFirstMenuField(prev => ({
+          ...prev,
+          subtitles: prev.subtitles.map(s => 
+            s.id === subtitleId ? { ...s, thumbnail: url } : s
+          )
+        }))
+      } else if (parts[1] === 'menu') {
+        // subtitle-menu-{menuId}-{subtitleId} 형식
+        const menuIdStr = parts[2]
+        const subtitleIdStr = parts[3]
+        const menuId = Number(menuIdStr)
+        const subtitleId = Number(subtitleIdStr)
+        
+        console.log('메뉴 필드의 소제목 썸네일 업데이트:', {
+          menuIdStr,
+          menuId,
+          subtitleIdStr,
+          subtitleId,
+          url,
+          currentMenuFields: menuFields.map(f => ({ 
+            id: f.id, 
+            idType: typeof f.id,
+            value: f.value, 
+            subtitlesCount: f.subtitles.length,
+            subtitleIds: f.subtitles.map(s => ({ id: s.id, idType: typeof s.id }))
+          }))
+        })
+        
+        setMenuFields(prevFields => {
+          const updated = prevFields.map(f => {
+            // 타입 안전한 비교
+            const fId = Number(f.id)
+            if (fId === menuId) {
+              console.log('매칭된 메뉴 필드 찾음:', f.id, '소제목 개수:', f.subtitles.length)
+              const updatedSubtitles = f.subtitles.map(s => {
+                const sId = Number(s.id)
+                if (sId === subtitleId) {
+                  console.log('소제목 썸네일 업데이트:', s.id, '->', url)
+                  return { ...s, thumbnail: url }
+                }
+                return s
+              })
+              const updatedField = {
+                ...f,
+                subtitles: updatedSubtitles
+              }
+              console.log('업데이트된 메뉴 필드:', updatedField)
+              return updatedField
+            }
+            return f
+          })
+          console.log('최종 업데이트된 menuFields:', updated.map(f => ({ 
+            id: f.id, 
+            value: f.value,
+            subtitles: f.subtitles.map(s => ({ id: s.id, thumbnail: s.thumbnail }))
+          })))
+          return updated
+        })
+      }
     }
   }
 
@@ -572,17 +757,94 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             </button>
             <button
               type="button"
-              onClick={() => setMenuFields([...menuFields, { id: Date.now(), value: '' }])}
+              onClick={() => setMenuFields([...menuFields, { id: Date.now(), value: '', subtitles: [{ id: Date.now() + 1, subtitle: '', interpretation_tool: '' }] }])}
               className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-xl w-12 h-12 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
             >
               +
             </button>
           </div>
           
+          {/* 첫 번째 메뉴 필드의 소제목들 */}
+          {firstMenuField.value && (
+            <div className="mt-3 ml-4 border-l-2 border-gray-600 pl-4 space-y-3">
+              {firstMenuField.subtitles.map((subtitle, subIndex) => (
+                <div key={subtitle.id} className="flex gap-2 items-start">
+                  <input
+                    type="text"
+                    value={subtitle.subtitle}
+                    onChange={(e) => setFirstMenuField(prev => ({
+                      ...prev,
+                      subtitles: prev.subtitles.map(s => 
+                        s.id === subtitle.id ? { ...s, subtitle: e.target.value } : s
+                      )
+                    }))}
+                    className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
+                    placeholder="상품 메뉴 소제목"
+                  />
+                  <textarea
+                    value={subtitle.interpretation_tool}
+                    onChange={(e) => setFirstMenuField(prev => ({
+                      ...prev,
+                      subtitles: prev.subtitles.map(s => 
+                        s.id === subtitle.id ? { ...s, interpretation_tool: e.target.value } : s
+                      )
+                    }))}
+                    rows={1}
+                    className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize-y overflow-y-auto"
+                    placeholder="해석도구"
+                    style={{ minHeight: '36px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentThumbnailField(`subtitle-first-${subtitle.id}` as any)
+                      console.log('첫 번째 메뉴 소제목 썸네일 클릭:', subtitle.id)
+                      setShowThumbnailModal(true)
+                    }}
+                    className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                  >
+                    {subtitle.thumbnail ? (
+                      <img 
+                        src={subtitle.thumbnail} 
+                        alt="썸네일" 
+                        className="absolute inset-0 w-full h-full object-contain"
+                      />
+                    ) : (
+                      <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                    )}
+                  </button>
+                  {subIndex === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setFirstMenuField(prev => ({
+                        ...prev,
+                        subtitles: [...prev.subtitles, { id: Date.now(), subtitle: '', interpretation_tool: '' }]
+                      }))}
+                      className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                    >
+                      +
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSubtitleToDelete({ menuId: 'first', subtitleId: subtitle.id })
+                        setShowDeleteSubtitleConfirm(true)
+                      }}
+                      className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 동적으로 생성된 메뉴 필드들 */}
           {menuFields.map((field) => (
-            <div key={field.id}>
-              <div className="flex gap-3 mt-3">
+            <div key={field.id} className="mt-3">
+              <div className="flex gap-3">
                 <input
                   type="text"
                   value={field.value}
@@ -618,39 +880,103 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   ×
                 </button>
               </div>
+              {/* 각 메뉴 필드의 소제목들 */}
+              {field.value && (
+                <div className="mt-3 ml-4 border-l-2 border-gray-600 pl-4 space-y-3">
+                  {field.subtitles.map((subtitle, subIndex) => (
+                    <div key={subtitle.id} className="flex gap-2 items-start">
+                      <input
+                        type="text"
+                        value={subtitle.subtitle}
+                        onChange={(e) => setMenuFields(menuFields.map(f => 
+                          f.id === field.id ? {
+                            ...f,
+                            subtitles: f.subtitles.map(s => 
+                              s.id === subtitle.id ? { ...s, subtitle: e.target.value } : s
+                            )
+                          } : f
+                        ))}
+                        className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
+                        placeholder="상품 메뉴 소제목"
+                      />
+                      <textarea
+                        value={subtitle.interpretation_tool}
+                        onChange={(e) => setMenuFields(menuFields.map(f => 
+                          f.id === field.id ? {
+                            ...f,
+                            subtitles: f.subtitles.map(s => 
+                              s.id === subtitle.id ? { ...s, interpretation_tool: e.target.value } : s
+                            )
+                          } : f
+                        ))}
+                        rows={1}
+                        className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize-y overflow-y-auto"
+                        placeholder="해석도구"
+                        style={{ minHeight: '36px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const fieldId = field.id
+                          const subtitleId = subtitle.id
+                          const fieldKey = `subtitle-menu-${fieldId}-${subtitleId}`
+                          console.log('메뉴 필드 소제목 썸네일 클릭:', {
+                            fieldId,
+                            fieldIdType: typeof fieldId,
+                            subtitleId,
+                            subtitleIdType: typeof subtitleId,
+                            fieldKey,
+                            currentThumbnail: subtitle.thumbnail,
+                            fieldValue: field.value
+                          })
+                          setCurrentThumbnailField(fieldKey as any)
+                          setShowThumbnailModal(true)
+                        }}
+                        className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                      >
+                        {subtitle.thumbnail ? (
+                          <img 
+                            src={subtitle.thumbnail} 
+                            alt="썸네일" 
+                            className="absolute inset-0 w-full h-full object-contain"
+                          />
+                        ) : (
+                          <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                        )}
+                      </button>
+                      {subIndex === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setMenuFields(menuFields.map(f => 
+                            f.id === field.id ? {
+                              ...f,
+                              subtitles: [...f.subtitles, { id: Date.now(), subtitle: '', interpretation_tool: '' }]
+                            } : f
+                          ))}
+                          className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                        >
+                          +
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSubtitleToDelete({ menuId: field.id, subtitleId: subtitle.id })
+                            setShowDeleteSubtitleConfirm(true)
+                          }}
+                          className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
 
-        {/* 하단 섹션: 작은 입력 필드들 */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1">
-              상품 메뉴 소제목
-            </label>
-            <textarea
-              name="menuSubtitle"
-              value={formData.menuSubtitle}
-              onChange={handleChange}
-              rows={16}
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize-y"
-              placeholder="입력하세요"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1">
-              해석도구
-            </label>
-            <textarea
-              name="interpretationTool"
-              value={formData.interpretationTool}
-              onChange={handleChange}
-              rows={16}
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize-y"
-              placeholder="입력하세요"
-            />
-          </div>
-        </div>
 
         {/* 폰트 설정 섹션 */}
         <div className="border-t border-gray-600 pt-4 mt-4">
@@ -792,6 +1118,20 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             ? menuFields.find(f => f.id === currentThumbnailField)?.thumbnail
             : (currentThumbnailField === 'preview-0' || currentThumbnailField === 'preview-1' || currentThumbnailField === 'preview-2')
             ? formData.previewThumbnails[parseInt(currentThumbnailField.split('-')[1])]
+            : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('subtitle-')
+            ? (() => {
+                const parts = currentThumbnailField.split('-')
+                if (parts[1] === 'first') {
+                  const subtitleId = parseInt(parts[2])
+                  return firstMenuField.subtitles.find(s => s.id === subtitleId)?.thumbnail
+                } else if (parts[1] === 'menu') {
+                  const menuId = parseInt(parts[2])
+                  const subtitleId = parseInt(parts[3])
+                  const menuField = menuFields.find(f => f.id === menuId)
+                  return menuField?.subtitles.find(s => s.id === subtitleId)?.thumbnail
+                }
+                return undefined
+              })()
             : undefined
         }
       />
@@ -850,6 +1190,51 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 onClick={() => {
                   setShowDeleteMenuConfirm(false)
                   setMenuFieldToDelete(null)
+                }}
+                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 소제목 삭제 확인 팝업 */}
+      {showDeleteSubtitleConfirm && subtitleToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-white mb-4">소제목 삭제</h3>
+            <p className="text-gray-300 mb-6">
+              정말로 이 소제목을 삭제하시겠습니까?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  if (subtitleToDelete.menuId === 'first') {
+                    setFirstMenuField(prev => ({
+                      ...prev,
+                      subtitles: prev.subtitles.filter(s => s.id !== subtitleToDelete.subtitleId)
+                    }))
+                  } else {
+                    setMenuFields(menuFields.map(f => 
+                      f.id === subtitleToDelete.menuId ? {
+                        ...f,
+                        subtitles: f.subtitles.filter(s => s.id !== subtitleToDelete.subtitleId)
+                      } : f
+                    ))
+                  }
+                  setShowDeleteSubtitleConfirm(false)
+                  setSubtitleToDelete(null)
+                }}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
+              >
+                삭제
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteSubtitleConfirm(false)
+                  setSubtitleToDelete(null)
                 }}
                 className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
               >

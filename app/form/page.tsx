@@ -2150,6 +2150,53 @@ function FormContent() {
                               // userName을 안전하게 처리 (템플릿 리터럴 중첩 방지)
                               const userNameForScript = saved.userName ? JSON.stringify(saved.userName) : "''"
                               
+                              // 소제목 썸네일 추가를 위한 HTML 처리
+                              let htmlContent = saved.html || '';
+                              htmlContent = htmlContent.replace(/\*\*/g, '');
+                              
+                              const contentObj = saved.content || {};
+                              const menuItems = contentObj?.menu_items || [];
+                              
+                              if (menuItems.length > 0 && htmlContent) {
+                                try {
+                                  const parser = new DOMParser();
+                                  const doc = parser.parseFromString(htmlContent, 'text/html');
+                                  const menuSections = Array.from(doc.querySelectorAll('.menu-section'));
+                                  
+                                  menuSections.forEach((section, menuIndex) => {
+                                    const menuItem = menuItems[menuIndex];
+                                    if (menuItem?.subtitles) {
+                                      const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'));
+                                      subtitleSections.forEach((subSection, subIndex) => {
+                                        const subtitle = menuItem.subtitles[subIndex];
+                                        if (subtitle?.thumbnail) {
+                                          const titleDiv = subSection.querySelector('.subtitle-title');
+                                          if (titleDiv && titleDiv.parentNode) {
+                                            const thumbnailImg = doc.createElement('div');
+                                            thumbnailImg.className = 'subtitle-thumbnail-container';
+                                            thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;';
+                                            thumbnailImg.innerHTML = '<img src="' + subtitle.thumbnail + '" alt="소제목 썸네일" style="width: 100%; height: auto; display: block;" />';
+                                            titleDiv.parentNode.insertBefore(thumbnailImg, titleDiv.nextSibling);
+                                          }
+                                        }
+                                      });
+                                    }
+                                  });
+                                  
+                                  htmlContent = doc.documentElement.outerHTML;
+                                  // DOMParser가 추가한 html, body 태그 제거
+                                  const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+                                  if (bodyMatch) {
+                                    htmlContent = bodyMatch[1];
+                                  }
+                                } catch (e) {
+                                  console.error('소제목 썸네일 추가 실패:', e);
+                                }
+                              }
+                              
+                              // 템플릿 리터럴 특수 문자 이스케이프
+                              const safeHtml = htmlContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
+                              
                               const newWindow = window.open('', '_blank')
                               if (newWindow) {
                                 const savedMenuFontSize = saved.content?.menu_font_size || 16
@@ -2287,6 +2334,20 @@ function FormContent() {
                                         color: #555;
                                         line-height: 1.8;
                                         white-space: pre-line;
+                                      }
+                                      .subtitle-thumbnail-container {
+                                        display: flex;
+                                        justify-content: center;
+                                        width: 50%;
+                                        margin-left: auto;
+                                        margin-right: auto;
+                                        margin-top: 8px;
+                                        margin-bottom: 8px;
+                                      }
+                                      .subtitle-thumbnail-container img {
+                                        width: 100%;
+                                        height: auto;
+                                        display: block;
                                       }
                                       .spinner {
                                         width: 20px;
@@ -2605,7 +2666,7 @@ function FormContent() {
                                           <span id="ttsText">점사 듣기</span>
                                         </button>
                                       </div>
-                                      <div id="contentHtml">${saved.html ? saved.html.replace(/\*\*/g, '') : ''}</div>
+                                      <div id="contentHtml">${safeHtml}</div>
                                     </div>
                                     
                                     <!-- 추가 질문하기 팝업 -->

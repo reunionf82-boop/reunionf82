@@ -16,6 +16,7 @@ interface ResultData {
 interface ParsedSubtitle {
   title: string
   contentHtml: string
+  thumbnail?: string
 }
 
 interface ParsedMenu {
@@ -736,6 +737,10 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
     const doc = parser.parseFromString(sourceHtml, 'text/html')
     const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
 
+    // content.menu_items 가져오기
+    const content = resultData?.content
+    const menuItems = content?.menu_items || []
+
     // 썸네일/만세력은 ref 캐시에서 가져오거나 새로 추출 (깜빡임 완전 방지)
     let cursor = 0
     const parsed: ParsedMenu[] = menuSections.map((section, index) => {
@@ -767,10 +772,21 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       }
 
       const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'))
-      const subtitles: ParsedSubtitle[] = subtitleSections.map((sub) => ({
-        title: sub.querySelector('.subtitle-title')?.textContent?.trim() || '',
-        contentHtml: sub.querySelector('.subtitle-content')?.innerHTML || ''
-      }))
+      
+      // content.menu_items에서 해당 메뉴의 subtitles 정보 가져오기
+      const currentMenuItem = menuItems[index]
+      const menuSubtitles = currentMenuItem?.subtitles || []
+      
+      const subtitles: ParsedSubtitle[] = subtitleSections.map((sub, subIdx) => {
+        // menu_items의 subtitles에서 썸네일 찾기 (순서로 매칭)
+        const subtitleThumbnail = menuSubtitles[subIdx]?.thumbnail || ''
+        
+        return {
+          title: sub.querySelector('.subtitle-title')?.textContent?.trim() || '',
+          contentHtml: sub.querySelector('.subtitle-content')?.innerHTML || '',
+          thumbnail: subtitleThumbnail
+        }
+      })
       const startIndex = cursor
       cursor += subtitles.length
 
@@ -1570,21 +1586,28 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
   // 저장된 결과 보기
   const viewSavedResult = (resultId: string) => {
+    console.log('=== viewSavedResult 함수 실행 시작 ===', resultId)
     if (typeof window === 'undefined') return
     
     try {
       const saved = savedResults.find((r: any) => r.id === resultId)
+      console.log('저장된 결과 찾기:', saved ? '찾음' : '없음')
       
       if (saved) {
+        console.log('저장된 결과 원본:', saved)
         // content가 문자열인 경우 파싱
         let contentObj = saved.content
+        console.log('저장된 결과 content 타입:', typeof saved.content)
         if (typeof saved.content === 'string') {
           try {
             contentObj = JSON.parse(saved.content)
+            console.log('content 파싱 성공:', contentObj)
           } catch (e) {
             console.error('content 파싱 실패:', e)
             contentObj = saved.content
           }
+        } else {
+          console.log('content는 이미 객체:', contentObj)
         }
         
         // userName을 안전하게 처리 (템플릿 리터럴 중첩 방지)
@@ -1603,6 +1626,83 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           styleContent = styleMatch[1]
           // HTML에서 <style> 태그 제거
           htmlContent = htmlContent.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        }
+        
+        // 소제목 썸네일 추가 (저장된 결과) - batch 모드와 동일한 방식
+        const menuItems = contentObj?.menu_items || []
+        console.log('=== 저장된 결과: 소제목 썸네일 추가 시작 ===')
+        console.log('저장된 결과: contentObj:', contentObj)
+        console.log('저장된 결과: contentObj 타입:', typeof contentObj)
+        console.log('저장된 결과: menuItems:', menuItems)
+        console.log('저장된 결과: menuItems.length:', menuItems.length)
+        console.log('저장된 결과: htmlContent 길이:', htmlContent?.length || 0)
+        
+        if (menuItems.length > 0 && htmlContent) {
+          try {
+            // ** 제거는 DOMParser 전에 처리
+            let processedHtml = htmlContent.replace(/\*\*/g, '')
+            
+            const parser = new DOMParser()
+            const doc = parser.parseFromString(processedHtml, 'text/html')
+            const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
+            
+            console.log('저장된 결과: menuSections.length:', menuSections.length)
+            
+            menuSections.forEach((section, menuIndex) => {
+              const menuItem = menuItems[menuIndex]
+              console.log(`저장된 결과: menu[${menuIndex}]:`, menuItem)
+              if (menuItem?.subtitles) {
+                console.log(`저장된 결과: menu[${menuIndex}] subtitles:`, menuItem.subtitles)
+                const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'))
+                console.log(`저장된 결과: menu[${menuIndex}] subtitleSections.length:`, subtitleSections.length)
+                subtitleSections.forEach((subSection, subIndex) => {
+                  const subtitle = menuItem.subtitles[subIndex]
+                  console.log(`저장된 결과: menu[${menuIndex}] subtitle[${subIndex}]:`, subtitle)
+                  if (subtitle?.thumbnail) {
+                    console.log(`저장된 결과: menu[${menuIndex}] subtitle[${subIndex}] thumbnail:`, subtitle.thumbnail)
+                    const titleDiv = subSection.querySelector('.subtitle-title')
+                    if (titleDiv) {
+                      const thumbnailImg = doc.createElement('div')
+                      thumbnailImg.className = 'subtitle-thumbnail-container'
+                      thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;'
+                      thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block;" />`
+                      titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling)
+                      console.log(`저장된 결과: 썸네일 추가 완료 - menu[${menuIndex}] subtitle[${subIndex}]`)
+                    } else {
+                      console.warn(`저장된 결과: .subtitle-title을 찾을 수 없음 - menu[${menuIndex}] subtitle[${subIndex}]`)
+                    }
+                  } else {
+                    console.log(`저장된 결과: 썸네일 없음 - menu[${menuIndex}] subtitle[${subIndex}]`)
+                  }
+                })
+              } else {
+                console.log(`저장된 결과: menu[${menuIndex}]에 subtitles 없음`)
+              }
+            })
+            
+            processedHtml = doc.documentElement.outerHTML
+            // DOMParser가 추가한 html, body 태그 제거
+            const bodyMatch = processedHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i)
+            if (bodyMatch) {
+              processedHtml = bodyMatch[1]
+            }
+            
+            htmlContent = processedHtml
+            console.log('저장된 결과: 소제목 썸네일 추가 완료, htmlContent 길이:', htmlContent.length)
+            console.log('저장된 결과: htmlContent에 썸네일 포함 여부:', htmlContent.includes('subtitle-thumbnail-container'))
+            // 썸네일이 실제로 추가되었는지 확인
+            const thumbnailCount = (htmlContent.match(/subtitle-thumbnail-container/g) || []).length
+            console.log('저장된 결과: 추가된 썸네일 개수:', thumbnailCount)
+          } catch (e) {
+            console.error('소제목 썸네일 추가 실패:', e)
+            console.error('에러 스택:', e instanceof Error ? e.stack : '')
+          }
+        } else {
+          console.log('저장된 결과: menuItems가 없거나 htmlContent가 비어있음', { menuItemsLength: menuItems.length, hasHtmlContent: !!htmlContent })
+          // ** 제거는 여기서도 처리
+          if (htmlContent) {
+            htmlContent = htmlContent.replace(/\*\*/g, '')
+          }
         }
         
         // 새 창으로 결과 표시
@@ -1742,6 +1842,20 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                   line-height: 1.8;
                   white-space: pre-line;
                 }
+                .subtitle-thumbnail-container {
+                  display: flex;
+                  justify-content: center;
+                  width: 50%;
+                  margin-left: auto;
+                  margin-right: auto;
+                  margin-top: 8px;
+                  margin-bottom: 8px;
+                }
+                .subtitle-thumbnail-container img {
+                  width: 100%;
+                  height: auto;
+                  display: block;
+                }
               </style>
             </head>
             <body>
@@ -1760,13 +1874,31 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                     <span id="ttsText">점사 듣기</span>
                   </button>
                 </div>
-                <div id="contentHtml">${htmlContent ? htmlContent.replace(/\*\*/g, '') : ''}</div>
+                <div id="contentHtml">${(() => {
+                  // htmlContent를 안전하게 이스케이프하여 템플릿 리터럴에 삽입
+                  try {
+                    let safeHtml = htmlContent || '';
+                    // 템플릿 리터럴 특수 문자 이스케이프
+                    safeHtml = safeHtml.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
+                    return safeHtml;
+                  } catch (e) {
+                    console.error('HTML 이스케이프 실패:', e);
+                    return '';
+                  }
+                })()}</div>
               </div>
               
               <script>
                 // 저장된 컨텐츠의 화자 정보를 전역 변수로 설정 (초기값)
                 console.log('=== 새 창: 페이지 로드 ===');
-                const contentObj = ${contentObjJson};
+                let contentObj;
+                try {
+                  contentObj = ${contentObjJson};
+                  console.log('새 창: contentObj 파싱 성공:', contentObj);
+                } catch (e) {
+                  console.error('새 창: contentObj 파싱 실패:', e);
+                  contentObj = {};
+                }
                 console.log('저장된 content 객체:', contentObj);
                 console.log('저장된 content.id:', contentObj?.id ? contentObj.id : 'null');
                 console.log('저장된 content.tts_speaker:', contentObj?.tts_speaker ? contentObj.tts_speaker : '없음');
@@ -2444,6 +2576,16 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                               {sub.title}
                             </div>
                           )}
+                          {sub.thumbnail && (
+                            <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto' }}>
+                              <img 
+                                src={sub.thumbnail} 
+                                alt="소제목 썸네일"
+                                className="w-full h-auto"
+                                style={{ display: 'block' }}
+                              />
+                            </div>
+                          )}
                           {isRevealed ? (
                             <div
                               className="subtitle-content text-gray-800"
@@ -2498,6 +2640,42 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
                       // 모든 종류의 태그 뒤의 연속된 줄바꿈과 공백을 제거하고 테이블 바로 붙이기
                       .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                    
+                    // 소제목 썸네일 추가 (batch 모드)
+                    const menuItems = content?.menu_items || []
+                    if (menuItems.length > 0) {
+                      const parser = new DOMParser()
+                      const doc = parser.parseFromString(processedHtml, 'text/html')
+                      const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
+                      
+                      menuSections.forEach((section, menuIndex) => {
+                        const menuItem = menuItems[menuIndex]
+                        if (menuItem?.subtitles) {
+                          const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'))
+                          subtitleSections.forEach((subSection, subIndex) => {
+                            const subtitle = menuItem.subtitles[subIndex]
+                            if (subtitle?.thumbnail) {
+                              const titleDiv = subSection.querySelector('.subtitle-title')
+                              if (titleDiv) {
+                                const thumbnailImg = doc.createElement('div')
+                                thumbnailImg.className = 'subtitle-thumbnail-container'
+                                thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;'
+                                thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block;" />`
+                                titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling)
+                              }
+                            }
+                          })
+                        }
+                      })
+                      
+                      processedHtml = doc.documentElement.outerHTML
+                      // DOMParser가 추가한 html, body 태그 제거
+                      const bodyMatch = processedHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i)
+                      if (bodyMatch) {
+                        processedHtml = bodyMatch[1]
+                      }
+                    }
+                    
                     return processedHtml
                   })()
                 : '' 
