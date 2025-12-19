@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       if (isProduction && chromium) {
         // 프로덕션 환경(Vercel 등): @sparticuz/chromium 사용
         console.log('프로덕션 환경: @sparticuz/chromium 사용')
-        chromium.setGraphicsMode(false) // 서버리스 환경 최적화
+        
         const executablePath = await chromium.executablePath()
         console.log('Chromium 실행 경로:', executablePath)
         
