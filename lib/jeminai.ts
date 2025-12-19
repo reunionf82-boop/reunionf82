@@ -41,12 +41,14 @@ interface JeminaiResponse {
 
 // 스트리밍 콜백 타입
 export type StreamingCallback = (data: {
-  type: 'start' | 'chunk' | 'done' | 'error'
+  type: 'start' | 'chunk' | 'done' | 'error' | 'partial_done'
   text?: string
   html?: string
   accumulatedLength?: number
   isTruncated?: boolean
   finishReason?: string
+  remainingSubtitles?: number[]
+  completedSubtitles?: number[]
   usage?: {
     promptTokens: number
     candidatesTokens: number

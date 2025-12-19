@@ -34,6 +34,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     fontFace: '',
     ttsSpeaker: speakerParam || 'nara', // URL 파라미터 또는 기본값: nara
     previewThumbnails: ['', '', ''], // 재회상품 미리보기 썸네일 3개
+    bookCoverThumbnail: '', // 북커버 썸네일 (첫 번째 대제목 전)
+    endingBookCoverThumbnail: '', // 엔딩북커버 썸네일 (마지막 대제목 밑)
   })
   const [menuFields, setMenuFields] = useState<Array<{ 
     id: number; 
@@ -49,7 +51,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const [initialData, setInitialData] = useState<any>(null)
   const [hasChanges, setHasChanges] = useState(false)
   const [showThumbnailModal, setShowThumbnailModal] = useState(false)
-  const [currentThumbnailField, setCurrentThumbnailField] = useState<'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | number | `menu-${number}` | `subtitle-first-${number}` | `subtitle-menu-${number}-${number}`>('main')
+  const [currentThumbnailField, setCurrentThumbnailField] = useState<'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | 'bookCover' | 'endingBookCover' | number | `menu-${number}` | `subtitle-first-${number}` | `subtitle-menu-${number}-${number}`>('main')
   const [showDeleteSubtitleConfirm, setShowDeleteSubtitleConfirm] = useState(false)
   const [subtitleToDelete, setSubtitleToDelete] = useState<{ menuId: number | 'first'; subtitleId: number } | null>(null)
   const [showCancelWarning, setShowCancelWarning] = useState(false)
@@ -112,6 +114,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         is_new: formData.showNew,
         tts_speaker: formData.ttsSpeaker || 'nara',
         preview_thumbnails: formData.previewThumbnails || ['', '', ''],
+        book_cover_thumbnail: formData.bookCoverThumbnail || '',
+        ending_book_cover_thumbnail: formData.endingBookCoverThumbnail || '',
       }
       
       // initialData도 정규화 (menu_items 배열 처리)
@@ -136,6 +140,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         is_new: initialData.is_new || false,
         tts_speaker: initialData.tts_speaker || 'nara',
         preview_thumbnails: initialData.preview_thumbnails || ['', '', ''],
+        book_cover_thumbnail: initialData.book_cover_thumbnail || '',
+        ending_book_cover_thumbnail: initialData.ending_book_cover_thumbnail || '',
       }
       
       // menu_items 배열 정규화 (id 제거하고 value, thumbnail, subtitles 비교)
@@ -182,7 +188,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         firstMenuField.subtitles.some(s => s.subtitle || s.interpretation_tool) ||
         menuFields.length > 0 ||
         menuFields.some(f => f.value || f.thumbnail || f.subtitles.some(s => s.subtitle || s.interpretation_tool)) ||
-        formData.previewThumbnails.some(thumb => thumb && thumb.trim())
+        formData.previewThumbnails.some(thumb => thumb && thumb.trim()) ||
+        formData.bookCoverThumbnail ||
+        formData.endingBookCoverThumbnail
       )
       
       setHasChanges(hasAnyValue)
@@ -192,6 +200,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const loadContent = async (id: number) => {
     try {
       const data = await getContentById(id)
+      console.log('=== loadContent: 데이터 로드 ===')
+      console.log('data.book_cover_thumbnail:', data.book_cover_thumbnail)
+      console.log('data.ending_book_cover_thumbnail:', data.ending_book_cover_thumbnail)
       setInitialData(data)
       setFormData({
         title: data.role_prompt || '',
@@ -237,7 +248,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           console.log('loadContent: previewThumbnails 로드됨:', thumbnails)
           return thumbnails
         })(),
+        bookCoverThumbnail: data.book_cover_thumbnail || '',
+        endingBookCoverThumbnail: data.ending_book_cover_thumbnail || '',
       })
+      console.log('loadContent: formData.bookCoverThumbnail:', data.book_cover_thumbnail || '')
+      console.log('loadContent: formData.endingBookCoverThumbnail:', data.ending_book_cover_thumbnail || '')
+      console.log('==============================')
       // 기존 데이터를 새 구조로 변환
       if (data.menu_items && data.menu_items.length > 0) {
         // menu_items에 subtitles가 있는지 확인 (새 구조)
@@ -316,6 +332,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     try {
       console.log('=== 관리자 폼: 컨텐츠 저장 ===');
       console.log('formData.ttsSpeaker:', formData.ttsSpeaker);
+      console.log('formData.bookCoverThumbnail:', formData.bookCoverThumbnail);
+      console.log('formData.endingBookCoverThumbnail:', formData.endingBookCoverThumbnail);
       console.log('contentId:', contentId);
       console.log('speakerParam:', speakerParam);
       
@@ -376,10 +394,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         is_new: formData.showNew,
         tts_speaker: formData.ttsSpeaker || 'nara',
         preview_thumbnails: formData.previewThumbnails || ['', '', ''],
+        book_cover_thumbnail: formData.bookCoverThumbnail || '',
+        ending_book_cover_thumbnail: formData.endingBookCoverThumbnail || '',
       }
       
       console.log('저장할 contentData.tts_speaker:', contentData.tts_speaker);
       console.log('저장할 contentData.preview_thumbnails:', contentData.preview_thumbnails);
+      console.log('저장할 contentData.book_cover_thumbnail:', contentData.book_cover_thumbnail);
+      console.log('저장할 contentData.ending_book_cover_thumbnail:', contentData.ending_book_cover_thumbnail);
       console.log('저장할 menu_items:', JSON.stringify(contentData.menu_items, null, 2));
       console.log('==============================');
       
@@ -426,7 +448,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     }
   }
 
-  const handleThumbnailClick = (field: 'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | number) => {
+  const handleThumbnailClick = (field: 'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | 'bookCover' | 'endingBookCover' | number) => {
     setCurrentThumbnailField(field)
     setShowThumbnailModal(true)
   }
@@ -446,6 +468,22 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         const newThumbnails = [...prev.previewThumbnails]
         newThumbnails[index] = url
         return { ...prev, previewThumbnails: newThumbnails }
+      })
+    } else if (currentThumbnailField === 'bookCover') {
+      console.log('북커버 썸네일 선택:', url)
+      setFormData(prev => {
+        console.log('북커버 썸네일 업데이트 전 formData.bookCoverThumbnail:', prev.bookCoverThumbnail)
+        const updated = { ...prev, bookCoverThumbnail: url }
+        console.log('북커버 썸네일 업데이트 후 formData.bookCoverThumbnail:', updated.bookCoverThumbnail)
+        return updated
+      })
+    } else if (currentThumbnailField === 'endingBookCover') {
+      console.log('엔딩북커버 썸네일 선택:', url)
+      setFormData(prev => {
+        console.log('엔딩북커버 썸네일 업데이트 전 formData.endingBookCoverThumbnail:', prev.endingBookCoverThumbnail)
+        const updated = { ...prev, endingBookCoverThumbnail: url }
+        console.log('엔딩북커버 썸네일 업데이트 후 formData.endingBookCoverThumbnail:', updated.endingBookCoverThumbnail)
+        return updated
       })
     } else if (typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('subtitle-')) {
       const parts = currentThumbnailField.split('-')
@@ -732,6 +770,32 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           <label className="block text-sm font-medium text-gray-300 mb-2">
             상품 메뉴 구성
           </label>
+          
+          {/* 북커버 썸네일 (첫 번째 대제목 전) */}
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-gray-400 mb-2 text-center">
+              북커버 썸네일 (첫 번째 대제목 전, 9:16 비율)
+            </label>
+            <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => handleThumbnailClick('bookCover')}
+              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center"
+              style={{ aspectRatio: '9/16' }}
+            >
+              {formData.bookCoverThumbnail ? (
+                <img 
+                  src={formData.bookCoverThumbnail} 
+                  alt="북커버 썸네일" 
+                  className="absolute inset-0 w-full h-full object-contain"
+                />
+              ) : (
+                <span className="text-xs text-center">북커버<br/>썸네일</span>
+              )}
+            </button>
+            </div>
+          </div>
+          
           <div className="flex gap-3">
             <input
               type="text"
@@ -975,6 +1039,31 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               )}
             </div>
           ))}
+          
+          {/* 엔딩북커버 썸네일 (마지막 대제목 밑) */}
+          <div className="mt-4">
+            <label className="block text-xs font-medium text-gray-400 mb-2 text-center">
+              엔딩북커버 썸네일 (마지막 대제목 밑, 9:16 비율)
+            </label>
+            <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => handleThumbnailClick('endingBookCover')}
+              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center"
+              style={{ aspectRatio: '9/16' }}
+            >
+              {formData.endingBookCoverThumbnail ? (
+                <img 
+                  src={formData.endingBookCoverThumbnail} 
+                  alt="엔딩북커버 썸네일" 
+                  className="absolute inset-0 w-full h-full object-contain"
+                />
+              ) : (
+                <span className="text-xs text-center">엔딩북커버<br/>썸네일</span>
+              )}
+            </button>
+            </div>
+          </div>
         </div>
 
 
@@ -1118,6 +1207,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             ? menuFields.find(f => f.id === currentThumbnailField)?.thumbnail
             : (currentThumbnailField === 'preview-0' || currentThumbnailField === 'preview-1' || currentThumbnailField === 'preview-2')
             ? formData.previewThumbnails[parseInt(currentThumbnailField.split('-')[1])]
+            : currentThumbnailField === 'bookCover'
+            ? formData.bookCoverThumbnail
+            : currentThumbnailField === 'endingBookCover'
+            ? formData.endingBookCoverThumbnail
             : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('subtitle-')
             ? (() => {
                 const parts = currentThumbnailField.split('-')

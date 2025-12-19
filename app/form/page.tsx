@@ -2277,19 +2277,50 @@ function FormContent() {
                               // userName을 안전하게 처리 (템플릿 리터럴 중첩 방지)
                               const userNameForScript = saved.userName ? JSON.stringify(saved.userName) : "''"
                               
-                              // 소제목 썸네일 추가를 위한 HTML 처리
+                              // HTML 처리 (result 페이지 batch 모드와 동일한 로직)
                               let htmlContent = saved.html || '';
                               htmlContent = htmlContent.replace(/\*\*/g, '');
                               
+                              // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
+                              htmlContent = htmlContent
+                                // 이전 태그 닫기(>)와 테이블 사이의 모든 줄바꿈/공백/빈줄 완전 제거
+                                .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                                // 줄 시작부터 테이블까지의 모든 줄바꿈/공백/빈줄 완전 제거
+                                .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                                // 테이블 앞의 모든 공백 문자 제거 (줄바꿈, 공백, 탭 등)
+                                .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                                // 텍스트 단락 태그(</p>, </div>, </h3> 등) 뒤의 모든 공백과 줄바꿈 제거 후 테이블
+                                .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                                // 모든 종류의 태그 뒤의 연속된 줄바꿈과 공백을 제거하고 테이블 바로 붙이기
+                                .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                              
                               const contentObj = saved.content || {};
                               const menuItems = contentObj?.menu_items || [];
+                              const bookCoverThumbnail = contentObj?.book_cover_thumbnail || '';
+                              const endingBookCoverThumbnail = contentObj?.ending_book_cover_thumbnail || '';
                               
-                              if (menuItems.length > 0 && htmlContent) {
+                              if (menuItems.length > 0 || bookCoverThumbnail || endingBookCoverThumbnail) {
                                 try {
                                   const parser = new DOMParser();
                                   const doc = parser.parseFromString(htmlContent, 'text/html');
                                   const menuSections = Array.from(doc.querySelectorAll('.menu-section'));
                                   
+                                  // 북커버 썸네일 추가 (첫 번째 menu-section 안, 제목 위)
+                                  if (bookCoverThumbnail && menuSections.length > 0) {
+                                    const firstSection = menuSections[0];
+                                    const bookCoverDiv = doc.createElement('div');
+                                    bookCoverDiv.className = 'book-cover-thumbnail-container';
+                                    bookCoverDiv.style.cssText = 'width: 100%; margin-bottom: 2.5rem; display: flex; justify-content: center;';
+                                    bookCoverDiv.innerHTML = '<img src="' + bookCoverThumbnail + '" alt="북커버 썸네일" style="width: 100%; height: auto; object-fit: contain; display: block;" />';
+                                    // 첫 번째 자식 요소(menu-title) 앞에 삽입
+                                    if (firstSection.firstChild) {
+                                      firstSection.insertBefore(bookCoverDiv, firstSection.firstChild);
+                                    } else {
+                                      firstSection.appendChild(bookCoverDiv);
+                                    }
+                                  }
+                                  
+                                  // 소제목 썸네일 추가
                                   menuSections.forEach((section, menuIndex) => {
                                     const menuItem = menuItems[menuIndex];
                                     if (menuItem?.subtitles) {
@@ -2298,17 +2329,28 @@ function FormContent() {
                                         const subtitle = menuItem.subtitles[subIndex];
                                         if (subtitle?.thumbnail) {
                                           const titleDiv = subSection.querySelector('.subtitle-title');
-                                          if (titleDiv && titleDiv.parentNode) {
+                                          if (titleDiv) {
                                             const thumbnailImg = doc.createElement('div');
                                             thumbnailImg.className = 'subtitle-thumbnail-container';
                                             thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;';
-                                            thumbnailImg.innerHTML = '<img src="' + subtitle.thumbnail + '" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px;" />';
-                                            titleDiv.parentNode.insertBefore(thumbnailImg, titleDiv.nextSibling);
+                                            thumbnailImg.innerHTML = '<img src="' + subtitle.thumbnail + '" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" />';
+                                            titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling);
                                           }
                                         }
                                       });
                                     }
                                   });
+                                  
+                                  // 엔딩북커버 썸네일 추가 (마지막 menu-section 안, 소제목들 아래)
+                                  if (endingBookCoverThumbnail && menuSections.length > 0) {
+                                    const lastSection = menuSections[menuSections.length - 1];
+                                    const endingBookCoverDiv = doc.createElement('div');
+                                    endingBookCoverDiv.className = 'ending-book-cover-thumbnail-container';
+                                    endingBookCoverDiv.style.cssText = 'width: 100%; margin-top: 1rem; display: flex; justify-content: center;';
+                                    endingBookCoverDiv.innerHTML = '<img src="' + endingBookCoverThumbnail + '" alt="엔딩북커버 썸네일" style="width: 100%; height: auto; object-fit: contain; display: block;" />';
+                                    // 마지막 자식 요소 뒤에 추가
+                                    lastSection.appendChild(endingBookCoverDiv);
+                                  }
                                   
                                   htmlContent = doc.documentElement.outerHTML;
                                   // DOMParser가 추가한 html, body 태그 제거
@@ -2317,7 +2359,7 @@ function FormContent() {
                                     htmlContent = bodyMatch[1];
                                   }
                                 } catch (e) {
-                                  console.error('소제목 썸네일 추가 실패:', e);
+                                  console.error('HTML 처리 실패:', e);
                                 }
                               }
                               
@@ -2476,8 +2518,9 @@ function FormContent() {
                                         width: 100%;
                                         height: auto;
                                         object-fit: contain;
-                                        max-height: 400px;
+                                        border-radius: 8px;
                                         margin-bottom: 24px;
+                                        display: block;
                                       }
                                       .subtitle-section {
                                         padding-top: 24px;
@@ -2507,6 +2550,7 @@ function FormContent() {
                                         height: auto;
                                         display: block;
                                         border-radius: 8px;
+                                        object-fit: contain;
                                       }
                                       .spinner {
                                         width: 20px;

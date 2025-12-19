@@ -11,6 +11,7 @@ interface ResultData {
   startTime?: number
   model?: string // 사용된 모델 정보
   userName?: string // 사용자 이름
+  isSecondRequest?: boolean // 2차 요청 완료 여부
 }
 
 interface ParsedSubtitle {
@@ -32,7 +33,7 @@ const ThumbnailDisplay = memo(({ html, menuIndex }: { html: string; menuIndex: n
   return (
     <div
       key={`thumbnail-${menuIndex}`}
-      className="mt-2"
+      className="mt-2 w-full"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )
@@ -354,6 +355,125 @@ function ResultContent() {
         let accumulatedHtml = ''
         const manseRyeokTable: string | undefined = payload?.requestData?.manse_ryeok_table
 
+        // 2차 요청을 위한 헬퍼 함수
+        const startSecondRequest = async (firstHtml: string, remainingSubtitleIndices: number[]) => {
+          console.log('=== 2차 요청 시작 ===')
+          console.log('남은 소제목 개수:', remainingSubtitleIndices.length, '개')
+          console.log('남은 소제목 인덱스:', remainingSubtitleIndices.join(', '))
+          console.log('1차 HTML 길이:', firstHtml.length, '자')
+          console.log('=== 2차 요청 시작 ===')
+          
+          // 남은 소제목만 추출
+          const remainingSubtitles = remainingSubtitleIndices.map((index: number) => requestData.menu_subtitles[index])
+          
+          // 2차 요청 데이터 생성
+          const secondRequestData = {
+            ...requestData,
+            menu_subtitles: remainingSubtitles,
+            isSecondRequest: true, // 2차 요청 플래그
+          }
+          
+          // 2차 요청 시작
+          await callJeminaiAPIStream(secondRequestData, (data) => {
+            if (cancelled) return
+            
+            console.log('결과 페이지: 2차 스트리밍 콜백:', data.type)
+            
+            if (data.type === 'start') {
+              // 2차 요청 시작 시 1차 HTML 유지
+              console.log('2차 요청 스트리밍 시작, 1차 HTML 길이:', firstHtml.length, '자')
+            } else if (data.type === 'chunk') {
+              // 2차 HTML을 누적
+              accumulatedHtml = firstHtml + (data.text || '')
+              
+              // HTML 정리
+              accumulatedHtml = accumulatedHtml
+                .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                .replace(/\*\*/g, '')
+              
+              setStreamingHtml(accumulatedHtml)
+            } else if (data.type === 'done') {
+              // 2차 요청 완료: 1차 HTML + 2차 HTML 병합
+              const secondHtml = data.html || ''
+              let mergedHtml = firstHtml + secondHtml
+              
+              // HTML 정리
+              mergedHtml = mergedHtml
+                .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                .replace(/\*\*/g, '')
+              
+              // 만세력 테이블 삽입 (아직 없으면)
+              if (manseRyeokTable && !mergedHtml.includes('manse-ryeok-table')) {
+                const firstMenuSectionMatch = mergedHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+                if (firstMenuSectionMatch) {
+                  const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+                  if (thumbnailMatch) {
+                    mergedHtml = mergedHtml.replace(
+                      /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  } else {
+                    const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                    if (menuTitleMatch) {
+                      mergedHtml = mergedHtml.replace(
+                        /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
+                        `$1\n${manseRyeokTable}`
+                      )
+                    } else {
+                      mergedHtml = mergedHtml.replace(
+                        /(<div class="menu-section">)\s*/,
+                        `$1\n${manseRyeokTable}`
+                      )
+                    }
+                  }
+                }
+              }
+              
+              setStreamingHtml(mergedHtml)
+              
+              // 2차 요청 완료 상세 로그
+              console.log('=== 2차 요청 완료 및 HTML 병합 완료 ===')
+              console.log('1차 HTML 길이:', firstHtml.length, '자')
+              console.log('2차 HTML 길이:', secondHtml.length, '자')
+              console.log('병합된 HTML 길이:', mergedHtml.length, '자')
+              console.log('병합 비율: 1차', Math.round((firstHtml.length / mergedHtml.length) * 100) + '%', '/ 2차', Math.round((secondHtml.length / mergedHtml.length) * 100) + '%')
+              console.log('=== 2차 요청 완료 및 HTML 병합 완료 ===')
+              
+              const finalResult: ResultData = {
+                content,
+                html: mergedHtml,
+                startTime,
+                model,
+                userName,
+                isSecondRequest: true, // 2차 요청 완료 플래그
+              }
+              setResultData(finalResult)
+              
+              console.log('결과 페이지: 2차 요청 완료, 전체 결과 완료')
+              
+              setIsStreamingActive(false)
+              setStreamingFinished(true)
+              setStreamingProgress(100)
+              setLoading(false)
+              setShowRealtimePopup(false)
+              console.log('=== 재미나이 API 스트리밍 완료 (1차 + 2차) ===')
+            } else if (data.type === 'error') {
+              console.error('결과 페이지: 2차 스트리밍 에러:', data.error)
+              setError(data.error || '2차 점사 진행 중 문제가 발생했습니다.')
+              setIsStreamingActive(false)
+              setStreamingFinished(true)
+            }
+          })
+        }
+        
         await callJeminaiAPIStream(requestData, (data) => {
           if (cancelled) return
 
@@ -361,6 +481,46 @@ function ResultContent() {
 
           if (data.type === 'start') {
             accumulatedHtml = ''
+          } else if (data.type === 'partial_done') {
+            // 1차 요청 부분 완료: 2차 요청 자동 시작
+            console.log('=== 1차 요청 부분 완료, 2차 요청 시작 ===')
+            console.log('1차 요청 완료된 HTML 길이:', (data.html || accumulatedHtml).length, '자')
+            console.log('완료된 소제목 인덱스:', data.completedSubtitles || [])
+            console.log('남은 소제목 인덱스:', data.remainingSubtitles || [])
+            console.log('남은 소제목 개수:', (data.remainingSubtitles || []).length, '개')
+            console.log('=== 1차 요청 부분 완료, 2차 요청 시작 ===')
+            
+            const firstHtml = data.html || accumulatedHtml
+            const remainingIndices = data.remainingSubtitles || []
+            
+            if (remainingIndices.length > 0) {
+              // 1차 HTML 저장
+              setStreamingHtml(firstHtml)
+              
+              // 2차 요청 시작 (비동기로 실행, await하지 않음)
+              startSecondRequest(firstHtml, remainingIndices).catch((err) => {
+                console.error('2차 요청 실패:', err)
+                setError('2차 점사 진행 중 문제가 발생했습니다.')
+                setIsStreamingActive(false)
+                setStreamingFinished(true)
+              })
+            } else {
+              // 남은 소제목이 없으면 완료 처리
+              setStreamingHtml(firstHtml)
+              const finalResult: ResultData = {
+                content,
+                html: firstHtml,
+                startTime,
+                model,
+                userName,
+              }
+              setResultData(finalResult)
+              setIsStreamingActive(false)
+              setStreamingFinished(true)
+              setStreamingProgress(100)
+              setLoading(false)
+              setShowRealtimePopup(false)
+            }
           } else if (data.type === 'chunk') {
             accumulatedHtml += data.text || ''
 
@@ -642,7 +802,9 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          title: content?.content_name || '재회 결과',
+          title: resultData.isSecondRequest 
+            ? `${content?.content_name || '재회 결과'}+2차` 
+            : (content?.content_name || '재회 결과'),
           html: htmlWithFont, // 웹폰트가 포함된 HTML 저장
           content: content, // content 객체 전체 저장 (tts_speaker 포함)
           model: model || 'gemini-3-flash-preview', // 모델 정보 저장
@@ -768,6 +930,46 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                   htmlEl.style.height = 'auto'
                   htmlEl.style.display = 'block'
                   htmlEl.style.borderRadius = '8px'
+                  htmlEl.style.objectFit = 'contain'
+                }
+                
+                // 북커버 썸네일 컨테이너 스타일 강제 적용
+                if (el.classList.contains('book-cover-thumbnail-container')) {
+                  htmlEl.style.width = '100%'
+                  htmlEl.style.marginBottom = '2.5rem'
+                  
+                  const img = el.querySelector('img')
+                  if (img) {
+                    (img as HTMLElement).style.width = '100%'
+                    ;(img as HTMLElement).style.height = 'auto'
+                    ;(img as HTMLElement).style.objectFit = 'contain'
+                    ;(img as HTMLElement).style.display = 'block'
+                  }
+                }
+                
+                // 엔딩북커버 썸네일 컨테이너 스타일 강제 적용
+                if (el.classList.contains('ending-book-cover-thumbnail-container')) {
+                  htmlEl.style.width = '100%'
+                  htmlEl.style.marginTop = '1rem'
+                  
+                  const img = el.querySelector('img')
+                  if (img) {
+                    (img as HTMLElement).style.width = '100%'
+                    ;(img as HTMLElement).style.height = 'auto'
+                    ;(img as HTMLElement).style.objectFit = 'contain'
+                    ;(img as HTMLElement).style.display = 'block'
+                  }
+                }
+                
+                // 대제목 썸네일 (menu-thumbnail) 스타일 강제 적용
+                if (el.classList.contains('menu-thumbnail') || (el.tagName === 'IMG' && el.classList.contains('menu-thumbnail'))) {
+                  htmlEl.style.width = '100%'
+                  htmlEl.style.height = 'auto'
+                  htmlEl.style.objectFit = 'contain'
+                  htmlEl.style.borderRadius = '8px'
+                  htmlEl.style.display = 'block'
+                  htmlEl.style.marginBottom = '24px'
+                  htmlEl.style.boxSizing = 'border-box'
                 }
               })
               
@@ -1884,7 +2086,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       const thumbnailImg = doc.createElement('div')
                       thumbnailImg.className = 'subtitle-thumbnail-container'
                       thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;'
-                      thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px;" />`
+                      thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" />`
                       titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling)
                       console.log(`저장된 결과: 썸네일 추가 완료 - menu[${menuIndex}] subtitle[${subIndex}]`)
                     } else {
@@ -2042,10 +2244,11 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 }
                 .menu-thumbnail {
                   width: 100%;
-                  height: 256px;
-                  object-fit: cover;
+                  height: auto;
+                  object-fit: contain;
                   border-radius: 8px;
                   margin-bottom: 24px;
+                  display: block;
                 }
                 .subtitle-section {
                   padding-top: 24px;
@@ -2075,6 +2278,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                   height: auto;
                   display: block;
                   border-radius: 8px;
+                  object-fit: contain;
                 }
               </style>
             </head>
@@ -2770,6 +2974,21 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             <div className="jeminai-results space-y-6">
               {parsedMenus.map((menu, menuIndex) => (
                 <div key={`menu-${menuIndex}`} className="menu-section space-y-3">
+                  {/* 북커버 썸네일 (첫 번째 대제목 라운드 박스 안, 제목 위) */}
+                  {menuIndex === 0 && content?.book_cover_thumbnail && (
+                    <div className="book-cover-thumbnail-container w-full mb-10">
+                      <img 
+                        src={content.book_cover_thumbnail} 
+                        alt="북커버 썸네일"
+                        className="w-full h-auto"
+                        style={{ 
+                          objectFit: 'contain', 
+                          display: 'block' 
+                        }}
+                      />
+                    </div>
+                  )}
+                  
                   <div className="menu-title font-bold text-lg text-gray-900">{menu.title}</div>
 
                   {/* 대제목별 썸네일 */}
@@ -2802,7 +3021,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                                 src={sub.thumbnail} 
                                 alt="소제목 썸네일"
                                 className="w-full h-auto rounded-lg"
-                                style={{ display: 'block' }}
+                                style={{ display: 'block', objectFit: 'contain' }}
                               />
                             </div>
                           )}
@@ -2825,6 +3044,21 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       )
                     })}
                   </div>
+                  
+                  {/* 엔딩북커버 썸네일 (마지막 대제목 라운드 박스 안, 소제목들 아래) */}
+                  {menuIndex === parsedMenus.length - 1 && content?.ending_book_cover_thumbnail && (
+                    <div className="ending-book-cover-thumbnail-container w-full mt-4">
+                      <img 
+                        src={content.ending_book_cover_thumbnail} 
+                        alt="엔딩북커버 썸네일"
+                        className="w-full h-auto"
+                        style={{ 
+                          objectFit: 'contain', 
+                          display: 'block' 
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -2861,13 +3095,32 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       // 모든 종류의 태그 뒤의 연속된 줄바꿈과 공백을 제거하고 테이블 바로 붙이기
                       .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
                     
-                    // 소제목 썸네일 추가 (batch 모드)
+                    // 북커버와 엔딩북커버, 소제목 썸네일 추가 (batch 모드)
                     const menuItems = content?.menu_items || []
-                    if (menuItems.length > 0) {
+                    const bookCoverThumbnail = content?.book_cover_thumbnail || ''
+                    const endingBookCoverThumbnail = content?.ending_book_cover_thumbnail || ''
+                    
+                    if (menuItems.length > 0 || bookCoverThumbnail || endingBookCoverThumbnail) {
                       const parser = new DOMParser()
                       const doc = parser.parseFromString(processedHtml, 'text/html')
                       const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
                       
+                      // 북커버 썸네일 추가 (첫 번째 menu-section 안, 제목 위)
+                      if (bookCoverThumbnail && menuSections.length > 0) {
+                        const firstSection = menuSections[0]
+                        const bookCoverDiv = doc.createElement('div')
+                        bookCoverDiv.className = 'book-cover-thumbnail-container'
+                        bookCoverDiv.style.cssText = 'width: 100%; margin-bottom: 2.5rem; display: flex; justify-content: center;'
+                        bookCoverDiv.innerHTML = `<img src="${bookCoverThumbnail}" alt="북커버 썸네일" style="width: calc(100% - 48px); max-width: calc(100% - 48px); height: auto; object-fit: contain; display: block;" />`
+                        // 첫 번째 자식 요소(menu-title) 앞에 삽입
+                        if (firstSection.firstChild) {
+                          firstSection.insertBefore(bookCoverDiv, firstSection.firstChild)
+                        } else {
+                          firstSection.appendChild(bookCoverDiv)
+                        }
+                      }
+                      
+                      // 소제목 썸네일 추가
                       menuSections.forEach((section, menuIndex) => {
                         const menuItem = menuItems[menuIndex]
                         if (menuItem?.subtitles) {
@@ -2880,13 +3133,24 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                                 const thumbnailImg = doc.createElement('div')
                                 thumbnailImg.className = 'subtitle-thumbnail-container'
                                 thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;'
-                                thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px;" />`
+                                thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" />`
                                 titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling)
                               }
                             }
                           })
                         }
                       })
+                      
+                      // 엔딩북커버 썸네일 추가 (마지막 menu-section 안, 소제목들 아래)
+                      if (endingBookCoverThumbnail && menuSections.length > 0) {
+                        const lastSection = menuSections[menuSections.length - 1]
+                        const endingBookCoverDiv = doc.createElement('div')
+                        endingBookCoverDiv.className = 'ending-book-cover-thumbnail-container'
+                        endingBookCoverDiv.style.cssText = 'width: 100%; margin-top: 1rem; display: flex; justify-content: center;'
+                        endingBookCoverDiv.innerHTML = `<img src="${endingBookCoverThumbnail}" alt="엔딩북커버 썸네일" style="width: 100%; height: auto; object-fit: contain; display: block;" />`
+                        // 마지막 자식 요소 뒤에 추가
+                        lastSection.appendChild(endingBookCoverDiv)
+                      }
                       
                       processedHtml = doc.documentElement.outerHTML
                       // DOMParser가 추가한 html, body 태그 제거

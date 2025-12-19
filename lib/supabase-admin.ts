@@ -43,6 +43,8 @@ export interface ContentData {
   is_new?: boolean
   tts_speaker?: string // TTS 화자 (nara, jinho, mijin, nhajun, ndain)
   preview_thumbnails?: string[] // 재회상품 미리보기 썸네일 배열 (최대 3개)
+  book_cover_thumbnail?: string // 북커버 썸네일 (첫 번째 대제목 전, 9:16 비율)
+  ending_book_cover_thumbnail?: string // 엔딩북커버 썸네일 (마지막 대제목 밑, 9:16 비율)
   created_at?: string
   updated_at?: string
 }

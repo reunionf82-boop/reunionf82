@@ -34,6 +34,8 @@ export async function POST(req: NextRequest) {
     console.log('=== API: 컨텐츠 저장/업데이트 ===')
     console.log('id:', id)
     console.log('dataToSave:', dataToSave)
+    console.log('dataToSave.book_cover_thumbnail:', dataToSave.book_cover_thumbnail)
+    console.log('dataToSave.ending_book_cover_thumbnail:', dataToSave.ending_book_cover_thumbnail)
 
     if (id) {
       // 업데이트

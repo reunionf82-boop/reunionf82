@@ -8,10 +8,15 @@ export async function POST(req: NextRequest) {
   try {
     console.log('=== 재미나이 API 라우트 시작 ===')
     const body = await req.json()
-    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-3-flash-preview', manse_ryeok_table, manse_ryeok_text, manse_ryeok_json, day_gan_info } = body
+    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-3-flash-preview', manse_ryeok_table, manse_ryeok_text, manse_ryeok_json, day_gan_info, isSecondRequest } = body
     
     console.log('요청 모델:', model)
     console.log('메뉴 소제목 개수:', menu_subtitles?.length)
+    console.log('2차 요청 여부:', isSecondRequest || false)
+    if (isSecondRequest) {
+      console.log('=== 2차 요청 시작 ===')
+      console.log('2차 요청 처리할 소제목 개수:', menu_subtitles?.length)
+    }
     console.log('manse_ryeok_text 길이:', manse_ryeok_text ? manse_ryeok_text.length : 0)
     console.log('manse_ryeok_json 길이:', manse_ryeok_json ? manse_ryeok_json.length : 0)
     
@@ -220,6 +225,11 @@ ${partner_info.gender ? `- 성별: ${partner_info.gender}` : ''}
 
 ---
 
+${isSecondRequest ? `
+⚠️ **2차 요청입니다. 이전에 완료된 메뉴/소제목은 제외하고, 아래에 나열된 남은 메뉴/소제목만 해석해주세요.**
+이전 요청에서 타임아웃으로 인해 일부만 완료되었으므로, 남은 부분만 이어서 해석합니다.
+` : ''}
+
 다음 상품 메뉴 구성과 소제목들을 각각 해석해주세요:
 
 ${menuItemsInfo.map((menuItem: any, menuIdx: number) => {
@@ -273,7 +283,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
 5. 소제목 제목은 <h3 class="subtitle-title">으로 표시하되, 소제목 끝에 반드시 마침표(.)를 추가하세요. 예: <h3 class="subtitle-title">1-1. 나의 타고난 '기본 성격'과 '가치관'.</h3>
 6. 해석 내용은 <div class="subtitle-content"> 안에 HTML 형식으로 작성
 7. 각 content는 해당 subtitle의 char_count를 초과하지 않도록 주의
-8. 모든 메뉴와 소제목을 순서대로 포함
+${isSecondRequest ? '8. **2차 요청이므로 아래에 나열된 메뉴/소제목만 포함하세요. 이전에 완료된 내용은 포함하지 마세요.**' : '8. 모든 메뉴와 소제목을 순서대로 포함'}
 9. 소제목 제목에 마침표가 없으면 자동으로 마침표를 추가하세요 (TTS 재생 시 자연스러운 구분을 위해)
 10. 소제목 제목과 해석 내용 사이에 빈 줄이나 공백을 절대 넣지 마세요. <h3 class="subtitle-title"> 태그와 <div class="subtitle-content"> 태그 사이에 줄바꿈이나 공백 문자를 넣지 말고 바로 붙여서 작성하세요. 예: <h3 class="subtitle-title">1-1. 소제목.</h3><div class="subtitle-content">본문 내용</div>
 `
@@ -287,6 +297,64 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
     // ReadableStream 생성
     const stream = new ReadableStream({
       async start(controller) {
+        // 변수들을 try 블록 밖에 선언하여 catch 블록에서도 접근 가능하도록 함
+        let fullText = ''
+        let isFirstChunk = true
+        // streamStartTime을 generateContentStream 호출 전에 설정하여 정확한 시간 측정
+        const streamStartTime = Date.now()
+        console.log(`=== 스트림 시작 시간 설정 ===`)
+        console.log(`streamStartTime: ${streamStartTime} (${new Date(streamStartTime).toISOString()})`)
+        const TIMEOUT_WARNING = 280000 // 280초 (타임아웃 20초 전 경고)
+        const TIMEOUT_PARTIAL = 280000 // 280초 (1차 요청 중단, 2차 요청으로 이어가기)
+        const MAX_DURATION = 300000 // 300초 (서버 타임아웃)
+        let hasSentTimeoutWarning = false
+        let hasSentPartialDone = false
+        
+        // 완료된 메뉴/소제목 파싱 함수 (catch 블록에서도 사용하기 위해 try 블록 밖에 선언)
+        const parseCompletedSubtitles = (html: string, allMenuSubtitles: any[]) => {
+          const completedSubtitles: number[] = []
+          const completedMenus: number[] = []
+          
+          // HTML에서 모든 소제목 섹션 추출
+          const subtitleSections = html.match(/<div class="subtitle-section">[\s\S]*?<\/div>\s*<\/div>/g) || []
+          
+          // 각 소제목이 완료되었는지 확인
+          allMenuSubtitles.forEach((subtitle, index) => {
+            const menuMatch = subtitle.subtitle.match(/^(\d+)-(\d+)/)
+            if (!menuMatch) return
+            
+            const menuNumber = parseInt(menuMatch[1])
+            const subtitleNumber = parseInt(menuMatch[2])
+            
+            // 소제목 제목 패턴 (마침표 포함/미포함 모두 고려)
+            const subtitleTitlePattern = new RegExp(
+              `<h3[^>]*class="subtitle-title"[^>]*>[^<]*${subtitle.subtitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^<]*</h3>`,
+              'i'
+            )
+            
+            // 소제목 내용 패턴
+            const subtitleContentPattern = /<div[^>]*class="subtitle-content"[^>]*>[\s\S]*?<\/div>/
+            
+            // 완료된 소제목 확인: 제목과 내용이 모두 있어야 함
+            subtitleSections.forEach((section) => {
+              if (subtitleTitlePattern.test(section) && subtitleContentPattern.test(section)) {
+                // 내용이 비어있지 않은지 확인 (최소 10자 이상)
+                const contentMatch = section.match(/<div[^>]*class="subtitle-content"[^>]*>([\s\S]*?)<\/div>/i)
+                if (contentMatch && contentMatch[1].trim().length > 10) {
+                  if (!completedSubtitles.includes(index)) {
+                    completedSubtitles.push(index)
+                    if (!completedMenus.includes(menuNumber - 1)) {
+                      completedMenus.push(menuNumber - 1)
+                    }
+                  }
+                }
+              }
+            })
+          })
+          
+          return { completedSubtitles, completedMenus }
+        }
+        
         try {
           // 재시도 로직 (최대 3번)
           let lastError: any = null
@@ -338,12 +406,100 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
             throw lastError
           }
           
-          let fullText = ''
-          let isFirstChunk = true
-          
           // 스트림 데이터 읽기
           try {
+            let chunkIndex = 0
             for await (const chunk of streamResult.stream) {
+              chunkIndex++
+              // 타임아웃 직전 부분 완료 처리 (1차 요청 중단, 2차 요청으로 이어가기)
+              const elapsed = Date.now() - streamStartTime
+              
+              // 매 100번째 청크마다 경과 시간 로깅 (디버깅용)
+              if (chunkIndex % 100 === 0 || elapsed >= 270000) {
+                console.log(`[청크 ${chunkIndex}] 경과 시간: ${Math.round(elapsed / 1000)}초 (${elapsed}ms), fullText 길이: ${fullText.length}자`)
+              }
+              
+              // 280초 경과 시 로그 출력 (디버깅용) - 매 청크마다 체크
+              if (elapsed >= TIMEOUT_PARTIAL && !hasSentPartialDone && !isSecondRequest) {
+                console.warn(`=== 280초 경과 체크 (매 청크마다) ===`)
+                console.warn(`청크 인덱스: ${chunkIndex}`)
+                console.warn(`경과 시간: ${Math.round(elapsed / 1000)}초 (${elapsed}ms), 데이터 길이: ${fullText.length}자`)
+                console.warn(`fullText.trim().length: ${fullText.trim().length}자`)
+                console.warn(`hasSentPartialDone: ${hasSentPartialDone}, isSecondRequest: ${isSecondRequest}`)
+                console.warn(`조건 체크: elapsed >= TIMEOUT_PARTIAL: ${elapsed >= TIMEOUT_PARTIAL}, fullText.trim(): ${!!fullText.trim()}, length > 50: ${fullText.trim().length > 50}`)
+              }
+              
+              // 280초 경과 체크 (isSecondRequest가 아닐 때만)
+              if (elapsed >= TIMEOUT_PARTIAL && fullText.trim() && fullText.trim().length > 50 && !hasSentPartialDone && !isSecondRequest) {
+                console.warn(`=== 타임아웃 직전 부분 완료 처리 시작 ===`)
+                console.warn(`경과 시간: ${Math.round(elapsed / 1000)}초 (${elapsed}ms), 데이터 길이: ${fullText.length}자`)
+                console.warn(`fullText.trim().length: ${fullText.trim().length}자`)
+                console.warn(`hasSentPartialDone: ${hasSentPartialDone}, isSecondRequest: ${isSecondRequest}`)
+                
+                // 완료된 메뉴/소제목 파싱
+                const { completedSubtitles, completedMenus } = parseCompletedSubtitles(fullText, menu_subtitles)
+                const remainingSubtitles = menu_subtitles
+                  .map((sub: any, index: number) => ({ ...sub, originalIndex: index }))
+                  .filter((_: any, index: number) => !completedSubtitles.includes(index))
+                
+                console.log(`=== 1차 요청 완료 상태 ===`)
+                console.log(`전체 소제목: ${menu_subtitles.length}개`)
+                console.log(`완료된 소제목: ${completedSubtitles.length}개 (인덱스: ${completedSubtitles.join(', ')})`)
+                console.log(`남은 소제목: ${remainingSubtitles.length}개 (인덱스: ${remainingSubtitles.map((s: any) => s.originalIndex).join(', ')})`)
+                console.log(`완료된 메뉴: ${completedMenus.length}개 (인덱스: ${completedMenus.join(', ')})`)
+                console.log(`=== 1차 요청 완료 상태 ===`)
+                
+                if (remainingSubtitles.length > 0) {
+                  // 부분 완료 신호 전송 (2차 요청 필요)
+                  hasSentPartialDone = true
+                  
+                  // HTML 정리 (기존 로직과 동일)
+                  let cleanHtml = fullText.trim()
+                  const htmlBlockMatch = cleanHtml.match(/```html\s*([\s\S]*?)\s*```/)
+                  if (htmlBlockMatch) {
+                    cleanHtml = htmlBlockMatch[1].trim()
+                  } else {
+                    const codeBlockMatch = cleanHtml.match(/```\s*([\s\S]*?)\s*```/)
+                    if (codeBlockMatch) {
+                      cleanHtml = codeBlockMatch[1].trim()
+                    }
+                  }
+                  
+                  // HTML 정리
+                  cleanHtml = cleanHtml.replace(/(<\/h3>)\s+(<div class="subtitle-content">)/g, '$1$2')
+                  cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content"[^>]*>)/g, '$1$2')
+                  cleanHtml = cleanHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
+                  cleanHtml = cleanHtml.replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                  cleanHtml = cleanHtml.replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                  cleanHtml = cleanHtml.replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                  cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                  cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                  cleanHtml = cleanHtml.replace(/\*\*/g, '')
+                  
+                  console.log(`=== 1차 요청 부분 완료 신호 전송 ===`)
+                  console.log(`전송할 HTML 길이: ${cleanHtml.length}자`)
+                  console.log(`남은 소제목 인덱스: ${remainingSubtitles.map((s: any) => s.originalIndex).join(', ')}`)
+                  console.log(`=== 1차 요청 부분 완료 신호 전송 ===`)
+                  
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                    type: 'partial_done',
+                    html: cleanHtml,
+                    remainingSubtitles: remainingSubtitles.map((sub: any) => sub.originalIndex),
+                    completedSubtitles: completedSubtitles,
+                  })}\n\n`))
+                  
+                  controller.close()
+                  console.log('1차 요청 종료, 2차 요청으로 이어가기')
+                  return // 1차 요청 종료, 2차 요청으로 이어가기
+                }
+              }
+              
+              // 타임아웃 경고 (한 번만)
+              if (elapsed >= TIMEOUT_WARNING && !hasSentTimeoutWarning) {
+                console.warn(`타임아웃 경고: ${Math.round(elapsed / 1000)}초 경과, 타임아웃까지 약 ${Math.round((MAX_DURATION - elapsed) / 1000)}초 남음`)
+                hasSentTimeoutWarning = true
+              }
+              
               try {
                 const chunkText = chunk.text()
                 if (chunkText) {
@@ -368,6 +524,17 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
                 // 전체 스트림이 실패하지 않도록 함
               }
             }
+            
+            // 스트림 루프 종료 시 경과 시간 로깅
+            const finalElapsed = Date.now() - streamStartTime
+            console.log(`=== 스트림 루프 종료 ===`)
+            console.log(`총 청크 수: ${chunkIndex}`)
+            console.log(`최종 경과 시간: ${Math.round(finalElapsed / 1000)}초 (${finalElapsed}ms)`)
+            console.log(`fullText 최종 길이: ${fullText.length}자`)
+            console.log(`280초 경과 여부: ${finalElapsed >= TIMEOUT_PARTIAL ? '예' : '아니오'}`)
+            console.log(`hasSentPartialDone: ${hasSentPartialDone}`)
+            console.log(`isSecondRequest: ${isSecondRequest}`)
+            console.log(`=== 스트림 루프 종료 ===`)
           } catch (streamReadError: any) {
             console.error('스트림 읽기 중 에러:', streamReadError)
             // 스트림 읽기 에러 발생 시, 지금까지 받은 데이터로 처리 시도
@@ -463,9 +630,16 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
           // ** 문자 제거 (마크다운 강조 표시 제거)
           cleanHtml = cleanHtml.replace(/\*\*/g, '')
           
-          console.log('Gemini API 스트리밍 완료')
-          console.log('응답 HTML 길이:', cleanHtml.length)
-          console.log('Finish Reason:', finishReason)
+          if (isSecondRequest) {
+            console.log('=== 2차 요청 완료 ===')
+            console.log('2차 요청 응답 HTML 길이:', cleanHtml.length, '자')
+            console.log('Finish Reason:', finishReason)
+            console.log('=== 2차 요청 완료 ===')
+          } else {
+            console.log('Gemini API 스트리밍 완료 (1차 요청)')
+            console.log('응답 HTML 길이:', cleanHtml.length, '자')
+            console.log('Finish Reason:', finishReason)
+          }
           
           // 완료 신호 전송
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
@@ -491,9 +665,137 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
             stack: error?.stack?.substring(0, 1000)
           })
           
+          // 타임아웃 에러이지만 부분 데이터가 있으면 완료 처리
+          const errorMessage = error?.message || error?.toString() || ''
+          const isTimeoutError = errorMessage.includes('timeout') || 
+                                 errorMessage.includes('타임아웃') || 
+                                 errorMessage.includes('Function execution timeout') ||
+                                 errorMessage.includes('maxDuration')
+          
+          // 280초 경과 체크 (타임아웃 에러가 아니어도) - catch 블록에서도 체크
+          const elapsed = Date.now() - streamStartTime
+          console.warn(`=== catch 블록: 경과 시간 체크 ===`)
+          console.warn(`경과 시간: ${Math.round(elapsed / 1000)}초 (${elapsed}ms), 데이터 길이: ${fullText.length}자`)
+          console.warn(`fullText.trim().length: ${fullText.trim().length}자`)
+          console.warn(`hasSentPartialDone: ${hasSentPartialDone}`)
+          console.warn(`isSecondRequest: ${isSecondRequest}`)
+          console.warn(`TIMEOUT_PARTIAL: ${TIMEOUT_PARTIAL}ms (${TIMEOUT_PARTIAL / 1000}초)`)
+          console.warn(`elapsed >= TIMEOUT_PARTIAL: ${elapsed >= TIMEOUT_PARTIAL}`)
+          console.warn(`fullText.trim().length > 50: ${fullText.trim().length > 50}`)
+          
+          if (elapsed >= TIMEOUT_PARTIAL && fullText.trim() && fullText.trim().length > 50 && !hasSentPartialDone && !isSecondRequest) {
+            console.warn(`=== catch 블록에서 280초 경과 감지, partial_done 전송 시도 ===`)
+            console.warn(`경과 시간: ${Math.round(elapsed / 1000)}초 (${elapsed}ms), 데이터 길이: ${fullText.length}자`)
+            
+            try {
+              // 완료된 메뉴/소제목 파싱
+              const { completedSubtitles, completedMenus } = parseCompletedSubtitles(fullText, menu_subtitles)
+              const remainingSubtitles = menu_subtitles
+                .map((sub: any, index: number) => ({ ...sub, originalIndex: index }))
+                .filter((_: any, index: number) => !completedSubtitles.includes(index))
+              
+              console.log(`=== catch 블록: 1차 요청 완료 상태 ===`)
+              console.log(`전체 소제목: ${menu_subtitles.length}개`)
+              console.log(`완료된 소제목: ${completedSubtitles.length}개 (인덱스: ${completedSubtitles.join(', ')})`)
+              console.log(`남은 소제목: ${remainingSubtitles.length}개 (인덱스: ${remainingSubtitles.map((s: any) => s.originalIndex).join(', ')})`)
+              console.log(`=== catch 블록: 1차 요청 완료 상태 ===`)
+              
+              if (remainingSubtitles.length > 0) {
+                hasSentPartialDone = true
+                
+                // HTML 정리
+                let cleanHtml = fullText.trim()
+                const htmlBlockMatch = cleanHtml.match(/```html\s*([\s\S]*?)\s*```/)
+                if (htmlBlockMatch) {
+                  cleanHtml = htmlBlockMatch[1].trim()
+                } else {
+                  const codeBlockMatch = cleanHtml.match(/```\s*([\s\S]*?)\s*```/)
+                  if (codeBlockMatch) {
+                    cleanHtml = codeBlockMatch[1].trim()
+                  }
+                }
+                
+                // HTML 정리
+                cleanHtml = cleanHtml.replace(/(<\/h3>)\s+(<div class="subtitle-content">)/g, '$1$2')
+                cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content"[^>]*>)/g, '$1$2')
+                cleanHtml = cleanHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
+                cleanHtml = cleanHtml.replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                cleanHtml = cleanHtml.replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                cleanHtml = cleanHtml.replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                cleanHtml = cleanHtml.replace(/\*\*/g, '')
+                
+                console.log(`=== catch 블록: 1차 요청 부분 완료 신호 전송 ===`)
+                console.log(`전송할 HTML 길이: ${cleanHtml.length}자`)
+                console.log(`남은 소제목 인덱스: ${remainingSubtitles.map((s: any) => s.originalIndex).join(', ')}`)
+                console.log(`=== catch 블록: 1차 요청 부분 완료 신호 전송 ===`)
+                
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                  type: 'partial_done',
+                  html: cleanHtml,
+                  remainingSubtitles: remainingSubtitles.map((sub: any) => sub.originalIndex),
+                  completedSubtitles: completedSubtitles,
+                })}\n\n`))
+                
+                controller.close()
+                return // 에러 처리 건너뛰기
+              }
+            } catch (processError: any) {
+              console.error('catch 블록에서 부분 데이터 처리 중 에러:', processError)
+              // 처리 실패 시 일반 에러 처리로 진행
+            }
+          }
+          
+          // 타임아웃 에러이고 부분 데이터가 충분하면 완료 처리
+          if (isTimeoutError && fullText.trim() && fullText.trim().length > 100) {
+            console.warn('타임아웃 에러 발생했지만 부분 데이터가 충분함. 완료 처리합니다.')
+            console.log(`부분 데이터 길이: ${fullText.length}자`)
+            
+            try {
+              // 부분 데이터를 HTML로 처리
+              let cleanHtml = fullText.trim()
+              const htmlBlockMatch = cleanHtml.match(/```html\s*([\s\S]*?)\s*```/)
+              if (htmlBlockMatch) {
+                cleanHtml = htmlBlockMatch[1].trim()
+              } else {
+                const codeBlockMatch = cleanHtml.match(/```\s*([\s\S]*?)\s*```/)
+                if (codeBlockMatch) {
+                  cleanHtml = codeBlockMatch[1].trim()
+                }
+              }
+              
+              // HTML 정리 (기존 로직과 동일)
+              cleanHtml = cleanHtml.replace(/(<\/h3>)\s+(<div class="subtitle-content">)/g, '$1$2')
+              cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content"[^>]*>)/g, '$1$2')
+              cleanHtml = cleanHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
+              cleanHtml = cleanHtml.replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+              cleanHtml = cleanHtml.replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+              cleanHtml = cleanHtml.replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+              cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+              cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+              cleanHtml = cleanHtml.replace(/\*\*/g, '')
+              
+              if (cleanHtml.trim() && cleanHtml.trim().length > 100) {
+                // 부분 데이터를 완료 처리
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                  type: 'done',
+                  html: cleanHtml,
+                  isTruncated: true, // 타임아웃으로 인한 잘림 표시
+                  finishReason: 'TIMEOUT',
+                  usage: undefined,
+                })}\n\n`))
+                controller.close()
+                return // 에러 처리 건너뛰기
+              }
+            } catch (processError: any) {
+              console.error('부분 데이터 처리 중 에러:', processError)
+              // 처리 실패 시 일반 에러 처리로 진행
+            }
+          }
+          
           // 사용자 친화적 에러 메시지 생성
           let userFriendlyMessage: string | null = '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
-          const errorMessage = error?.message || error?.toString() || ''
           const errorStatus = error?.status || error?.code || ''
           
           // 429 Rate Limit 에러 처리 - 점사중... 메시지가 이미 떠 있으므로 에러 메시지 전송하지 않음
@@ -505,7 +807,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
             userFriendlyMessage = '서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
           }
           // 타임아웃 에러
-          else if (errorMessage.includes('timeout') || errorMessage.includes('타임아웃')) {
+          else if (isTimeoutError) {
             userFriendlyMessage = '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
           }
           // 네트워크 에러

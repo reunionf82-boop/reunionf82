@@ -168,8 +168,22 @@ export async function POST(request: NextRequest) {
     .container {
       max-width: 896px;
       margin: 0 auto;
-      background: transparent;
+      background: #f9fafb;
       padding: 32px 16px;
+    }
+    /* menu-section 스타일 (result 페이지와 동일) */
+    .menu-section {
+      background: white !important;
+      border-radius: 12px !important;
+      padding: 24px !important;
+      margin-bottom: 24px !important;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+    }
+    .menu-title {
+      font-size: 20px !important;
+      font-weight: bold !important;
+      margin-bottom: 16px !important;
+      color: #111 !important;
     }
     /* 타이틀 밑 대표 썸네일 전체 폭 스타일 (container padding 무시) */
     .thumbnail-container {
@@ -194,18 +208,39 @@ export async function POST(request: NextRequest) {
       margin: 0 0 16px 0;
       color: #111;
     }
-    /* 대제목 썸네일 (menu-thumbnail) 스타일 강제 적용 (가운데 정렬) */
+    /* 대제목 썸네일 (menu-thumbnail) 스타일 강제 적용 (result 페이지와 동일) */
     .menu-thumbnail,
     img.menu-thumbnail {
       display: block !important;
       width: 100% !important;
       max-width: 100% !important;
       height: auto !important;
-      object-fit: cover !important;
-      margin-left: auto !important;
-      margin-right: auto !important;
-      margin-bottom: 1.5rem !important;
+      object-fit: contain !important;
+      border-radius: 8px !important;
+      margin-bottom: 24px !important;
       box-sizing: border-box !important;
+    }
+    /* 북커버 썸네일 스타일 (result 페이지와 동일) */
+    .book-cover-thumbnail-container {
+      width: 100% !important;
+      margin-bottom: 2.5rem !important;
+    }
+    .book-cover-thumbnail-container img {
+      width: 100% !important;
+      height: auto !important;
+      object-fit: contain !important;
+      display: block !important;
+    }
+    /* 엔딩북커버 썸네일 스타일 (result 페이지와 동일) */
+    .ending-book-cover-thumbnail-container {
+      width: 100% !important;
+      margin-top: 1rem !important;
+    }
+    .ending-book-cover-thumbnail-container img {
+      width: 100% !important;
+      height: auto !important;
+      object-fit: contain !important;
+      display: block !important;
     }
     /* 소제목 썸네일 컨테이너 스타일 강제 적용 (가운데 정렬) */
     .subtitle-thumbnail-container {
@@ -220,7 +255,7 @@ export async function POST(request: NextRequest) {
       margin-bottom: 0.5rem !important;
       box-sizing: border-box !important;
     }
-    /* 소제목 썸네일 이미지 스타일 강제 적용 */
+    /* 소제목 썸네일 이미지 스타일 강제 적용 (result 페이지와 동일) */
     .subtitle-thumbnail-container img {
       width: 100% !important;
       max-width: 100% !important;
@@ -229,8 +264,8 @@ export async function POST(request: NextRequest) {
       border-radius: 8px !important;
       -webkit-border-radius: 8px !important;
       -moz-border-radius: 8px !important;
+      object-fit: contain !important;
       box-sizing: border-box !important;
-      overflow: hidden !important;
     }
     /* 모든 이미지에 기본 스타일 적용 */
     img {
@@ -285,22 +320,56 @@ export async function POST(request: NextRequest) {
           htmlImg.style.maxWidth = '100%'
           htmlImg.style.height = 'auto'
           htmlImg.style.display = 'block'
-          htmlImg.style.objectFit = 'cover'
+          htmlImg.style.objectFit = 'contain'
         }
       })
       
-      // 대표 썸네일 (menu-thumbnail) 스타일 강제 적용 (가운데 정렬)
+      // 대제목 썸네일 (menu-thumbnail) 스타일 강제 적용 (result 페이지와 동일)
       const menuThumbnails = document.querySelectorAll('.menu-thumbnail, img.menu-thumbnail')
       menuThumbnails.forEach((img: Element) => {
         const htmlImg = img as HTMLElement
         htmlImg.style.width = '100%'
         htmlImg.style.height = 'auto'
         htmlImg.style.display = 'block'
-        htmlImg.style.objectFit = 'cover'
-        htmlImg.style.marginLeft = 'auto'
-        htmlImg.style.marginRight = 'auto'
-        htmlImg.style.marginBottom = '1.5rem'
+        htmlImg.style.objectFit = 'contain'
+        htmlImg.style.borderRadius = '8px'
+        htmlImg.style.marginBottom = '24px'
         htmlImg.style.maxWidth = '100%'
+        htmlImg.style.boxSizing = 'border-box'
+      })
+      
+      // 북커버 썸네일 스타일 강제 적용 (result 페이지와 동일)
+      const bookCoverContainers = document.querySelectorAll('.book-cover-thumbnail-container')
+      bookCoverContainers.forEach((container: Element) => {
+        const htmlContainer = container as HTMLElement
+        htmlContainer.style.width = '100%'
+        htmlContainer.style.marginBottom = '2.5rem'
+        
+        const img = container.querySelector('img')
+        if (img) {
+          const htmlImg = img as HTMLElement
+          htmlImg.style.width = '100%'
+          htmlImg.style.height = 'auto'
+          htmlImg.style.objectFit = 'contain'
+          htmlImg.style.display = 'block'
+        }
+      })
+      
+      // 엔딩북커버 썸네일 스타일 강제 적용 (result 페이지와 동일)
+      const endingBookCoverContainers = document.querySelectorAll('.ending-book-cover-thumbnail-container')
+      endingBookCoverContainers.forEach((container: Element) => {
+        const htmlContainer = container as HTMLElement
+        htmlContainer.style.width = '100%'
+        htmlContainer.style.marginTop = '1rem'
+        
+        const img = container.querySelector('img')
+        if (img) {
+          const htmlImg = img as HTMLElement
+          htmlImg.style.width = '100%'
+          htmlImg.style.height = 'auto'
+          htmlImg.style.objectFit = 'contain'
+          htmlImg.style.display = 'block'
+        }
       })
       
       // 소제목 썸네일 컨테이너 스타일 강제 적용 (가운데 정렬)
@@ -318,7 +387,7 @@ export async function POST(request: NextRequest) {
         htmlContainer.style.marginBottom = '0.5rem'
         htmlContainer.style.boxSizing = 'border-box'
         
-        // 소제목 썸네일 이미지 스타일 강제 적용
+        // 소제목 썸네일 이미지 스타일 강제 적용 (result 페이지와 동일)
         const img = container.querySelector('img')
         if (img) {
           const htmlImg = img as HTMLElement
@@ -327,6 +396,7 @@ export async function POST(request: NextRequest) {
           htmlImg.style.height = 'auto'
           htmlImg.style.display = 'block'
           htmlImg.style.borderRadius = '8px'
+          htmlImg.style.objectFit = 'contain'
           htmlImg.style.boxSizing = 'border-box'
         }
       })
