@@ -239,6 +239,11 @@ ${menuItemsInfo.map((menuItem: any, menuIdx: number) => {
     return match ? parseInt(match[1]) === menuNumber : false
   })
   
+  // 2차 요청일 때는 남은 소제목이 있는 메뉴만 표시
+  if (isSecondRequest && subtitlesForMenu.length === 0) {
+    return ''
+  }
+  
   return `
 메뉴 ${menuNumber}: ${menuItem.title}
 ${menuItem.thumbnail ? `썸네일 URL: ${menuItem.thumbnail}` : ''}
@@ -255,9 +260,12 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
 `
   }).join('\n')}
 `
-}).join('\n\n')}
+}).filter((menuText: string) => menuText.trim().length > 0).join('\n\n')}
 
 각 메뉴별로 다음 HTML 형식으로 결과를 작성해주세요:
+${isSecondRequest ? `
+**⚠️ 2차 요청 주의: 위에 나열된 남은 메뉴/소제목만 HTML로 작성하세요. 이전에 완료된 메뉴나 소제목은 포함하지 마세요.**
+` : ''}
 
 <div class="menu-section">
   <h2 class="menu-title">[메뉴 제목]</h2>
@@ -274,6 +282,9 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
   <h2 class="menu-title">[다음 메뉴 제목]</h2>
   ...
 </div>
+${isSecondRequest ? `
+**⚠️ 위 HTML 예시는 형식만 보여주는 것입니다. 실제로는 위에 나열된 남은 메뉴/소제목만 작성하세요.**
+` : ''}
 
 중요:
 1. 각 메뉴는 <div class="menu-section">으로 구분
@@ -283,7 +294,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
 5. 소제목 제목은 <h3 class="subtitle-title">으로 표시하되, 소제목 끝에 반드시 마침표(.)를 추가하세요. 예: <h3 class="subtitle-title">1-1. 나의 타고난 '기본 성격'과 '가치관'.</h3>
 6. 해석 내용은 <div class="subtitle-content"> 안에 HTML 형식으로 작성
 7. 각 content는 해당 subtitle의 char_count를 초과하지 않도록 주의
-${isSecondRequest ? '8. **2차 요청이므로 아래에 나열된 메뉴/소제목만 포함하세요. 이전에 완료된 내용은 포함하지 마세요.**' : '8. 모든 메뉴와 소제목을 순서대로 포함'}
+${isSecondRequest ? '8. **2차 요청이므로 아래에 나열된 메뉴/소제목만 포함하세요. 이전에 완료된 내용은 절대 포함하지 마세요. 처음부터 다시 시작하지 말고, 남은 소제목부터만 해석하세요.**' : '8. 모든 메뉴와 소제목을 순서대로 포함'}
 9. 소제목 제목에 마침표가 없으면 자동으로 마침표를 추가하세요 (TTS 재생 시 자연스러운 구분을 위해)
 10. 소제목 제목과 해석 내용 사이에 빈 줄이나 공백을 절대 넣지 마세요. <h3 class="subtitle-title"> 태그와 <div class="subtitle-content"> 태그 사이에 줄바꿈이나 공백 문자를 넣지 말고 바로 붙여서 작성하세요. 예: <h3 class="subtitle-title">1-1. 소제목.</h3><div class="subtitle-content">본문 내용</div>
 `
@@ -928,4 +939,5 @@ ${isSecondRequest ? '8. **2차 요청이므로 아래에 나열된 메뉴/소제
     )
   }
 }
+
 
