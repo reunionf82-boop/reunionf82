@@ -185,8 +185,11 @@ export async function callJeminaiAPIStream(
     let chunkCount = 0
     let accumulatedHtml = '' // done 타입을 받지 못한 경우를 위한 fallback
     let hasReceivedStart = false // start 타입 수신 여부 추적
+    let hasReceivedPartialDone = false // partial_done 이벤트 수신 여부
     let lastChunkTime = Date.now() // 마지막 청크 수신 시간
+    const streamStartTime = Date.now() // 스트림 시작 시간 (280초 경과 체크용)
     const STREAM_TIMEOUT = 300000 // 5분 (300초)
+    const TIMEOUT_PARTIAL = 280000 // 280초 (1차 요청 중단, 2차 요청으로 이어가기)
     
     // 백그라운드에서도 스트림이 계속 읽히도록 보장
     // visibilitychange 이벤트 리스너 추가 (백그라운드 복귀 시 스트림 상태 확인)
@@ -327,6 +330,22 @@ export async function callJeminaiAPIStream(
                     accumulatedLength: data.accumulatedLength
                   })
                 }
+              } else if (data.type === 'partial_done') {
+                console.log('=== 클라이언트: 1차 요청 부분 완료 수신 ===')
+                console.log('1차 요청 완료된 HTML 길이:', (data.html || accumulatedHtml).length, '자')
+                console.log('완료된 소제목 인덱스:', data.completedSubtitles || [])
+                console.log('남은 소제목 인덱스:', data.remainingSubtitles || [])
+                console.log('남은 소제목 개수:', (data.remainingSubtitles || []).length, '개')
+                console.log('경과 시간:', Math.round((Date.now() - streamStartTime) / 1000), '초')
+                console.log('=== 클라이언트: 1차 요청 부분 완료 수신 ===')
+                
+                hasReceivedPartialDone = true
+                onChunk({
+                  type: 'partial_done',
+                  html: data.html || accumulatedHtml,
+                  remainingSubtitles: data.remainingSubtitles || [],
+                  completedSubtitles: data.completedSubtitles || []
+                })
               } else if (data.type === 'done') {
                 lastChunkTime = Date.now() // done 수신 시 시간 갱신
                 if (data.html) {
