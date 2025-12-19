@@ -315,8 +315,25 @@ ${isSecondRequest ? '8. **2차 요청이므로 아래에 나열된 메뉴/소제
           const completedSubtitles: number[] = []
           const completedMenus: number[] = []
           
-          // HTML에서 모든 소제목 섹션 추출
-          const subtitleSections = html.match(/<div class="subtitle-section">[\s\S]*?<\/div>\s*<\/div>/g) || []
+          console.log('=== parseCompletedSubtitles 시작 ===')
+          console.log('HTML 길이:', html.length)
+          console.log('전체 소제목 개수:', allMenuSubtitles.length)
+          
+          // HTML에서 모든 소제목 섹션 추출 (더 유연한 패턴)
+          // subtitle-section div와 그 안의 subtitle-content div를 포함하는 섹션 찾기
+          // 여러 패턴 시도: 정확한 클래스명, 부분 매칭 등
+          let subtitleSections = html.match(/<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>[\s\S]*?<\/div>\s*<\/div>/g) || []
+          if (subtitleSections.length === 0) {
+            // 다른 패턴 시도: subtitle-section이 포함된 div 찾기
+            subtitleSections = html.match(/<div[^>]*subtitle-section[^>]*>[\s\S]*?<\/div>\s*<\/div>/g) || []
+          }
+          console.log('추출된 subtitle-section 개수:', subtitleSections.length)
+          const firstSection = subtitleSections[0]
+          if (firstSection) {
+            console.log('첫 번째 subtitle-section 샘플 (처음 500자):', firstSection.substring(0, 500))
+          } else {
+            console.warn('subtitle-section을 찾을 수 없음. HTML 샘플 (처음 1000자):', html.substring(0, 1000))
+          }
           
           // 각 소제목이 완료되었는지 확인
           allMenuSubtitles.forEach((subtitle, index) => {
@@ -326,18 +343,37 @@ ${isSecondRequest ? '8. **2차 요청이므로 아래에 나열된 메뉴/소제
             const menuNumber = parseInt(menuMatch[1])
             const subtitleNumber = parseInt(menuMatch[2])
             
-            // 소제목 제목 패턴 (마침표 포함/미포함 모두 고려)
-            const subtitleTitlePattern = new RegExp(
-              `<h3[^>]*class="subtitle-title"[^>]*>[^<]*${subtitle.subtitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^<]*</h3>`,
+            // 소제목 제목 패턴 (더 유연하게 - 마침표 포함/미포함, HTML 이스케이프 고려)
+            const subtitleTitleEscaped = subtitle.subtitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            // 여러 패턴 시도: 정확한 매칭, 마침표 제거, 숫자만 매칭 등
+            const subtitleTitlePattern1 = new RegExp(
+              `<h3[^>]*class="subtitle-title"[^>]*>[^<]*${subtitleTitleEscaped}[^<]*</h3>`,
+              'i'
+            )
+            // 마침표를 제거한 버전도 시도
+            const subtitleTitleWithoutDot = subtitle.subtitle.replace(/\./g, '')
+            const subtitleTitlePattern2 = new RegExp(
+              `<h3[^>]*class="subtitle-title"[^>]*>[^<]*${subtitleTitleWithoutDot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^<]*</h3>`,
+              'i'
+            )
+            // 숫자 패턴만 매칭 (예: "1-1" 또는 "1-1.")
+            const numberPattern = new RegExp(
+              `<h3[^>]*class="subtitle-title"[^>]*>[^<]*${menuNumber}-${subtitleNumber}[^<]*</h3>`,
               'i'
             )
             
-            // 소제목 내용 패턴
-            const subtitleContentPattern = /<div[^>]*class="subtitle-content"[^>]*>[\s\S]*?<\/div>/
+            // 소제목 내용 패턴 (더 유연하게)
+            const subtitleContentPattern = /<div[^>]*class="subtitle-content"[^>]*>[\s\S]*?<\/div>/i
             
             // 완료된 소제목 확인: 제목과 내용이 모두 있어야 함
-            subtitleSections.forEach((section) => {
-              if (subtitleTitlePattern.test(section) && subtitleContentPattern.test(section)) {
+            let found = false
+            for (const section of subtitleSections) {
+              // 여러 패턴으로 제목 매칭 시도
+              const titleMatches = subtitleTitlePattern1.test(section) || 
+                                   subtitleTitlePattern2.test(section) || 
+                                   numberPattern.test(section)
+              
+              if (titleMatches && subtitleContentPattern.test(section)) {
                 // 내용이 비어있지 않은지 확인 (최소 10자 이상)
                 const contentMatch = section.match(/<div[^>]*class="subtitle-content"[^>]*>([\s\S]*?)<\/div>/i)
                 if (contentMatch && contentMatch[1].trim().length > 10) {
@@ -346,11 +382,24 @@ ${isSecondRequest ? '8. **2차 요청이므로 아래에 나열된 메뉴/소제
                     if (!completedMenus.includes(menuNumber - 1)) {
                       completedMenus.push(menuNumber - 1)
                     }
+                    found = true
+                    console.log(`소제목 ${index} (${subtitle.subtitle}) 완료 감지`)
+                    break
                   }
                 }
               }
-            })
+            }
+            
+            if (!found) {
+              console.log(`소제목 ${index} (${subtitle.subtitle}) 미완료`)
+            }
           })
+          
+          console.log('=== parseCompletedSubtitles 완료 ===')
+          console.log('완료된 소제목:', completedSubtitles.length, '개')
+          console.log('완료된 소제목 인덱스:', completedSubtitles)
+          console.log('완료된 메뉴:', completedMenus.length, '개')
+          console.log('완료된 메뉴 인덱스:', completedMenus)
           
           return { completedSubtitles, completedMenus }
         }
@@ -436,8 +485,22 @@ ${isSecondRequest ? '8. **2차 요청이므로 아래에 나열된 메뉴/소제
                 console.warn(`fullText.trim().length: ${fullText.trim().length}자`)
                 console.warn(`hasSentPartialDone: ${hasSentPartialDone}, isSecondRequest: ${isSecondRequest}`)
                 
-                // 완료된 메뉴/소제목 파싱
-                const { completedSubtitles, completedMenus } = parseCompletedSubtitles(fullText, menu_subtitles)
+                // HTML 코드 블록 제거 (있는 경우) - 파싱 전에 정리
+                let htmlForParsing = fullText.trim()
+                const htmlBlockMatch = htmlForParsing.match(/```html\s*([\s\S]*?)\s*```/)
+                if (htmlBlockMatch) {
+                  htmlForParsing = htmlBlockMatch[1].trim()
+                  console.log('HTML 코드 블록 제거됨 (파싱 전)')
+                } else {
+                  const codeBlockMatch = htmlForParsing.match(/```\s*([\s\S]*?)\s*```/)
+                  if (codeBlockMatch) {
+                    htmlForParsing = codeBlockMatch[1].trim()
+                    console.log('코드 블록 제거됨 (파싱 전)')
+                  }
+                }
+                
+                // 완료된 메뉴/소제목 파싱 (정리된 HTML 사용)
+                const { completedSubtitles, completedMenus } = parseCompletedSubtitles(htmlForParsing, menu_subtitles)
                 const remainingSubtitles = menu_subtitles
                   .map((sub: any, index: number) => ({ ...sub, originalIndex: index }))
                   .filter((_: any, index: number) => !completedSubtitles.includes(index))
