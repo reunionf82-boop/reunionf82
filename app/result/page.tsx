@@ -42,6 +42,7 @@ ThumbnailDisplay.displayName = 'ThumbnailDisplay'
 function ResultContent() {
   const searchParams = useSearchParams()
   const storageKey = searchParams.get('key')
+  const savedId = searchParams.get('savedId')
   const requestKey = searchParams.get('requestKey')
   const isStreaming = searchParams.get('stream') === 'true'
   const isRealtime = isStreaming && !!requestKey
@@ -205,58 +206,67 @@ function ResultContent() {
     }
   }, [])
 
-  // batch 모드: 기존 방식으로 완료된 결과 로드 (key 기반)
+  // batch 모드: Supabase에서 완료된 결과 로드 (savedId 기반)
   useEffect(() => {
-    if (!storageKey || isRealtime) {
-      // realtime 모드이거나 key가 없으면 이 경로는 사용하지 않음
+    if (!savedId || isRealtime) {
+      // realtime 모드이거나 savedId가 없으면 이 경로는 사용하지 않음
+      // 기존 key 파라미터 지원 (하위 호환성)
+      if (storageKey && !isRealtime) {
+        console.warn('결과 페이지: 구버전 key 파라미터 사용 중. savedId를 사용하세요.')
+        setError('결과 데이터를 찾을 수 없습니다. 다시 시도해주세요.')
+        setLoading(false)
+      }
       return
     }
 
-    console.log('결과 페이지: 키로 데이터 찾기 시작, 키:', storageKey)
+    console.log('결과 페이지: savedId로 데이터 찾기 시작, ID:', savedId)
     
-    // 기존 방식: 완료된 결과 로드
-    const loadData = () => {
+    // Supabase에서 완료된 결과 로드
+    const loadData = async () => {
       try {
-        // 세션 스토리지에서 데이터 가져오기
-        const resultDataStr = sessionStorage.getItem(storageKey)
-        
-        console.log('결과 페이지: sessionStorage에서 데이터 조회, 키:', storageKey)
-        console.log('결과 페이지: 데이터 존재 여부:', !!resultDataStr)
-        
-        if (!resultDataStr) {
-          // 모든 키 확인 (디버깅용)
-          console.log('결과 페이지: sessionStorage의 모든 키:', Object.keys(sessionStorage))
-          setError('결과 데이터를 찾을 수 없습니다. 다시 시도해주세요.')
-          setLoading(false)
-          return
+        const response = await fetch(`/api/saved-results/list`)
+        if (!response.ok) {
+          throw new Error('저장된 결과 목록 조회 실패')
         }
 
-        console.log('결과 페이지: 데이터 파싱 시작, 크기:', resultDataStr.length, 'bytes')
-        const parsedData: ResultData = JSON.parse(resultDataStr)
-        console.log('결과 페이지: 데이터 파싱 완료, HTML 길이:', parsedData.html?.length || 0)
-        console.log('결과 페이지: content 객체:', parsedData.content)
-        console.log('결과 페이지: content의 tts_speaker:', parsedData.content?.tts_speaker)
+        const result = await response.json()
+        if (!result.success || !result.data) {
+          throw new Error('저장된 결과 데이터가 없습니다.')
+        }
+
+        const savedResult = result.data.find((item: any) => item.id === savedId)
+        if (!savedResult) {
+          throw new Error('저장된 결과를 찾을 수 없습니다.')
+        }
+
+        console.log('결과 페이지: 저장된 결과 조회 완료, HTML 길이:', savedResult.html?.length || 0)
+        
+        // ResultData 형식으로 변환
+        const parsedData: ResultData = {
+          content: savedResult.content || null,
+          html: savedResult.html || '',
+          startTime: savedResult.processingTime ? Date.now() - savedResult.processingTime : undefined,
+          model: savedResult.model,
+          userName: savedResult.userName
+        }
+        
         setResultData(parsedData)
         
         // 저장된 결과 목록 로드
         console.log('결과 페이지: loadSavedResults 호출')
         loadSavedResults()
 
-        // 사용 후 세션 스토리지에서 삭제하지 않음 (저장 기능을 위해 유지)
         console.log('결과 페이지: 데이터 로드 완료')
-      } catch (e) {
-        console.error('결과 데이터 파싱 실패:', e)
+      } catch (e: any) {
+        console.error('결과 데이터 로드 실패:', e)
         setError('결과 데이터를 불러오는 중 오류가 발생했습니다.')
       } finally {
         setLoading(false)
       }
     }
 
-    // 약간의 지연 후 데이터 로드
-    const timer = setTimeout(loadData, 50)
-    
-    return () => clearTimeout(timer)
-  }, [storageKey, isRealtime])
+    loadData()
+  }, [savedId, storageKey, isRealtime])
 
   // realtime 모드: requestKey 기반으로 스트리밍 수행
   useEffect(() => {
@@ -270,17 +280,37 @@ function ResultContent() {
 
     const startStreaming = async () => {
       try {
-        const payloadStr = sessionStorage.getItem(requestKey)
-        if (!payloadStr) {
-          console.error('결과 페이지: requestKey에 대한 요청 데이터가 없습니다.', requestKey)
+        // Supabase에서 임시 요청 데이터 조회
+        const getResponse = await fetch(`/api/temp-request/get?requestKey=${requestKey}`)
+        
+        if (!getResponse.ok) {
+          const errorData = await getResponse.json()
+          console.error('결과 페이지: requestKey에 대한 요청 데이터를 찾을 수 없습니다.', requestKey, errorData)
           if (!cancelled) {
             setError('결과 요청 데이터를 찾을 수 없습니다. 다시 시도해주세요.')
             setLoading(false)
+            // 3초 후 form 페이지로 리다이렉트
+            setTimeout(() => {
+              window.location.href = '/form'
+            }, 3000)
           }
           return
         }
 
-        const payload = JSON.parse(payloadStr)
+        const getResult = await getResponse.json()
+        if (!getResult.success || !getResult.payload) {
+          console.error('결과 페이지: payload 데이터가 없습니다.', getResult)
+          if (!cancelled) {
+            setError('결과 요청 데이터를 불러오는 중 오류가 발생했습니다. 다시 시도해주세요.')
+            setLoading(false)
+            setTimeout(() => {
+              window.location.href = '/form'
+            }, 3000)
+          }
+          return
+        }
+
+        const payload = getResult.payload
         const { requestData, content, startTime, model, userName } = payload
 
         if (cancelled) return
@@ -443,14 +473,16 @@ function ResultContent() {
             }
             setResultData(finalResult)
 
-            // 세션에도 저장해서 이후 재사용/저장 기능 유지
-            const resultStorageKey = `result_${Date.now()}`
-            sessionStorage.setItem(resultStorageKey, JSON.stringify(finalResult))
-            console.log('결과 페이지: realtime 모드, 최종 결과 저장 키:', resultStorageKey)
+            // sessionStorage 대신 Supabase에 저장하므로 여기서는 저장하지 않음
+            // (이미 saved_results 테이블에 저장됨)
+            console.log('결과 페이지: realtime 모드, 최종 결과 완료')
 
             setIsStreamingActive(false)
             setStreamingFinished(true)
             setStreamingProgress(100)
+            setLoading(false)
+            setShowRealtimePopup(false)
+            console.log('=== 재미나이 API 스트리밍 완료 ===')
           } else if (data.type === 'error') {
             console.error('결과 페이지: realtime 스트리밍 에러:', data.error)
             // 429 Rate Limit 에러는 점사중... 메시지가 이미 떠 있으므로 에러 메시지 표시하지 않음
@@ -551,6 +583,9 @@ function ResultContent() {
       return
     }
     
+    // requestKey 저장 (나중에 temp_requests 삭제용)
+    const currentRequestKey = requestKey
+    
     try {
       // resultData에서 필요한 값들 가져오기
       const content = resultData.content
@@ -644,6 +679,190 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           alert('결과가 저장되었습니다.')
         } else {
           console.log('점사 완료: 결과가 자동으로 저장되었습니다.')
+        }
+        
+        // PDF 생성 및 업로드 (서버 사이드로 처리, 비동기 실행)
+        if (savedResultId && typeof window !== 'undefined') {
+          console.log('=== 서버 사이드 PDF 생성 요청 ===')
+          console.log('savedResultId:', savedResultId)
+          ;(async () => {
+            try {
+              // 실제 렌더링된 메인 컨테이너에서 HTML 추출
+              const mainContainer = document.querySelector('main.container') as HTMLElement
+              if (!mainContainer) {
+                throw new Error('메인 컨테이너를 찾을 수 없습니다.')
+              }
+              
+              // 메인 컨테이너의 HTML 추출 (TTS 버튼 제거)
+              const tempDiv = mainContainer.cloneNode(true) as HTMLElement
+              const ttsButtons = tempDiv.querySelectorAll('.tts-button-container, .tts-button, #ttsButton')
+              ttsButtons.forEach(btn => btn.remove())
+              
+              // 대표 썸네일 찾아서 thumbnail-container 클래스 추가 및 전체 폭 스타일 적용
+              // result-title 다음에 오는 첫 번째 이미지를 대표 썸네일로 인식
+              const resultTitle = tempDiv.querySelector('.result-title, h1')
+              if (resultTitle) {
+                // result-title 다음에 오는 첫 번째 div > img 또는 직접 img 찾기
+                let nextSibling = resultTitle.nextElementSibling
+                while (nextSibling) {
+                  // div 안에 img가 있는 경우
+                  const imgInDiv = nextSibling.querySelector('img')
+                  if (imgInDiv && nextSibling.tagName === 'DIV') {
+                    nextSibling.className = 'thumbnail-container'
+                    const img = nextSibling.querySelector('img')
+                    if (img) {
+                      (img as HTMLElement).style.width = '100%'
+                      ;(img as HTMLElement).style.height = 'auto'
+                      ;(img as HTMLElement).style.display = 'block'
+                      ;(img as HTMLElement).style.objectFit = 'cover'
+                    }
+                    break
+                  }
+                  // 직접 img인 경우
+                  if (nextSibling.tagName === 'IMG') {
+                    const wrapper = document.createElement('div')
+                    wrapper.className = 'thumbnail-container'
+                    nextSibling.parentNode?.insertBefore(wrapper, nextSibling)
+                    wrapper.appendChild(nextSibling)
+                    ;(nextSibling as HTMLElement).style.width = '100%'
+                    ;(nextSibling as HTMLElement).style.height = 'auto'
+                    ;(nextSibling as HTMLElement).style.display = 'block'
+                    ;(nextSibling as HTMLElement).style.objectFit = 'cover'
+                    break
+                  }
+                  nextSibling = nextSibling.nextElementSibling
+                }
+              }
+              
+              // 계산된 스타일을 인라인 스타일로 변환 (PDF에서 스타일이 제대로 적용되도록)
+              // 셀렉터 오류 방지를 위해 직접 요소를 찾는 방식으로 변경
+              const allElements = tempDiv.querySelectorAll('*')
+              allElements.forEach((el, index) => {
+                const htmlEl = el as HTMLElement
+                
+                // 대표 썸네일 컨테이너 전체 폭 스타일 적용
+                if (el.classList.contains('thumbnail-container')) {
+                  htmlEl.style.width = 'calc(100% + 64px)'
+                  htmlEl.style.maxWidth = 'calc(100% + 64px)'
+                  htmlEl.style.marginLeft = '-32px'
+                  htmlEl.style.marginRight = '-32px'
+                  htmlEl.style.padding = '0'
+                  htmlEl.style.boxSizing = 'border-box'
+                }
+                
+                // 클래스명으로 셀렉터를 만들지 않고, 직접 스타일 적용
+                // 소제목 썸네일 컨테이너 스타일 강제 적용 (가운데 정렬)
+                if (el.classList.contains('subtitle-thumbnail-container')) {
+                  htmlEl.style.width = '50%'
+                  htmlEl.style.display = 'flex'
+                  htmlEl.style.justifyContent = 'center' // 가운데 정렬
+                  htmlEl.style.alignItems = 'center'
+                  htmlEl.style.marginLeft = 'auto'
+                  htmlEl.style.marginRight = 'auto'
+                  htmlEl.style.marginTop = '0.5rem'
+                  htmlEl.style.marginBottom = '0.5rem'
+                }
+                // 소제목 썸네일 이미지 스타일 강제 적용
+                if (el.tagName === 'IMG' && el.closest('.subtitle-thumbnail-container')) {
+                  htmlEl.style.width = '100%'
+                  htmlEl.style.height = 'auto'
+                  htmlEl.style.display = 'block'
+                  htmlEl.style.borderRadius = '8px'
+                }
+              })
+              
+              // 모든 스타일 태그 추출 (head의 style 태그 포함)
+              const styleTags = Array.from(document.querySelectorAll('style'))
+              const headStyleTags = Array.from(document.head.querySelectorAll('style'))
+              // 중복 제거를 위해 Map 사용
+              const styleMap = new Map<string, string>()
+              styleTags.forEach(style => {
+                const content = style.innerHTML
+                if (content && !styleMap.has(content)) {
+                  styleMap.set(content, content)
+                }
+              })
+              headStyleTags.forEach(style => {
+                const content = style.innerHTML
+                if (content && !styleMap.has(content)) {
+                  styleMap.set(content, content)
+                }
+              })
+              const styleContent = Array.from(styleMap.values()).join('\n')
+              
+              // HTML 콘텐츠 추출 (outerHTML로 전체 구조 포함)
+              const htmlContent = tempDiv.innerHTML
+              
+              // 서버로 PDF 생성 요청 (타임아웃 5분)
+              console.log('서버로 PDF 생성 요청 전송...')
+              const controller = new AbortController()
+              const timeoutId = setTimeout(() => controller.abort(), 300000) // 5분 타임아웃
+              
+              try {
+                const generateResponse = await fetch('/api/saved-results/generate-pdf', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    savedResultId,
+                    html: `<style>${styleContent}</style>${htmlContent}`,
+                    contentName: content?.content_name || '재회 결과',
+                    thumbnailUrl: content?.thumbnail_url || null
+                  }),
+                  signal: controller.signal
+                })
+                
+                clearTimeout(timeoutId)
+                
+                if (!generateResponse.ok) {
+                  const error = await generateResponse.json()
+                  console.error('PDF 생성 API 에러:', error)
+                  throw new Error(error.error || error.details || 'PDF 생성에 실패했습니다.')
+                }
+                
+                const generateResult = await generateResponse.json()
+                console.log('=== 서버 사이드 PDF 생성 및 업로드 성공 ===')
+                console.log('PDF URL:', generateResult.url)
+                console.log('PDF 경로:', generateResult.path)
+              } catch (fetchError: any) {
+                clearTimeout(timeoutId)
+                if (fetchError.name === 'AbortError') {
+                  throw new Error('PDF 생성이 타임아웃되었습니다 (5분 초과)')
+                }
+                throw fetchError
+              }
+              
+              // temp_requests 데이터 삭제 (realtime 모드에서 사용한 경우)
+              // requestKey는 클로저에서 가져오기
+              const currentRequestKey = requestKey
+              if (currentRequestKey) {
+                try {
+                  const deleteResponse = await fetch(`/api/temp-request/delete?requestKey=${currentRequestKey}`, {
+                    method: 'DELETE'
+                  })
+                  if (deleteResponse.ok) {
+                    console.log('temp_requests 데이터 삭제 완료:', currentRequestKey)
+                  } else {
+                    console.warn('temp_requests 삭제 실패:', await deleteResponse.text())
+                  }
+                } catch (deleteError) {
+                  console.warn('temp_requests 삭제 실패 (무시):', deleteError)
+                }
+              }
+            } catch (pdfError) {
+              console.error('=== PDF 생성/업로드 실패 ===')
+              console.error('에러 타입:', typeof pdfError)
+              console.error('에러 메시지:', pdfError instanceof Error ? pdfError.message : String(pdfError))
+              console.error('에러 스택:', pdfError instanceof Error ? pdfError.stack : 'N/A')
+              console.error('전체 에러 객체:', pdfError)
+              // PDF 생성 실패해도 저장은 성공한 것으로 처리 (사용자에게 알리지 않음)
+            }
+          })()
+        } else {
+          console.warn('=== PDF 생성 건너뜀 ===')
+          console.warn('savedResultId:', savedResultId)
+          console.warn('typeof window:', typeof window)
         }
         
         // 저장된 결과 목록 다시 로드 (DB 동기화를 위해 충분한 시간 대기)

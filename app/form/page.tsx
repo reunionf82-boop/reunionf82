@@ -71,6 +71,7 @@ function FormContent() {
   const [agreePrivacy, setAgreePrivacy] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [savedResults, setSavedResults] = useState<any[]>([])
+  const [pdfExistsMap, setPdfExistsMap] = useState<Record<string, boolean>>({})
   
   // 스트리밍 로딩 팝업 상태
   const [showLoadingPopup, setShowLoadingPopup] = useState(false)
@@ -198,6 +199,38 @@ function FormContent() {
       setSavedResults([])
     }
   }
+
+  // PDF 파일 존재 여부 확인
+  useEffect(() => {
+    const checkPdfExists = async () => {
+      if (savedResults.length === 0) return
+      
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const checks = await Promise.all(
+        savedResults.map(async (saved: any) => {
+          if (!saved.id) return null
+          try {
+            const pdfUrl = `${supabaseUrl}/storage/v1/object/public/pdfs/${saved.id}.pdf`
+            const response = await fetch(pdfUrl, { method: 'HEAD' })
+            return { id: saved.id, exists: response.ok }
+          } catch (error) {
+            return { id: saved.id, exists: false }
+          }
+        })
+      )
+      
+      const newMap: Record<string, boolean> = {}
+      checks.forEach(check => {
+        if (check) {
+          newMap[check.id] = check.exists
+        }
+      })
+      
+      setPdfExistsMap(newMap)
+    }
+    
+    checkPdfExists()
+  }, [savedResults])
 
   // 저장된 결과 삭제 (서버)
   const deleteSavedResult = async (resultId: string) => {
@@ -740,7 +773,7 @@ function FormContent() {
       if (fortuneViewMode === 'realtime') {
         console.log('Form 페이지: realtime 모드 감지, result 페이지로 리다이렉트')
         
-        // requestKey 생성 및 sessionStorage에 저장
+        // requestKey 생성 및 Supabase에 저장
         const requestKey = `request_${Date.now()}`
         const payload = {
           requestData,
@@ -749,8 +782,33 @@ function FormContent() {
           model: currentModel,
           userName: name
         }
-        sessionStorage.setItem(requestKey, JSON.stringify(payload))
-        console.log('Form 페이지: requestKey 저장 완료:', requestKey)
+        
+        try {
+          // Supabase에 임시 요청 데이터 저장
+          const saveResponse = await fetch('/api/temp-request/save', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              requestKey,
+              payload
+            })
+          })
+
+          if (!saveResponse.ok) {
+            const errorData = await saveResponse.json()
+            throw new Error(errorData.error || '임시 요청 데이터 저장 실패')
+          }
+
+          const saveResult = await saveResponse.json()
+          console.log('Form 페이지: Supabase에 requestKey 저장 완료:', requestKey)
+        } catch (e: any) {
+          console.error('Form 페이지: Supabase 저장 실패:', e?.message || e)
+          alert('데이터 저장에 실패했습니다. 다시 시도해주세요.')
+          setSubmitting(false)
+          return
+        }
         
         // result 페이지로 리다이렉트 (realtime 모드)
         setSubmitting(false)
@@ -817,7 +875,7 @@ function FormContent() {
       })
       
       try {
-        await callJeminaiAPIStream(requestData, (data) => {
+        await callJeminaiAPIStream(requestData, async (data) => {
           console.log('스트리밍 콜백 호출:', data.type, data)
           
           if (data.type === 'start') {
@@ -1001,17 +1059,44 @@ function FormContent() {
             console.log('Form 페이지: 저장할 resultData의 content:', content)
             console.log('Form 페이지: 저장할 content의 tts_speaker:', content?.tts_speaker)
             
-            // 세션 스토리지에 저장
-            const storageKey = `result_${Date.now()}`
-            const resultDataStr = JSON.stringify(resultData)
-            sessionStorage.setItem(storageKey, resultDataStr)
-            
-            console.log('결과 데이터 저장 완료, 키:', storageKey)
-            
-            // 결과 페이지로 즉시 이동
-            setShowLoadingPopup(false)
-            setSubmitting(false)
-            router.push(`/result?key=${storageKey}`)
+            // batch 모드: 완료된 결과를 Supabase에 저장 (비동기로 실행)
+            ;(async () => {
+              try {
+                const saveResponse = await fetch('/api/saved-results/save', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    title: content?.content_name || '재회 결과',
+                    html: finalHtml,
+                    content: content,
+                    model: currentModel,
+                    userName: name,
+                    processingTime: Date.now() - startTime
+                  })
+                })
+
+                if (!saveResponse.ok) {
+                  const errorData = await saveResponse.json()
+                  throw new Error(errorData.error || '결과 저장 실패')
+                }
+
+                const saveResult = await saveResponse.json()
+                const savedId = saveResult.data?.id
+                console.log('Form 페이지: batch 모드 결과 저장 완료, ID:', savedId)
+                
+                // 결과 페이지로 이동 (저장된 ID 사용)
+                setShowLoadingPopup(false)
+                setSubmitting(false)
+                router.push(`/result?savedId=${savedId}`)
+              } catch (e: any) {
+                console.error('Form 페이지: batch 모드 결과 저장 실패:', e?.message || e)
+                alert('결과 저장에 실패했습니다. 다시 시도해주세요.')
+                setShowLoadingPopup(false)
+                setSubmitting(false)
+              }
+            })()
           } else if (data.type === 'error') {
             console.error('스트리밍 에러:', data.error)
             
@@ -2143,6 +2228,48 @@ function FormContent() {
                       </div>
                       <div className="flex items-center gap-2">
                         {!isExpired60d && (
+                        <>
+                        {/* PDF 다운로드 버튼 - PDF 파일이 존재할 때만 표시 */}
+                        {pdfExistsMap[saved.id] === true && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+                              const pdfUrl = `${supabaseUrl}/storage/v1/object/public/pdfs/${saved.id}.pdf`
+                              
+                              // PDF 존재 여부 확인
+                              const checkResponse = await fetch(pdfUrl, { method: 'HEAD' })
+                              
+                              if (checkResponse.ok) {
+                                // PDF 다운로드
+                                const downloadResponse = await fetch(pdfUrl)
+                                const blob = await downloadResponse.blob()
+                                const url = window.URL.createObjectURL(blob)
+                                const a = document.createElement('a')
+                                a.href = url
+                                a.download = `${saved.title || '재회 결과'}.pdf`
+                                document.body.appendChild(a)
+                                a.click()
+                                document.body.removeChild(a)
+                                window.URL.revokeObjectURL(url)
+                              } else {
+                                alert('PDF 파일을 찾을 수 없습니다.')
+                              }
+                            } catch (error) {
+                              console.error('PDF 다운로드 실패:', error)
+                              alert('PDF 다운로드에 실패했습니다.')
+                            }
+                          }}
+                          className="bg-green-400 hover:bg-green-500 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors duration-200 flex items-center gap-1"
+                          title="PDF 다운로드"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                          </svg>
+                          <span>PDF</span>
+                        </button>
+                        )}
+                        {/* 보기 버튼 */}
                         <button
                           onClick={() => {
                             if (typeof window === 'undefined') return
@@ -2202,12 +2329,39 @@ function FormContent() {
                                 const savedMenuFontSize = saved.content?.menu_font_size || 16
                                 const savedSubtitleFontSize = saved.content?.subtitle_font_size || 14
                                 const savedBodyFontSize = saved.content?.body_font_size || 11
+                                
+                                // 웹폰트 적용
+                                const fontFace = saved.content?.font_face || ''
+                                const extractFontFamily = (fontFaceCss: string): string | null => {
+                                  if (!fontFaceCss) return null
+                                  const match = fontFaceCss.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
+                                  return match ? (match[1] || match[2]?.trim()) : null
+                                }
+                                const fontFamilyName = extractFontFamily(fontFace)
 
                                 const savedDynamicStyles = `
                                   .menu-title { font-size: ${savedMenuFontSize}px !important; }
                                   .subtitle-title { font-size: ${savedSubtitleFontSize}px !important; }
                                   .subtitle-content { font-size: ${savedBodyFontSize}px !important; }
                                 `
+                                
+                                const fontStyles = fontFamilyName ? `
+                                  * {
+                                    font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+                                  }
+                                  body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
+                                    font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+                                  }
+                                  .jeminai-results, .jeminai-results * {
+                                    font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+                                  }
+                                  .menu-section, .menu-section * {
+                                    font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+                                  }
+                                  .menu-title, .subtitle-title, .subtitle-content {
+                                    font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+                                  }
+                                ` : ''
 
                                 newWindow.document.write(`
                                   <!DOCTYPE html>
@@ -2216,8 +2370,10 @@ function FormContent() {
                                     <meta charset="UTF-8">
                                     <title>${saved.title}</title>
                                     <style>
+                                      ${fontFace ? fontFace : ''}
+                                      ${fontStyles}
                                       body {
-                                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+                                        font-family: ${fontFamilyName ? `'${fontFamilyName}', ` : ''}-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
                                         max-width: 896px;
                                         margin: 0 auto;
                                         padding: 32px 16px;
@@ -3875,6 +4031,7 @@ function FormContent() {
                         >
                           보기
                         </button>
+                        </>
                         )}
                         <button
                           onClick={() => deleteSavedResult(saved.id)}

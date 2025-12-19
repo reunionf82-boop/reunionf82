@@ -16,7 +16,8 @@
 }
 
 .jeminai-results .menu-thumbnail {
-  @apply w-full h-64 object-cover mb-6;
+  @apply w-full h-auto object-contain mb-6;
+  max-height: 400px;
   border-bottom: none !important;
 }
 

@@ -286,9 +286,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             thumbnail: '' // 기존 데이터에는 소제목 썸네일이 없음
           }))
           
-          setFirstMenuField({
-            value: data.menu_items[0].value || '',
-            thumbnail: data.menu_items[0].thumbnail || '',
+        setFirstMenuField({
+          value: data.menu_items[0].value || '',
+          thumbnail: data.menu_items[0].thumbnail || '',
             subtitles: firstMenuSubtitles.length > 0 ? firstMenuSubtitles : [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
           })
           
@@ -840,7 +840,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               ))}
             </div>
           )}
-
+          
           {/* 동적으로 생성된 메뉴 필드들 */}
           {menuFields.map((field) => (
             <div key={field.id} className="mt-3">
@@ -899,7 +899,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
                         placeholder="상품 메뉴 소제목"
                       />
-                      <textarea
+            <textarea
                         value={subtitle.interpretation_tool}
                         onChange={(e) => setMenuFields(menuFields.map(f => 
                           f.id === field.id ? {
@@ -969,7 +969,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                           ×
                         </button>
                       )}
-                    </div>
+          </div>
                   ))}
                 </div>
               )}
