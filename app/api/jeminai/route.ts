@@ -330,20 +330,62 @@ ${isSecondRequest ? '8. **2차 요청이므로 아래에 나열된 메뉴/소제
           console.log('HTML 길이:', html.length)
           console.log('전체 소제목 개수:', allMenuSubtitles.length)
           
-          // HTML에서 모든 소제목 섹션 추출 (더 유연한 패턴)
-          // subtitle-section div와 그 안의 subtitle-content div를 포함하는 섹션 찾기
-          // 여러 패턴 시도: 정확한 클래스명, 부분 매칭 등
-          let subtitleSections = html.match(/<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>[\s\S]*?<\/div>\s*<\/div>/g) || []
-          if (subtitleSections.length === 0) {
-            // 다른 패턴 시도: subtitle-section이 포함된 div 찾기
-            subtitleSections = html.match(/<div[^>]*subtitle-section[^>]*>[\s\S]*?<\/div>\s*<\/div>/g) || []
+          // HTML에서 모든 소제목 섹션 추출 (더 견고한 방법)
+          // subtitle-section div를 찾되, 내부 구조를 정확히 파악
+          // 패턴: <div class="subtitle-section">...<h3 class="subtitle-title">...</h3>...<div class="subtitle-content">...</div>...</div>
+          
+          // 방법 1: 간단한 패턴으로 subtitle-section 시작 태그 찾기
+          const subtitleSectionStartRegex = /<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>/gi
+          const subtitleSectionMatches: RegExpExecArray[] = []
+          let match: RegExpExecArray | null
+          while ((match = subtitleSectionStartRegex.exec(html)) !== null) {
+            subtitleSectionMatches.push(match)
           }
+          
+          const subtitleSections: string[] = []
+          
+          // 각 subtitle-section의 시작 위치에서 닫는 태그까지 찾기
+          for (let i = 0; i < subtitleSectionMatches.length; i++) {
+            const match = subtitleSectionMatches[i]
+            const startIndex = match.index!
+            const startTag = match[0]
+            
+            // 시작 태그 다음부터 닫는 </div> 찾기 (중첩된 div 고려)
+            let depth = 1
+            let currentIndex = startIndex + startTag.length
+            let endIndex = -1
+            
+            while (currentIndex < html.length && depth > 0) {
+              const nextOpenDiv = html.indexOf('<div', currentIndex)
+              const nextCloseDiv = html.indexOf('</div>', currentIndex)
+              
+              if (nextCloseDiv === -1) break
+              
+              if (nextOpenDiv !== -1 && nextOpenDiv < nextCloseDiv) {
+                depth++
+                currentIndex = nextOpenDiv + 4
+              } else {
+                depth--
+                if (depth === 0) {
+                  endIndex = nextCloseDiv + 6
+                  break
+                }
+                currentIndex = nextCloseDiv + 6
+              }
+            }
+            
+            if (endIndex > startIndex) {
+              const section = html.substring(startIndex, endIndex)
+              subtitleSections.push(section)
+            }
+          }
+          
           console.log('추출된 subtitle-section 개수:', subtitleSections.length)
           const firstSection = subtitleSections[0]
           if (firstSection) {
             console.log('첫 번째 subtitle-section 샘플 (처음 500자):', firstSection.substring(0, 500))
           } else {
-            console.warn('subtitle-section을 찾을 수 없음. HTML 샘플 (처음 1000자):', html.substring(0, 1000))
+            console.warn('subtitle-section을 찾을 수 없음. HTML 샘플 (처음 2000자):', html.substring(0, 2000))
           }
           
           // 각 소제목이 완료되었는지 확인
@@ -354,22 +396,27 @@ ${isSecondRequest ? '8. **2차 요청이므로 아래에 나열된 메뉴/소제
             const menuNumber = parseInt(menuMatch[1])
             const subtitleNumber = parseInt(menuMatch[2])
             
-            // 소제목 제목 패턴 (더 유연하게 - 마침표 포함/미포함, HTML 이스케이프 고려)
+            // 소제목 제목 패턴 (더 유연하게 - h3 태그 내부의 모든 내용을 고려)
             const subtitleTitleEscaped = subtitle.subtitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-            // 여러 패턴 시도: 정확한 매칭, 마침표 제거, 숫자만 매칭 등
+            // 패턴 1: h3 태그 안에 소제목 제목이 포함되어 있는지 확인 (태그 내부 구조 고려)
             const subtitleTitlePattern1 = new RegExp(
-              `<h3[^>]*class="subtitle-title"[^>]*>[^<]*${subtitleTitleEscaped}[^<]*</h3>`,
+              `<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)${subtitleTitleEscaped}([\\s\\S]*?)</h3>`,
               'i'
             )
-            // 마침표를 제거한 버전도 시도
+            // 패턴 2: 마침표를 제거한 버전
             const subtitleTitleWithoutDot = subtitle.subtitle.replace(/\./g, '')
             const subtitleTitlePattern2 = new RegExp(
-              `<h3[^>]*class="subtitle-title"[^>]*>[^<]*${subtitleTitleWithoutDot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^<]*</h3>`,
+              `<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)${subtitleTitleWithoutDot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)</h3>`,
               'i'
             )
-            // 숫자 패턴만 매칭 (예: "1-1" 또는 "1-1.")
+            // 패턴 3: 숫자 패턴만 매칭 (예: "1-1" 또는 "1-1.")
             const numberPattern = new RegExp(
-              `<h3[^>]*class="subtitle-title"[^>]*>[^<]*${menuNumber}-${subtitleNumber}[^<]*</h3>`,
+              `<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)${menuNumber}-${subtitleNumber}([\\s\\S]*?)</h3>`,
+              'i'
+            )
+            // 패턴 4: h3 태그 내부 텍스트를 추출해서 직접 비교
+            const h3TextPattern = new RegExp(
+              `<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)</h3>`,
               'i'
             )
             
@@ -380,13 +427,27 @@ ${isSecondRequest ? '8. **2차 요청이므로 아래에 나열된 메뉴/소제
             let found = false
             for (const section of subtitleSections) {
               // 여러 패턴으로 제목 매칭 시도
-              const titleMatches = subtitleTitlePattern1.test(section) || 
-                                   subtitleTitlePattern2.test(section) || 
-                                   numberPattern.test(section)
+              let titleMatches = subtitleTitlePattern1.test(section) || 
+                                 subtitleTitlePattern2.test(section) || 
+                                 numberPattern.test(section)
+              
+              // 패턴 4: h3 태그 내부 텍스트 직접 비교
+              if (!titleMatches) {
+                const h3Match = section.match(h3TextPattern)
+                if (h3Match) {
+                  const h3Text = h3Match[1].replace(/<[^>]+>/g, '').trim() // HTML 태그 제거 후 텍스트만 추출
+                  // 소제목 제목이 포함되어 있는지 확인 (부분 매칭)
+                  if (h3Text.includes(subtitle.subtitle) || 
+                      h3Text.includes(subtitleTitleWithoutDot) ||
+                      h3Text.includes(`${menuNumber}-${subtitleNumber}`)) {
+                    titleMatches = true
+                  }
+                }
+              }
               
               if (titleMatches && subtitleContentPattern.test(section)) {
                 // 내용이 비어있지 않은지 확인 (최소 10자 이상)
-                const contentMatch = section.match(/<div[^>]*class="subtitle-content"[^>]*>([\s\S]*?)<\/div>/i)
+                const contentMatch = section.match(/<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
                 if (contentMatch && contentMatch[1].trim().length > 10) {
                   if (!completedSubtitles.includes(index)) {
                     completedSubtitles.push(index)
