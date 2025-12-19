@@ -2400,7 +2400,8 @@ function FormContent() {
                                       .thumbnail-container img {
                                         width: 100%;
                                         height: auto;
-                                        object-fit: cover;
+                                        object-fit: contain;
+                                        max-height: 400px;
                                       }
                                       .thumbnail-container {
                                         border-radius: 0;
@@ -2473,8 +2474,9 @@ function FormContent() {
                                       }
                                       .menu-thumbnail {
                                         width: 100%;
-                                        height: 256px;
-                                        object-fit: cover;
+                                        height: auto;
+                                        object-fit: contain;
+                                        max-height: 400px;
                                         margin-bottom: 24px;
                                       }
                                       .subtitle-section {

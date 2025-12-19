@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import puppeteer from 'puppeteer'
+
+// 프로덕션 환경에서는 puppeteer-core + @sparticuz/chromium 사용
+// 개발 환경에서는 puppeteer 사용
+const isProduction = process.env.NODE_ENV === 'production'
+
+let puppeteer: any
+let chromium: any
+
+if (isProduction) {
+  // 프로덕션: puppeteer-core + @sparticuz/chromium
+  puppeteer = require('puppeteer-core')
+  chromium = require('@sparticuz/chromium')
+} else {
+  // 개발: puppeteer (Chromium 포함)
+  puppeteer = require('puppeteer')
+}
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -32,20 +47,53 @@ export async function POST(request: NextRequest) {
     console.log('=== 서버 사이드 PDF 생성 시작 ===')
     console.log('저장된 결과 ID:', savedResultId)
     console.log('HTML 길이:', html.length)
+    console.log('환경:', isProduction ? 'production' : 'development')
+    console.log('Puppeteer 모드:', isProduction && chromium ? 'puppeteer-core + @sparticuz/chromium' : 'puppeteer')
 
-    // Puppeteer 브라우저 실행
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu'
-      ]
-    })
+    // Puppeteer 브라우저 실행 (프로덕션 환경 대응)
+    let launchOptions: any
+    
+    try {
+      if (isProduction && chromium) {
+        // 프로덕션 환경(Vercel 등): @sparticuz/chromium 사용
+        console.log('프로덕션 환경: @sparticuz/chromium 사용')
+        chromium.setGraphicsMode(false) // 서버리스 환경 최적화
+        const executablePath = await chromium.executablePath()
+        console.log('Chromium 실행 경로:', executablePath)
+        
+        launchOptions = {
+          args: chromium.args,
+          defaultViewport: chromium.defaultViewport,
+          executablePath: executablePath,
+          headless: chromium.headless,
+          ignoreHTTPSErrors: true
+        }
+      } else {
+        // 개발 환경: 일반 puppeteer 사용
+        console.log('개발 환경: puppeteer 사용')
+        launchOptions = {
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu'
+          ]
+        }
+      }
+      
+      console.log('Puppeteer 실행 옵션:', JSON.stringify(launchOptions, null, 2))
+      browser = await puppeteer.launch(launchOptions)
+      console.log('Puppeteer 브라우저 실행 성공')
+    } catch (launchError: any) {
+      console.error('Puppeteer 브라우저 실행 실패:', launchError)
+      console.error('에러 메시지:', launchError?.message)
+      console.error('에러 스택:', launchError?.stack)
+      throw new Error(`Puppeteer 브라우저 실행 실패: ${launchError?.message || String(launchError)}`)
+    }
 
     const page = await browser.newPage()
 
