@@ -58,14 +58,39 @@ export async function POST(request: NextRequest) {
         // 프로덕션 환경(Vercel 등): @sparticuz/chromium 사용
         console.log('프로덕션 환경: @sparticuz/chromium 사용')
         
+        // Chromium WebGL 비활성화 (Vercel 환경 최적화)
+        // setGraphicsMode는 속성이므로 함수 호출이 아닌 속성 할당
+        try {
+          if ('setGraphicsMode' in chromium && typeof chromium.setGraphicsMode !== 'function') {
+            (chromium as any).setGraphicsMode = false
+            console.log('Chromium setGraphicsMode 비활성화 완료')
+          }
+        } catch (graphicsModeError) {
+          console.warn('setGraphicsMode 설정 실패 (무시):', graphicsModeError)
+        }
+        
         const executablePath = await chromium.executablePath()
         console.log('Chromium 실행 경로:', executablePath)
         
+        // Chromium args 확인
+        const chromiumArgs = chromium.args || []
+        console.log('Chromium 기본 args:', chromiumArgs)
+        
         launchOptions = {
-          args: chromium.args,
-          defaultViewport: chromium.defaultViewport,
+          args: [
+            ...chromiumArgs,
+            '--disable-gpu',
+            '--disable-dev-shm-usage',
+            '--disable-setuid-sandbox',
+            '--no-first-run',
+            '--no-sandbox',
+            '--no-zygote',
+            '--single-process',
+            '--disable-extensions'
+          ],
+          defaultViewport: chromium.defaultViewport || { width: 1280, height: 720 },
           executablePath: executablePath,
-          headless: chromium.headless,
+          headless: chromium.headless !== false ? true : false,
           ignoreHTTPSErrors: true
         }
       } else {
@@ -86,12 +111,15 @@ export async function POST(request: NextRequest) {
       }
       
       console.log('Puppeteer 실행 옵션:', JSON.stringify(launchOptions, null, 2))
+      console.log('Puppeteer 브라우저 실행 시도...')
       browser = await puppeteer.launch(launchOptions)
       console.log('Puppeteer 브라우저 실행 성공')
     } catch (launchError: any) {
-      console.error('Puppeteer 브라우저 실행 실패:', launchError)
+      console.error('=== Puppeteer 브라우저 실행 실패 ===')
+      console.error('에러 타입:', typeof launchError)
       console.error('에러 메시지:', launchError?.message)
       console.error('에러 스택:', launchError?.stack)
+      console.error('전체 에러 객체:', JSON.stringify(launchError, Object.getOwnPropertyNames(launchError)))
       throw new Error(`Puppeteer 브라우저 실행 실패: ${launchError?.message || String(launchError)}`)
     }
 
