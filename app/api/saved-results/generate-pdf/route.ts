@@ -58,6 +58,16 @@ export async function POST(request: NextRequest) {
         // 프로덕션 환경(Vercel 등): @sparticuz/chromium 사용
         console.log('프로덕션 환경: @sparticuz/chromium 사용')
         
+        // Chromium 폰트 로드 (Vercel 환경에서 필요할 수 있음)
+        try {
+          if (typeof chromium.font === 'function') {
+            await chromium.font()
+            console.log('Chromium 폰트 로드 완료')
+          }
+        } catch (fontError) {
+          console.warn('Chromium 폰트 로드 실패 (무시):', fontError)
+        }
+        
         // Chromium WebGL 비활성화 (Vercel 환경 최적화)
         // setGraphicsMode는 속성이므로 함수 호출이 아닌 속성 할당
         try {
@@ -86,11 +96,19 @@ export async function POST(request: NextRequest) {
             '--no-sandbox',
             '--no-zygote',
             '--single-process',
-            '--disable-extensions'
+            '--disable-extensions',
+            '--disable-software-rasterizer',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-features=TranslateUI',
+            '--disable-ipc-flooding-protection',
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor'
           ],
           defaultViewport: chromium.defaultViewport || { width: 1280, height: 720 },
           executablePath: executablePath,
-          headless: chromium.headless !== false ? true : false,
+          headless: chromium.headless !== false ? 'new' : false,
           ignoreHTTPSErrors: true
         }
       } else {
