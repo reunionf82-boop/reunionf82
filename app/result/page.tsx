@@ -45,11 +45,86 @@ ThumbnailDisplay.displayName = 'ThumbnailDisplay'
 
 function ResultContent() {
   const searchParams = useSearchParams()
-  const storageKey = searchParams.get('key')
-  const savedId = searchParams.get('savedId')
-  const requestKey = searchParams.get('requestKey')
-  const isStreaming = searchParams.get('stream') === 'true'
-  const isRealtime = isStreaming && !!requestKey
+  
+  // sessionStorage에서 데이터 가져오기 (URL 파라미터 대신, 하위 호환성 유지)
+  const [storageKey, setStorageKey] = useState<string | null>(null)
+  const [savedId, setSavedId] = useState<string | null>(null)
+  const [requestKey, setRequestKey] = useState<string | null>(null)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [isRealtime, setIsRealtime] = useState(false)
+  const [dataLoaded, setDataLoaded] = useState(false) // 데이터 로드 완료 플래그
+  
+  // sessionStorage와 URL 파라미터에서 데이터 로드 (최우선 실행)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (dataLoaded) return // 이미 로드했으면 건너뛰기
+    
+    // 1. sessionStorage 우선 확인 (새로운 방식)
+    const storedRequestKey = sessionStorage.getItem('result_requestKey')
+    const storedStream = sessionStorage.getItem('result_stream')
+    const storedSavedId = sessionStorage.getItem('result_savedId')
+    const storedStorageKey = sessionStorage.getItem('result_key')
+    
+    if (storedRequestKey) {
+      setRequestKey(storedRequestKey)
+      setIsStreaming(storedStream === 'true')
+      setIsRealtime(storedStream === 'true' && !!storedRequestKey)
+      // 사용 후 삭제 (한 번만 사용)
+      sessionStorage.removeItem('result_requestKey')
+      sessionStorage.removeItem('result_stream')
+      console.log('Result 페이지: sessionStorage에서 requestKey 가져옴:', storedRequestKey)
+      setDataLoaded(true)
+      return
+    }
+    
+    if (storedSavedId) {
+      setSavedId(storedSavedId)
+      // 사용 후 삭제 (한 번만 사용)
+      sessionStorage.removeItem('result_savedId')
+      console.log('Result 페이지: sessionStorage에서 savedId 가져옴:', storedSavedId)
+      setDataLoaded(true)
+      return
+    }
+    
+    if (storedStorageKey) {
+      setStorageKey(storedStorageKey)
+      // 사용 후 삭제 (한 번만 사용)
+      sessionStorage.removeItem('result_key')
+      console.log('Result 페이지: sessionStorage에서 storageKey 가져옴:', storedStorageKey)
+      setDataLoaded(true)
+      return
+    }
+    
+    // 2. URL 파라미터 확인 (하위 호환성)
+    const urlStorageKey = searchParams.get('key')
+    const urlSavedId = searchParams.get('savedId')
+    const urlRequestKey = searchParams.get('requestKey')
+    const urlIsStreaming = searchParams.get('stream') === 'true'
+    
+    if (urlStorageKey) {
+      setStorageKey(urlStorageKey)
+      console.log('Result 페이지: URL에서 storageKey 가져옴:', urlStorageKey)
+    }
+    
+    if (urlSavedId) {
+      setSavedId(urlSavedId)
+      console.log('Result 페이지: URL에서 savedId 가져옴:', urlSavedId)
+    }
+    
+    if (urlRequestKey) {
+      setRequestKey(urlRequestKey)
+      setIsStreaming(urlIsStreaming)
+      setIsRealtime(urlIsStreaming && !!urlRequestKey)
+      console.log('Result 페이지: URL에서 requestKey 가져옴:', urlRequestKey)
+    }
+    
+    setDataLoaded(true)
+  }, [searchParams, dataLoaded])
+  
+  // requestKey나 isStreaming이 변경되면 isRealtime 업데이트
+  useEffect(() => {
+    setIsRealtime(isStreaming && !!requestKey)
+  }, [isStreaming, requestKey])
   const [resultData, setResultData] = useState<ResultData | null>(null)
   const [streamingHtml, setStreamingHtml] = useState('')
   const [isStreamingActive, setIsStreamingActive] = useState(false)

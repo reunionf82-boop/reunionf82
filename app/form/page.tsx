@@ -133,6 +133,12 @@ function FormContent() {
   const [playingResultId, setPlayingResultId] = useState<string | null>(null)
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null)
   
+  // 썸네일 이미지 로드 실패 상태 관리
+  const [thumbnailError, setThumbnailError] = useState(false)
+  const [thumbnailRetried, setThumbnailRetried] = useState(false)
+  const [previewThumbnailErrors, setPreviewThumbnailErrors] = useState<Record<number, boolean>>({})
+  const [previewThumbnailRetried, setPreviewThumbnailRetried] = useState<Record<number, boolean>>({})
+  
   // 궁합형 여부 확인
   const isGonghapType = content?.content_type === 'gonghap'
 
@@ -302,6 +308,23 @@ function FormContent() {
     }
   }
 
+  // HTML에서 썸네일 이미지에 onerror 핸들러 추가 (재시도 포함)
+  const addImageErrorHandlers = (html: string): string => {
+    // menu-thumbnail 클래스를 가진 이미지 태그에 onerror 핸들러 추가 (재시도 포함)
+    return html.replace(
+      /(<img[^>]*class="[^"]*menu-thumbnail[^"]*"[^>]*)(\/?>)/g,
+      (match, imgTag, closing) => {
+        // 이미 onerror가 있는지 확인
+        if (imgTag.includes('onerror')) {
+          return match + closing
+        }
+        // 재시도 로직이 포함된 onerror 핸들러 추가
+        const originalSrc = imgTag.match(/src=["']([^"']+)["']/)?.[1] || ''
+        return imgTag + ' data-retry-count="0" data-original-src="' + originalSrc.replace(/"/g, '&quot;') + '" onerror="if(this.dataset.retryCount===\'0\') { this.dataset.retryCount=\'1\'; this.src=this.dataset.originalSrc+\'?retry=\'+Date.now(); } else { this.onerror=null; this.style.display=\'none\'; if(this.parentElement) { this.parentElement.style.background=\'linear-gradient(to bottom right, #1e3a8a, #7c3aed, #ec4899)\'; this.parentElement.style.minHeight=\'200px\'; } }"' + closing
+      }
+    )
+  }
+
   // HTML에서 텍스트 추출 (태그 제거)
   const extractTextFromHtml = (htmlString: string): string => {
     if (typeof window === 'undefined') return ''
@@ -464,6 +487,14 @@ function FormContent() {
   useEffect(() => {
     loadContent()
   }, [title])
+
+  // content가 변경될 때 썸네일 에러 상태 초기화
+  useEffect(() => {
+    setThumbnailError(false)
+    setThumbnailRetried(false)
+    setPreviewThumbnailErrors({})
+    setPreviewThumbnailRetried({})
+  }, [content])
 
   // 저장된 결과는 컴포넌트 마운트 시와 title 변경 시 모두 로드
   useEffect(() => {
@@ -846,8 +877,13 @@ function FormContent() {
         
         // result 페이지로 즉시 리다이렉트 (realtime 모드)
         // 저장 작업 완료를 기다리지 않고 즉시 이동하여 지연 최소화
+        // sessionStorage에 데이터 저장 (URL 파라미터 대신)
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('result_requestKey', requestKey)
+          sessionStorage.setItem('result_stream', 'true')
+        }
         setSubmitting(false)
-        router.push(`/result?requestKey=${requestKey}&stream=true`)
+        router.push('/result')
         return
       }
 
@@ -1082,6 +1118,9 @@ function FormContent() {
               }
             }
             
+            // 모든 이미지에 onerror 핸들러 추가
+            finalHtml = addImageErrorHandlers(finalHtml)
+            
             // 결과 데이터 준비
             const resultData = {
               content, // content 객체 전체 저장 (tts_speaker 포함)
@@ -1122,9 +1161,13 @@ function FormContent() {
                 console.log('Form 페이지: batch 모드 결과 저장 완료, ID:', savedId)
                 
                 // 결과 페이지로 이동 (저장된 ID 사용)
+                // sessionStorage에 데이터 저장 (URL 파라미터 대신)
+                if (typeof window !== 'undefined') {
+                  sessionStorage.setItem('result_savedId', String(savedId))
+                }
                 setShowLoadingPopup(false)
                 setSubmitting(false)
-                router.push(`/result?savedId=${savedId}`)
+                router.push('/result')
               } catch (e: any) {
                 console.error('Form 페이지: batch 모드 결과 저장 실패:', e?.message || e)
                 alert('결과 저장에 실패했습니다. 다시 시도해주세요.')
@@ -1332,13 +1375,25 @@ function FormContent() {
       
       <main className="container mx-auto px-4 sm:px-6 py-8 max-w-4xl w-full">
         {/* 상단 썸네일 영역 */}
-        {content?.thumbnail_url ? (
+        {content?.thumbnail_url && !thumbnailError ? (
           <div className="relative mb-8 overflow-hidden shadow-sm">
             <div className="relative h-96">
               <img 
-                src={content.thumbnail_url} 
+                src={content.thumbnail_url + (thumbnailRetried ? '?retry=' + Date.now() : '')} 
                 alt={content.content_name || '썸네일'}
                 className="w-full h-full object-cover"
+                onError={(e) => {
+                  const img = e.currentTarget
+                  if (!thumbnailRetried) {
+                    console.warn('썸네일 이미지 로드 실패, 재시도 중...', content.thumbnail_url)
+                    setThumbnailRetried(true)
+                    // src를 강제로 다시 설정하여 재시도
+                    img.src = content.thumbnail_url + '?retry=' + Date.now()
+                  } else {
+                    console.error('썸네일 이미지 로드 재시도 실패:', content.thumbnail_url)
+                    setThumbnailError(true)
+                  }
+                }}
               />
               {/* NEW 태그 */}
               {content?.is_new && (
@@ -1551,13 +1606,35 @@ function FormContent() {
                   <h2 className="text-xl font-bold text-gray-900 mb-4">재회상품 미리보기</h2>
                   <div className="flex gap-4 flex-wrap">
                     {validThumbnails.map((thumbnail: string, index: number) => (
-                      <img
-                        key={index}
-                        src={thumbnail}
-                        alt={`재회상품 미리보기 ${index + 1}`}
-                        className="cursor-pointer rounded-lg shadow-md hover:shadow-lg transition-shadow max-h-48 object-contain"
-                        onClick={() => openPreviewModal(index)}
-                      />
+                      !previewThumbnailErrors[index] ? (
+                        <img
+                          key={index}
+                          src={thumbnail + (previewThumbnailRetried[index] ? '?retry=' + Date.now() : '')}
+                          alt={`재회상품 미리보기 ${index + 1}`}
+                          className="cursor-pointer rounded-lg shadow-md hover:shadow-lg transition-shadow max-h-48 object-contain"
+                          onClick={() => openPreviewModal(index)}
+                          onError={(e) => {
+                            const img = e.currentTarget
+                            if (!previewThumbnailRetried[index]) {
+                              console.warn('Preview 썸네일 이미지 로드 실패, 재시도 중...', thumbnail, index)
+                              setPreviewThumbnailRetried(prev => ({ ...prev, [index]: true }))
+                              // src를 강제로 다시 설정하여 재시도
+                              img.src = thumbnail + '?retry=' + Date.now()
+                            } else {
+                              console.error('Preview 썸네일 이미지 로드 재시도 실패:', thumbnail, index)
+                              setPreviewThumbnailErrors(prev => ({ ...prev, [index]: true }))
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div
+                          key={index}
+                          className="cursor-pointer rounded-lg shadow-md hover:shadow-lg transition-shadow max-h-48 w-32 h-32 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 flex items-center justify-center"
+                          onClick={() => openPreviewModal(index)}
+                        >
+                          <span className="text-white text-xs">이미지 로드 실패</span>
+                        </div>
+                      )
                     ))}
                   </div>
                 </div>
@@ -1628,11 +1705,29 @@ function FormContent() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                   </svg>
                                 </button>
-                                <img
-                                  src={thumbnail}
-                                  alt={`재회상품 미리보기 ${index + 1}`}
-                                  className="max-w-full max-h-[90vh] object-contain"
-                                />
+                                {!previewThumbnailErrors[index] ? (
+                                  <img
+                                    src={thumbnail + (previewThumbnailRetried[index] ? '?retry=' + Date.now() : '')}
+                                    alt={`재회상품 미리보기 ${index + 1}`}
+                                    className="max-w-full max-h-[90vh] object-contain"
+                                    onError={(e) => {
+                                      const img = e.currentTarget
+                                      if (!previewThumbnailRetried[index]) {
+                                        console.warn('Preview 모달 썸네일 이미지 로드 실패, 재시도 중...', thumbnail, index)
+                                        setPreviewThumbnailRetried(prev => ({ ...prev, [index]: true }))
+                                        // src를 강제로 다시 설정하여 재시도
+                                        img.src = thumbnail + '?retry=' + Date.now()
+                                      } else {
+                                        console.error('Preview 모달 썸네일 이미지 로드 재시도 실패:', thumbnail, index)
+                                        setPreviewThumbnailErrors(prev => ({ ...prev, [index]: true }))
+                                      }
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="max-w-full max-h-[90vh] w-full h-96 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 flex items-center justify-center">
+                                    <span className="text-white text-lg">이미지 로드 실패</span>
+                                  </div>
+                                )}
                               </div>
                               {/* 인디케이터 (2개 이상일 때만 표시, 썸네일 바로 아래) */}
                               {validThumbnails.length > 1 && (
@@ -2346,7 +2441,7 @@ function FormContent() {
                                     const bookCoverDiv = doc.createElement('div');
                                     bookCoverDiv.className = 'book-cover-thumbnail-container';
                                     bookCoverDiv.style.cssText = 'width: 100%; margin-bottom: 2.5rem; display: flex; justify-content: center;';
-                                    bookCoverDiv.innerHTML = '<img src="' + bookCoverThumbnail + '" alt="북커버 썸네일" style="width: 100%; height: auto; object-fit: contain; display: block;" />';
+                                    bookCoverDiv.innerHTML = '<img src="' + bookCoverThumbnail + '" alt="북커버 썸네일" style="width: 100%; height: auto; object-fit: contain; display: block;" data-retry-count="0" data-original-src="' + bookCoverThumbnail.replace(/"/g, '&quot;') + '" onerror="if(this.dataset.retryCount===\'0\') { this.dataset.retryCount=\'1\'; this.src=this.dataset.originalSrc+\'?retry=\'+Date.now(); } else { this.onerror=null; this.style.display=\'none\'; if(this.parentElement) { this.parentElement.style.background=\'linear-gradient(to bottom right, #1e3a8a, #7c3aed, #ec4899)\'; this.parentElement.style.minHeight=\'200px\'; } }" />';
                                     // 첫 번째 자식 요소(menu-title) 앞에 삽입
                                     if (firstSection.firstChild) {
                                       firstSection.insertBefore(bookCoverDiv, firstSection.firstChild);
@@ -2368,7 +2463,7 @@ function FormContent() {
                                             const thumbnailImg = doc.createElement('div');
                                             thumbnailImg.className = 'subtitle-thumbnail-container';
                                             thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;';
-                                            thumbnailImg.innerHTML = '<img src="' + subtitle.thumbnail + '" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" />';
+                                            thumbnailImg.innerHTML = '<img src="' + subtitle.thumbnail + '" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" data-retry-count="0" data-original-src="' + subtitle.thumbnail.replace(/"/g, '&quot;') + '" onerror="if(this.dataset.retryCount===\'0\') { this.dataset.retryCount=\'1\'; this.src=this.dataset.originalSrc+\'?retry=\'+Date.now(); } else { this.onerror=null; this.style.display=\'none\'; if(this.parentElement) { this.parentElement.style.background=\'linear-gradient(to bottom right, #1e3a8a, #7c3aed, #ec4899)\'; this.parentElement.style.minHeight=\'150px\'; this.parentElement.style.borderRadius=\'8px\'; } }" />';
                                             titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling);
                                           }
                                         }
@@ -2382,7 +2477,7 @@ function FormContent() {
                                     const endingBookCoverDiv = doc.createElement('div');
                                     endingBookCoverDiv.className = 'ending-book-cover-thumbnail-container';
                                     endingBookCoverDiv.style.cssText = 'width: 100%; margin-top: 1rem; display: flex; justify-content: center;';
-                                    endingBookCoverDiv.innerHTML = '<img src="' + endingBookCoverThumbnail + '" alt="엔딩북커버 썸네일" style="width: 100%; height: auto; object-fit: contain; display: block;" />';
+                                    endingBookCoverDiv.innerHTML = '<img src="' + endingBookCoverThumbnail + '" alt="엔딩북커버 썸네일" style="width: 100%; height: auto; object-fit: contain; display: block;" data-retry-count="0" data-original-src="' + endingBookCoverThumbnail.replace(/"/g, '&quot;') + '" onerror="if(this.dataset.retryCount===\'0\') { this.dataset.retryCount=\'1\'; this.src=this.dataset.originalSrc+\'?retry=\'+Date.now(); } else { this.onerror=null; this.style.display=\'none\'; if(this.parentElement) { this.parentElement.style.background=\'linear-gradient(to bottom right, #1e3a8a, #7c3aed, #ec4899)\'; this.parentElement.style.minHeight=\'200px\'; } }" />';
                                     // 마지막 자식 요소 뒤에 추가
                                     lastSection.appendChild(endingBookCoverDiv);
                                   }
