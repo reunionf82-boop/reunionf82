@@ -13,7 +13,8 @@ async function callGeminiStream(
   prompt: string,
   onChunk: (chunk: any) => void
 ): Promise<{ response: any; finishReason?: string }> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`
+  // alt=sse 파라미터가 필수입니다 (Server-Sent Events 형식)
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`
   
   const requestBody = {
     contents: [{
@@ -69,16 +70,36 @@ async function callGeminiStream(
 
   try {
     console.log('스트림 리더 시작, 데이터 읽기 시작')
-    while (true) {
+    let readAttempts = 0
+    const maxReadAttempts = 1000 // 무한 루프 방지
+    
+    while (readAttempts < maxReadAttempts) {
+      readAttempts++
+      
+      // 첫 번째 읽기 시도 전에 로그
+      if (readAttempts === 1) {
+        console.log('첫 번째 reader.read() 호출 대기 중...')
+      }
+      
       const { done, value } = await reader.read()
+      
+      if (readAttempts === 1) {
+        console.log('첫 번째 reader.read() 완료, done:', done, 'value:', value ? `있음 (${value.length} bytes)` : '없음')
+      }
+      
       if (done) {
-        console.log('스트림 읽기 완료, 총 읽은 바이트:', totalBytesRead)
+        console.log('스트림 읽기 완료, 총 읽은 바이트:', totalBytesRead, '총 읽기 시도:', readAttempts)
         break
       }
 
+      if (!value || value.length === 0) {
+        console.log('빈 값 수신, 계속 대기...')
+        continue
+      }
+
       totalBytesRead += value.length
-      if (totalBytesRead % 10000 === 0 || totalBytesRead < 1000) {
-        console.log('읽은 바이트:', totalBytesRead)
+      if (totalBytesRead % 10000 === 0 || totalBytesRead < 1000 || readAttempts <= 5) {
+        console.log(`읽은 바이트: ${totalBytesRead} (시도 #${readAttempts}, 청크 크기: ${value.length})`)
       }
 
       buffer += decoder.decode(value, { stream: true })
@@ -186,13 +207,21 @@ async function callGeminiStream(
       }
     }
   } catch (streamError: any) {
-    console.error('스트림 읽기 중 에러:', streamError)
-    console.error('에러 메시지:', streamError?.message)
-    console.error('에러 스택:', streamError?.stack)
+    console.error('=== 스트림 읽기 중 에러 발생 ===')
+    console.error('에러 타입:', typeof streamError)
+    console.error('에러 메시지:', streamError?.message || String(streamError))
+    console.error('에러 스택:', streamError?.stack || 'N/A')
+    console.error('총 읽은 바이트:', totalBytesRead)
+    console.error('버퍼 길이:', buffer.length)
+    console.error('버퍼 시작 부분:', buffer.substring(0, 200))
     throw streamError
   } finally {
-    reader.releaseLock()
-    console.log('스트림 리더 종료')
+    try {
+      reader.releaseLock()
+      console.log('스트림 리더 종료')
+    } catch (releaseError) {
+      console.error('리더 해제 중 에러:', releaseError)
+    }
   }
 
   return { response: null, finishReason }
