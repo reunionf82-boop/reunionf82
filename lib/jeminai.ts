@@ -80,17 +80,22 @@ export async function callJeminaiAPIStream(
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     
+    // 디버깅: 환경 변수 확인
+    console.log('=== 환경 변수 확인 ===')
+    console.log('NEXT_PUBLIC_CLOUDWAYS_URL:', cloudwaysUrl ? `${cloudwaysUrl.substring(0, 50)}...` : '❌ 설정되지 않음')
+    console.log('NEXT_PUBLIC_SUPABASE_URL:', supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : '없음')
+    
     // Cloudways가 설정되어 있으면 우선 사용, 없으면 Supabase Edge Function 사용
     let edgeFunctionUrl: string
     let useCloudways = false
     
-    if (cloudwaysUrl) {
+    if (cloudwaysUrl && cloudwaysUrl.trim() !== '') {
       useCloudways = true
       edgeFunctionUrl = `${cloudwaysUrl}/chat`
-      console.log('=== Cloudways 서버 사용 ===')
+      console.log('=== ✅ Cloudways 서버 사용 ===')
       console.log('Cloudways URL:', cloudwaysUrl)
     } else {
-      console.log('=== Supabase Edge Function 사용 ===')
+      console.log('=== ⚠️ Supabase Edge Function 사용 (Cloudways URL이 설정되지 않음) ===')
       console.log('Supabase URL:', supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : '없음')
       console.log('Supabase Anon Key:', supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : '없음')
       
