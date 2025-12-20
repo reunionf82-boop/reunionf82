@@ -146,12 +146,22 @@ function FormContent() {
       const storedThumbnailUrl = sessionStorage.getItem('form_thumbnail_url')
       if (storedThumbnailUrl) {
         setCachedThumbnailUrl(storedThumbnailUrl)
-        // 사용 후 삭제
-        sessionStorage.removeItem('form_thumbnail_url')
+        // 사용 후 삭제하지 않음 (result에서 돌아올 때도 사용)
         console.log('Form 페이지: sessionStorage에서 썸네일 URL 가져옴:', storedThumbnailUrl)
       }
     }
   }, [])
+  
+  // title이 변경될 때 sessionStorage에서 썸네일 다시 확인 (result에서 돌아올 때)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && title) {
+      const storedThumbnailUrl = sessionStorage.getItem('form_thumbnail_url')
+      if (storedThumbnailUrl && !cachedThumbnailUrl) {
+        setCachedThumbnailUrl(storedThumbnailUrl)
+        console.log('Form 페이지: title 변경 시 썸네일 URL 다시 확인:', storedThumbnailUrl)
+      }
+    }
+  }, [title, cachedThumbnailUrl])
   
   // 궁합형 여부 확인
   const isGonghapType = content?.content_type === 'gonghap'

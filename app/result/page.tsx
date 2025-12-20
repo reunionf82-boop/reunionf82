@@ -130,6 +130,15 @@ function ResultContent() {
   const [isStreamingActive, setIsStreamingActive] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // resultData가 로드되면 썸네일을 sessionStorage에 저장 (form 페이지로 돌아갈 때 사용)
+  useEffect(() => {
+    if (resultData?.content?.thumbnail_url && typeof window !== 'undefined') {
+      sessionStorage.setItem('form_thumbnail_url', resultData.content.thumbnail_url)
+      sessionStorage.setItem('form_title', resultData.content.content_name || '')
+      console.log('Result 페이지: 썸네일 URL을 sessionStorage에 저장:', resultData.content.thumbnail_url)
+    }
+  }, [resultData])
   const [savedResults, setSavedResults] = useState<any[]>([])
   const [streamingProgress, setStreamingProgress] = useState(0) // realtime 가짜 로딩/진행률
   const [fortuneViewMode, setFortuneViewMode] = useState<'batch' | 'realtime'>('batch')
@@ -951,6 +960,26 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               
               console.log('메인 컨테이너 찾음, PDF 생성 시작...')
               
+              // 컨테이너 내용 확인
+              const containerText = mainContainer.innerText || ''
+              const containerHTML = mainContainer.innerHTML || ''
+              console.log('컨테이너 텍스트 길이:', containerText.length)
+              console.log('컨테이너 HTML 길이:', containerHTML.length)
+              
+              if (containerText.trim().length < 10 && containerHTML.length < 100) {
+                console.warn('경고: 컨테이너 내용이 거의 없습니다. 추가 대기 시간...')
+                await new Promise(resolve => setTimeout(resolve, 3000))
+              }
+              
+              // 컨테이너 높이 확인
+              const containerHeight = mainContainer.scrollHeight || mainContainer.offsetHeight || 0
+              console.log('컨테이너 높이:', containerHeight, 'px')
+              
+              if (containerHeight < 100) {
+                console.warn('경고: 컨테이너 높이가 너무 작습니다. 추가 대기 시간...')
+                await new Promise(resolve => setTimeout(resolve, 3000))
+              }
+              
               // 모든 버튼 제거 (TTS 버튼, 점사 보기 버튼 등) - 실제 DOM에서 제거하지 않고 캡처 시 제외
               const buttonsToHide = mainContainer.querySelectorAll(
                 '.tts-button-container, .tts-button, #ttsButton, ' +
@@ -968,56 +997,79 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               // 모든 이미지가 로드될 때까지 대기
               console.log('이미지 로드 대기 시작...')
               const images = mainContainer.querySelectorAll('img')
-              const imageLoadPromises = Array.from(images).map((img: HTMLImageElement) => {
-                return new Promise<void>((resolve) => {
-                  // 이미 로드된 이미지는 즉시 resolve
-                  if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
-                    resolve()
-                    return
-                  }
-                  
-                  // 로드 실패한 이미지도 resolve (에러가 있어도 계속 진행)
-                  if (img.complete && img.naturalWidth === 0 && img.naturalHeight === 0) {
-                    console.warn('이미지 로드 실패:', img.src.substring(0, 100))
-                    resolve()
-                    return
-                  }
-                  
-                  // 타임아웃 설정 (10초)
-                  const timeout = setTimeout(() => {
-                    console.warn('이미지 로드 타임아웃:', img.src.substring(0, 100))
-                    resolve() // 타임아웃되어도 계속 진행
-                  }, 10000)
-                  
-                  // 로드 성공
-                  img.onload = () => {
-                    clearTimeout(timeout)
-                    resolve()
-                  }
-                  
-                  // 로드 실패
-                  img.onerror = () => {
-                    clearTimeout(timeout)
-                    console.warn('이미지 로드 에러:', img.src.substring(0, 100))
-                    resolve() // 에러가 있어도 계속 진행
-                  }
-                  
-                  // 이미 src가 있는데 complete가 false인 경우 재설정하여 로드 강제
-                  if (img.src && !img.complete) {
-                    const originalSrc = img.src
-                    img.src = ''
-                    setTimeout(() => {
-                      img.src = originalSrc
-                    }, 0)
-                  }
+              console.log(`발견된 이미지 개수: ${images.length}개`)
+              
+              if (images.length > 0) {
+                const imageLoadPromises = Array.from(images).map((img: HTMLImageElement, index) => {
+                  return new Promise<void>((resolve) => {
+                    // 이미 로드된 이미지는 즉시 resolve
+                    if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+                      console.log(`이미지 ${index + 1}/${images.length} 이미 로드됨:`, img.src.substring(0, 50))
+                      resolve()
+                      return
+                    }
+                    
+                    // 로드 실패한 이미지도 resolve (에러가 있어도 계속 진행)
+                    if (img.complete && img.naturalWidth === 0 && img.naturalHeight === 0) {
+                      console.warn(`이미지 ${index + 1}/${images.length} 로드 실패:`, img.src.substring(0, 50))
+                      resolve()
+                      return
+                    }
+                    
+                    // 타임아웃 설정 (15초)
+                    const timeout = setTimeout(() => {
+                      console.warn(`이미지 ${index + 1}/${images.length} 로드 타임아웃:`, img.src.substring(0, 50))
+                      resolve() // 타임아웃되어도 계속 진행
+                    }, 15000)
+                    
+                    // 로드 성공
+                    img.onload = () => {
+                      clearTimeout(timeout)
+                      console.log(`이미지 ${index + 1}/${images.length} 로드 성공:`, img.src.substring(0, 50))
+                      resolve()
+                    }
+                    
+                    // 로드 실패
+                    img.onerror = () => {
+                      clearTimeout(timeout)
+                      console.warn(`이미지 ${index + 1}/${images.length} 로드 에러:`, img.src.substring(0, 50))
+                      resolve() // 에러가 있어도 계속 진행
+                    }
+                    
+                    // 이미 src가 있는데 complete가 false인 경우 재설정하여 로드 강제
+                    if (img.src && !img.complete) {
+                      const originalSrc = img.src
+                      img.src = ''
+                      setTimeout(() => {
+                        img.src = originalSrc
+                      }, 0)
+                    }
+                  })
                 })
-              })
+                
+                await Promise.all(imageLoadPromises)
+                console.log(`이미지 로드 대기 완료 (${images.length}개 이미지)`)
+              } else {
+                console.log('이미지가 없습니다.')
+              }
               
-              await Promise.all(imageLoadPromises)
-              console.log(`이미지 로드 대기 완료 (${images.length}개 이미지)`)
+              // 폰트 로드 대기
+              await document.fonts.ready
+              console.log('폰트 로드 완료')
               
-              // 추가 안정화 대기 시간
-              await new Promise(resolve => setTimeout(resolve, 1000))
+              // 추가 안정화 대기 시간 (렌더링 완료 보장)
+              await new Promise(resolve => setTimeout(resolve, 2000))
+              
+              // 최종 컨테이너 상태 확인
+              const finalHeight = mainContainer.scrollHeight || mainContainer.offsetHeight || 0
+              const finalText = mainContainer.innerText || ''
+              console.log('최종 컨테이너 높이:', finalHeight, 'px')
+              console.log('최종 컨테이너 텍스트 길이:', finalText.length)
+              
+              if (finalHeight < 100 || finalText.trim().length < 10) {
+                console.error('경고: 컨테이너 내용이 충분하지 않습니다. PDF 생성이 실패할 수 있습니다.')
+                console.error('컨테이너 HTML 일부:', mainContainer.innerHTML.substring(0, 500))
+              }
               
               // html2canvas로 캡처 (백그라운드에서도 실행되도록 옵션 설정)
               console.log('html2canvas로 캡처 시작...')
@@ -1025,11 +1077,12 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 useCORS: true,
                 allowTaint: false,
                 scale: 2, // 고해상도
-                logging: false,
+                logging: true, // 디버깅을 위해 로깅 활성화
                 backgroundColor: '#f9fafb',
                 removeContainer: false,
-                imageTimeout: 15000, // 이미지 로드 타임아웃 15초
-                onclone: (clonedDoc) => {
+                imageTimeout: 20000, // 이미지 로드 타임아웃 20초로 증가
+                foreignObjectRendering: false, // 외부 객체 렌더링 비활성화 (안정성 향상)
+                onclone: (clonedDoc, element) => {
                   // 복제된 문서에서 모든 버튼 제거
                   const clonedButtons = clonedDoc.querySelectorAll(
                     '.tts-button-container, .tts-button, #ttsButton, ' +
@@ -1038,6 +1091,15 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                     'a[class*="view"], a[class*="보기"]'
                   )
                   clonedButtons.forEach(btn => btn.remove())
+                  
+                  // 복제된 컨테이너 확인
+                  const clonedContainer = clonedDoc.querySelector('main.container')
+                  if (clonedContainer) {
+                    const clonedText = clonedContainer.textContent || ''
+                    const clonedHeight = clonedContainer.scrollHeight || 0
+                    console.log('복제된 컨테이너 텍스트 길이:', clonedText.length)
+                    console.log('복제된 컨테이너 높이:', clonedHeight, 'px')
+                  }
                 }
               })
               
@@ -1048,6 +1110,123 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               })
               
               console.log('캔버스 생성 완료, 크기:', canvas.width, 'x', canvas.height)
+              
+              // 캔버스가 비어있는지 확인 (여러 영역 샘플링)
+              const ctx = canvas.getContext('2d')
+              if (ctx) {
+                // 여러 영역에서 샘플링 (상단, 중간, 하단)
+                const sampleRegions = [
+                  { x: 0, y: 0, w: Math.min(canvas.width, 200), h: Math.min(canvas.height, 200) },
+                  { x: Math.max(0, canvas.width / 2 - 100), y: Math.max(0, canvas.height / 2 - 100), w: 200, h: 200 },
+                  { x: Math.max(0, canvas.width - 200), y: Math.max(0, canvas.height - 200), w: 200, h: 200 }
+                ]
+                
+                let totalNonWhitePixels = 0
+                let totalPixels = 0
+                
+                for (const region of sampleRegions) {
+                  if (region.x < canvas.width && region.y < canvas.height) {
+                    const imageData = ctx.getImageData(region.x, region.y, region.w, region.h)
+                    const pixels = imageData.data
+                    totalPixels += pixels.length / 4
+                    
+                    for (let i = 0; i < pixels.length; i += 4) {
+                      const r = pixels[i]
+                      const g = pixels[i + 1]
+                      const b = pixels[i + 2]
+                      // 배경색(#f9fafb = rgb(249, 250, 251))과 다른 픽셀 확인
+                      if (!(r >= 249 && r <= 251 && g >= 249 && g <= 251 && b >= 249 && b <= 251)) {
+                        totalNonWhitePixels++
+                      }
+                    }
+                  }
+                }
+                
+                const nonWhitePercentage = totalPixels > 0 ? (totalNonWhitePixels / totalPixels) * 100 : 0
+                console.log('캔버스 샘플링 결과 (여러 영역):', {
+                  totalPixels,
+                  totalNonWhitePixels,
+                  percentage: nonWhitePercentage.toFixed(2) + '%',
+                  canvasSize: `${canvas.width}x${canvas.height}`
+                })
+                
+                if (nonWhitePercentage < 1) {
+                  console.error('경고: 캔버스가 거의 비어있습니다. 추가 대기 후 재시도...')
+                  // 추가 대기 후 재시도
+                  await new Promise(resolve => setTimeout(resolve, 5000))
+                  
+                  // 컨테이너 상태 재확인
+                  const retryHeight = mainContainer.scrollHeight || mainContainer.offsetHeight || 0
+                  const retryText = mainContainer.innerText || ''
+                  console.log('재시도 전 컨테이너 상태:', { height: retryHeight, textLength: retryText.length })
+                  
+                  // 다시 캡처 시도
+                  console.log('캔버스 재캡처 시도...')
+                  const retryCanvas = await html2canvas(mainContainer, {
+                    useCORS: true,
+                    allowTaint: false,
+                    scale: 2,
+                    logging: true,
+                    backgroundColor: '#f9fafb',
+                    removeContainer: false,
+                    imageTimeout: 20000,
+                    foreignObjectRendering: false,
+                    windowWidth: mainContainer.scrollWidth,
+                    windowHeight: mainContainer.scrollHeight,
+                    onclone: (clonedDoc) => {
+                      const clonedButtons = clonedDoc.querySelectorAll(
+                        '.tts-button-container, .tts-button, #ttsButton, ' +
+                        '.question-button-container, .question-button, ' +
+                        'button[class*="view"], button[class*="보기"], ' +
+                        'a[class*="view"], a[class*="보기"]'
+                      )
+                      clonedButtons.forEach(btn => btn.remove())
+                    }
+                  })
+                  
+                  // 재시도 캔버스 확인
+                  const retryCtx = retryCanvas.getContext('2d')
+                  if (retryCtx) {
+                    let retryTotalNonWhitePixels = 0
+                    let retryTotalPixels = 0
+                    
+                    for (const region of sampleRegions) {
+                      if (region.x < retryCanvas.width && region.y < retryCanvas.height) {
+                        const retryImageData = retryCtx.getImageData(region.x, region.y, region.w, region.h)
+                        const retryPixels = retryImageData.data
+                        retryTotalPixels += retryPixels.length / 4
+                        
+                        for (let i = 0; i < retryPixels.length; i += 4) {
+                          const r = retryPixels[i]
+                          const g = retryPixels[i + 1]
+                          const b = retryPixels[i + 2]
+                          if (!(r >= 249 && r <= 251 && g >= 249 && g <= 251 && b >= 249 && b <= 251)) {
+                            retryTotalNonWhitePixels++
+                          }
+                        }
+                      }
+                    }
+                    
+                    const retryPercentage = retryTotalPixels > 0 ? (retryTotalNonWhitePixels / retryTotalPixels) * 100 : 0
+                    console.log('재시도 캔버스 샘플링 결과:', {
+                      totalPixels: retryTotalPixels,
+                      nonWhitePixels: retryTotalNonWhitePixels,
+                      percentage: retryPercentage.toFixed(2) + '%',
+                      canvasSize: `${retryCanvas.width}x${retryCanvas.height}`
+                    })
+                    
+                    if (retryPercentage > nonWhitePercentage) {
+                      console.log('재시도 캔버스가 더 나음. 재시도 캔버스 사용')
+                      canvas.width = retryCanvas.width
+                      canvas.height = retryCanvas.height
+                      ctx.clearRect(0, 0, canvas.width, canvas.height)
+                      ctx.drawImage(retryCanvas, 0, 0)
+                    } else if (retryPercentage < 1) {
+                      throw new Error('캔버스가 비어있습니다. 콘텐츠가 렌더링되지 않았을 수 있습니다.')
+                    }
+                  }
+                }
+              }
               
               // jsPDF로 PDF 생성 (여러 페이지로 분할)
               console.log('PDF 생성 시작...')
