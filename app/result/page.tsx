@@ -1228,137 +1228,103 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 }
               }
               
-              // jsPDF로 PDF 생성 (여러 페이지로 분할)
+              // jsPDF로 PDF 생성
               console.log('PDF 생성 시작...')
-              
-              // jsPDF 최대 페이지 크기: 14400 userUnit (약 381mm)
-              // px 단위로 변환하면 약 14400px (96 DPI 기준)
-              const MAX_PAGE_HEIGHT_PX = 14400
-              const MAX_PAGE_WIDTH_PX = 14400
               
               const canvasWidth = canvas.width
               const canvasHeight = canvas.height
               
               console.log(`원본 캔버스 크기: ${canvasWidth}x${canvasHeight}px`)
               
-              // 캔버스가 너무 크면 스케일 다운
-              let scale = 1
-              let pdfWidthPx = canvasWidth
-              if (canvasWidth > MAX_PAGE_WIDTH_PX) {
-                scale = MAX_PAGE_WIDTH_PX / canvasWidth
-                pdfWidthPx = MAX_PAGE_WIDTH_PX
-                console.warn(`⚠️ 캔버스 너비(${canvasWidth}px)가 최대 페이지 너비(${MAX_PAGE_WIDTH_PX}px)를 초과합니다. 스케일링: ${(scale * 100).toFixed(1)}%`)
-              }
+              // A4 크기 (mm): 210mm x 297mm
+              const A4_WIDTH_MM = 210
+              const A4_HEIGHT_MM = 297
               
-              const pageHeightPx = MAX_PAGE_HEIGHT_PX
-              
-              console.log(`PDF 크기: ${pdfWidthPx}x${pageHeightPx}px, 예상 페이지 수: ${Math.ceil(canvasHeight / pageHeightPx)}`)
-              
-              // jsPDF는 mm 단위를 기본으로 사용하므로 px를 mm로 변환
-              // 1px = 0.264583mm @ 96 DPI
+              // px to mm 변환 (96 DPI: 1px = 0.264583mm)
               const PX_TO_MM = 0.264583
-              const pdfWidthMm = pdfWidthPx * PX_TO_MM
-              const pageHeightMm = pageHeightPx * PX_TO_MM
               
-              // 첫 번째 페이지 생성 (mm 단위 사용)
+              // A4 너비에 맞게 스케일 계산
+              const canvasWidthMm = canvasWidth * PX_TO_MM
+              const scale = A4_WIDTH_MM / canvasWidthMm
+              
+              const scaledWidthMm = A4_WIDTH_MM
+              const scaledHeightMm = canvasHeight * PX_TO_MM * scale
+              const scaledHeightPx = canvasHeight * scale
+              
+              console.log(`스케일: ${(scale * 100).toFixed(1)}%, 스케일된 크기: ${scaledWidthMm.toFixed(2)}x${scaledHeightMm.toFixed(2)}mm`)
+              
+              // 페이지 수 계산
+              const totalPages = Math.ceil(scaledHeightMm / A4_HEIGHT_MM)
+              console.log(`예상 페이지 수: ${totalPages}페이지`)
+              
+              // 첫 번째 페이지 생성
               const pdf = new jsPDF({
                 orientation: 'portrait',
                 unit: 'mm',
-                format: [pdfWidthMm, pageHeightMm],
-                compress: true
+                format: [A4_WIDTH_MM, A4_HEIGHT_MM]
               })
               
-              // 원본 캔버스 높이 기준으로 페이지 분할
+              // 페이지별로 캔버스 부분을 잘라서 추가
               let sourceY = 0
               let pageNumber = 0
               
               while (sourceY < canvasHeight) {
                 if (pageNumber > 0) {
-                  pdf.addPage([pdfWidthMm, pageHeightMm], 'portrait')
+                  pdf.addPage([A4_WIDTH_MM, A4_HEIGHT_MM], 'portrait')
                 }
                 
-                // 현재 페이지에 들어갈 원본 캔버스 높이 계산
+                // 현재 페이지에 들어갈 높이 계산 (원본 px 기준)
                 const remainingHeight = canvasHeight - sourceY
+                // A4 높이를 px로 변환한 만큼 가져오기
+                const pageHeightPx = A4_HEIGHT_MM / PX_TO_MM / scale
                 const sourceHeight = Math.min(pageHeightPx, remainingHeight)
                 
-                console.log(`페이지 ${pageNumber + 1} 처리 중: sourceY=${sourceY}px, sourceHeight=${sourceHeight}px`)
+                console.log(`페이지 ${pageNumber + 1} 처리: sourceY=${sourceY}px, sourceHeight=${sourceHeight.toFixed(0)}px`)
                 
-                // 원본 캔버스에서 해당 부분을 잘라서 새 캔버스에 그리기
-                const tempCanvas = document.createElement('canvas')
-                tempCanvas.width = pdfWidthPx
-                tempCanvas.height = sourceHeight
-                const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true })
+                // 원본 캔버스에서 해당 부분을 잘라서 새 캔버스에 복사
+                const pageCanvas = document.createElement('canvas')
+                pageCanvas.width = canvasWidth
+                pageCanvas.height = sourceHeight
+                const pageCtx = pageCanvas.getContext('2d')
                 
-                if (!tempCtx) {
-                  throw new Error('tempCanvas context를 가져올 수 없습니다.')
+                if (!pageCtx) {
+                  throw new Error('pageCanvas context 생성 실패')
                 }
                 
-                // 원본 캔버스의 해당 부분을 새 캔버스에 복사 (1:1 비율)
-                tempCtx.drawImage(
+                // 원본 캔버스의 해당 부분 복사
+                pageCtx.drawImage(
                   canvas,
-                  0, sourceY, canvasWidth, sourceHeight, // 소스 영역 (원본 캔버스)
-                  0, 0, pdfWidthPx, sourceHeight // 대상 영역 (새 캔버스)
+                  0, sourceY, canvasWidth, sourceHeight, // 소스 영역
+                  0, 0, canvasWidth, sourceHeight // 대상 영역
                 )
                 
-                // tempCanvas가 실제로 내용을 가지고 있는지 확인
-                const sampleSize = Math.min(100, Math.min(pdfWidthPx, sourceHeight))
-                const tempImageData = tempCtx.getImageData(0, 0, sampleSize, sampleSize)
-                const tempPixels = tempImageData.data
-                let tempNonWhitePixels = 0
-                for (let i = 0; i < tempPixels.length; i += 4) {
-                  const r = tempPixels[i]
-                  const g = tempPixels[i + 1]
-                  const b = tempPixels[i + 2]
-                  if (!(r >= 249 && r <= 251 && g >= 249 && g <= 251 && b >= 249 && b <= 251)) {
-                    tempNonWhitePixels++
-                  }
-                }
-                const contentPercentage = ((tempNonWhitePixels / (tempPixels.length / 4)) * 100).toFixed(2)
-                console.log(`페이지 ${pageNumber + 1} tempCanvas 샘플링: ${contentPercentage}% 컨텐츠 포함`)
+                // 페이지 캔버스를 이미지로 변환
+                const pageImgData = pageCanvas.toDataURL('image/png', 1.0)
                 
-                // 이미지 데이터로 변환
-                const imgData = tempCanvas.toDataURL('image/png', 1.0)
-                console.log(`페이지 ${pageNumber + 1} 이미지 데이터 생성 완료, 길이: ${(imgData.length / 1024).toFixed(2)} KB`)
+                // 이미지 크기를 mm로 변환
+                const imgWidthMm = canvasWidth * PX_TO_MM * scale
+                const imgHeightMm = sourceHeight * PX_TO_MM * scale
                 
-                if (!imgData || imgData.length < 100) {
-                  throw new Error(`페이지 ${pageNumber + 1} 이미지 데이터 생성 실패`)
-                }
+                console.log(`페이지 ${pageNumber + 1} 이미지 크기: ${imgWidthMm.toFixed(2)}x${imgHeightMm.toFixed(2)}mm, 데이터 길이: ${(pageImgData.length / 1024).toFixed(2)} KB`)
                 
-                // PDF 페이지에 추가 (mm 단위로 변환)
-                const imgHeightMm = sourceHeight * PX_TO_MM
-                const imgWidthMm = pdfWidthPx * PX_TO_MM
-                
-                try {
-                  pdf.addImage(
-                    imgData,
-                    'PNG',
-                    0, // x 좌표 (mm)
-                    0, // y 좌표 (mm) - 항상 페이지 상단
-                    imgWidthMm, // 너비 (mm)
-                    imgHeightMm, // 높이 (mm)
-                    undefined,
-                    'FAST'
-                  )
-                  console.log(`페이지 ${pageNumber + 1} PDF에 추가 완료 (${imgWidthMm.toFixed(2)}mm x ${imgHeightMm.toFixed(2)}mm)`)
-                } catch (error) {
-                  console.error(`페이지 ${pageNumber + 1} PDF에 추가 실패:`, error)
-                  throw error
-                }
+                // PDF 페이지에 추가 (항상 상단에 배치)
+                pdf.addImage(
+                  pageImgData,
+                  'PNG',
+                  0, // x 좌표 (왼쪽 정렬)
+                  0, // y 좌표 (상단 정렬)
+                  imgWidthMm, // 너비
+                  imgHeightMm, // 높이
+                  undefined,
+                  'FAST'
+                )
                 
                 sourceY += sourceHeight
                 pageNumber++
               }
               
               const pdfBlobSize = pdf.output('blob').size
-              console.log(`PDF 생성 완료, 총 ${pageNumber}페이지 (크기: ${pdfWidthPx}x${pageHeightPx}px), 크기: ${pdfBlobSize}bytes`)
-              
-              // 크기가 최대값을 초과하는 경우 정보 출력
-              if (canvasWidth > MAX_PAGE_WIDTH_PX) {
-                console.warn(`⚠️ 컨텐츠 너비(${canvasWidth}px)가 최대 페이지 너비(${MAX_PAGE_WIDTH_PX}px)를 초과합니다. 스케일링이 적용되었습니다.`)
-              }
-              if (canvasHeight > MAX_PAGE_HEIGHT_PX) {
-                console.log(`ℹ️ 컨텐츠 높이(${canvasHeight}px)가 최대 페이지 높이(${MAX_PAGE_HEIGHT_PX}px)를 초과하여 ${pageNumber}페이지로 분할되었습니다.`)
-              }
+              console.log(`PDF 생성 완료, 총 ${pageNumber}페이지, 크기: ${(pdfBlobSize / 1024).toFixed(2)} KB`)
               
               // PDF를 Blob으로 변환
               const pdfBlob = pdf.output('blob')
