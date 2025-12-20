@@ -62,38 +62,103 @@ async function callGeminiStream(
       if (done) break
 
       buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
+      
+      // Server-Sent Events 형식 파싱
+      // Gemini API는 "data: "로 시작하는 각 이벤트를 보냄
+      // 각 이벤트는 완전한 JSON 객체이거나 여러 줄로 나뉘어질 수 있음
+      
+      while (true) {
+        // "data: "로 시작하는 이벤트 찾기
+        const dataPrefix = 'data: '
+        const eventStart = buffer.indexOf(dataPrefix)
+        
+        if (eventStart === -1) {
+          // 더 이상 이벤트가 없으면 버퍼에 남김
+          break
+        }
+        
+        // "data: " 다음부터 시작
+        let jsonStart = eventStart + dataPrefix.length
+        let jsonEnd = jsonStart
+        
+        // 완전한 JSON 객체를 찾기 위해 중괄호/대괄호 매칭
+        let braceCount = 0
+        let bracketCount = 0
+        let inString = false
+        let escapeNext = false
+        
+        for (let i = jsonStart; i < buffer.length; i++) {
+          const char = buffer[i]
+          
+          if (escapeNext) {
+            escapeNext = false
+            continue
+          }
+          
+          if (char === '\\') {
+            escapeNext = true
+            continue
+          }
+          
+          if (char === '"' && !escapeNext) {
+            inString = !inString
+            continue
+          }
+          
+          if (inString) continue
+          
+          if (char === '{') braceCount++
+          else if (char === '}') {
+            braceCount--
+            if (braceCount === 0 && bracketCount === 0) {
+              jsonEnd = i + 1
+              break
+            }
+          }
+          else if (char === '[') bracketCount++
+          else if (char === ']') {
+            bracketCount--
+            if (braceCount === 0 && bracketCount === 0) {
+              jsonEnd = i + 1
+              break
+            }
+          }
+        }
+        
+        // 완전한 JSON을 찾지 못했으면 더 기다림
+        if (jsonEnd === jsonStart || braceCount !== 0 || bracketCount !== 0) {
+          // 버퍼에 남김
+          buffer = buffer.substring(eventStart)
+          break
+        }
+        
+        // JSON 추출
+        const jsonStr = buffer.substring(jsonStart, jsonEnd).trim()
+        
+        // 버퍼에서 처리한 부분 제거
+        buffer = buffer.substring(jsonEnd)
+        
+        // JSON 파싱
+        if (jsonStr) {
           try {
-            const data = JSON.parse(line.slice(6))
-            console.log('Gemini 스트림 데이터:', JSON.stringify(data).substring(0, 200))
+            const data = JSON.parse(jsonStr)
             
             if (data.candidates && data.candidates[0]) {
               const candidate = data.candidates[0]
               if (candidate.content && candidate.content.parts) {
                 for (const part of candidate.content.parts) {
                   if (part.text) {
-                    console.log('텍스트 청크 수신:', part.text.substring(0, 50))
                     onChunk({ text: part.text })
                   }
                 }
               }
               if (candidate.finishReason) {
                 finishReason = candidate.finishReason
-                console.log('Finish Reason:', finishReason)
               }
-            } else {
-              console.log('후보 데이터 없음:', Object.keys(data))
             }
           } catch (e) {
-            console.error('JSON 파싱 실패:', e, '라인:', line.substring(0, 200))
-            // JSON 파싱 실패는 무시하고 계속 진행
+            console.error('JSON 파싱 실패:', e, 'JSON:', jsonStr.substring(0, 200))
           }
-        } else if (line.trim()) {
-          console.log('데이터가 아닌 라인:', line.substring(0, 100))
         }
       }
     }
