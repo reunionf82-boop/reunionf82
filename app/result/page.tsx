@@ -1350,15 +1350,14 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               }
               
               const pdfBlobSize = pdf.output('blob').size
-              console.log(`PDF 생성 완료, 총 ${pageNumber}페이지 (크기: ${pdfWidth}x${pageHeight}px), 크기: ${pdfBlobSize}bytes`)
+              console.log(`PDF 생성 완료, 총 ${pageNumber}페이지 (크기: ${pdfWidthPx}x${pageHeightPx}px), 크기: ${pdfBlobSize}bytes`)
               
               // 크기가 최대값을 초과하는 경우 정보 출력
-              if (canvasWidth > MAX_PAGE_WIDTH) {
-                console.warn(`⚠️ 컨텐츠 너비(${canvasWidth}px)가 최대 페이지 너비(${MAX_PAGE_WIDTH}px)를 초과합니다. 스케일링이 적용되었습니다.`)
+              if (canvasWidth > MAX_PAGE_WIDTH_PX) {
+                console.warn(`⚠️ 컨텐츠 너비(${canvasWidth}px)가 최대 페이지 너비(${MAX_PAGE_WIDTH_PX}px)를 초과합니다. 스케일링이 적용되었습니다.`)
               }
-              if (canvasHeight > MAX_PAGE_HEIGHT / scale) {
-                const scaledHeight = canvasHeight * scale
-                console.log(`ℹ️ 컨텐츠 높이(${scaledHeight}px)가 최대 페이지 높이(${MAX_PAGE_HEIGHT}px)를 초과하여 ${pageNumber}페이지로 분할되었습니다.`)
+              if (canvasHeight > MAX_PAGE_HEIGHT_PX) {
+                console.log(`ℹ️ 컨텐츠 높이(${canvasHeight}px)가 최대 페이지 높이(${MAX_PAGE_HEIGHT_PX}px)를 초과하여 ${pageNumber}페이지로 분할되었습니다.`)
               }
               
               // PDF를 Blob으로 변환
