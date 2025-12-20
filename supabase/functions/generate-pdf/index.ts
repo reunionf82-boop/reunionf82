@@ -3,36 +3,41 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // Deno용 Puppeteer - Supabase Edge Functions 환경에 맞게 수정
 // 참고: Supabase Edge Functions는 Deno 런타임을 사용하므로 Deno용 Puppeteer 필요
-let puppeteer: any
-try {
-  // Deno용 Puppeteer import 시도
-  const puppeteerModule = await import('https://deno.land/x/puppeteer@16.2.0/mod.ts')
-  puppeteer = puppeteerModule.default || puppeteerModule
-} catch (e) {
-  console.error('Puppeteer import 실패:', e)
-  throw new Error('Puppeteer를 로드할 수 없습니다.')
-}
+// 주의: Supabase Edge Functions는 Puppeteer 실행에 제한이 있을 수 있음
+let puppeteer: any = null
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
 }
 
 serve(async (req) => {
   // CORS preflight 요청 처리
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { 
+    console.log('OPTIONS 요청 수신, CORS 헤더 반환')
+    return new Response(null, { 
       headers: corsHeaders,
-      status: 200
+      status: 204
     })
   }
 
   let browser: any = null
   try {
-    const { savedResultId, html, contentName, thumbnailUrl } = await req.json()
+    console.log('=== PDF 생성 요청 수신 ===')
+    console.log('요청 메서드:', req.method)
+    console.log('요청 URL:', req.url)
+    
+    const requestBody = await req.json()
+    console.log('요청 본문 키:', Object.keys(requestBody))
+    console.log('savedResultId:', requestBody.savedResultId)
+    console.log('html 길이:', requestBody.html?.length || 0)
+    
+    const { savedResultId, html, contentName, thumbnailUrl } = requestBody
 
     if (!savedResultId || !html) {
+      console.error('필수 파라미터 누락:', { savedResultId: !!savedResultId, html: !!html })
       return new Response(
         JSON.stringify({ error: 'savedResultId와 html은 필수입니다.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -47,8 +52,13 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     
+    console.log('Supabase URL 존재:', !!supabaseUrl)
+    console.log('Supabase Service Key 존재:', !!supabaseServiceKey)
+    
     if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Supabase 환경 변수가 설정되지 않았습니다.')
+      const errorMsg = `Supabase 환경 변수가 설정되지 않았습니다. URL: ${!!supabaseUrl}, Key: ${!!supabaseServiceKey}`
+      console.error(errorMsg)
+      throw new Error(errorMsg)
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
@@ -58,9 +68,23 @@ serve(async (req) => {
       }
     })
 
+    // Puppeteer 동적 로드 (함수 내에서)
+    if (!puppeteer) {
+      try {
+        console.log('Puppeteer 모듈 로드 시도...')
+        const puppeteerModule = await import('https://deno.land/x/puppeteer@16.2.0/mod.ts')
+        puppeteer = puppeteerModule.default || puppeteerModule
+        console.log('Puppeteer 모듈 로드 성공')
+      } catch (e) {
+        console.error('Puppeteer import 실패:', e)
+        throw new Error(`Puppeteer를 로드할 수 없습니다: ${e.message || String(e)}`)
+      }
+    }
+
     // Puppeteer 브라우저 실행
     console.log('Puppeteer 브라우저 실행 시도...')
-    browser = await puppeteer.launch({
+    try {
+      browser = await puppeteer.launch({
       headless: true,
       args: [
         '--no-sandbox',
@@ -91,8 +115,12 @@ serve(async (req) => {
         '--password-store=basic',
         '--use-mock-keychain'
       ]
-    })
-    console.log('Puppeteer 브라우저 실행 성공')
+      })
+      console.log('Puppeteer 브라우저 실행 성공')
+    } catch (launchError: any) {
+      console.error('Puppeteer 브라우저 실행 실패:', launchError)
+      throw new Error(`브라우저 실행 실패: ${launchError.message || String(launchError)}`)
+    }
 
     const page = await browser.newPage()
 
@@ -497,8 +525,10 @@ serve(async (req) => {
   } catch (error: any) {
     console.error('=== Supabase Edge Function PDF 생성 오류 ===')
     console.error('에러 타입:', typeof error)
+    console.error('에러 이름:', error?.name)
     console.error('에러 메시지:', error?.message || String(error))
     console.error('에러 스택:', error?.stack || 'N/A')
+    console.error('전체 에러 객체:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
     
     // 브라우저가 열려있으면 종료
     if (browser) {
@@ -511,10 +541,18 @@ serve(async (req) => {
       }
     }
     
+    // 상세 에러 정보 반환 (개발 환경에서 디버깅 용이)
+    const errorDetails = {
+      message: error?.message || '서버 오류가 발생했습니다.',
+      name: error?.name || 'UnknownError',
+      stack: error?.stack || 'N/A',
+      type: typeof error
+    }
+    
     return new Response(
       JSON.stringify({ 
         error: '서버 오류가 발생했습니다.', 
-        details: error?.message || String(error)
+        details: errorDetails
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

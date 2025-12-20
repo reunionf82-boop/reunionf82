@@ -4,6 +4,9 @@ import { useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState, useRef, useMemo, memo, useCallback } from 'react'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { getContentById, getSelectedSpeaker, getFortuneViewMode } from '@/lib/supabase-admin'
+import html2canvas from 'html2canvas'
+import { createClient } from '@supabase/supabase-js'
+import { jsPDF } from 'jspdf'
 
 interface ResultData {
   content: any
@@ -857,211 +860,113 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           console.log('점사 완료: 결과가 자동으로 저장되었습니다.')
         }
         
-        // PDF 생성 및 업로드 (서버 사이드로 처리, 비동기 실행)
+        // PDF 생성 및 업로드 (클라이언트 사이드로 처리, 백그라운드에서도 실행)
         if (savedResultId && typeof window !== 'undefined') {
-          console.log('=== 서버 사이드 PDF 생성 요청 ===')
+          console.log('=== 클라이언트 사이드 PDF 생성 시작 ===')
           console.log('savedResultId:', savedResultId)
-          ;(async () => {
+          
+          // 백그라운드에서도 실행되도록 보장하는 함수
+          const generatePdfInBackground = async () => {
             try {
-              // 실제 렌더링된 메인 컨테이너에서 HTML 추출
+              // 실제 렌더링된 메인 컨테이너 찾기
               const mainContainer = document.querySelector('main.container') as HTMLElement
               if (!mainContainer) {
                 throw new Error('메인 컨테이너를 찾을 수 없습니다.')
               }
               
-              // 메인 컨테이너의 HTML 추출 (TTS 버튼 제거)
-              const tempDiv = mainContainer.cloneNode(true) as HTMLElement
-              const ttsButtons = tempDiv.querySelectorAll('.tts-button-container, .tts-button, #ttsButton')
-              ttsButtons.forEach(btn => btn.remove())
+              console.log('메인 컨테이너 찾음, PDF 생성 시작...')
               
-              // 대표 썸네일 찾아서 thumbnail-container 클래스 추가 및 전체 폭 스타일 적용
-              // result-title 다음에 오는 첫 번째 이미지를 대표 썸네일로 인식
-              const resultTitle = tempDiv.querySelector('.result-title, h1')
-              if (resultTitle) {
-                // result-title 다음에 오는 첫 번째 div > img 또는 직접 img 찾기
-                let nextSibling = resultTitle.nextElementSibling
-                while (nextSibling) {
-                  // div 안에 img가 있는 경우
-                  const imgInDiv = nextSibling.querySelector('img')
-                  if (imgInDiv && nextSibling.tagName === 'DIV') {
-                    nextSibling.className = 'thumbnail-container'
-                    const img = nextSibling.querySelector('img')
-                    if (img) {
-                      (img as HTMLElement).style.width = '100%'
-                      ;(img as HTMLElement).style.height = 'auto'
-                      ;(img as HTMLElement).style.display = 'block'
-                      ;(img as HTMLElement).style.objectFit = 'cover'
-                    }
-                    break
-                  }
-                  // 직접 img인 경우
-                  if (nextSibling.tagName === 'IMG') {
-                    const wrapper = document.createElement('div')
-                    wrapper.className = 'thumbnail-container'
-                    nextSibling.parentNode?.insertBefore(wrapper, nextSibling)
-                    wrapper.appendChild(nextSibling)
-                    ;(nextSibling as HTMLElement).style.width = '100%'
-                    ;(nextSibling as HTMLElement).style.height = 'auto'
-                    ;(nextSibling as HTMLElement).style.display = 'block'
-                    ;(nextSibling as HTMLElement).style.objectFit = 'cover'
-                    break
-                  }
-                  nextSibling = nextSibling.nextElementSibling
+              // TTS 버튼 제거 (실제 DOM에서 제거하지 않고 캡처 시 제외)
+              const ttsButtons = mainContainer.querySelectorAll('.tts-button-container, .tts-button, #ttsButton')
+              const originalDisplay: string[] = []
+              ttsButtons.forEach((btn) => {
+                const htmlBtn = btn as HTMLElement
+                originalDisplay.push(htmlBtn.style.display)
+                htmlBtn.style.display = 'none'
+              })
+              
+              // html2canvas로 캡처 (백그라운드에서도 실행되도록 옵션 설정)
+              console.log('html2canvas로 캡처 시작...')
+              const canvas = await html2canvas(mainContainer, {
+                useCORS: true,
+                allowTaint: false,
+                scale: 2, // 고해상도
+                logging: false,
+                backgroundColor: '#f9fafb',
+                removeContainer: false,
+                onclone: (clonedDoc) => {
+                  // 복제된 문서에서 TTS 버튼 제거
+                  const clonedButtons = clonedDoc.querySelectorAll('.tts-button-container, .tts-button, #ttsButton')
+                  clonedButtons.forEach(btn => btn.remove())
                 }
+              })
+              
+              // 원래 display 복원
+              ttsButtons.forEach((btn, index) => {
+                const htmlBtn = btn as HTMLElement
+                htmlBtn.style.display = originalDisplay[index] || ''
+              })
+              
+              console.log('캔버스 생성 완료, 크기:', canvas.width, 'x', canvas.height)
+              
+              // jsPDF로 PDF 생성
+              console.log('PDF 생성 시작...')
+              const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'px',
+                format: [canvas.width, canvas.height]
+              })
+              
+              const imgData = canvas.toDataURL('image/png', 1.0)
+              pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height, undefined, 'FAST')
+              
+              const pdfBlobSize = pdf.output('blob').size
+              console.log('PDF 생성 완료, 크기:', pdfBlobSize, 'bytes')
+              
+              // PDF를 Blob으로 변환
+              const pdfBlob = pdf.output('blob')
+              
+              // 200MB 제한 확인
+              const maxSize = 200 * 1024 * 1024
+              if (pdfBlob.size > maxSize) {
+                throw new Error(`PDF 파일 크기가 200MB를 초과합니다 (${(pdfBlob.size / 1024 / 1024).toFixed(2)}MB)`)
               }
               
-              // 계산된 스타일을 인라인 스타일로 변환 (PDF에서 스타일이 제대로 적용되도록)
-              // 셀렉터 오류 방지를 위해 직접 요소를 찾는 방식으로 변경
-              const allElements = tempDiv.querySelectorAll('*')
-              allElements.forEach((el, index) => {
-                const htmlEl = el as HTMLElement
-                
-                // 대표 썸네일 컨테이너 전체 폭 스타일 적용
-                if (el.classList.contains('thumbnail-container')) {
-                  htmlEl.style.width = 'calc(100% + 64px)'
-                  htmlEl.style.maxWidth = 'calc(100% + 64px)'
-                  htmlEl.style.marginLeft = '-32px'
-                  htmlEl.style.marginRight = '-32px'
-                  htmlEl.style.padding = '0'
-                  htmlEl.style.boxSizing = 'border-box'
-                }
-                
-                // 클래스명으로 셀렉터를 만들지 않고, 직접 스타일 적용
-                // 소제목 썸네일 컨테이너 스타일 강제 적용 (가운데 정렬)
-                if (el.classList.contains('subtitle-thumbnail-container')) {
-                  htmlEl.style.width = '50%'
-                  htmlEl.style.display = 'flex'
-                  htmlEl.style.justifyContent = 'center' // 가운데 정렬
-                  htmlEl.style.alignItems = 'center'
-                  htmlEl.style.marginLeft = 'auto'
-                  htmlEl.style.marginRight = 'auto'
-                  htmlEl.style.marginTop = '0.5rem'
-                  htmlEl.style.marginBottom = '0.5rem'
-                }
-                // 소제목 썸네일 이미지 스타일 강제 적용
-                if (el.tagName === 'IMG' && el.closest('.subtitle-thumbnail-container')) {
-                  htmlEl.style.width = '100%'
-                  htmlEl.style.height = 'auto'
-                  htmlEl.style.display = 'block'
-                  htmlEl.style.borderRadius = '8px'
-                  htmlEl.style.objectFit = 'contain'
-                }
-                
-                // 북커버 썸네일 컨테이너 스타일 강제 적용
-                if (el.classList.contains('book-cover-thumbnail-container')) {
-                  htmlEl.style.width = '100%'
-                  htmlEl.style.marginBottom = '2.5rem'
-                  
-                  const img = el.querySelector('img')
-                  if (img) {
-                    (img as HTMLElement).style.width = '100%'
-                    ;(img as HTMLElement).style.height = 'auto'
-                    ;(img as HTMLElement).style.objectFit = 'contain'
-                    ;(img as HTMLElement).style.display = 'block'
-                  }
-                }
-                
-                // 엔딩북커버 썸네일 컨테이너 스타일 강제 적용
-                if (el.classList.contains('ending-book-cover-thumbnail-container')) {
-                  htmlEl.style.width = '100%'
-                  htmlEl.style.marginTop = '1rem'
-                  
-                  const img = el.querySelector('img')
-                  if (img) {
-                    (img as HTMLElement).style.width = '100%'
-                    ;(img as HTMLElement).style.height = 'auto'
-                    ;(img as HTMLElement).style.objectFit = 'contain'
-                    ;(img as HTMLElement).style.display = 'block'
-                  }
-                }
-                
-                // 대제목 썸네일 (menu-thumbnail) 스타일 강제 적용
-                if (el.classList.contains('menu-thumbnail') || (el.tagName === 'IMG' && el.classList.contains('menu-thumbnail'))) {
-                  htmlEl.style.width = '100%'
-                  htmlEl.style.height = 'auto'
-                  htmlEl.style.objectFit = 'contain'
-                  htmlEl.style.borderRadius = '8px'
-                  htmlEl.style.display = 'block'
-                  htmlEl.style.marginBottom = '24px'
-                  htmlEl.style.boxSizing = 'border-box'
-                }
-              })
+              // Supabase Storage에 업로드
+              console.log('Supabase Storage에 업로드 시작...')
+              const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+              const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
               
-              // 모든 스타일 태그 추출 (head의 style 태그 포함)
-              const styleTags = Array.from(document.querySelectorAll('style'))
-              const headStyleTags = Array.from(document.head.querySelectorAll('style'))
-              // 중복 제거를 위해 Map 사용
-              const styleMap = new Map<string, string>()
-              styleTags.forEach(style => {
-                const content = style.innerHTML
-                if (content && !styleMap.has(content)) {
-                  styleMap.set(content, content)
-                }
-              })
-              headStyleTags.forEach(style => {
-                const content = style.innerHTML
-                if (content && !styleMap.has(content)) {
-                  styleMap.set(content, content)
-                }
-              })
-              const styleContent = Array.from(styleMap.values()).join('\n')
+              if (!supabaseUrl || !supabaseAnonKey) {
+                throw new Error('Supabase 환경 변수가 설정되지 않았습니다.')
+              }
               
-              // HTML 콘텐츠 추출 (outerHTML로 전체 구조 포함)
-              const htmlContent = tempDiv.innerHTML
+              const supabase = createClient(supabaseUrl, supabaseAnonKey)
               
-              // 서버로 PDF 생성 요청 (타임아웃 5분)
-              console.log('서버로 PDF 생성 요청 전송...')
-              const controller = new AbortController()
-              const timeoutId = setTimeout(() => controller.abort(), 300000) // 5분 타임아웃
-              
-              try {
-                // Supabase Edge Function 호출
-                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-                const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-                
-                if (!supabaseUrl || !supabaseAnonKey) {
-                  throw new Error('Supabase 환경 변수가 설정되지 않았습니다.')
-                }
-                
-                const edgeFunctionUrl = `${supabaseUrl}/functions/v1/generate-pdf`
-                
-                const generateResponse = await fetch(edgeFunctionUrl, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${supabaseAnonKey}`,
-                  },
-                  body: JSON.stringify({
-                    savedResultId,
-                    html: `<style>${styleContent}</style>${htmlContent}`,
-                    contentName: content?.content_name || '재회 결과',
-                    thumbnailUrl: content?.thumbnail_url || null
-                  }),
-                  signal: controller.signal
+              const fileName = `${savedResultId}.pdf`
+              const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('pdfs')
+                .upload(fileName, pdfBlob, {
+                  cacheControl: '3600',
+                  upsert: true,
+                  contentType: 'application/pdf'
                 })
-                
-                clearTimeout(timeoutId)
-                
-                if (!generateResponse.ok) {
-                  const error = await generateResponse.json()
-                  console.error('PDF 생성 API 에러:', error)
-                  throw new Error(error.error || error.details || 'PDF 생성에 실패했습니다.')
-                }
-                
-                const generateResult = await generateResponse.json()
-                console.log('=== 서버 사이드 PDF 생성 및 업로드 성공 ===')
-                console.log('PDF URL:', generateResult.url)
-                console.log('PDF 경로:', generateResult.path)
-              } catch (fetchError: any) {
-                clearTimeout(timeoutId)
-                if (fetchError.name === 'AbortError') {
-                  throw new Error('PDF 생성이 타임아웃되었습니다 (5분 초과)')
-                }
-                throw fetchError
+              
+              if (uploadError) {
+                console.error('Supabase PDF 업로드 에러:', uploadError)
+                throw new Error(uploadError.message || 'PDF 업로드에 실패했습니다.')
               }
+              
+              // 공개 URL 생성
+              const { data: urlData } = supabase.storage
+                .from('pdfs')
+                .getPublicUrl(fileName)
+              
+              console.log('=== 클라이언트 사이드 PDF 생성 및 업로드 성공 ===')
+              console.log('PDF URL:', urlData.publicUrl)
+              console.log('PDF 경로:', fileName)
               
               // temp_requests 데이터 삭제 (realtime 모드에서 사용한 경우)
-              // requestKey는 클로저에서 가져오기
               const currentRequestKey = requestKey
               if (currentRequestKey) {
                 try {
@@ -1085,7 +990,49 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               console.error('전체 에러 객체:', pdfError)
               // PDF 생성 실패해도 저장은 성공한 것으로 처리 (사용자에게 알리지 않음)
             }
-          })()
+          }
+          
+          // 백그라운드에서도 실행되도록 보장
+          // html2canvas는 백그라운드에서도 작동하므로 즉시 실행
+          // visibilitychange 이벤트로 페이지 전환을 추적하되, 실행은 계속 진행
+          let isGenerating = false
+          let generationPromise: Promise<void> | null = null
+          
+          const startGeneration = async () => {
+            if (isGenerating) {
+              console.log('PDF 생성이 이미 진행 중입니다.')
+              return generationPromise
+            }
+            isGenerating = true
+            console.log('PDF 생성 시작 (백그라운드 지원)')
+            
+            generationPromise = generatePdfInBackground().finally(() => {
+              isGenerating = false
+              generationPromise = null
+            })
+            
+            return generationPromise
+          }
+          
+          // visibilitychange 이벤트 리스너 추가 (백그라운드에서도 계속 실행 보장)
+          const visibilityHandler = () => {
+            if (document.hidden) {
+              console.log('페이지가 백그라운드로 전환됨, PDF 생성은 계속 진행됩니다.')
+            } else {
+              console.log('페이지가 다시 보이게 됨, PDF 생성 상태 확인')
+            }
+          }
+          document.addEventListener('visibilitychange', visibilityHandler)
+          
+          // 즉시 시작 (비동기로 실행, await하지 않음)
+          // 백그라운드로 가도 계속 실행됨
+          startGeneration().catch((err) => {
+            console.error('PDF 생성 시작 실패:', err)
+            document.removeEventListener('visibilitychange', visibilityHandler)
+          }).then(() => {
+            // 완료 후 리스너 제거
+            document.removeEventListener('visibilitychange', visibilityHandler)
+          })
         } else {
           console.warn('=== PDF 생성 건너뜀 ===')
           console.warn('savedResultId:', savedResultId)

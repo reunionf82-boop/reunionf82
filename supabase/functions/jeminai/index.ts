@@ -278,12 +278,19 @@ function parseCompletedSubtitles(html: string, allMenuSubtitles: any[]): { compl
   console.log('=== parseCompletedSubtitles 시작 ===')
   console.log('HTML 길이:', html.length)
   console.log('전체 소제목 개수:', allMenuSubtitles.length)
+  console.log('HTML 시작 부분 (500자):', html.substring(0, 500))
+  console.log('HTML 끝 부분 (500자):', html.substring(Math.max(0, html.length - 500)))
 
   const subtitleSectionStartRegex = /<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>/gi
   const subtitleSectionMatches: RegExpMatchArray[] = []
   let match: RegExpMatchArray | null
   while ((match = subtitleSectionStartRegex.exec(html)) !== null) {
     subtitleSectionMatches.push(match)
+  }
+
+  console.log('subtitle-section 시작 태그 매칭 개수:', subtitleSectionMatches.length)
+  if (subtitleSectionMatches.length > 0) {
+    console.log('첫 번째 subtitle-section 샘플:', html.substring(subtitleSectionMatches[0].index!, subtitleSectionMatches[0].index! + 500))
   }
 
   const subtitleSections: string[] = []
@@ -333,36 +340,79 @@ function parseCompletedSubtitles(html: string, allMenuSubtitles: any[]): { compl
     let found = false
 
     for (const section of subtitleSections) {
+      // h3 태그 찾기 (더 유연한 패턴)
       const h3Match = section.match(/<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([^<]+)<\/h3>/i)
-      if (!h3Match) continue
+      if (!h3Match) {
+        // h3 태그가 없으면 이 섹션은 건너뛰기
+        if (index < 3) { // 처음 3개만 디버깅 로그
+          console.log(`소제목 ${index}: h3 태그를 찾을 수 없음, 섹션 시작: ${section.substring(0, 200)}`)
+        }
+        continue
+      }
 
       const h3Text = h3Match[1].trim()
       const subtitleTitleWithoutDot = subtitle.subtitle.replace(/\.$/, '')
       let titleMatches = false
 
+      // 정확한 매칭
       if (h3Text === subtitle.subtitle || h3Text === subtitleTitleWithoutDot) {
         titleMatches = true
       } else {
-        if (h3Text.includes(subtitle.subtitle) || 
+        // 부분 매칭 (더 유연하게)
+        const h3TextNormalized = h3Text.replace(/\s+/g, ' ').trim()
+        const subtitleNormalized = subtitle.subtitle.replace(/\s+/g, ' ').trim()
+        const subtitleWithoutDotNormalized = subtitleTitleWithoutDot.replace(/\s+/g, ' ').trim()
+        
+        if (h3TextNormalized === subtitleNormalized || 
+            h3TextNormalized === subtitleWithoutDotNormalized ||
+            h3Text.includes(subtitle.subtitle) || 
             h3Text.includes(subtitleTitleWithoutDot) ||
-            h3Text.includes(`${menuNumber}-${subtitleNumber}`)) {
+            h3Text.includes(`${menuNumber}-${subtitleNumber}`) ||
+            h3TextNormalized.includes(subtitleNormalized) ||
+            h3TextNormalized.includes(subtitleWithoutDotNormalized)) {
           titleMatches = true
         }
       }
 
+      if (index < 3) { // 처음 3개만 디버깅 로그
+        console.log(`소제목 ${index} (${subtitle.subtitle}): h3Text="${h3Text}", titleMatches=${titleMatches}`)
+      }
+
+      // subtitle-content 확인
       const subtitleContentPattern = /<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>/i
-      if (titleMatches && subtitleContentPattern.test(section)) {
-        const contentMatch = section.match(/<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
-        if (contentMatch && contentMatch[1].trim().length > 10) {
-          if (!completedSubtitles.includes(index)) {
-            completedSubtitles.push(index)
-            if (!completedMenus.includes(menuNumber - 1)) {
-              completedMenus.push(menuNumber - 1)
+      const hasContent = subtitleContentPattern.test(section)
+      
+      if (titleMatches && hasContent) {
+        // content 내용 확인 (더 유연한 패턴)
+        const contentMatch = section.match(/<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>([\s\S]*?)(?:<\/div>|$)/i)
+        if (contentMatch) {
+          const contentText = contentMatch[1].trim()
+          // HTML 태그를 제거한 순수 텍스트 길이 확인
+          const textOnly = contentText.replace(/<[^>]+>/g, '').trim()
+          
+          if (textOnly.length > 10) {
+            if (!completedSubtitles.includes(index)) {
+              completedSubtitles.push(index)
+              if (!completedMenus.includes(menuNumber - 1)) {
+                completedMenus.push(menuNumber - 1)
+              }
+              found = true
+              console.log(`✅ 소제목 ${index} (${subtitle.subtitle}) 완료 감지, 내용 길이: ${textOnly.length}자`)
+              break
             }
-            found = true
-            console.log(`소제목 ${index} (${subtitle.subtitle}) 완료 감지`)
-            break
+          } else {
+            if (index < 3) {
+              console.log(`소제목 ${index}: 내용이 너무 짧음 (${textOnly.length}자)`)
+            }
           }
+        } else {
+          if (index < 3) {
+            console.log(`소제목 ${index}: content 매칭 실패`)
+          }
+        }
+      } else {
+        if (index < 3) {
+          console.log(`소제목 ${index}: titleMatches=${titleMatches}, hasContent=${hasContent}`)
         }
       }
     }
@@ -628,7 +678,7 @@ serve(async (req) => {
         let fullText = ''
         let isFirstChunk = true
         const streamStartTime = Date.now()
-        const TIMEOUT_PARTIAL = 370000 // 370초 (400초 제한 내에서 여유 있게)
+        const TIMEOUT_PARTIAL = 400000 // 400초
         const MAX_DURATION = 400000 // 400초 (Supabase Edge Function 제한)
         let hasSentPartialDone = false
 
@@ -670,61 +720,8 @@ serve(async (req) => {
                   accumulatedLength: fullText.length
                 })}\n\n`))
 
-                // 380초 경과 체크 (1차 요청만)
-                if (elapsed >= TIMEOUT_PARTIAL && fullText.trim() && fullText.trim().length > 50 && !hasSentPartialDone && !isSecondRequest) {
-                  console.warn(`=== 380초 경과, 부분 완료 처리 시작 ===`)
-                  
-                  let htmlForParsing = fullText.trim()
-                  const htmlBlockMatch = htmlForParsing.match(/```html\s*([\s\S]*?)\s*```/)
-                  if (htmlBlockMatch) {
-                    htmlForParsing = htmlBlockMatch[1].trim()
-                  } else {
-                    const codeBlockMatch = htmlForParsing.match(/```\s*([\s\S]*?)\s*```/)
-                    if (codeBlockMatch) {
-                      htmlForParsing = codeBlockMatch[1].trim()
-                    }
-                  }
-
-                  const { completedSubtitles } = parseCompletedSubtitles(htmlForParsing, menu_subtitles)
-                  const remainingSubtitles = menu_subtitles
-                    .map((sub: any, index: number) => ({ ...sub, originalIndex: index }))
-                    .filter((_: any, index: number) => !completedSubtitles.includes(index))
-
-                  if (remainingSubtitles.length > 0) {
-                    hasSentPartialDone = true
-
-                    let cleanHtml = fullText.trim()
-                    const htmlBlockMatch = cleanHtml.match(/```html\s*([\s\S]*?)\s*```/)
-                    if (htmlBlockMatch) {
-                      cleanHtml = htmlBlockMatch[1].trim()
-                    } else {
-                      const codeBlockMatch = cleanHtml.match(/```\s*([\s\S]*?)\s*```/)
-                      if (codeBlockMatch) {
-                        cleanHtml = codeBlockMatch[1].trim()
-                      }
-                    }
-
-                    cleanHtml = cleanHtml.replace(/(<\/h3>)\s+(<div class="subtitle-content">)/g, '$1$2')
-                    cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content"[^>]*>)/g, '$1$2')
-                    cleanHtml = cleanHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
-                    cleanHtml = cleanHtml.replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
-                    cleanHtml = cleanHtml.replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
-                    cleanHtml = cleanHtml.replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
-                    cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
-                    cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
-                    cleanHtml = cleanHtml.replace(/\*\*/g, '')
-
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                      type: 'partial_done',
-                      html: cleanHtml,
-                      remainingSubtitles: remainingSubtitles.map((sub: any) => sub.originalIndex),
-                      completedSubtitles: completedSubtitles,
-                    })}\n\n`))
-
-                    controller.close()
-                    return
-                  }
-                }
+                // 2차 요청 자동 시작 로직 제거 (사용자 요청)
+                // 타임아웃이 발생하면 그냥 완료 처리
               }
             }
           )
@@ -765,45 +762,13 @@ serve(async (req) => {
           cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
           cleanHtml = cleanHtml.replace(/\*\*/g, '')
 
-          // Finish Reason이 없거나 STOP이 아닌 경우, 부분 완료 처리 시도
-          if (!finishReason || finishReason !== 'STOP') {
-            console.warn('=== Finish Reason이 없거나 STOP이 아님, 부분 완료 처리 시도 ===')
-            
-            // 부분 완료 처리 로직
-            let htmlForParsing = fullText.trim()
-            const htmlBlockMatch = htmlForParsing.match(/```html\s*([\s\S]*?)\s*```/)
-            if (htmlBlockMatch) {
-              htmlForParsing = htmlBlockMatch[1].trim()
-            } else {
-              const codeBlockMatch = htmlForParsing.match(/```\s*([\s\S]*?)\s*```/)
-              if (codeBlockMatch) {
-                htmlForParsing = codeBlockMatch[1].trim()
-              }
-            }
-            
-            const { completedSubtitles } = parseCompletedSubtitles(htmlForParsing, menu_subtitles)
-            const remainingSubtitles = menu_subtitles
-              .map((sub: any, index: number) => ({ ...sub, originalIndex: index }))
-              .filter((_: any, index: number) => !completedSubtitles.includes(index))
-            
-            if (remainingSubtitles.length > 0 && !isSecondRequest) {
-              console.warn(`남은 소제목이 있음 (${remainingSubtitles.length}개), partial_done 전송`)
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                type: 'partial_done',
-                html: cleanHtml,
-                remainingSubtitles: remainingSubtitles.map((sub: any) => sub.originalIndex),
-                completedSubtitles: completedSubtitles,
-              })}\n\n`))
-              controller.close()
-              return
-            }
-          }
-          
+          // 2차 요청 자동 시작 로직 제거됨 - 항상 done 전송
+          console.log('✅ 스트림 완료, done 전송')
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'done',
             html: cleanHtml,
             isTruncated: finishReason === 'MAX_TOKENS' || !finishReason,
-            finishReason: finishReason || 'UNKNOWN',
+            finishReason: finishReason || 'STOP',
           })}\n\n`))
 
           controller.close()
@@ -816,65 +781,7 @@ serve(async (req) => {
           console.error('경과 시간:', Math.round(elapsed/1000), '초')
           console.error('fullText 길이:', fullText.length, '자')
 
-          // 타임아웃 또는 에러 발생 시 부분 완료 처리 (1차 요청만)
-          if (elapsed >= TIMEOUT_PARTIAL && fullText.trim() && fullText.trim().length > 50 && !hasSentPartialDone && !isSecondRequest) {
-            console.warn(`=== 에러 발생 시 부분 완료 처리 (${Math.round(elapsed/1000)}초 경과) ===`)
-            try {
-              let htmlForParsing = fullText.trim()
-              const htmlBlockMatch = htmlForParsing.match(/```html\s*([\s\S]*?)\s*```/)
-              if (htmlBlockMatch) {
-                htmlForParsing = htmlBlockMatch[1].trim()
-              } else {
-                const codeBlockMatch = htmlForParsing.match(/```\s*([\s\S]*?)\s*```/)
-                if (codeBlockMatch) {
-                  htmlForParsing = codeBlockMatch[1].trim()
-                }
-              }
-              
-              const { completedSubtitles } = parseCompletedSubtitles(htmlForParsing, menu_subtitles)
-              const remainingSubtitles = menu_subtitles
-                .map((sub: any, index: number) => ({ ...sub, originalIndex: index }))
-                .filter((_: any, index: number) => !completedSubtitles.includes(index))
-
-              if (remainingSubtitles.length > 0) {
-                hasSentPartialDone = true
-
-                let cleanHtml = fullText.trim()
-                const htmlBlockMatch = cleanHtml.match(/```html\s*([\s\S]*?)\s*```/)
-                if (htmlBlockMatch) {
-                  cleanHtml = htmlBlockMatch[1].trim()
-                } else {
-                  const codeBlockMatch = cleanHtml.match(/```\s*([\s\S]*?)\s*```/)
-                  if (codeBlockMatch) {
-                    cleanHtml = codeBlockMatch[1].trim()
-                  }
-                }
-
-                cleanHtml = cleanHtml.replace(/(<\/h3>)\s+(<div class="subtitle-content">)/g, '$1$2')
-                cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content"[^>]*>)/g, '$1$2')
-                cleanHtml = cleanHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
-                cleanHtml = cleanHtml.replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
-                cleanHtml = cleanHtml.replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
-                cleanHtml = cleanHtml.replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
-                cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
-                cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
-                cleanHtml = cleanHtml.replace(/\*\*/g, '')
-
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                  type: 'partial_done',
-                  html: cleanHtml,
-                  remainingSubtitles: remainingSubtitles.map((sub: any) => sub.originalIndex),
-                  completedSubtitles: completedSubtitles,
-                })}\n\n`))
-
-                controller.close()
-                return
-              }
-            } catch (processError: any) {
-              console.error('부분 데이터 처리 중 에러:', processError)
-            }
-          }
-
+          // 2차 요청 자동 시작 로직 제거됨 - 에러 발생 시 error 전송
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'error',
             error: error?.message || '스트리밍 중 오류가 발생했습니다.'
