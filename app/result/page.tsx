@@ -1243,19 +1243,27 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               // px to mm 변환 (96 DPI: 1px = 0.264583mm)
               const PX_TO_MM = 0.264583
               
-              // A4 너비에 맞게 스케일 계산
+              // 캔버스 크기를 mm로 변환
               const canvasWidthMm = canvasWidth * PX_TO_MM
-              const scale = A4_WIDTH_MM / canvasWidthMm
+              const canvasHeightMm = canvasHeight * PX_TO_MM
               
+              console.log(`캔버스 크기 (mm): ${canvasWidthMm.toFixed(2)}x${canvasHeightMm.toFixed(2)}mm`)
+              
+              // A4 너비에 맞게 스케일 계산
+              const scale = A4_WIDTH_MM / canvasWidthMm
               const scaledWidthMm = A4_WIDTH_MM
-              const scaledHeightMm = canvasHeight * PX_TO_MM * scale
+              const scaledHeightMm = canvasHeightMm * scale
+              
+              // 스케일된 높이를 px로 변환 (페이지 분할용)
               const scaledHeightPx = canvasHeight * scale
               
               console.log(`스케일: ${(scale * 100).toFixed(1)}%, 스케일된 크기: ${scaledWidthMm.toFixed(2)}x${scaledHeightMm.toFixed(2)}mm`)
               
-              // 페이지 수 계산
-              const totalPages = Math.ceil(scaledHeightMm / A4_HEIGHT_MM)
-              console.log(`예상 페이지 수: ${totalPages}페이지`)
+              // 한 페이지에 들어갈 px 높이 계산 (A4 높이를 px로 변환한 후 원본 스케일로 나눔)
+              const pageHeightPx = A4_HEIGHT_MM / PX_TO_MM / scale
+              const totalPages = Math.ceil(canvasHeight / pageHeightPx)
+              
+              console.log(`페이지당 높이: ${pageHeightPx.toFixed(0)}px, 예상 페이지 수: ${totalPages}페이지`)
               
               // 첫 번째 페이지 생성
               const pdf = new jsPDF({
@@ -1273,13 +1281,11 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                   pdf.addPage([A4_WIDTH_MM, A4_HEIGHT_MM], 'portrait')
                 }
                 
-                // 현재 페이지에 들어갈 높이 계산 (원본 px 기준)
+                // 현재 페이지에 들어갈 높이 계산
                 const remainingHeight = canvasHeight - sourceY
-                // A4 높이를 px로 변환한 만큼 가져오기
-                const pageHeightPx = A4_HEIGHT_MM / PX_TO_MM / scale
                 const sourceHeight = Math.min(pageHeightPx, remainingHeight)
                 
-                console.log(`페이지 ${pageNumber + 1} 처리: sourceY=${sourceY}px, sourceHeight=${sourceHeight.toFixed(0)}px`)
+                console.log(`페이지 ${pageNumber + 1} 처리: sourceY=${sourceY.toFixed(0)}px, sourceHeight=${sourceHeight.toFixed(0)}px`)
                 
                 // 원본 캔버스에서 해당 부분을 잘라서 새 캔버스에 복사
                 const pageCanvas = document.createElement('canvas')
@@ -1294,18 +1300,23 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 // 원본 캔버스의 해당 부분 복사
                 pageCtx.drawImage(
                   canvas,
-                  0, sourceY, canvasWidth, sourceHeight, // 소스 영역
-                  0, 0, canvasWidth, sourceHeight // 대상 영역
+                  0, sourceY, canvasWidth, sourceHeight, // 소스 영역 (원본 캔버스)
+                  0, 0, canvasWidth, sourceHeight // 대상 영역 (페이지 캔버스)
                 )
                 
                 // 페이지 캔버스를 이미지로 변환
                 const pageImgData = pageCanvas.toDataURL('image/png', 1.0)
+                console.log(`페이지 ${pageNumber + 1} 이미지 데이터 생성, 길이: ${(pageImgData.length / 1024).toFixed(2)} KB`)
+                
+                if (!pageImgData || pageImgData.length < 100) {
+                  throw new Error(`페이지 ${pageNumber + 1} 이미지 데이터 생성 실패`)
+                }
                 
                 // 이미지 크기를 mm로 변환
                 const imgWidthMm = canvasWidth * PX_TO_MM * scale
                 const imgHeightMm = sourceHeight * PX_TO_MM * scale
                 
-                console.log(`페이지 ${pageNumber + 1} 이미지 크기: ${imgWidthMm.toFixed(2)}x${imgHeightMm.toFixed(2)}mm, 데이터 길이: ${(pageImgData.length / 1024).toFixed(2)} KB`)
+                console.log(`페이지 ${pageNumber + 1} PDF 추가: 크기 ${imgWidthMm.toFixed(2)}x${imgHeightMm.toFixed(2)}mm`)
                 
                 // PDF 페이지에 추가 (항상 상단에 배치)
                 pdf.addImage(
