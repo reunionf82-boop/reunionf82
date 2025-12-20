@@ -7,6 +7,7 @@ interface JeminaiRequest {
     subtitle: string
     interpretation_tool: string
     char_count: number
+    thumbnail?: string
   }>
   menu_items?: Array<any> // menu_items 추가
   user_info: {
@@ -26,6 +27,9 @@ interface JeminaiRequest {
   manse_ryeok_text?: string
   manse_ryeok_json?: string
   day_gan_info?: any
+  isSecondRequest?: boolean
+  completedSubtitles?: Array<any>
+  completedSubtitleIndices?: number[]
 }
 
 interface JeminaiResponse {
@@ -98,16 +102,27 @@ export async function callJeminaiAPIStream(
     console.log('=== 재미나이 API 스트리밍 호출 시작 ===')
     console.log('선택된 모델:', modelDisplayName, `(${selectedModel})`)
     
-    // fetch 타임아웃 설정 (290초, 서버 타임아웃 300초보다 짧게)
+    // Supabase Edge Function URL 구성
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+    
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('Supabase 환경 변수가 설정되지 않았습니다.')
+    }
+
+    const edgeFunctionUrl = `${supabaseUrl}/functions/v1/jeminai`
+
+    // fetch 타임아웃 설정 (390초, 서버 타임아웃 400초보다 짧게)
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 290000) // 290초
+    const timeoutId = setTimeout(() => controller.abort(), 390000) // 390초
     
     let response: Response
     try {
-      response = await fetch('/api/jeminai', {
+      response = await fetch(edgeFunctionUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
         },
         body: JSON.stringify({
           role_prompt: request.role_prompt,
@@ -116,11 +131,14 @@ export async function callJeminaiAPIStream(
           menu_items: request.menu_items || [],
           user_info: request.user_info,
           partner_info: request.partner_info,
-        model: request.model || 'gemini-3-flash-preview',
+          model: request.model || 'gemini-3-flash-preview',
           manse_ryeok_table: request.manse_ryeok_table,
           manse_ryeok_text: request.manse_ryeok_text,
           manse_ryeok_json: request.manse_ryeok_json,
-          day_gan_info: request.day_gan_info
+          day_gan_info: request.day_gan_info,
+          isSecondRequest: request.isSecondRequest,
+          completedSubtitles: request.completedSubtitles,
+          completedSubtitleIndices: request.completedSubtitleIndices
         }),
         signal: controller.signal
       })
