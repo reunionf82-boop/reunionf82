@@ -1,4 +1,10 @@
 {
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "functions": {
+    "app/api/saved-results/generate-pdf/route.ts": {
+      "maxDuration": 300,
+      "memory": 3008
+    }
+  }
 }
 

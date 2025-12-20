@@ -10,11 +10,18 @@ let chromium: any
 
 if (isProduction) {
   // 프로덕션: puppeteer-core + @sparticuz/chromium
-  puppeteer = require('puppeteer-core')
-  chromium = require('@sparticuz/chromium')
+  try {
+    puppeteer = require('puppeteer-core')
+    chromium = require('@sparticuz/chromium')
+    console.log('프로덕션: puppeteer-core + @sparticuz/chromium 로드 성공')
+  } catch (requireError: any) {
+    console.error('프로덕션 환경에서 puppeteer-core 또는 @sparticuz/chromium 로드 실패:', requireError?.message)
+    throw requireError
+  }
 } else {
   // 개발: puppeteer (Chromium 포함)
   puppeteer = require('puppeteer')
+  console.log('개발: puppeteer 로드 성공')
 }
 
 export const dynamic = 'force-dynamic'
@@ -57,35 +64,62 @@ export async function POST(request: NextRequest) {
       if (isProduction && chromium) {
         // 프로덕션 환경(Vercel 등): @sparticuz/chromium 사용
         console.log('프로덕션 환경: @sparticuz/chromium 사용')
+        console.log('Chromium 버전:', chromium.version || 'N/A')
+        console.log('Chromium headless:', chromium.headless)
         
         // Chromium 폰트 로드 (Vercel 환경에서 필요할 수 있음)
         try {
           if (typeof chromium.font === 'function') {
             await chromium.font()
             console.log('Chromium 폰트 로드 완료')
+          } else {
+            console.log('Chromium.font 함수 없음, 건너뜀')
           }
-        } catch (fontError) {
-          console.warn('Chromium 폰트 로드 실패 (무시):', fontError)
+        } catch (fontError: any) {
+          console.warn('Chromium 폰트 로드 실패 (무시):', fontError?.message || String(fontError))
         }
         
         // Chromium WebGL 비활성화 (Vercel 환경 최적화)
-        // setGraphicsMode는 속성이므로 함수 호출이 아닌 속성 할당
         try {
-          if ('setGraphicsMode' in chromium && typeof chromium.setGraphicsMode !== 'function') {
-            (chromium as any).setGraphicsMode = false
+          if (chromium && typeof chromium.setGraphicsMode === 'function') {
+            chromium.setGraphicsMode(false)
             console.log('Chromium setGraphicsMode 비활성화 완료')
+          } else if (chromium && 'setGraphicsMode' in chromium) {
+            (chromium as any).setGraphicsMode = false
+            console.log('Chromium setGraphicsMode 속성 비활성화 완료')
           }
-        } catch (graphicsModeError) {
-          console.warn('setGraphicsMode 설정 실패 (무시):', graphicsModeError)
+        } catch (graphicsModeError: any) {
+          console.warn('setGraphicsMode 설정 실패 (무시):', graphicsModeError?.message || String(graphicsModeError))
         }
         
-        const executablePath = await chromium.executablePath()
-        console.log('Chromium 실행 경로:', executablePath)
+        // Chromium 실행 경로 가져오기
+        let executablePath: string
+        try {
+          // Chromium이 압축되어 있으면 압축 해제
+          if (typeof chromium.executablePath === 'function') {
+            executablePath = await chromium.executablePath()
+          } else {
+            executablePath = chromium.executablePath || ''
+          }
+          console.log('Chromium 실행 경로:', executablePath)
+          console.log('Chromium 실행 경로 길이:', executablePath?.length || 0)
+          
+          if (!executablePath || executablePath.length === 0) {
+            throw new Error('Chromium executablePath가 비어있습니다.')
+          }
+        } catch (execPathError: any) {
+          console.error('Chromium executablePath 가져오기 실패:', execPathError?.message || String(execPathError))
+          console.error('Chromium 객체:', chromium ? '존재' : '없음')
+          console.error('Chromium 타입:', typeof chromium)
+          throw new Error(`Chromium 실행 경로를 가져올 수 없습니다: ${execPathError?.message || String(execPathError)}`)
+        }
         
-        // Chromium args 확인
+        // Chromium args 확인 및 설정
         const chromiumArgs = chromium.args || []
-        console.log('Chromium 기본 args:', chromiumArgs)
+        console.log('Chromium 기본 args 개수:', chromiumArgs.length)
+        console.log('Chromium 기본 args 샘플:', chromiumArgs.slice(0, 5))
         
+        // Vercel 환경에 최적화된 args
         launchOptions = {
           args: [
             ...chromiumArgs,
@@ -104,12 +138,25 @@ export async function POST(request: NextRequest) {
             '--disable-features=TranslateUI',
             '--disable-ipc-flooding-protection',
             '--disable-web-security',
-            '--disable-features=VizDisplayCompositor'
+            '--disable-features=VizDisplayCompositor',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-infobars',
+            '--disable-notifications',
+            '--disable-popup-blocking',
+            '--disable-translate',
+            '--hide-scrollbars',
+            '--mute-audio',
+            '--no-default-browser-check',
+            '--no-pings',
+            '--password-store=basic',
+            '--use-mock-keychain'
           ],
           defaultViewport: chromium.defaultViewport || { width: 1280, height: 720 },
           executablePath: executablePath,
-          headless: chromium.headless !== false ? 'new' : false,
-          ignoreHTTPSErrors: true
+          headless: true, // Vercel에서는 항상 true 사용
+          ignoreHTTPSErrors: true,
+          ignoreDefaultArgs: false,
+          protocolTimeout: 300000 // 5분 타임아웃
         }
       } else {
         // 개발 환경: 일반 puppeteer 사용
@@ -128,8 +175,12 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      console.log('Puppeteer 실행 옵션:', JSON.stringify(launchOptions, null, 2))
+      console.log('Puppeteer 실행 옵션 준비 완료')
+      console.log('executablePath:', launchOptions.executablePath || 'N/A')
+      console.log('headless:', launchOptions.headless)
+      console.log('args 개수:', launchOptions.args?.length || 0)
       console.log('Puppeteer 브라우저 실행 시도...')
+      
       browser = await puppeteer.launch(launchOptions)
       console.log('Puppeteer 브라우저 실행 성공')
     } catch (launchError: any) {
@@ -137,8 +188,30 @@ export async function POST(request: NextRequest) {
       console.error('에러 타입:', typeof launchError)
       console.error('에러 메시지:', launchError?.message)
       console.error('에러 스택:', launchError?.stack)
-      console.error('전체 에러 객체:', JSON.stringify(launchError, Object.getOwnPropertyNames(launchError)))
-      throw new Error(`Puppeteer 브라우저 실행 실패: ${launchError?.message || String(launchError)}`)
+      console.error('에러 이름:', launchError?.name)
+      console.error('전체 에러 객체:', JSON.stringify(launchError, Object.getOwnPropertyNames(launchError), 2))
+      
+      // Vercel 환경에서 Puppeteer가 작동하지 않는 경우를 위한 안내
+      if (isProduction) {
+        console.error('=== Vercel 환경 제약 가능성 ===')
+        console.error('Vercel의 serverless 환경에서는 Puppeteer 실행이 제한될 수 있습니다.')
+        console.error('Chromium 버전:', chromium?.version || 'N/A')
+        console.error('Chromium executablePath 타입:', typeof chromium?.executablePath)
+        console.error('대안: Supabase Edge Functions 또는 별도 서버에서 PDF 생성 고려')
+        console.error('또는 @sparticuz/chromium-min 사용 고려 (더 가벼운 버전)')
+      }
+      
+      // 더 자세한 에러 정보 포함
+      const errorDetails = {
+        message: launchError?.message || String(launchError),
+        name: launchError?.name,
+        code: launchError?.code,
+        errno: launchError?.errno,
+        syscall: launchError?.syscall,
+        path: launchError?.path
+      }
+      
+      throw new Error(`Puppeteer 브라우저 실행 실패: ${JSON.stringify(errorDetails)}`)
     }
 
     const page = await browser.newPage()
