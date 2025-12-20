@@ -66,35 +66,8 @@ export async function callJeminaiAPIStream(
   request: JeminaiRequest,
   onChunk: StreamingCallback
 ): Promise<JeminaiResponse> {
-  const apiKey = process.env.NEXT_PUBLIC_JEMINAI_API_URL
-  
-  // API 키가 없거나 localhost면 모의 응답 반환
-  const isDevelopment = process.env.NODE_ENV === 'development'
-  const hasInvalidKey = !apiKey || apiKey.includes('localhost')
-  
-  if (isDevelopment && hasInvalidKey) {
-    console.log('개발 모드: 모의 응답 반환', { isDevelopment, hasInvalidKey })
-    const mockResponse = getMockResponse(request)
-    // 모의 응답도 스트리밍처럼 시뮬레이션
-    onChunk({ type: 'start' })
-    // 청크로 나누어 전송
-    const chunkSize = 100
-    for (let i = 0; i < mockResponse.html.length; i += chunkSize) {
-      const chunk = mockResponse.html.substring(i, i + chunkSize)
-      onChunk({ 
-        type: 'chunk', 
-        text: chunk,
-        accumulatedLength: Math.min(i + chunkSize, mockResponse.html.length)
-      })
-      await new Promise(resolve => setTimeout(resolve, 50)) // 시뮬레이션 딜레이
-    }
-    onChunk({ type: 'done', html: mockResponse.html })
-    return mockResponse
-  }
-  
-  if (!apiKey) {
-    throw new Error('NEXT_PUBLIC_JEMINAI_API_URL 환경 변수가 설정되지 않았습니다.')
-  }
+  // Supabase Edge Function을 사용하므로 모의 응답 로직 제거
+  // 이제는 항상 Supabase Edge Function을 호출합니다
   
   try {
     const selectedModel = request.model || 'gemini-3-flash-preview'
@@ -106,11 +79,17 @@ export async function callJeminaiAPIStream(
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     
+    console.log('=== Supabase 환경 변수 확인 ===')
+    console.log('Supabase URL:', supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : '없음')
+    console.log('Supabase Anon Key:', supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : '없음')
+    
     if (!supabaseUrl || !supabaseAnonKey) {
+      console.error('Supabase 환경 변수 오류:', { supabaseUrl: !!supabaseUrl, supabaseAnonKey: !!supabaseAnonKey })
       throw new Error('Supabase 환경 변수가 설정되지 않았습니다.')
     }
 
     const edgeFunctionUrl = `${supabaseUrl}/functions/v1/jeminai`
+    console.log('Edge Function URL:', edgeFunctionUrl)
 
     // fetch 타임아웃 설정 (390초, 서버 타임아웃 400초보다 짧게)
     const controller = new AbortController()

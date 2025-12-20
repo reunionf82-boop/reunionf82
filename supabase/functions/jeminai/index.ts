@@ -69,22 +69,31 @@ async function callGeminiStream(
         if (line.startsWith('data: ')) {
           try {
             const data = JSON.parse(line.slice(6))
+            console.log('Gemini 스트림 데이터:', JSON.stringify(data).substring(0, 200))
+            
             if (data.candidates && data.candidates[0]) {
               const candidate = data.candidates[0]
               if (candidate.content && candidate.content.parts) {
                 for (const part of candidate.content.parts) {
                   if (part.text) {
+                    console.log('텍스트 청크 수신:', part.text.substring(0, 50))
                     onChunk({ text: part.text })
                   }
                 }
               }
               if (candidate.finishReason) {
                 finishReason = candidate.finishReason
+                console.log('Finish Reason:', finishReason)
               }
+            } else {
+              console.log('후보 데이터 없음:', Object.keys(data))
             }
           } catch (e) {
+            console.error('JSON 파싱 실패:', e, '라인:', line.substring(0, 200))
             // JSON 파싱 실패는 무시하고 계속 진행
           }
+        } else if (line.trim()) {
+          console.log('데이터가 아닌 라인:', line.substring(0, 100))
         }
       }
     }
@@ -423,8 +432,10 @@ serve(async (req) => {
     console.log('요청 모델:', model)
     console.log('메뉴 소제목 개수:', menu_subtitles?.length)
     console.log('2차 요청 여부:', isSecondRequest || false)
+    console.log('요청 본문 크기:', JSON.stringify(body).length, 'bytes')
 
     if (!role_prompt || !menu_subtitles || !Array.isArray(menu_subtitles) || menu_subtitles.length === 0) {
+      console.error('Invalid request format:', { role_prompt: !!role_prompt, menu_subtitles: menu_subtitles?.length })
       return new Response(
         JSON.stringify({ error: 'Invalid request format' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -432,7 +443,9 @@ serve(async (req) => {
     }
 
     const apiKey = Deno.env.get('GEMINI_API_KEY') || ''
+    console.log('GEMINI_API_KEY 존재 여부:', !!apiKey, '길이:', apiKey.length)
     if (!apiKey) {
+      console.error('GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.')
       return new Response(
         JSON.stringify({ error: 'GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
