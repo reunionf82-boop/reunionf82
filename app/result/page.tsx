@@ -939,12 +939,10 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 console.warn(`⚠️ 캔버스 너비(${canvasWidth}px)가 최대 페이지 너비(${MAX_PAGE_WIDTH}px)를 초과합니다. 스케일링: ${(scale * 100).toFixed(1)}%`)
               }
               
-              // 스케일링된 높이 계산
-              const scaledHeight = canvasHeight * scale
               const pageHeight = MAX_PAGE_HEIGHT
               
-              console.log(`캔버스 크기: ${canvasWidth}x${canvasHeight}px, 스케일: ${(scale * 100).toFixed(1)}%, 스케일된 높이: ${scaledHeight}px`)
-              console.log(`페이지 높이: ${pageHeight}px, 예상 페이지 수: ${Math.ceil(scaledHeight / pageHeight)}`)
+              console.log(`캔버스 크기: ${canvasWidth}x${canvasHeight}px, 스케일: ${(scale * 100).toFixed(1)}%, PDF 너비: ${pdfWidth}px`)
+              console.log(`페이지 높이: ${pageHeight}px, 예상 페이지 수: ${Math.ceil(canvasHeight / pageHeight)}`)
               
               // 첫 번째 페이지 생성
               const pdf = new jsPDF({
@@ -953,34 +951,32 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 format: [pdfWidth, pageHeight]
               })
               
-              // 캔버스를 여러 페이지로 나누기
-              let yPosition = 0
+              // 원본 캔버스 높이 기준으로 페이지 분할 (스케일링은 PDF 추가 시 적용)
+              let sourceY = 0 // 원본 캔버스의 Y 위치
               let pageNumber = 0
               
-              while (yPosition < scaledHeight) {
+              while (sourceY < canvasHeight) {
                 if (pageNumber > 0) {
                   pdf.addPage([pdfWidth, pageHeight], 'portrait')
                 }
                 
-                // 현재 페이지에 들어갈 높이 계산
-                const remainingHeight = scaledHeight - yPosition
-                const currentPageHeight = Math.min(pageHeight, remainingHeight)
+                // 현재 페이지에 들어갈 원본 캔버스 높이 계산
+                const remainingHeight = canvasHeight - sourceY
+                const sourceHeight = Math.min(pageHeight / scale, remainingHeight) // 원본 캔버스에서 가져올 높이
+                const pdfPageHeight = sourceHeight * scale // PDF 페이지에 표시될 높이
                 
                 // 원본 캔버스에서 해당 부분을 잘라서 새 캔버스에 그리기
                 const tempCanvas = document.createElement('canvas')
                 tempCanvas.width = pdfWidth
-                tempCanvas.height = currentPageHeight
+                tempCanvas.height = pdfPageHeight
                 const tempCtx = tempCanvas.getContext('2d')
                 
                 if (tempCtx) {
-                  // 원본 캔버스의 해당 부분을 새 캔버스에 복사 (스케일 적용)
-                  const sourceY = yPosition / scale // 원본 캔버스의 Y 위치
-                  const sourceHeight = currentPageHeight / scale // 원본 캔버스의 높이
-                  
+                  // 원본 캔버스의 해당 부분을 새 캔버스에 복사 (스케일링 적용)
                   tempCtx.drawImage(
                     canvas,
                     0, sourceY, canvasWidth, sourceHeight, // 소스 영역 (원본 캔버스)
-                    0, 0, pdfWidth, currentPageHeight // 대상 영역 (새 캔버스)
+                    0, 0, pdfWidth, pdfPageHeight // 대상 영역 (새 캔버스, 스케일링 적용)
                   )
                   
                   // 이미지 데이터로 변환
@@ -993,15 +989,16 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                     0,
                     0,
                     pdfWidth,
-                    currentPageHeight,
+                    pdfPageHeight,
                     undefined,
                     'FAST'
                   )
                   
-                  console.log(`페이지 ${pageNumber + 1} 추가 완료 (y: ${yPosition}px, 높이: ${currentPageHeight}px)`)
+                  console.log(`페이지 ${pageNumber + 1} 추가 완료 (원본 y: ${sourceY}px, 원본 높이: ${sourceHeight}px, PDF 높이: ${pdfPageHeight}px)`)
                 }
                 
-                yPosition += pageHeight
+                // 원본 캔버스의 다음 위치로 이동
+                sourceY += sourceHeight
                 pageNumber++
               }
               
@@ -1012,7 +1009,8 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               if (canvasWidth > MAX_PAGE_WIDTH) {
                 console.warn(`⚠️ 컨텐츠 너비(${canvasWidth}px)가 최대 페이지 너비(${MAX_PAGE_WIDTH}px)를 초과합니다. 스케일링이 적용되었습니다.`)
               }
-              if (scaledHeight > MAX_PAGE_HEIGHT) {
+              if (canvasHeight > MAX_PAGE_HEIGHT / scale) {
+                const scaledHeight = canvasHeight * scale
                 console.log(`ℹ️ 컨텐츠 높이(${scaledHeight}px)가 최대 페이지 높이(${MAX_PAGE_HEIGHT}px)를 초과하여 ${pageNumber}페이지로 분할되었습니다.`)
               }
               

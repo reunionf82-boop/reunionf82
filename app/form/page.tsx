@@ -12,19 +12,51 @@ import PrivacyPopup from '@/components/PrivacyPopup'
 function FormContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const title = searchParams.get('title') || ''
+  
+  // sessionStorage에서 title 가져오기 (URL 파라미터 대신)
+  const [title, setTitle] = useState<string>('')
   
   // 모델 상태 관리
   const [model, setModel] = useState<string>('gemini-3-flash-preview')
   
-  // URL 파라미터와 Supabase에서 모델 가져오기
+  // sessionStorage와 URL 파라미터에서 데이터 가져오기 (하위 호환성 유지)
   useEffect(() => {
-    const loadModel = async () => {
+    const loadData = async () => {
+      // 1. sessionStorage 우선 확인 (새로운 방식)
+      if (typeof window !== 'undefined') {
+        const storedTitle = sessionStorage.getItem('form_title')
+        const storedModel = sessionStorage.getItem('form_model')
+        
+        if (storedTitle) {
+          setTitle(storedTitle)
+          // 사용 후 삭제 (한 번만 사용)
+          sessionStorage.removeItem('form_title')
+          console.log('Form 페이지: sessionStorage에서 title 가져옴:', storedTitle)
+        }
+        
+        if (storedModel) {
+          setModel(storedModel)
+          // 사용 후 삭제 (한 번만 사용)
+          sessionStorage.removeItem('form_model')
+          console.log('Form 페이지: sessionStorage에서 모델 가져옴:', storedModel)
+          return // sessionStorage에서 가져왔으면 종료
+        }
+      }
+      
+      // 2. URL 파라미터 확인 (하위 호환성)
+      const urlTitle = searchParams.get('title')
       const urlModel = searchParams.get('model')
+      
+      if (urlTitle) {
+        setTitle(urlTitle)
+        console.log('Form 페이지: URL에서 title 가져옴:', urlTitle)
+      }
+      
       if (urlModel) {
         setModel(urlModel)
         console.log('Form 페이지: URL에서 모델 가져옴:', urlModel)
       } else {
+        // 3. Supabase에서 모델 가져오기 (기본값)
         try {
           const savedModel = await getSelectedModel()
           setModel(savedModel)
@@ -35,7 +67,7 @@ function FormContent() {
         }
       }
     }
-    loadModel()
+    loadData()
   }, [searchParams])
   
   const [content, setContent] = useState<any>(null)

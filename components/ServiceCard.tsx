@@ -31,15 +31,30 @@ export default function ServiceCard({ service }: ServiceCardProps) {
   const router = useRouter()
 
   const handleReunionClick = async () => {
-    const encodedTitle = encodeURIComponent(service.title)
     // Supabase에서 선택된 모델 가져오기
     try {
       const selectedModel = await getSelectedModel()
       console.log('ServiceCard: Supabase에서 모델 가져옴:', selectedModel)
-      router.push(`/form?title=${encodedTitle}&model=${selectedModel}`)
+      
+      // sessionStorage에 데이터 저장 (URL 파라미터 대신)
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('form_title', service.title)
+        sessionStorage.setItem('form_model', selectedModel)
+      }
+      
+      // 깔끔한 URL로 이동
+      router.push('/form')
     } catch (error) {
       console.error('모델 로드 실패, 기본값 사용:', error)
-      router.push(`/form?title=${encodedTitle}&model=gemini-3-flash-preview`)
+      
+      // sessionStorage에 데이터 저장
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('form_title', service.title)
+        sessionStorage.setItem('form_model', 'gemini-3-flash-preview')
+      }
+      
+      // 깔끔한 URL로 이동
+      router.push('/form')
     }
   }
 
