@@ -1260,7 +1260,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 format: [pdfWidth, pageHeight]
               })
               
-              // 원본 캔버스 높이 기준으로 페이지 분할 (스케일링은 PDF 추가 시 적용)
+              // 원본 캔버스 높이 기준으로 페이지 분할
               let sourceY = 0 // 원본 캔버스의 Y 위치
               let pageNumber = 0
               
@@ -1271,39 +1271,39 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 
                 // 현재 페이지에 들어갈 원본 캔버스 높이 계산
                 const remainingHeight = canvasHeight - sourceY
-                const sourceHeight = Math.min(pageHeight / scale, remainingHeight) // 원본 캔버스에서 가져올 높이
-                const pdfPageHeight = sourceHeight * scale // PDF 페이지에 표시될 높이
+                // 원본 캔버스에서 가져올 높이 (PDF 페이지 높이와 동일하게)
+                const sourceHeight = Math.min(pageHeight, remainingHeight)
                 
                 // 원본 캔버스에서 해당 부분을 잘라서 새 캔버스에 그리기
                 const tempCanvas = document.createElement('canvas')
                 tempCanvas.width = pdfWidth
-                tempCanvas.height = pdfPageHeight
+                tempCanvas.height = sourceHeight // PDF 페이지 높이와 동일
                 const tempCtx = tempCanvas.getContext('2d')
                 
                 if (tempCtx) {
-                  // 원본 캔버스의 해당 부분을 새 캔버스에 복사 (스케일링 적용)
+                  // 원본 캔버스의 해당 부분을 새 캔버스에 복사 (1:1 비율)
                   tempCtx.drawImage(
                     canvas,
                     0, sourceY, canvasWidth, sourceHeight, // 소스 영역 (원본 캔버스)
-                    0, 0, pdfWidth, pdfPageHeight // 대상 영역 (새 캔버스, 스케일링 적용)
+                    0, 0, pdfWidth, sourceHeight // 대상 영역 (새 캔버스, 1:1 비율)
                   )
                   
-                  // 이미지 데이터로 변환
+                  // 이미지 데이터로 변환 (고품질)
                   const imgData = tempCanvas.toDataURL('image/png', 1.0)
                   
-                  // PDF 페이지에 추가
+                  // PDF 페이지에 추가 (y 좌표는 항상 0, 페이지 높이에 맞춤)
                   pdf.addImage(
                     imgData,
                     'PNG',
-                    0,
-                    0,
-                    pdfWidth,
-                    pdfPageHeight,
+                    0, // x 좌표
+                    0, // y 좌표 (항상 페이지 상단)
+                    pdfWidth, // 너비
+                    sourceHeight, // 높이 (PDF 페이지 높이와 동일)
                     undefined,
                     'FAST'
                   )
                   
-                  console.log(`페이지 ${pageNumber + 1} 추가 완료 (원본 y: ${sourceY}px, 원본 높이: ${sourceHeight}px, PDF 높이: ${pdfPageHeight}px)`)
+                  console.log(`페이지 ${pageNumber + 1} 추가 완료 (원본 y: ${sourceY}px, 원본 높이: ${sourceHeight}px, PDF 높이: ${sourceHeight}px)`)
                 }
                 
                 // 원본 캔버스의 다음 위치로 이동
