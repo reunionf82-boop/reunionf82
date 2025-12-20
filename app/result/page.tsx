@@ -1253,11 +1253,14 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               console.log(`캔버스 크기: ${canvasWidth}x${canvasHeight}px, 스케일: ${(scale * 100).toFixed(1)}%, PDF 너비: ${pdfWidth}px`)
               console.log(`페이지 높이: ${pageHeight}px, 예상 페이지 수: ${Math.ceil(canvasHeight / pageHeight)}`)
               
-              // 첫 번째 페이지 생성
+              // 첫 번째 페이지 생성 (mm 단위 사용, 더 안정적)
+              // A4 크기: 210mm x 297mm
+              // 하지만 여기서는 px 단위로 직접 작업하므로 mm로 변환
               const pdf = new jsPDF({
                 orientation: 'portrait',
                 unit: 'px',
-                format: [pdfWidth, pageHeight]
+                format: [pdfWidth, pageHeight],
+                compress: true
               })
               
               // 원본 캔버스 높이 기준으로 페이지 분할
@@ -1274,36 +1277,68 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 // 원본 캔버스에서 가져올 높이 (PDF 페이지 높이와 동일하게)
                 const sourceHeight = Math.min(pageHeight, remainingHeight)
                 
+                console.log(`페이지 ${pageNumber + 1} 처리 중: sourceY=${sourceY}, sourceHeight=${sourceHeight}, remainingHeight=${remainingHeight}`)
+                
                 // 원본 캔버스에서 해당 부분을 잘라서 새 캔버스에 그리기
                 const tempCanvas = document.createElement('canvas')
                 tempCanvas.width = pdfWidth
-                tempCanvas.height = sourceHeight // PDF 페이지 높이와 동일
+                tempCanvas.height = sourceHeight
                 const tempCtx = tempCanvas.getContext('2d')
                 
-                if (tempCtx) {
-                  // 원본 캔버스의 해당 부분을 새 캔버스에 복사 (1:1 비율)
-                  tempCtx.drawImage(
-                    canvas,
-                    0, sourceY, canvasWidth, sourceHeight, // 소스 영역 (원본 캔버스)
-                    0, 0, pdfWidth, sourceHeight // 대상 영역 (새 캔버스, 1:1 비율)
-                  )
-                  
-                  // 이미지 데이터로 변환 (고품질)
-                  const imgData = tempCanvas.toDataURL('image/png', 1.0)
-                  
-                  // PDF 페이지에 추가 (y 좌표는 항상 0, 페이지 높이에 맞춤)
+                if (!tempCtx) {
+                  throw new Error('tempCanvas context를 가져올 수 없습니다.')
+                }
+                
+                // 배경을 흰색으로 채우기
+                tempCtx.fillStyle = '#f9fafb'
+                tempCtx.fillRect(0, 0, pdfWidth, sourceHeight)
+                
+                // 원본 캔버스의 해당 부분을 새 캔버스에 복사
+                tempCtx.drawImage(
+                  canvas,
+                  0, sourceY, canvasWidth, sourceHeight, // 소스 영역 (원본 캔버스)
+                  0, 0, pdfWidth, sourceHeight // 대상 영역 (새 캔버스)
+                )
+                
+                // tempCanvas가 실제로 내용을 가지고 있는지 확인
+                const tempImageData = tempCtx.getImageData(0, 0, Math.min(100, pdfWidth), Math.min(100, sourceHeight))
+                const tempPixels = tempImageData.data
+                let tempNonWhitePixels = 0
+                for (let i = 0; i < tempPixels.length; i += 4) {
+                  const r = tempPixels[i]
+                  const g = tempPixels[i + 1]
+                  const b = tempPixels[i + 2]
+                  if (!(r >= 249 && r <= 251 && g >= 249 && g <= 251 && b >= 249 && b <= 251)) {
+                    tempNonWhitePixels++
+                  }
+                }
+                console.log(`페이지 ${pageNumber + 1} tempCanvas 샘플링: ${tempNonWhitePixels}/${tempPixels.length / 4} 픽셀 (${((tempNonWhitePixels / (tempPixels.length / 4)) * 100).toFixed(2)}%)`)
+                
+                // 이미지 데이터로 변환 (고품질)
+                const imgData = tempCanvas.toDataURL('image/png', 1.0)
+                console.log(`페이지 ${pageNumber + 1} 이미지 데이터 생성 완료, 길이: ${imgData.length} bytes`)
+                
+                if (!imgData || imgData.length < 100) {
+                  console.error(`페이지 ${pageNumber + 1} 이미지 데이터가 비어있습니다!`)
+                  throw new Error(`페이지 ${pageNumber + 1} 이미지 데이터 생성 실패`)
+                }
+                
+                // PDF 페이지에 추가
+                try {
                   pdf.addImage(
                     imgData,
                     'PNG',
                     0, // x 좌표
                     0, // y 좌표 (항상 페이지 상단)
                     pdfWidth, // 너비
-                    sourceHeight, // 높이 (PDF 페이지 높이와 동일)
+                    sourceHeight, // 높이
                     undefined,
                     'FAST'
                   )
-                  
-                  console.log(`페이지 ${pageNumber + 1} 추가 완료 (원본 y: ${sourceY}px, 원본 높이: ${sourceHeight}px, PDF 높이: ${sourceHeight}px)`)
+                  console.log(`페이지 ${pageNumber + 1} PDF에 추가 완료 (x: 0, y: 0, width: ${pdfWidth}, height: ${sourceHeight})`)
+                } catch (error) {
+                  console.error(`페이지 ${pageNumber + 1} PDF에 추가 실패:`, error)
+                  throw error
                 }
                 
                 // 원본 캔버스의 다음 위치로 이동
