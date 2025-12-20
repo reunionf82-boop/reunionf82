@@ -1379,7 +1379,7 @@ function FormContent() {
           <div className="relative mb-8 overflow-hidden shadow-sm">
             <div className="relative h-96">
               <img 
-                src={content.thumbnail_url + (thumbnailRetried ? '?retry=' + Date.now() : '')} 
+                src={content.thumbnail_url} 
                 alt={content.content_name || '썸네일'}
                 className="w-full h-full object-cover"
                 onError={(e) => {
@@ -1609,7 +1609,7 @@ function FormContent() {
                       !previewThumbnailErrors[index] ? (
                         <img
                           key={index}
-                          src={thumbnail + (previewThumbnailRetried[index] ? '?retry=' + Date.now() : '')}
+                          src={thumbnail}
                           alt={`재회상품 미리보기 ${index + 1}`}
                           className="cursor-pointer rounded-lg shadow-md hover:shadow-lg transition-shadow max-h-48 object-contain"
                           onClick={() => openPreviewModal(index)}
@@ -1707,7 +1707,7 @@ function FormContent() {
                                 </button>
                                 {!previewThumbnailErrors[index] ? (
                                   <img
-                                    src={thumbnail + (previewThumbnailRetried[index] ? '?retry=' + Date.now() : '')}
+                                    src={thumbnail}
                                     alt={`재회상품 미리보기 ${index + 1}`}
                                     className="max-w-full max-h-[90vh] object-contain"
                                     onError={(e) => {

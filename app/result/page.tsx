@@ -965,6 +965,60 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 htmlBtn.style.display = 'none'
               })
               
+              // 모든 이미지가 로드될 때까지 대기
+              console.log('이미지 로드 대기 시작...')
+              const images = mainContainer.querySelectorAll('img')
+              const imageLoadPromises = Array.from(images).map((img: HTMLImageElement) => {
+                return new Promise<void>((resolve) => {
+                  // 이미 로드된 이미지는 즉시 resolve
+                  if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+                    resolve()
+                    return
+                  }
+                  
+                  // 로드 실패한 이미지도 resolve (에러가 있어도 계속 진행)
+                  if (img.complete && img.naturalWidth === 0 && img.naturalHeight === 0) {
+                    console.warn('이미지 로드 실패:', img.src.substring(0, 100))
+                    resolve()
+                    return
+                  }
+                  
+                  // 타임아웃 설정 (10초)
+                  const timeout = setTimeout(() => {
+                    console.warn('이미지 로드 타임아웃:', img.src.substring(0, 100))
+                    resolve() // 타임아웃되어도 계속 진행
+                  }, 10000)
+                  
+                  // 로드 성공
+                  img.onload = () => {
+                    clearTimeout(timeout)
+                    resolve()
+                  }
+                  
+                  // 로드 실패
+                  img.onerror = () => {
+                    clearTimeout(timeout)
+                    console.warn('이미지 로드 에러:', img.src.substring(0, 100))
+                    resolve() // 에러가 있어도 계속 진행
+                  }
+                  
+                  // 이미 src가 있는데 complete가 false인 경우 재설정하여 로드 강제
+                  if (img.src && !img.complete) {
+                    const originalSrc = img.src
+                    img.src = ''
+                    setTimeout(() => {
+                      img.src = originalSrc
+                    }, 0)
+                  }
+                })
+              })
+              
+              await Promise.all(imageLoadPromises)
+              console.log(`이미지 로드 대기 완료 (${images.length}개 이미지)`)
+              
+              // 추가 안정화 대기 시간
+              await new Promise(resolve => setTimeout(resolve, 1000))
+              
               // html2canvas로 캡처 (백그라운드에서도 실행되도록 옵션 설정)
               console.log('html2canvas로 캡처 시작...')
               const canvas = await html2canvas(mainContainer, {
@@ -974,6 +1028,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 logging: false,
                 backgroundColor: '#f9fafb',
                 removeContainer: false,
+                imageTimeout: 15000, // 이미지 로드 타임아웃 15초
                 onclone: (clonedDoc) => {
                   // 복제된 문서에서 모든 버튼 제거
                   const clonedButtons = clonedDoc.querySelectorAll(

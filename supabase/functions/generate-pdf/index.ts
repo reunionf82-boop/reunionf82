@@ -316,84 +316,14 @@ serve(async (req) => {
     await page.evaluateHandle(() => document.fonts.ready)
     console.log('폰트 로드 완료')
     
-    // 모든 이미지가 완전히 로드될 때까지 명시적으로 대기
-    try {
-      await page.evaluate(async () => {
-        const images = Array.from(document.querySelectorAll('img')) as HTMLImageElement[]
-        console.log(`총 ${images.length}개의 이미지 발견`)
-        
-        const imageLoadPromises = images.map((img, index) => {
-          return new Promise<void>((resolve) => {
-            // 이미 완료된 이미지는 즉시 resolve
-            if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
-              console.log(`이미지 ${index + 1} 이미 로드됨:`, img.src.substring(0, 50))
-              resolve()
-              return
-            }
-            
-            // 로드 실패한 이미지도 resolve (에러가 있어도 계속 진행)
-            if (img.complete && img.naturalWidth === 0 && img.naturalHeight === 0) {
-              console.warn(`이미지 ${index + 1} 로드 실패:`, img.src.substring(0, 50))
-              resolve()
-              return
-            }
-            
-            // 타임아웃 설정 (15초)
-            const timeout = setTimeout(() => {
-              console.warn(`이미지 ${index + 1} 로드 타임아웃:`, img.src.substring(0, 50))
-              resolve() // 타임아웃되어도 계속 진행
-            }, 15000)
-            
-            // 로드 성공
-            img.onload = () => {
-              clearTimeout(timeout)
-              console.log(`이미지 ${index + 1} 로드 성공:`, img.src.substring(0, 50))
-              resolve()
-            }
-            
-            // 로드 실패
-            img.onerror = () => {
-              clearTimeout(timeout)
-              console.warn(`이미지 ${index + 1} 로드 에러:`, img.src.substring(0, 50))
-              resolve() // 에러가 있어도 계속 진행
-            }
-            
-            // 이미 src가 있는데 complete가 false인 경우 재설정하여 로드 강제
-            if (img.src && !img.complete) {
-              const originalSrc = img.src
-              img.src = ''
-              setTimeout(() => {
-                img.src = originalSrc
-              }, 0)
-            }
-          })
-        })
-        
-        await Promise.all(imageLoadPromises)
-        console.log('모든 이미지 로드 처리 완료')
-      })
-      console.log('이미지 로드 확인 완료')
-    } catch (error) {
-      console.warn('이미지 로드 확인 중 오류, 계속 진행:', error)
-    }
-    
-    // 추가 안정화 대기 시간 (렌더링 완료 보장)
-    await new Promise(resolve => setTimeout(resolve, 3000))
-    
-    // 콘텐츠가 실제로 렌더링되었는지 확인
-    const hasContent = await page.evaluate(() => {
-      const body = document.body
-      const hasText = body.innerText && body.innerText.trim().length > 0
-      const hasImages = document.querySelectorAll('img').length > 0
-      const bodyHeight = body.scrollHeight
-      console.log('콘텐츠 확인:', { hasText, hasImages, bodyHeight })
-      return hasText || hasImages || bodyHeight > 100
+    // 간단한 이미지 로드 확인 (복잡한 로직 제거, networkidle0이 이미 처리함)
+    const imageCount = await page.evaluate(() => {
+      return document.querySelectorAll('img').length
     })
+    console.log(`이미지 개수: ${imageCount}개`)
     
-    if (!hasContent) {
-      console.warn('경고: 콘텐츠가 렌더링되지 않은 것으로 보입니다. 추가 대기 시간...')
-      await new Promise(resolve => setTimeout(resolve, 5000))
-    }
+    // networkidle0이 이미 이미지 로드를 처리했으므로 추가 대기만
+    await new Promise(resolve => setTimeout(resolve, 2000))
     
     console.log('이미지 및 폰트 로드 대기 완료')
     
@@ -523,38 +453,6 @@ serve(async (req) => {
     })
     console.log('스타일 강제 적용 완료')
 
-    // 최종 콘텐츠 확인 및 렌더링 상태 체크
-    console.log('최종 콘텐츠 렌더링 상태 확인...')
-    const renderStatus = await page.evaluate(() => {
-      const body = document.body
-      const bodyText = body.innerText || ''
-      const bodyHTML = body.innerHTML || ''
-      const images = document.querySelectorAll('img')
-      const imageStatus = Array.from(images).map((img: HTMLImageElement) => ({
-        src: img.src.substring(0, 100),
-        complete: img.complete,
-        naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight
-      }))
-      
-      return {
-        hasText: bodyText.trim().length > 0,
-        textLength: bodyText.trim().length,
-        hasHTML: bodyHTML.length > 0,
-        htmlLength: bodyHTML.length,
-        imageCount: images.length,
-        imageStatus: imageStatus,
-        bodyHeight: body.scrollHeight,
-        bodyOffsetHeight: body.offsetHeight
-      }
-    })
-    
-    console.log('렌더링 상태:', JSON.stringify(renderStatus, null, 2))
-    
-    if (renderStatus.textLength === 0 && renderStatus.htmlLength < 100) {
-      console.error('경고: 콘텐츠가 거의 없습니다. HTML이 제대로 렌더링되지 않았을 수 있습니다.')
-    }
-    
     // 페이지 높이 계산
     const pageHeight = await page.evaluate(() => {
       return Math.max(
@@ -568,24 +466,6 @@ serve(async (req) => {
     
     console.log('페이지 높이:', pageHeight, 'px')
     
-    // 최소 높이 확인 (콘텐츠가 있는지 확인)
-    if (pageHeight < 100) {
-      console.warn('경고: 페이지 높이가 너무 작습니다. 콘텐츠가 렌더링되지 않았을 수 있습니다.')
-      // 추가 대기 시간
-      await new Promise(resolve => setTimeout(resolve, 5000))
-      
-      // 다시 높이 확인
-      const retryHeight = await page.evaluate(() => {
-        return Math.max(
-          document.body.scrollHeight,
-          document.body.offsetHeight,
-          document.documentElement.scrollHeight,
-          document.documentElement.offsetHeight
-        )
-      })
-      console.log('재시도 후 페이지 높이:', retryHeight, 'px')
-    }
-    
     const MAX_PAGE_HEIGHT_PX = 54000
     
     // PDF 생성
@@ -596,13 +476,13 @@ serve(async (req) => {
         throw new Error('페이지 높이 초과')
       }
       
-      // PDF 생성 옵션 최적화
+      // PDF 생성 옵션 (preferCSSPageSize: false로 변경하여 height 설정이 적용되도록)
       pdfBuffer = await Promise.race([
         page.pdf({
           width: '896px',
-          height: `${Math.max(pageHeight, 800)}px`, // 최소 높이 보장
+          height: `${pageHeight}px`,
           printBackground: true,
-          preferCSSPageSize: true,
+          preferCSSPageSize: false,
           displayHeaderFooter: false,
           margin: {
             top: '0',
@@ -616,11 +496,6 @@ serve(async (req) => {
         )
       ])
       console.log('단일 페이지 PDF 생성 성공, 크기:', pdfBuffer.length, 'bytes')
-      
-      // PDF 버퍼가 비어있는지 확인
-      if (pdfBuffer.length < 1000) {
-        throw new Error('PDF 버퍼가 너무 작습니다 (콘텐츠 없음)')
-      }
     } catch (error: any) {
       console.warn('단일 페이지 생성 실패, 페이지 분할 모드로 전환:', error.message)
       
@@ -643,11 +518,6 @@ serve(async (req) => {
         )
       ])
       console.log('페이지 분할 모드 PDF 생성 완료, 크기:', pdfBuffer.length, 'bytes')
-      
-      // PDF 버퍼가 비어있는지 확인
-      if (pdfBuffer.length < 1000) {
-        throw new Error('PDF 버퍼가 너무 작습니다 (콘텐츠 없음)')
-      }
     }
 
     console.log('PDF 생성 완료, 크기:', pdfBuffer.length, 'bytes')
