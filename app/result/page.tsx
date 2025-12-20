@@ -1001,10 +1001,21 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               const timeoutId = setTimeout(() => controller.abort(), 300000) // 5분 타임아웃
               
               try {
-                const generateResponse = await fetch('/api/saved-results/generate-pdf', {
+                // Supabase Edge Function 호출
+                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+                const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+                
+                if (!supabaseUrl || !supabaseAnonKey) {
+                  throw new Error('Supabase 환경 변수가 설정되지 않았습니다.')
+                }
+                
+                const edgeFunctionUrl = `${supabaseUrl}/functions/v1/generate-pdf`
+                
+                const generateResponse = await fetch(edgeFunctionUrl, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${supabaseAnonKey}`,
                   },
                   body: JSON.stringify({
                     savedResultId,
