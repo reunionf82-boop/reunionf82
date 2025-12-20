@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   try {
     console.log('=== 재미나이 API 라우트 시작 ===')
     const body = await req.json()
-    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-3-flash-preview', manse_ryeok_table, manse_ryeok_text, manse_ryeok_json, day_gan_info, isSecondRequest } = body
+    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-3-flash-preview', manse_ryeok_table, manse_ryeok_text, manse_ryeok_json, day_gan_info, isSecondRequest, completedSubtitles, completedSubtitleIndices } = body
     
     console.log('요청 모델:', model)
     console.log('메뉴 소제목 개수:', menu_subtitles?.length)
@@ -16,6 +16,11 @@ export async function POST(req: NextRequest) {
     if (isSecondRequest) {
       console.log('=== 2차 요청 시작 ===')
       console.log('2차 요청 처리할 소제목 개수:', menu_subtitles?.length)
+      console.log('완료된 소제목 개수:', completedSubtitles?.length || 0)
+      console.log('완료된 소제목 인덱스:', completedSubtitleIndices || [])
+      if (completedSubtitles && completedSubtitles.length > 0) {
+        console.log('완료된 소제목 목록:', completedSubtitles.map((s: any) => s.subtitle || s).join(', '))
+      }
     }
     console.log('manse_ryeok_text 길이:', manse_ryeok_text ? manse_ryeok_text.length : 0)
     console.log('manse_ryeok_json 길이:', manse_ryeok_json ? manse_ryeok_json.length : 0)
@@ -237,14 +242,26 @@ ${partner_info.gender ? `- 성별: ${partner_info.gender}` : ''}
 ${isSecondRequest ? `
 🚨🚨🚨 **중요: 2차 요청입니다. 절대 처음부터 다시 시작하지 마세요!** 🚨🚨🚨
 
-**반드시 준수할 사항:**
-1. **처음부터 다시 시작하지 마세요.** 이전 요청에서 이미 완료된 메뉴/소제목은 절대 포함하지 마세요.
-2. **아래에 나열된 남은 메뉴/소제목만 해석하세요.** 이전에 완료된 내용은 건너뛰고, 남은 부분부터만 이어서 해석합니다.
+**이미 완료된 소제목 목록 (절대 포함하지 마세요!):**
+${completedSubtitles && completedSubtitles.length > 0 ? completedSubtitles.map((sub: any, idx: number) => {
+  const subtitleText = typeof sub === 'string' ? sub : (sub.subtitle || sub.title || `소제목 ${idx + 1}`)
+  return `- ${subtitleText} (이미 완료됨, 건너뛰세요)`
+}).join('\n') : '없음'}
+
+**⚠️⚠️⚠️ 반드시 준수할 사항 (매우 중요!):** ⚠️⚠️⚠️
+1. **위에 나열된 완료된 소제목은 절대 포함하지 마세요.** 이미 해석이 완료되었으므로 건너뛰세요.
+2. **처음부터 다시 시작하지 마세요.** 아래에 나열된 남은 메뉴/소제목만 해석하세요.
 3. **이전 요청의 HTML 구조나 내용을 반복하지 마세요.** 오직 남은 소제목만 새로 생성하세요.
 4. **메뉴 제목이나 썸네일을 다시 생성하지 마세요.** 남은 소제목의 해석 내용만 생성하세요.
+5. **완료된 소제목의 HTML을 생성하지 마세요.** 오직 남은 소제목만 HTML로 작성하세요.
+6. **완료된 소제목 목록을 다시 확인하고, 그 소제목들은 절대 HTML에 포함하지 마세요!**
 
 이전 요청에서 타임아웃으로 인해 일부만 완료되었으므로, 남은 부분만 이어서 해석합니다.
-**다시 강조: 처음부터 다시 시작하지 마세요!**
+**🚨🚨🚨 다시 강조: 위에 나열된 완료된 소제목은 건너뛰고, 아래 남은 소제목만 해석하세요! 처음부터 다시 시작하지 마세요! 🚨🚨🚨**
+` : ''}
+
+${isSecondRequest ? `
+**⚠️ 아래에 나열된 남은 소제목만 해석하세요. 위에 나열된 완료된 소제목은 절대 포함하지 마세요!**
 ` : ''}
 
 다음 상품 메뉴 구성과 소제목들을 각각 해석해주세요:
@@ -265,15 +282,19 @@ ${menuItemsInfo.map((menuItem: any, menuIdx: number) => {
 메뉴 ${menuNumber}: ${menuItem.title}
 ${menuItem.thumbnail ? `썸네일 URL: ${menuItem.thumbnail}` : ''}
 
+${isSecondRequest ? `**⚠️ 이 메뉴의 아래 소제목들만 해석하세요. 위에 나열된 완료된 소제목은 건너뛰세요!**` : ''}
+
 이 메뉴의 소제목들:
 ${subtitlesForMenu.map((sub: any, subIdx: number) => {
     const globalSubIdx = menu_subtitles.findIndex((s: any) => s.subtitle === sub.subtitle)
     const tool = menu_subtitles[globalSubIdx]?.interpretation_tool || ''
     const charCount = menu_subtitles[globalSubIdx]?.char_count || 500
+    const thumbnail = menu_subtitles[globalSubIdx]?.thumbnail || ''
     return `
   ${sub.subtitle}
   - 해석도구: ${tool}
   - 글자수 제한: ${charCount}자 이내
+  ${thumbnail ? `- 썸네일 URL: ${thumbnail} (반드시 HTML에 포함하세요!)` : ''}
 `
   }).join('\n')}
 `
@@ -287,15 +308,24 @@ ${isSecondRequest ? `
 3. **처음부터 다시 시작하지 마세요.**
 4. **메뉴 제목이나 썸네일을 다시 생성하지 마세요. 남은 소제목의 해석 내용만 생성하세요.**
 5. **이전 요청의 HTML 구조를 반복하지 마세요.**
+6. **완료된 소제목 목록을 다시 확인하고, 그 소제목들은 절대 HTML에 포함하지 마세요!**
 ` : ''}
 
 <div class="menu-section">
   <h2 class="menu-title">[메뉴 제목]</h2>
   ${menuItemsInfo.some((m: any) => m.thumbnail) ? '<img src="[썸네일 URL]" alt="[메뉴 제목]" class="menu-thumbnail" />' : ''}
   
-  <div class="subtitle-section"><h3 class="subtitle-title">[소제목]</h3><div class="subtitle-content">[해석 내용 (HTML 형식, 글자수 제한 준수)]</div></div>
+  <div class="subtitle-section">
+    <h3 class="subtitle-title">[소제목]</h3>
+    ${menu_subtitles.some((s: any) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[소제목 썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
+    <div class="subtitle-content">[해석 내용 (HTML 형식, 글자수 제한 준수)]</div>
+  </div>
   
-  <div class="subtitle-section"><h3 class="subtitle-title">[다음 소제목]</h3><div class="subtitle-content">[해석 내용 (HTML 형식, 글자수 제한 준수)]</div></div>
+  <div class="subtitle-section">
+    <h3 class="subtitle-title">[다음 소제목]</h3>
+    ${menu_subtitles.some((s: any) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[소제목 썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
+    <div class="subtitle-content">[해석 내용 (HTML 형식, 글자수 제한 준수)]</div>
+  </div>
   
   ...
 </div>
@@ -312,6 +342,8 @@ ${isSecondRequest ? `
 3. 처음부터 다시 시작하지 마세요.
 4. 메뉴 제목이나 썸네일을 다시 생성하지 마세요.
 5. 오직 남은 소제목의 해석 내용만 생성하세요.
+6. 완료된 소제목 목록을 다시 확인하고, 그 소제목들은 절대 HTML에 포함하지 마세요!
+7. 소제목 썸네일이 제공된 경우 (위 소제목 목록에 "썸네일 URL"이 표시된 경우), 반드시 포함하세요!
 ` : ''}
 
 중요:
@@ -320,11 +352,12 @@ ${isSecondRequest ? `
 3. 썸네일이 있으면 <img src="[URL]" alt="[제목]" class="menu-thumbnail" />로 표시
 4. 각 소제목은 <div class="subtitle-section">으로 구분
 5. 소제목 제목은 <h3 class="subtitle-title">으로 표시하되, 소제목 끝에 반드시 마침표(.)를 추가하세요. 예: <h3 class="subtitle-title">1-1. 나의 타고난 '기본 성격'과 '가치관'.</h3>
-6. 해석 내용은 <div class="subtitle-content"> 안에 HTML 형식으로 작성
-7. 각 content는 해당 subtitle의 char_count를 초과하지 않도록 주의
-${isSecondRequest ? '8. 🚨 **2차 요청: 아래에 나열된 남은 메뉴/소제목만 포함하세요. 이전에 완료된 내용은 절대 포함하지 마세요. 처음부터 다시 시작하지 말고, 남은 소제목부터만 해석하세요. 메뉴 제목이나 썸네일을 다시 생성하지 마세요. 오직 남은 소제목의 해석 내용만 생성하세요.** 🚨' : '8. 모든 메뉴와 소제목을 순서대로 포함'}
-9. 소제목 제목에 마침표가 없으면 자동으로 마침표를 추가하세요 (TTS 재생 시 자연스러운 구분을 위해)
-10. 소제목 제목과 해석 내용 사이에 빈 줄이나 공백을 절대 넣지 마세요. <h3 class="subtitle-title"> 태그와 <div class="subtitle-content"> 태그 사이에 줄바꿈이나 공백 문자를 넣지 말고 바로 붙여서 작성하세요. 예: <h3 class="subtitle-title">1-1. 소제목.</h3><div class="subtitle-content">본문 내용</div>
+6. **소제목 썸네일이 제공된 경우 (위 소제목 목록에 "썸네일 URL"이 표시된 경우), 반드시 <h3 class="subtitle-title"> 태그 바로 다음에 <div class="subtitle-thumbnail-container"><img src="[썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>를 포함하세요. 썸네일이 없으면 포함하지 마세요.**
+7. 해석 내용은 <div class="subtitle-content"> 안에 HTML 형식으로 작성
+8. 각 content는 해당 subtitle의 char_count를 초과하지 않도록 주의
+${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 메뉴/소제목만 포함하세요. 이전에 완료된 내용은 절대 포함하지 마세요. 처음부터 다시 시작하지 말고, 남은 소제목부터만 해석하세요. 메뉴 제목이나 썸네일을 다시 생성하지 마세요. 오직 남은 소제목의 해석 내용만 생성하세요. 위에 나열된 완료된 소제목 목록을 다시 확인하고, 그 소제목들은 절대 포함하지 마세요!** 🚨🚨🚨' : '9. 모든 메뉴와 소제목을 순서대로 포함'}
+10. 소제목 제목에 마침표가 없으면 자동으로 마침표를 추가하세요 (TTS 재생 시 자연스러운 구분을 위해)
+11. 소제목 제목과 해석 내용 사이에 빈 줄이나 공백을 절대 넣지 마세요. <h3 class="subtitle-title"> 태그와 <div class="subtitle-content"> 태그 사이에 줄바꿈이나 공백 문자를 넣지 말고 바로 붙여서 작성하세요. 단, 썸네일이 있는 경우 <h3> 태그와 썸네일 사이, 썸네일과 <div class="subtitle-content"> 사이에는 줄바꿈이 있어도 됩니다. 예: <h3 class="subtitle-title">1-1. 소제목.</h3><div class="subtitle-thumbnail-container"><img src="[URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div><div class="subtitle-content">본문 내용</div>
 `
 
     console.log('Gemini API 호출 시작 (스트리밍 모드)')

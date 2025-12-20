@@ -356,21 +356,28 @@ function ResultContent() {
         const manseRyeokTable: string | undefined = payload?.requestData?.manse_ryeok_table
 
         // 2차 요청을 위한 헬퍼 함수
-        const startSecondRequest = async (firstHtml: string, remainingSubtitleIndices: number[]) => {
+        const startSecondRequest = async (firstHtml: string, remainingSubtitleIndices: number[], completedSubtitleIndices: number[] = []) => {
           console.log('=== 2차 요청 시작 ===')
           console.log('남은 소제목 개수:', remainingSubtitleIndices.length, '개')
           console.log('남은 소제목 인덱스:', remainingSubtitleIndices.join(', '))
+          console.log('완료된 소제목 개수:', completedSubtitleIndices.length, '개')
+          console.log('완료된 소제목 인덱스:', completedSubtitleIndices.join(', '))
           console.log('1차 HTML 길이:', firstHtml.length, '자')
           console.log('=== 2차 요청 시작 ===')
           
           // 남은 소제목만 추출
           const remainingSubtitles = remainingSubtitleIndices.map((index: number) => requestData.menu_subtitles[index])
           
+          // 완료된 소제목 정보 추출 (프롬프트에 포함하기 위해)
+          const completedSubtitles = completedSubtitleIndices.map((index: number) => requestData.menu_subtitles[index])
+          
           // 2차 요청 데이터 생성
           const secondRequestData = {
             ...requestData,
             menu_subtitles: remainingSubtitles,
             isSecondRequest: true, // 2차 요청 플래그
+            completedSubtitles: completedSubtitles, // 완료된 소제목 정보 (프롬프트에 포함)
+            completedSubtitleIndices: completedSubtitleIndices, // 완료된 소제목 인덱스
           }
           
           // 2차 요청 시작
@@ -380,8 +387,10 @@ function ResultContent() {
             console.log('결과 페이지: 2차 스트리밍 콜백:', data.type)
             
             if (data.type === 'start') {
-              // 2차 요청 시작 시 1차 HTML 유지
+              // 2차 요청 시작 시 1차 HTML 유지 및 로딩 상태 활성화
               console.log('2차 요청 스트리밍 시작, 1차 HTML 길이:', firstHtml.length, '자')
+              setIsStreamingActive(true)
+              setStreamingFinished(false)
             } else if (data.type === 'chunk') {
               // 2차 HTML을 누적
               accumulatedHtml = firstHtml + (data.text || '')
@@ -492,13 +501,18 @@ function ResultContent() {
             
             const firstHtml = data.html || accumulatedHtml
             const remainingIndices = data.remainingSubtitles || []
+            const completedIndices = data.completedSubtitles || []
             
             if (remainingIndices.length > 0) {
               // 1차 HTML 저장
               setStreamingHtml(firstHtml)
               
+              // 2차 요청 시작 전 로딩 상태 활성화
+              setIsStreamingActive(true)
+              setStreamingFinished(false)
+              
               // 2차 요청 시작 (비동기로 실행, await하지 않음)
-              startSecondRequest(firstHtml, remainingIndices).catch((err) => {
+              startSecondRequest(firstHtml, remainingIndices, completedIndices).catch((err) => {
                 console.error('2차 요청 실패:', err)
                 setError('2차 점사 진행 중 문제가 발생했습니다.')
                 setIsStreamingActive(false)
