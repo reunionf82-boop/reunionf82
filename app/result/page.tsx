@@ -876,10 +876,15 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               
               console.log('메인 컨테이너 찾음, PDF 생성 시작...')
               
-              // TTS 버튼 제거 (실제 DOM에서 제거하지 않고 캡처 시 제외)
-              const ttsButtons = mainContainer.querySelectorAll('.tts-button-container, .tts-button, #ttsButton')
+              // 모든 버튼 제거 (TTS 버튼, 점사 보기 버튼 등) - 실제 DOM에서 제거하지 않고 캡처 시 제외
+              const buttonsToHide = mainContainer.querySelectorAll(
+                '.tts-button-container, .tts-button, #ttsButton, ' +
+                '.question-button-container, .question-button, ' +
+                'button[class*="view"], button[class*="보기"], ' +
+                'a[class*="view"], a[class*="보기"]'
+              )
               const originalDisplay: string[] = []
-              ttsButtons.forEach((btn) => {
+              buttonsToHide.forEach((btn) => {
                 const htmlBtn = btn as HTMLElement
                 originalDisplay.push(htmlBtn.style.display)
                 htmlBtn.style.display = 'none'
@@ -895,14 +900,19 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 backgroundColor: '#f9fafb',
                 removeContainer: false,
                 onclone: (clonedDoc) => {
-                  // 복제된 문서에서 TTS 버튼 제거
-                  const clonedButtons = clonedDoc.querySelectorAll('.tts-button-container, .tts-button, #ttsButton')
+                  // 복제된 문서에서 모든 버튼 제거
+                  const clonedButtons = clonedDoc.querySelectorAll(
+                    '.tts-button-container, .tts-button, #ttsButton, ' +
+                    '.question-button-container, .question-button, ' +
+                    'button[class*="view"], button[class*="보기"], ' +
+                    'a[class*="view"], a[class*="보기"]'
+                  )
                   clonedButtons.forEach(btn => btn.remove())
                 }
               })
               
               // 원래 display 복원
-              ttsButtons.forEach((btn, index) => {
+              buttonsToHide.forEach((btn, index) => {
                 const htmlBtn = btn as HTMLElement
                 htmlBtn.style.display = originalDisplay[index] || ''
               })
@@ -915,44 +925,62 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               // jsPDF 최대 페이지 크기: 14400 userUnit (약 381mm)
               // px 단위로 변환하면 약 14400px (96 DPI 기준)
               const MAX_PAGE_HEIGHT = 14400
-              const PAGE_WIDTH = canvas.width
+              const MAX_PAGE_WIDTH = 14400 // 최대 페이지 너비도 14400px
               
-              // A4 크기로 PDF 생성 (페이지 분할)
+              const canvasWidth = canvas.width
+              const canvasHeight = canvas.height
+              
+              // 가로가 최대값을 초과하면 비율에 맞춰 스케일링
+              let scale = 1
+              let pdfWidth = canvasWidth
+              if (canvasWidth > MAX_PAGE_WIDTH) {
+                scale = MAX_PAGE_WIDTH / canvasWidth
+                pdfWidth = MAX_PAGE_WIDTH
+                console.warn(`⚠️ 캔버스 너비(${canvasWidth}px)가 최대 페이지 너비(${MAX_PAGE_WIDTH}px)를 초과합니다. 스케일링: ${(scale * 100).toFixed(1)}%`)
+              }
+              
+              // 스케일링된 높이 계산
+              const scaledHeight = canvasHeight * scale
+              const pageHeight = MAX_PAGE_HEIGHT
+              
+              console.log(`캔버스 크기: ${canvasWidth}x${canvasHeight}px, 스케일: ${(scale * 100).toFixed(1)}%, 스케일된 높이: ${scaledHeight}px`)
+              console.log(`페이지 높이: ${pageHeight}px, 예상 페이지 수: ${Math.ceil(scaledHeight / pageHeight)}`)
+              
+              // 첫 번째 페이지 생성
               const pdf = new jsPDF({
                 orientation: 'portrait',
                 unit: 'px',
-                format: [PAGE_WIDTH, 1123] // A4 높이 (약 1123px, 297mm)
+                format: [pdfWidth, pageHeight]
               })
               
               // 캔버스를 여러 페이지로 나누기
-              const totalHeight = canvas.height
-              const pageHeight = 1123 // A4 높이
               let yPosition = 0
               let pageNumber = 0
               
-              console.log(`총 높이: ${totalHeight}px, 페이지 높이: ${pageHeight}px, 예상 페이지 수: ${Math.ceil(totalHeight / pageHeight)}`)
-              
-              while (yPosition < totalHeight) {
+              while (yPosition < scaledHeight) {
                 if (pageNumber > 0) {
-                  pdf.addPage()
+                  pdf.addPage([pdfWidth, pageHeight], 'portrait')
                 }
                 
                 // 현재 페이지에 들어갈 높이 계산
-                const remainingHeight = totalHeight - yPosition
+                const remainingHeight = scaledHeight - yPosition
                 const currentPageHeight = Math.min(pageHeight, remainingHeight)
                 
-                // 캔버스의 해당 부분을 잘라서 새 캔버스에 그리기
+                // 원본 캔버스에서 해당 부분을 잘라서 새 캔버스에 그리기
                 const tempCanvas = document.createElement('canvas')
-                tempCanvas.width = PAGE_WIDTH
+                tempCanvas.width = pdfWidth
                 tempCanvas.height = currentPageHeight
                 const tempCtx = tempCanvas.getContext('2d')
                 
                 if (tempCtx) {
-                  // 원본 캔버스의 해당 부분을 새 캔버스에 복사
+                  // 원본 캔버스의 해당 부분을 새 캔버스에 복사 (스케일 적용)
+                  const sourceY = yPosition / scale // 원본 캔버스의 Y 위치
+                  const sourceHeight = currentPageHeight / scale // 원본 캔버스의 높이
+                  
                   tempCtx.drawImage(
                     canvas,
-                    0, yPosition, PAGE_WIDTH, currentPageHeight, // 소스 영역
-                    0, 0, PAGE_WIDTH, currentPageHeight // 대상 영역
+                    0, sourceY, canvasWidth, sourceHeight, // 소스 영역 (원본 캔버스)
+                    0, 0, pdfWidth, currentPageHeight // 대상 영역 (새 캔버스)
                   )
                   
                   // 이미지 데이터로 변환
@@ -964,7 +992,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                     'PNG',
                     0,
                     0,
-                    PAGE_WIDTH,
+                    pdfWidth,
                     currentPageHeight,
                     undefined,
                     'FAST'
@@ -978,7 +1006,15 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               }
               
               const pdfBlobSize = pdf.output('blob').size
-              console.log(`PDF 생성 완료, 총 ${pageNumber}페이지, 크기: ${pdfBlobSize}bytes`)
+              console.log(`PDF 생성 완료, 총 ${pageNumber}페이지 (크기: ${pdfWidth}x${pageHeight}px), 크기: ${pdfBlobSize}bytes`)
+              
+              // 크기가 최대값을 초과하는 경우 정보 출력
+              if (canvasWidth > MAX_PAGE_WIDTH) {
+                console.warn(`⚠️ 컨텐츠 너비(${canvasWidth}px)가 최대 페이지 너비(${MAX_PAGE_WIDTH}px)를 초과합니다. 스케일링이 적용되었습니다.`)
+              }
+              if (scaledHeight > MAX_PAGE_HEIGHT) {
+                console.log(`ℹ️ 컨텐츠 높이(${scaledHeight}px)가 최대 페이지 높이(${MAX_PAGE_HEIGHT}px)를 초과하여 ${pageNumber}페이지로 분할되었습니다.`)
+              }
               
               // PDF를 Blob으로 변환
               const pdfBlob = pdf.output('blob')

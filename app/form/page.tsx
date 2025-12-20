@@ -437,6 +437,9 @@ function FormContent() {
   useEffect(() => {
     console.log('Form 페이지: useEffect에서 loadSavedResults 호출')
     loadSavedResults()
+    
+    // result 페이지 미리 로드 (페이지 이동 지연 최소화)
+    router.prefetch('/result')
   }, [])
 
   // 페이지 포커스 시 저장된 결과 동기화
@@ -805,12 +808,12 @@ function FormContent() {
           console.log('Form 페이지: Supabase에 requestKey 저장 완료:', requestKey)
         } catch (e: any) {
           console.error('Form 페이지: Supabase 저장 실패:', e?.message || e)
-          alert('데이터 저장에 실패했습니다. 다시 시도해주세요.')
-          setSubmitting(false)
-          return
+          // 저장 실패해도 페이지 이동은 진행 (에러는 result 페이지에서 처리)
+          console.warn('Form 페이지: 저장 실패했지만 페이지 이동 진행')
         }
         
-        // result 페이지로 리다이렉트 (realtime 모드)
+        // result 페이지로 즉시 리다이렉트 (realtime 모드)
+        // 저장 작업 완료를 기다리지 않고 즉시 이동하여 지연 최소화
         setSubmitting(false)
         router.push(`/result?requestKey=${requestKey}&stream=true`)
         return
