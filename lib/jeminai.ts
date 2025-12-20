@@ -112,12 +112,20 @@ export async function callJeminaiAPIStream(
     
     let response: Response
     try {
+      // 헤더 설정
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      
+      // Supabase Edge Function만 Authorization 헤더 필요
+      // Cloudways 프록시는 서버 사이드에서 처리하므로 Authorization 불필요
+      if (!useCloudways && supabaseAnonKey) {
+        headers['Authorization'] = `Bearer ${supabaseAnonKey}`
+      }
+      
       response = await fetch(edgeFunctionUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-        },
+        headers,
         body: JSON.stringify({
           role_prompt: request.role_prompt,
           restrictions: request.restrictions,
