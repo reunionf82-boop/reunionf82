@@ -71,7 +71,7 @@ async function callGeminiStream(
   try {
     console.log('스트림 리더 시작, 데이터 읽기 시작')
     let readAttempts = 0
-    const maxReadAttempts = 1000 // 무한 루프 방지
+    const maxReadAttempts = 100000 // 충분히 큰 값 (실제로는 done이 true가 되면 종료)
     
     while (readAttempts < maxReadAttempts) {
       readAttempts++
@@ -81,6 +81,11 @@ async function callGeminiStream(
         console.log('첫 번째 reader.read() 호출 대기 중...')
       }
       
+      // 1000번마다 진행 상황 로그
+      if (readAttempts % 1000 === 0) {
+        console.log(`읽기 시도 #${readAttempts}, 총 바이트: ${totalBytesRead}, finishReason: ${finishReason || '없음'}`)
+      }
+      
       const { done, value } = await reader.read()
       
       if (readAttempts === 1) {
@@ -88,7 +93,40 @@ async function callGeminiStream(
       }
       
       if (done) {
-        console.log('스트림 읽기 완료, 총 읽은 바이트:', totalBytesRead, '총 읽기 시도:', readAttempts)
+        console.log('스트림 읽기 완료 (done: true), 총 읽은 바이트:', totalBytesRead, '총 읽기 시도:', readAttempts, 'finishReason:', finishReason || '없음')
+        
+        // 버퍼에 남은 데이터 처리
+        if (buffer.trim()) {
+          console.log('버퍼에 남은 데이터 처리 중, 버퍼 길이:', buffer.length)
+          // 버퍼의 마지막 데이터 처리 시도
+          const remainingDataPrefix = 'data: '
+          const lastEventStart = buffer.lastIndexOf(remainingDataPrefix)
+          if (lastEventStart !== -1) {
+            const lastJsonStart = lastEventStart + remainingDataPrefix.length
+            const lastJsonStr = buffer.substring(lastJsonStart).trim()
+            if (lastJsonStr) {
+              try {
+                const lastData = JSON.parse(lastJsonStr)
+                if (lastData.candidates && lastData.candidates[0]) {
+                  const lastCandidate = lastData.candidates[0]
+                  if (lastCandidate.content && lastCandidate.content.parts) {
+                    for (const part of lastCandidate.content.parts) {
+                      if (part.text) {
+                        onChunk({ text: part.text })
+                      }
+                    }
+                  }
+                  if (lastCandidate.finishReason && !finishReason) {
+                    finishReason = lastCandidate.finishReason
+                    console.log('버퍼에서 Finish Reason 발견:', finishReason)
+                  }
+                }
+              } catch (e) {
+                console.log('버퍼 마지막 데이터 파싱 실패 (무시 가능):', e)
+              }
+            }
+          }
+        }
         break
       }
 
@@ -196,6 +234,11 @@ async function callGeminiStream(
               if (candidate.finishReason) {
                 finishReason = candidate.finishReason
                 console.log('Finish Reason 수신:', finishReason)
+                
+                // STOP이 아닌 경우 (MAX_TOKENS 등) 로그 추가
+                if (finishReason !== 'STOP') {
+                  console.warn(`⚠️ Finish Reason이 STOP이 아님: ${finishReason}, 부분 완료 처리 필요할 수 있음`)
+                }
               }
             } else {
               console.log('후보 데이터 없음, 키:', Object.keys(data))
@@ -585,7 +628,7 @@ serve(async (req) => {
         let fullText = ''
         let isFirstChunk = true
         const streamStartTime = Date.now()
-        const TIMEOUT_PARTIAL = 380000 // 380초 (400초 제한 내에서)
+        const TIMEOUT_PARTIAL = 370000 // 370초 (400초 제한 내에서 여유 있게)
         const MAX_DURATION = 400000 // 400초 (Supabase Edge Function 제한)
         let hasSentPartialDone = false
 
@@ -594,6 +637,7 @@ serve(async (req) => {
           console.log('API 키 길이:', apiKey.length)
           console.log('모델:', model)
           console.log('프롬프트 길이:', prompt.length)
+          console.log(`타임아웃 설정: ${TIMEOUT_PARTIAL/1000}초 (부분 완료), ${MAX_DURATION/1000}초 (최대)`)
           
           let chunkCount = 0
           
@@ -688,7 +732,16 @@ serve(async (req) => {
           console.log(`=== Gemini API 스트리밍 완료 ===`)
           console.log(`총 청크 수: ${chunkCount}`)
           console.log(`fullText 길이: ${fullText.length}자`)
-          console.log(`Finish Reason: ${finishReason}`)
+          console.log(`Finish Reason: ${finishReason || '없음 (스트림이 중간에 끊김)'}`)
+          
+          // Finish Reason이 없거나 STOP이 아닌 경우 경고
+          if (!finishReason) {
+            console.warn('⚠️ Finish Reason이 없습니다. 스트림이 완전히 전송되지 않았을 수 있습니다.')
+            console.warn('⚠️ 부분 완료 처리를 시도하거나 2차 요청이 필요할 수 있습니다.')
+          } else if (finishReason !== 'STOP') {
+            console.warn(`⚠️ Finish Reason이 STOP이 아닙니다: ${finishReason}`)
+            console.warn('⚠️ 부분 완료 처리를 시도하거나 2차 요청이 필요할 수 있습니다.')
+          }
           
           // 스트림 완료 처리
           let cleanHtml = fullText.trim()
@@ -712,11 +765,45 @@ serve(async (req) => {
           cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
           cleanHtml = cleanHtml.replace(/\*\*/g, '')
 
+          // Finish Reason이 없거나 STOP이 아닌 경우, 부분 완료 처리 시도
+          if (!finishReason || finishReason !== 'STOP') {
+            console.warn('=== Finish Reason이 없거나 STOP이 아님, 부분 완료 처리 시도 ===')
+            
+            // 부분 완료 처리 로직
+            let htmlForParsing = fullText.trim()
+            const htmlBlockMatch = htmlForParsing.match(/```html\s*([\s\S]*?)\s*```/)
+            if (htmlBlockMatch) {
+              htmlForParsing = htmlBlockMatch[1].trim()
+            } else {
+              const codeBlockMatch = htmlForParsing.match(/```\s*([\s\S]*?)\s*```/)
+              if (codeBlockMatch) {
+                htmlForParsing = codeBlockMatch[1].trim()
+              }
+            }
+            
+            const { completedSubtitles } = parseCompletedSubtitles(htmlForParsing, menu_subtitles)
+            const remainingSubtitles = menu_subtitles
+              .map((sub: any, index: number) => ({ ...sub, originalIndex: index }))
+              .filter((_: any, index: number) => !completedSubtitles.includes(index))
+            
+            if (remainingSubtitles.length > 0 && !isSecondRequest) {
+              console.warn(`남은 소제목이 있음 (${remainingSubtitles.length}개), partial_done 전송`)
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'partial_done',
+                html: cleanHtml,
+                remainingSubtitles: remainingSubtitles.map((sub: any) => sub.originalIndex),
+                completedSubtitles: completedSubtitles,
+              })}\n\n`))
+              controller.close()
+              return
+            }
+          }
+          
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'done',
             html: cleanHtml,
-            isTruncated: finishReason === 'MAX_TOKENS',
-            finishReason: finishReason,
+            isTruncated: finishReason === 'MAX_TOKENS' || !finishReason,
+            finishReason: finishReason || 'UNKNOWN',
           })}\n\n`))
 
           controller.close()
@@ -725,13 +812,26 @@ serve(async (req) => {
           console.error('에러 타입:', typeof error)
           console.error('에러 메시지:', error?.message || String(error))
           console.error('에러 스택:', error?.stack || 'N/A')
-          console.error('경과 시간:', Date.now() - streamStartTime, 'ms')
-          console.error('fullText 길이:', fullText.length, '자')
           const elapsed = Date.now() - streamStartTime
+          console.error('경과 시간:', Math.round(elapsed/1000), '초')
+          console.error('fullText 길이:', fullText.length, '자')
 
+          // 타임아웃 또는 에러 발생 시 부분 완료 처리 (1차 요청만)
           if (elapsed >= TIMEOUT_PARTIAL && fullText.trim() && fullText.trim().length > 50 && !hasSentPartialDone && !isSecondRequest) {
+            console.warn(`=== 에러 발생 시 부분 완료 처리 (${Math.round(elapsed/1000)}초 경과) ===`)
             try {
-              const { completedSubtitles } = parseCompletedSubtitles(fullText, menu_subtitles)
+              let htmlForParsing = fullText.trim()
+              const htmlBlockMatch = htmlForParsing.match(/```html\s*([\s\S]*?)\s*```/)
+              if (htmlBlockMatch) {
+                htmlForParsing = htmlBlockMatch[1].trim()
+              } else {
+                const codeBlockMatch = htmlForParsing.match(/```\s*([\s\S]*?)\s*```/)
+                if (codeBlockMatch) {
+                  htmlForParsing = codeBlockMatch[1].trim()
+                }
+              }
+              
+              const { completedSubtitles } = parseCompletedSubtitles(htmlForParsing, menu_subtitles)
               const remainingSubtitles = menu_subtitles
                 .map((sub: any, index: number) => ({ ...sub, originalIndex: index }))
                 .filter((_: any, index: number) => !completedSubtitles.includes(index))
