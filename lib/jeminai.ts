@@ -75,25 +75,40 @@ export async function callJeminaiAPIStream(
     console.log('=== 재미나이 API 스트리밍 호출 시작 ===')
     console.log('선택된 모델:', modelDisplayName, `(${selectedModel})`)
     
-    // Supabase Edge Function URL 구성
+    // Cloudways 서버 URL 확인 (우선 사용)
+    const cloudwaysUrl = process.env.NEXT_PUBLIC_CLOUDWAYS_URL || ''
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     
-    console.log('=== Supabase 환경 변수 확인 ===')
-    console.log('Supabase URL:', supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : '없음')
-    console.log('Supabase Anon Key:', supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : '없음')
+    // Cloudways가 설정되어 있으면 우선 사용, 없으면 Supabase Edge Function 사용
+    let edgeFunctionUrl: string
+    let useCloudways = false
     
-    if (!supabaseUrl || !supabaseAnonKey) {
-      console.error('Supabase 환경 변수 오류:', { supabaseUrl: !!supabaseUrl, supabaseAnonKey: !!supabaseAnonKey })
-      throw new Error('Supabase 환경 변수가 설정되지 않았습니다.')
+    if (cloudwaysUrl) {
+      useCloudways = true
+      edgeFunctionUrl = `${cloudwaysUrl}/chat`
+      console.log('=== Cloudways 서버 사용 ===')
+      console.log('Cloudways URL:', cloudwaysUrl)
+    } else {
+      console.log('=== Supabase Edge Function 사용 ===')
+      console.log('Supabase URL:', supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : '없음')
+      console.log('Supabase Anon Key:', supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : '없음')
+      
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.error('Supabase 환경 변수 오류:', { supabaseUrl: !!supabaseUrl, supabaseAnonKey: !!supabaseAnonKey })
+        throw new Error('Supabase 환경 변수가 설정되지 않았습니다.')
+      }
+      
+      edgeFunctionUrl = `${supabaseUrl}/functions/v1/jeminai`
     }
-
-    const edgeFunctionUrl = `${supabaseUrl}/functions/v1/jeminai`
+    
     console.log('Edge Function URL:', edgeFunctionUrl)
 
-    // fetch 타임아웃 설정 (390초, 서버 타임아웃 400초보다 짧게)
+    // fetch 타임아웃 설정
+    // Cloudways: 30분 (1800초), Supabase: 390초
+    const timeout = useCloudways ? 1800000 : 390000 // Cloudways는 30분, Supabase는 390초
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 390000) // 390초
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
     
     let response: Response
     try {

@@ -909,19 +909,76 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               
               console.log('캔버스 생성 완료, 크기:', canvas.width, 'x', canvas.height)
               
-              // jsPDF로 PDF 생성
+              // jsPDF로 PDF 생성 (여러 페이지로 분할)
               console.log('PDF 생성 시작...')
+              
+              // jsPDF 최대 페이지 크기: 14400 userUnit (약 381mm)
+              // px 단위로 변환하면 약 14400px (96 DPI 기준)
+              const MAX_PAGE_HEIGHT = 14400
+              const PAGE_WIDTH = canvas.width
+              
+              // A4 크기로 PDF 생성 (페이지 분할)
               const pdf = new jsPDF({
                 orientation: 'portrait',
                 unit: 'px',
-                format: [canvas.width, canvas.height]
+                format: [PAGE_WIDTH, 1123] // A4 높이 (약 1123px, 297mm)
               })
               
-              const imgData = canvas.toDataURL('image/png', 1.0)
-              pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height, undefined, 'FAST')
+              // 캔버스를 여러 페이지로 나누기
+              const totalHeight = canvas.height
+              const pageHeight = 1123 // A4 높이
+              let yPosition = 0
+              let pageNumber = 0
+              
+              console.log(`총 높이: ${totalHeight}px, 페이지 높이: ${pageHeight}px, 예상 페이지 수: ${Math.ceil(totalHeight / pageHeight)}`)
+              
+              while (yPosition < totalHeight) {
+                if (pageNumber > 0) {
+                  pdf.addPage()
+                }
+                
+                // 현재 페이지에 들어갈 높이 계산
+                const remainingHeight = totalHeight - yPosition
+                const currentPageHeight = Math.min(pageHeight, remainingHeight)
+                
+                // 캔버스의 해당 부분을 잘라서 새 캔버스에 그리기
+                const tempCanvas = document.createElement('canvas')
+                tempCanvas.width = PAGE_WIDTH
+                tempCanvas.height = currentPageHeight
+                const tempCtx = tempCanvas.getContext('2d')
+                
+                if (tempCtx) {
+                  // 원본 캔버스의 해당 부분을 새 캔버스에 복사
+                  tempCtx.drawImage(
+                    canvas,
+                    0, yPosition, PAGE_WIDTH, currentPageHeight, // 소스 영역
+                    0, 0, PAGE_WIDTH, currentPageHeight // 대상 영역
+                  )
+                  
+                  // 이미지 데이터로 변환
+                  const imgData = tempCanvas.toDataURL('image/png', 1.0)
+                  
+                  // PDF 페이지에 추가
+                  pdf.addImage(
+                    imgData,
+                    'PNG',
+                    0,
+                    0,
+                    PAGE_WIDTH,
+                    currentPageHeight,
+                    undefined,
+                    'FAST'
+                  )
+                  
+                  console.log(`페이지 ${pageNumber + 1} 추가 완료 (y: ${yPosition}px, 높이: ${currentPageHeight}px)`)
+                }
+                
+                yPosition += pageHeight
+                pageNumber++
+              }
               
               const pdfBlobSize = pdf.output('blob').size
-              console.log('PDF 생성 완료, 크기:', pdfBlobSize, 'bytes')
+              console.log(`PDF 생성 완료, 총 ${pageNumber}페이지, 크기: ${pdfBlobSize}bytes`)
               
               // PDF를 Blob으로 변환
               const pdfBlob = pdf.output('blob')

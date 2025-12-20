@@ -1,0 +1,18 @@
+{
+  "name": "ai-backend",
+  "version": "1.0.0",
+  "description": "점사 AI 백엔드 서버 (Cloudways)",
+  "main": "cloudways-server.js",
+  "scripts": {
+    "start": "node cloudways-server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "@google/generative-ai": "^0.24.1",
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
