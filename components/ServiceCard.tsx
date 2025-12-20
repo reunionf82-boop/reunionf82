@@ -40,6 +40,10 @@ export default function ServiceCard({ service }: ServiceCardProps) {
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('form_title', service.title)
         sessionStorage.setItem('form_model', selectedModel)
+        // 썸네일 URL도 저장하여 form 페이지에서 즉시 사용
+        if (service.thumbnailUrl) {
+          sessionStorage.setItem('form_thumbnail_url', service.thumbnailUrl)
+        }
       }
       
       // 깔끔한 URL로 이동
@@ -51,6 +55,10 @@ export default function ServiceCard({ service }: ServiceCardProps) {
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('form_title', service.title)
         sessionStorage.setItem('form_model', 'gemini-3-flash-preview')
+        // 썸네일 URL도 저장하여 form 페이지에서 즉시 사용
+        if (service.thumbnailUrl) {
+          sessionStorage.setItem('form_thumbnail_url', service.thumbnailUrl)
+        }
       }
       
       // 깔끔한 URL로 이동

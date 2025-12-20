@@ -139,6 +139,20 @@ function FormContent() {
   const [previewThumbnailErrors, setPreviewThumbnailErrors] = useState<Record<number, boolean>>({})
   const [previewThumbnailRetried, setPreviewThumbnailRetried] = useState<Record<number, boolean>>({})
   
+  // sessionStorage에서 썸네일 URL 가져오기 (메뉴 페이지에서 로드된 썸네일 재사용)
+  const [cachedThumbnailUrl, setCachedThumbnailUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedThumbnailUrl = sessionStorage.getItem('form_thumbnail_url')
+      if (storedThumbnailUrl) {
+        setCachedThumbnailUrl(storedThumbnailUrl)
+        // 사용 후 삭제
+        sessionStorage.removeItem('form_thumbnail_url')
+        console.log('Form 페이지: sessionStorage에서 썸네일 URL 가져옴:', storedThumbnailUrl)
+      }
+    }
+  }, [])
+  
   // 궁합형 여부 확인
   const isGonghapType = content?.content_type === 'gonghap'
 
@@ -488,12 +502,17 @@ function FormContent() {
     loadContent()
   }, [title])
 
-  // content가 변경될 때 썸네일 에러 상태 초기화
+  // content가 변경될 때 썸네일 에러 상태 초기화 및 캐시된 썸네일 업데이트
   useEffect(() => {
     setThumbnailError(false)
     setThumbnailRetried(false)
     setPreviewThumbnailErrors({})
     setPreviewThumbnailRetried({})
+    
+    // content가 로드되면 썸네일 URL 업데이트 (캐시된 썸네일 대신 사용)
+    if (content?.thumbnail_url) {
+      setCachedThumbnailUrl(content.thumbnail_url)
+    }
   }, [content])
 
   // 저장된 결과는 컴포넌트 마운트 시와 title 변경 시 모두 로드
@@ -1375,22 +1394,23 @@ function FormContent() {
       
       <main className="container mx-auto px-4 sm:px-6 py-8 max-w-4xl w-full">
         {/* 상단 썸네일 영역 */}
-        {content?.thumbnail_url && !thumbnailError ? (
+        {(cachedThumbnailUrl || content?.thumbnail_url) && !thumbnailError ? (
           <div className="relative mb-8 overflow-hidden shadow-sm">
             <div className="relative h-96">
               <img 
-                src={content.thumbnail_url} 
-                alt={content.content_name || '썸네일'}
+                src={cachedThumbnailUrl || content?.thumbnail_url || ''} 
+                alt={content?.content_name || '썸네일'}
                 className="w-full h-full object-cover"
                 onError={(e) => {
                   const img = e.currentTarget
                   if (!thumbnailRetried) {
-                    console.warn('썸네일 이미지 로드 실패, 재시도 중...', content.thumbnail_url)
+                    const currentUrl = cachedThumbnailUrl || content?.thumbnail_url || ''
+                    console.warn('썸네일 이미지 로드 실패, 재시도 중...', currentUrl)
                     setThumbnailRetried(true)
                     // src를 강제로 다시 설정하여 재시도
-                    img.src = content.thumbnail_url + '?retry=' + Date.now()
+                    img.src = currentUrl + '?retry=' + Date.now()
                   } else {
-                    console.error('썸네일 이미지 로드 재시도 실패:', content.thumbnail_url)
+                    console.error('썸네일 이미지 로드 재시도 실패:', cachedThumbnailUrl || content?.thumbnail_url)
                     setThumbnailError(true)
                   }
                 }}
