@@ -34,6 +34,9 @@ async function callGeminiStream(
     ],
   }
 
+  console.log('Gemini API URL:', url.substring(0, 80) + '...')
+  console.log('요청 본문 크기:', JSON.stringify(requestBody).length, 'bytes')
+  
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -42,24 +45,41 @@ async function callGeminiStream(
     body: JSON.stringify(requestBody),
   })
 
+  console.log('Gemini API 응답 상태:', response.status, response.statusText)
+  console.log('Content-Type:', response.headers.get('content-type'))
+
   if (!response.ok) {
     const errorText = await response.text()
+    console.error('Gemini API 에러:', errorText)
     throw new Error(`Gemini API 호출 실패: ${response.status} ${errorText}`)
   }
 
   if (!response.body) {
+    console.error('응답 본문이 없습니다.')
     throw new Error('응답 본문이 없습니다.')
   }
+  
+  console.log('Gemini API 스트림 시작')
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   let finishReason: string | undefined
+  let totalBytesRead = 0
 
   try {
+    console.log('스트림 리더 시작, 데이터 읽기 시작')
     while (true) {
       const { done, value } = await reader.read()
-      if (done) break
+      if (done) {
+        console.log('스트림 읽기 완료, 총 읽은 바이트:', totalBytesRead)
+        break
+      }
+
+      totalBytesRead += value.length
+      if (totalBytesRead % 10000 === 0 || totalBytesRead < 1000) {
+        console.log('읽은 바이트:', totalBytesRead)
+      }
 
       buffer += decoder.decode(value, { stream: true })
       
@@ -154,16 +174,25 @@ async function callGeminiStream(
               }
               if (candidate.finishReason) {
                 finishReason = candidate.finishReason
+                console.log('Finish Reason 수신:', finishReason)
               }
+            } else {
+              console.log('후보 데이터 없음, 키:', Object.keys(data))
             }
           } catch (e) {
-            console.error('JSON 파싱 실패:', e, 'JSON:', jsonStr.substring(0, 200))
+            console.error('JSON 파싱 실패:', e, 'JSON 시작:', jsonStr.substring(0, 200))
           }
         }
       }
     }
+  } catch (streamError: any) {
+    console.error('스트림 읽기 중 에러:', streamError)
+    console.error('에러 메시지:', streamError?.message)
+    console.error('에러 스택:', streamError?.stack)
+    throw streamError
   } finally {
     reader.releaseLock()
+    console.log('스트림 리더 종료')
   }
 
   return { response: null, finishReason }
@@ -532,16 +561,28 @@ serve(async (req) => {
         let hasSentPartialDone = false
 
         try {
+          console.log('=== Gemini API 스트리밍 호출 시작 ===')
+          console.log('API 키 길이:', apiKey.length)
+          console.log('모델:', model)
+          console.log('프롬프트 길이:', prompt.length)
+          
+          let chunkCount = 0
+          
           // Gemini API 스트리밍 호출
           const { finishReason } = await callGeminiStream(
             apiKey,
             model,
             prompt,
             (chunk: any) => {
+              chunkCount++
+              if (chunkCount % 10 === 0 || chunkCount === 1) {
+                console.log(`Gemini 청크 #${chunkCount} 수신:`, chunk.text ? chunk.text.substring(0, 50) : '텍스트 없음')
+              }
               const elapsed = Date.now() - streamStartTime
 
               // 첫 번째 청크인 경우 시작 신호 전송
               if (isFirstChunk) {
+                console.log('첫 번째 청크 수신, 시작 신호 전송')
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'start' })}\n\n`))
                 isFirstChunk = false
               }
@@ -615,6 +656,11 @@ serve(async (req) => {
             }
           )
 
+          console.log(`=== Gemini API 스트리밍 완료 ===`)
+          console.log(`총 청크 수: ${chunkCount}`)
+          console.log(`fullText 길이: ${fullText.length}자`)
+          console.log(`Finish Reason: ${finishReason}`)
+          
           // 스트림 완료 처리
           let cleanHtml = fullText.trim()
           const htmlBlockMatch = cleanHtml.match(/```html\s*([\s\S]*?)\s*```/)
@@ -646,7 +692,12 @@ serve(async (req) => {
 
           controller.close()
         } catch (error: any) {
-          console.error('스트리밍 중 에러:', error)
+          console.error('=== 스트리밍 중 에러 발생 ===')
+          console.error('에러 타입:', typeof error)
+          console.error('에러 메시지:', error?.message || String(error))
+          console.error('에러 스택:', error?.stack || 'N/A')
+          console.error('경과 시간:', Date.now() - streamStartTime, 'ms')
+          console.error('fullText 길이:', fullText.length, '자')
           const elapsed = Date.now() - streamStartTime
 
           if (elapsed >= TIMEOUT_PARTIAL && fullText.trim() && fullText.trim().length > 50 && !hasSentPartialDone && !isSecondRequest) {
