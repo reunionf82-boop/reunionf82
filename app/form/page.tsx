@@ -2625,6 +2625,7 @@ function FormContent() {
                                   <html>
                                   <head>
                                     <meta charset="UTF-8">
+                                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
                                     <title>${saved.title}</title>
                                     <style>
                                       ${fontFace ? fontFace : ''}
@@ -2657,14 +2658,7 @@ function FormContent() {
                                       .thumbnail-container img {
                                         width: 100%;
                                         height: auto;
-                                        object-fit: contain;
-                                        max-height: 400px;
-                                      }
-                                      .thumbnail-container {
-                                        border-radius: 0;
-                                      }
-                                      .thumbnail-container img {
-                                        border-radius: 0;
+                                        object-fit: cover;
                                       }
                                       .tts-button-container {
                                         text-align: center;
@@ -2739,6 +2733,24 @@ function FormContent() {
                                       }
                                       .subtitle-section {
                                         padding-top: 24px;
+                                        padding-bottom: 24px;
+                                        position: relative;
+                                      }
+                                      .subtitle-section:not(:last-child) {
+                                        padding-bottom: 24px;
+                                        margin-bottom: 24px;
+                                      }
+                                      .subtitle-section:not(:last-child)::after {
+                                        content: '';
+                                        display: block;
+                                        width: 300px;
+                                        height: 2px;
+                                        background: linear-gradient(to right, transparent, #e5e7eb, transparent);
+                                        margin: 24px auto 0;
+                                      }
+                                      .subtitle-section:last-child {
+                                        padding-top: 24px;
+                                        padding-bottom: 24px;
                                       }
                                       .subtitle-title {
                                         font-size: 18px;
