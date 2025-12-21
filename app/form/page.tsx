@@ -29,15 +29,13 @@ function FormContent() {
         
         if (storedTitle) {
           setTitle(storedTitle)
-          // 사용 후 삭제 (한 번만 사용)
-          sessionStorage.removeItem('form_title')
+          // 삭제하지 않음 (result에서 돌아올 때 재사용 가능하도록 유지)
           console.log('Form 페이지: sessionStorage에서 title 가져옴:', storedTitle)
         }
         
         if (storedModel) {
           setModel(storedModel)
-          // 사용 후 삭제 (한 번만 사용)
-          sessionStorage.removeItem('form_model')
+          // 삭제하지 않음 (result에서 돌아올 때 재사용 가능하도록 유지)
           console.log('Form 페이지: sessionStorage에서 모델 가져옴:', storedModel)
           return // sessionStorage에서 가져왔으면 종료
         }
@@ -69,6 +67,37 @@ function FormContent() {
     }
     loadData()
   }, [searchParams])
+  
+  // 페이지 포커스 시 sessionStorage에서 title 다시 확인 (result에서 돌아올 때 대응)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && typeof window !== 'undefined') {
+        const storedTitle = sessionStorage.getItem('form_title')
+        if (storedTitle && storedTitle !== title) {
+          console.log('Form 페이지: 페이지 포커스 시 sessionStorage에서 title 재확인:', storedTitle)
+          setTitle(storedTitle)
+        }
+      }
+    }
+    
+    const handleFocus = () => {
+      if (typeof window !== 'undefined') {
+        const storedTitle = sessionStorage.getItem('form_title')
+        if (storedTitle && storedTitle !== title) {
+          console.log('Form 페이지: window focus 시 sessionStorage에서 title 재확인:', storedTitle)
+          setTitle(storedTitle)
+        }
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleFocus)
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [title])
   
   const [content, setContent] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -509,7 +538,10 @@ function FormContent() {
   }, [currentAudio])
 
   useEffect(() => {
-    loadContent()
+    if (title) {
+      setLoading(true)
+      loadContent()
+    }
   }, [title])
 
   // content가 변경될 때 썸네일 에러 상태 초기화 및 캐시된 썸네일 업데이트
@@ -567,7 +599,15 @@ function FormContent() {
 
 
   const loadContent = async () => {
+    if (!title) {
+      console.warn('Form 페이지: title이 없어 컨텐츠를 로드할 수 없습니다.')
+      setContent(null)
+      setLoading(false)
+      return
+    }
+    
     try {
+      setLoading(true)
       const data = await getContents()
       let decodedTitle = title
       try {
@@ -580,6 +620,10 @@ function FormContent() {
       console.log('Form 페이지: 로드된 컨텐츠:', foundContent)
       console.log('Form 페이지: 컨텐츠의 tts_speaker (원본):', foundContent?.tts_speaker)
       console.log('Form 페이지: 컨텐츠의 preview_thumbnails:', foundContent?.preview_thumbnails)
+      
+      if (!foundContent) {
+        console.error('Form 페이지: 컨텐츠를 찾을 수 없습니다. title:', decodedTitle)
+      }
       
       // tts_speaker가 없거나 'nara'이면 app_settings에서 선택된 화자 사용
       if (foundContent && (!foundContent.tts_speaker || foundContent.tts_speaker === 'nara')) {
@@ -596,6 +640,7 @@ function FormContent() {
       setContent(foundContent || null)
     } catch (error) {
       console.error('컨텐츠 로드 실패:', error)
+      setContent(null)
     } finally {
       setLoading(false)
     }
@@ -660,8 +705,18 @@ function FormContent() {
       return
     }
     
+    if (loading) {
+      alert('컨텐츠 정보를 불러오는 중입니다. 잠시만 기다려주세요.')
+      return
+    }
+    
+    if (!title) {
+      alert('상품 정보가 없습니다. 메인 페이지에서 다시 선택해주세요.')
+      return
+    }
+    
     if (!content) {
-      alert('컨텐츠 정보를 불러올 수 없습니다.')
+      alert(`컨텐츠 정보를 불러올 수 없습니다.\n\n상품명: ${title}\n\n메인 페이지에서 다시 선택해주세요.`)
       return
     }
 
@@ -2309,7 +2364,7 @@ function FormContent() {
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting}
+                disabled={submitting || loading || !content}
                 className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {submitting ? (
