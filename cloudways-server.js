@@ -1,6 +1,9 @@
 // Cloudways Node.js 서버 (점사 AI 백엔드)
 // 이 파일을 Cloudways의 public_html 폴더에 업로드하세요
 
+// 환경 변수 로드 (.env 파일)
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
@@ -107,7 +110,7 @@ app.post('/chat', async (req, res) => {
             ],
         });
 
-        // 만세력 데이터 파싱
+        // 만세력 데이터 파싱 및 확인
         let parsedManseRyeok = null;
         if (manse_ryeok_json) {
             try {
@@ -117,40 +120,376 @@ app.post('/chat', async (req, res) => {
             }
         }
 
-        // 프롬프트 생성 (Supabase Edge Function과 동일한 로직)
-        // 여기서는 간단한 예시만 제공하고, 실제로는 supabase/functions/jeminai/index.ts의 프롬프트 생성 로직을 복사해야 합니다
-        let prompt = `${role_prompt}\n\n${restrictions || ''}\n\n`;
-        
-        // 사용자 정보 추가
-        if (user_info) {
-            prompt += `내담자 정보:\n`;
-            if (user_info.name) prompt += `- 이름: ${user_info.name}\n`;
-            if (user_info.gender) prompt += `- 성별: ${user_info.gender}\n`;
-            if (user_info.birth_date) prompt += `- 생년월일: ${user_info.birth_date}\n`;
-            if (user_info.birth_hour) prompt += `- 태어난 시: ${user_info.birth_hour}\n`;
-        }
+        const hasManseRyeokData = !!(parsedManseRyeok || manse_ryeok_text || manse_ryeok_table);
 
-        // 만세력 정보 추가
-        if (manse_ryeok_text) {
-            prompt += `\n만세력 정보:\n${manse_ryeok_text}\n`;
-        }
+        // 프롬프트 생성 (Next.js API 라우트와 동일한 로직)
+        const menuItemsInfo = menu_items ? menu_items.map((item, idx) => {
+            const menuTitle = typeof item === 'string' ? item : (item.value || item.title || '');
+            const menuThumbnail = typeof item === 'object' ? (item.thumbnail || '') : '';
+            return {
+                index: idx,
+                title: menuTitle,
+                thumbnail: menuThumbnail
+            };
+        }) : [];
 
-        // 메뉴 및 소제목 정보 추가
-        prompt += `\n점사 항목:\n`;
-        menu_items.forEach((menuItem, menuIndex) => {
-            prompt += `\n${menuIndex + 1}. ${menuItem.title}\n`;
-            if (menuItem.subtitles) {
-                menuItem.subtitles.forEach((subtitle, subIndex) => {
-                    prompt += `  ${menuIndex + 1}-${subIndex + 1}. ${subtitle.title}\n`;
-                });
-            }
+        // 한국의 현재 날짜/시간 가져오기 (Asia/Seoul, UTC+9)
+        const now = new Date();
+        const koreaFormatter = new Intl.DateTimeFormat('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
         });
+        const koreaDateString = koreaFormatter.format(now);
+        const koreaYearFormatter = new Intl.DateTimeFormat('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+        });
+        const currentYear = parseInt(koreaYearFormatter.format(now));
 
-        // 소제목별 해석 요청
-        prompt += `\n위 항목들을 순서대로 상세히 해석해주세요. HTML 형식으로 작성해주세요.`;
+        const prompt = `
+${isSecondRequest ? `
+🚨🚨🚨 **중요: 2차 요청입니다. 절대 처음부터 다시 시작하지 마세요!** 🚨🚨🚨
+**이전 요청에서 이미 완료된 메뉴/소제목은 절대 포함하지 마세요.**
+**아래에 나열된 남은 메뉴/소제목만 해석하세요.**
+**메뉴 제목이나 썸네일을 다시 생성하지 마세요. 오직 남은 소제목의 해석 내용만 생성하세요.**
+**다시 강조: 처음부터 다시 시작하지 마세요!**
+
+---
+` : ''}
+당신은 ${role_prompt}입니다.
+
+---
+# ⚠️ 입력 데이터 (계산된 불변의 값 - 그대로 복사하여 사용)
+
+${manse_ryeok_text ? `${manse_ryeok_text}` : '(만세력 텍스트 데이터 없음 - 해석 불가)'}
+
+${manse_ryeok_json ? `
+**JSON 형식 만세력 데이터 (구조화):**
+\`\`\`json
+${manse_ryeok_json}
+\`\`\`
+` : ''}
+
+${day_gan_info ? `
+**일간(日干) 정보:** ${day_gan_info.fullName} (천간: ${day_gan_info.gan}(${day_gan_info.hanja}), 오행: ${day_gan_info.ohang})
+` : ''}
+
+${hasManseRyeokData ? `
+**중요:** 위 데이터만 사용하세요. 생년월일/띠/출생지는 보안상 제공되지 않았으며, 임의로 추정하거나 계산하는 행위는 금지됩니다.
+` : ''}
+
+${!hasManseRyeokData ? `
+⚠️⚠️⚠️ 만세력 데이터가 없습니다. 어떤 해석도 하지 말고, "만세력 데이터가 없어 해석할 수 없습니다"라고만 답하세요.
+` : ''}
+
+---
+# 🛑 분석 절차 (반드시 순서대로 수행할 것)
+
+**STEP 1: 데이터 검증 (내부 확인만)**
+- 위 [입력 데이터]에 적힌 년주/월주/일주/시주를 확인하되, 출력하지 마세요.
+- 내부적으로만 기억하고 바로 해석으로 넘어가세요.
+- "분석 대상 명식: ..." 같은 텍스트를 출력하지 마세요.
+- 생년월일을 다시 계산하거나 다른 글자를 가져오지 마세요.
+
+**STEP 2: 글자 기반 팩트 추출**
+- STEP 1에서 확인한 글자들만 사용하여 합(合), 충(沖), 형(刑), 공망 여부 등 팩트만 나열하세요. (해석 금지)
+
+**STEP 3: 심층 해석**
+- STEP 2에서 뽑은 팩트를 근거로 해석하세요.
+- [입력 데이터]에 없는 신살/오행/연도/띠/출생지 등은 언급 금지.
+
+---
+# 예시 (Few-shot)
+
+**입력된 만세력:**
+- 일주: 병인(丙寅)
+- 월주: 경신(庚申)
+
+**나쁜 답변 (X):**
+- "1980년생 원숭이띠로..." (생년월일 유추 금지)
+- "사주에 물이 많아서..." (입력 데이터에 없는 오행 언급 금지)
+
+**좋은 답변 (O):**
+- "제공된 명식을 보면 일주 병화(丙火)와 월주 경금(庚金)이 편재 관계입니다. 지지에서 인신충(寅申沖)이 발생하여 ... [이후 입력 글자 기반 해석]"
+
+---
+
+**중요: 현재 날짜 정보**
+- 오늘은 ${koreaDateString}입니다.
+- 현재 연도는 ${currentYear}년입니다.
+- 해석할 때 반드시 이 날짜 정보를 기준으로 하세요. 과거 연도(예: 2024년)를 언급하지 마세요.
+
+${restrictions ? `금칙사항: ${restrictions}` : ''}
+
+사용자 정보:
+- 이름: ${user_info.name}
+${user_info.gender ? `- 성별: ${user_info.gender}` : ''}
+- 생년월일/생시는 보안상 제공하지 않습니다.
+${partner_info ? `
+이성 정보:
+- 이름: ${partner_info.name}
+${partner_info.gender ? `- 성별: ${partner_info.gender}` : ''}
+- 생년월일/생시는 보안상 제공하지 않습니다.
+` : ''}
+
+---
+
+${isSecondRequest ? `
+🚨🚨🚨 **중요: 2차 요청입니다. 절대 처음부터 다시 시작하지 마세요!** 🚨🚨🚨
+
+**이미 완료된 소제목 목록 (절대 포함하지 마세요!):**
+${completedSubtitles && completedSubtitles.length > 0 ? completedSubtitles.map((sub, idx) => {
+  const subtitleText = typeof sub === 'string' ? sub : (sub.subtitle || sub.title || `소제목 ${idx + 1}`);
+  return `- ${subtitleText} (이미 완료됨, 건너뛰세요)`;
+}).join('\n') : '없음'}
+
+**⚠️⚠️⚠️ 반드시 준수할 사항 (매우 중요!):** ⚠️⚠️⚠️
+1. **위에 나열된 완료된 소제목은 절대 포함하지 마세요.** 이미 해석이 완료되었으므로 건너뛰세요.
+2. **처음부터 다시 시작하지 마세요.** 아래에 나열된 남은 메뉴/소제목만 해석하세요.
+3. **이전 요청의 HTML 구조나 내용을 반복하지 마세요.** 오직 남은 소제목만 새로 생성하세요.
+4. **메뉴 제목이나 썸네일을 다시 생성하지 마세요.** 남은 소제목의 해석 내용만 생성하세요.
+5. **완료된 소제목의 HTML을 생성하지 마세요.** 오직 남은 소제목만 HTML로 작성하세요.
+6. **완료된 소제목 목록을 다시 확인하고, 그 소제목들은 절대 HTML에 포함하지 마세요!**
+
+이전 요청에서 타임아웃으로 인해 일부만 완료되었으므로, 남은 부분만 이어서 해석합니다.
+**🚨🚨🚨 다시 강조: 위에 나열된 완료된 소제목은 건너뛰고, 아래 남은 소제목만 해석하세요! 처음부터 다시 시작하지 마세요! 🚨🚨🚨**
+` : ''}
+
+${isSecondRequest ? `
+**⚠️ 아래에 나열된 남은 소제목만 해석하세요. 위에 나열된 완료된 소제목은 절대 포함하지 마세요!**
+` : ''}
+
+다음 상품 메뉴 구성과 소제목들을 각각 해석해주세요:
+
+${menuItemsInfo.map((menuItem, menuIdx) => {
+  const menuNumber = menuIdx + 1;
+  const subtitlesForMenu = menu_subtitles.filter((sub, idx) => {
+    const match = sub.subtitle.match(/^(\d+)-(\d+)/);
+    return match ? parseInt(match[1]) === menuNumber : false;
+  });
+  
+  // 2차 요청일 때는 남은 소제목이 있는 메뉴만 표시
+  if (isSecondRequest && subtitlesForMenu.length === 0) {
+    return '';
+  }
+  
+  return `
+메뉴 ${menuNumber}: ${menuItem.title}
+${menuItem.thumbnail ? `썸네일 URL: ${menuItem.thumbnail}` : ''}
+
+${isSecondRequest ? `**⚠️ 이 메뉴의 아래 소제목들만 해석하세요. 위에 나열된 완료된 소제목은 건너뛰세요!**` : ''}
+
+이 메뉴의 소제목들:
+${subtitlesForMenu.map((sub, subIdx) => {
+    const globalSubIdx = menu_subtitles.findIndex((s) => s.subtitle === sub.subtitle);
+    const tool = menu_subtitles[globalSubIdx]?.interpretation_tool || '';
+    const charCount = menu_subtitles[globalSubIdx]?.char_count || 500;
+    const thumbnail = menu_subtitles[globalSubIdx]?.thumbnail || '';
+    return `
+  ${sub.subtitle}
+  - 해석도구: ${tool}
+  - 글자수 제한: ${charCount}자 이내
+  ${thumbnail ? `- 썸네일 URL: ${thumbnail} (반드시 HTML에 포함하세요!)` : ''}
+`;
+  }).join('\n')}
+`;
+}).filter((menuText) => menuText.trim().length > 0).join('\n\n')}
+
+각 메뉴별로 다음 HTML 형식으로 결과를 작성해주세요:
+${isSecondRequest ? `
+🚨🚨🚨 **2차 요청 주의사항 (반드시 준수):** 🚨🚨🚨
+1. **위에 나열된 남은 메뉴/소제목만 HTML로 작성하세요.**
+2. **이전에 완료된 메뉴나 소제목은 절대 포함하지 마세요.**
+3. **처음부터 다시 시작하지 마세요.**
+4. **메뉴 제목이나 썸네일을 다시 생성하지 마세요. 남은 소제목의 해석 내용만 생성하세요.**
+5. **이전 요청의 HTML 구조를 반복하지 마세요.**
+6. **완료된 소제목 목록을 다시 확인하고, 그 소제목들은 절대 HTML에 포함하지 마세요!**
+` : ''}
+
+<div class="menu-section">
+  <h2 class="menu-title">[메뉴 제목]</h2>
+  ${menuItemsInfo.some((m) => m.thumbnail) ? '<img src="[썸네일 URL]" alt="[메뉴 제목]" class="menu-thumbnail" />' : ''}
+  
+  <div class="subtitle-section">
+    <h3 class="subtitle-title">[소제목]</h3>
+    ${menu_subtitles.some((s) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[소제목 썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
+    <div class="subtitle-content">[해석 내용 (HTML 형식, 글자수 제한 준수)]</div>
+  </div>
+  
+  <div class="subtitle-section">
+    <h3 class="subtitle-title">[다음 소제목]</h3>
+    ${menu_subtitles.some((s) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[소제목 썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
+    <div class="subtitle-content">[해석 내용 (HTML 형식, 글자수 제한 준수)]</div>
+  </div>
+  
+  ...
+</div>
+
+<div class="menu-section">
+  <h2 class="menu-title">[다음 메뉴 제목]</h2>
+  ...
+</div>
+${isSecondRequest ? `
+🚨🚨🚨 **중요: 위 HTML 예시는 형식만 보여주는 것입니다.** 🚨🚨🚨
+**실제로는:**
+1. 위에 나열된 남은 메뉴/소제목만 작성하세요.
+2. 이전에 완료된 메뉴나 소제목은 절대 포함하지 마세요.
+3. 처음부터 다시 시작하지 마세요.
+4. 메뉴 제목이나 썸네일을 다시 생성하지 마세요.
+5. 오직 남은 소제목의 해석 내용만 생성하세요.
+6. 완료된 소제목 목록을 다시 확인하고, 그 소제목들은 절대 HTML에 포함하지 마세요!
+7. 소제목 썸네일이 제공된 경우 (위 소제목 목록에 "썸네일 URL"이 표시된 경우), 반드시 포함하세요!
+` : ''}
+
+중요:
+1. 각 메뉴는 <div class="menu-section">으로 구분
+2. 메뉴 제목은 <h2 class="menu-title">으로 표시
+3. 썸네일이 있으면 <img src="[URL]" alt="[제목]" class="menu-thumbnail" />로 표시
+4. 각 소제목은 <div class="subtitle-section">으로 구분
+5. 소제목 제목은 <h3 class="subtitle-title">으로 표시하되, 소제목 끝에 반드시 마침표(.)를 추가하세요. 예: <h3 class="subtitle-title">1-1. 나의 타고난 '기본 성격'과 '가치관'.</h3>
+6. **소제목 썸네일이 제공된 경우 (위 소제목 목록에 "썸네일 URL"이 표시된 경우), 반드시 <h3 class="subtitle-title"> 태그 바로 다음에 <div class="subtitle-thumbnail-container"><img src="[썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>를 포함하세요. 썸네일이 없으면 포함하지 마세요.**
+7. 해석 내용은 <div class="subtitle-content"> 안에 HTML 형식으로 작성
+8. 각 content는 해당 subtitle의 char_count를 초과하지 않도록 주의
+${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 메뉴/소제목만 포함하세요. 이전에 완료된 내용은 절대 포함하지 마세요. 처음부터 다시 시작하지 말고, 남은 소제목부터만 해석하세요. 메뉴 제목이나 썸네일을 다시 생성하지 마세요. 오직 남은 소제목의 해석 내용만 생성하세요. 위에 나열된 완료된 소제목 목록을 다시 확인하고, 그 소제목들은 절대 포함하지 마세요!** 🚨🚨🚨' : '9. 모든 메뉴와 소제목을 순서대로 포함'}
+10. 소제목 제목에 마침표가 없으면 자동으로 마침표를 추가하세요 (TTS 재생 시 자연스러운 구분을 위해)
+11. 소제목 제목과 해석 내용 사이에 빈 줄이나 공백을 절대 넣지 마세요. <h3 class="subtitle-title"> 태그와 <div class="subtitle-content"> 태그 사이에 줄바꿈이나 공백 문자를 넣지 말고 바로 붙여서 작성하세요. 단, 썸네일이 있는 경우 <h3> 태그와 썸네일 사이, 썸네일과 <div class="subtitle-content"> 사이에는 줄바꿈이 있어도 됩니다. 예: <h3 class="subtitle-title">1-1. 소제목.</h3><div class="subtitle-thumbnail-container"><img src="[URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div><div class="subtitle-content">본문 내용</div>
+`;
 
         console.log('프롬프트 생성 완료, 길이:', prompt.length);
         console.log('스트리밍 시작...');
+
+        // 완료된 메뉴/소제목 파싱 함수
+        const parseCompletedSubtitles = (html, allMenuSubtitles) => {
+            const completedSubtitles = [];
+            const completedMenus = [];
+            
+            console.log('=== parseCompletedSubtitles 시작 ===');
+            console.log('HTML 길이:', html.length);
+            console.log('전체 소제목 개수:', allMenuSubtitles.length);
+            
+            // HTML에서 모든 소제목 섹션 추출
+            const subtitleSectionStartRegex = /<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>/gi;
+            const subtitleSectionMatches = [];
+            let match;
+            while ((match = subtitleSectionStartRegex.exec(html)) !== null) {
+                subtitleSectionMatches.push(match);
+            }
+            
+            const subtitleSections = [];
+            
+            // 각 subtitle-section의 시작 위치에서 닫는 태그까지 찾기
+            for (let i = 0; i < subtitleSectionMatches.length; i++) {
+                const match = subtitleSectionMatches[i];
+                const startIndex = match.index;
+                const startTag = match[0];
+                
+                let depth = 1;
+                let currentIndex = startIndex + startTag.length;
+                let endIndex = -1;
+                
+                while (currentIndex < html.length && depth > 0) {
+                    const nextOpenDiv = html.indexOf('<div', currentIndex);
+                    const nextCloseDiv = html.indexOf('</div>', currentIndex);
+                    
+                    if (nextCloseDiv === -1) break;
+                    
+                    if (nextOpenDiv !== -1 && nextOpenDiv < nextCloseDiv) {
+                        depth++;
+                        currentIndex = nextOpenDiv + 4;
+                    } else {
+                        depth--;
+                        if (depth === 0) {
+                            endIndex = nextCloseDiv + 6;
+                            break;
+                        }
+                        currentIndex = nextCloseDiv + 6;
+                    }
+                }
+                
+                if (endIndex > startIndex) {
+                    const section = html.substring(startIndex, endIndex);
+                    subtitleSections.push(section);
+                }
+            }
+            
+            console.log('추출된 subtitle-section 개수:', subtitleSections.length);
+            
+            // 각 소제목이 완료되었는지 확인
+            allMenuSubtitles.forEach((subtitle, index) => {
+                const menuMatch = subtitle.subtitle.match(/^(\d+)-(\d+)/);
+                if (!menuMatch) return;
+                
+                const menuNumber = parseInt(menuMatch[1]);
+                const subtitleNumber = parseInt(menuMatch[2]);
+                
+                const subtitleTitleEscaped = subtitle.subtitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const subtitleTitlePattern1 = new RegExp(
+                    `<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)${subtitleTitleEscaped}([\\s\\S]*?)</h3>`,
+                    'i'
+                );
+                const subtitleTitleWithoutDot = subtitle.subtitle.replace(/\./g, '');
+                const subtitleTitlePattern2 = new RegExp(
+                    `<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)${subtitleTitleWithoutDot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)</h3>`,
+                    'i'
+                );
+                const numberPattern = new RegExp(
+                    `<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)${menuNumber}-${subtitleNumber}([\\s\\S]*?)</h3>`,
+                    'i'
+                );
+                const h3TextPattern = new RegExp(
+                    `<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)</h3>`,
+                    'i'
+                );
+                
+                const subtitleContentPattern = /<div[^>]*class="subtitle-content"[^>]*>[\s\S]*?<\/div>/i;
+                
+                let found = false;
+                for (const section of subtitleSections) {
+                    let titleMatches = subtitleTitlePattern1.test(section) || 
+                                     subtitleTitlePattern2.test(section) || 
+                                     numberPattern.test(section);
+                    
+                    if (!titleMatches) {
+                        const h3Match = section.match(h3TextPattern);
+                        if (h3Match) {
+                            const h3Text = h3Match[1].replace(/<[^>]+>/g, '').trim();
+                            if (h3Text.includes(subtitle.subtitle) || 
+                                h3Text.includes(subtitleTitleWithoutDot) ||
+                                h3Text.includes(`${menuNumber}-${subtitleNumber}`)) {
+                                titleMatches = true;
+                            }
+                        }
+                    }
+                    
+                    if (titleMatches && subtitleContentPattern.test(section)) {
+                        const contentMatch = section.match(/<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+                        if (contentMatch && contentMatch[1].trim().length > 10) {
+                            if (!completedSubtitles.includes(index)) {
+                                completedSubtitles.push(index);
+                                if (!completedMenus.includes(menuNumber - 1)) {
+                                    completedMenus.push(menuNumber - 1);
+                                }
+                                found = true;
+                                console.log(`소제목 ${index} (${subtitle.subtitle}) 완료 감지`);
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (!found) {
+                    console.log(`소제목 ${index} (${subtitle.subtitle}) 미완료`);
+                }
+            });
+            
+            console.log('=== parseCompletedSubtitles 완료 ===');
+            console.log('완료된 소제목:', completedSubtitles.length, '개');
+            console.log('완료된 소제목 인덱스:', completedSubtitles);
+            
+            return { completedSubtitles, completedMenus };
+        };
 
         // 스트리밍 방식으로 생성
         const result = await geminiModel.generateContentStream(prompt);
@@ -166,6 +505,9 @@ app.post('/chat', async (req, res) => {
 
         let accumulatedText = '';
         let chunkCount = 0;
+        let lastCompletionCheckChunk = 0;
+        const COMPLETION_CHECK_INTERVAL = 50;
+        let allSubtitlesCompletedEarly = false;
 
         // 스트림 읽기
         for await (const chunk of result.stream) {
@@ -174,19 +516,119 @@ app.post('/chat', async (req, res) => {
             accumulatedText += chunkText;
 
             // chunk 이벤트 전송
-            res.write(`data: ${JSON.stringify({ type: 'chunk', text: chunkText })}\n\n`);
+            res.write(`data: ${JSON.stringify({ type: 'chunk', text: chunkText, accumulatedLength: accumulatedText.length })}\n\n`);
 
             // 100개 청크마다 진행 상황 로그
             if (chunkCount % 100 === 0) {
                 console.log(`전송된 청크: ${chunkCount}개, 누적 텍스트 길이: ${accumulatedText.length}자`);
             }
+
+            // 모든 소제목 완료 여부 주기적 체크 (50번째 청크마다)
+            if (chunkCount - lastCompletionCheckChunk >= COMPLETION_CHECK_INTERVAL && accumulatedText.trim().length > 100) {
+                // HTML 코드 블록 제거
+                let htmlForParsing = accumulatedText.trim();
+                const htmlBlockMatch = htmlForParsing.match(/```html\s*([\s\S]*?)\s*```/);
+                if (htmlBlockMatch) {
+                    htmlForParsing = htmlBlockMatch[1].trim();
+                } else {
+                    const codeBlockMatch = htmlForParsing.match(/```\s*([\s\S]*?)\s*```/);
+                    if (codeBlockMatch) {
+                        htmlForParsing = codeBlockMatch[1].trim();
+                    }
+                }
+                
+                // 완료된 메뉴/소제목 파싱
+                const { completedSubtitles } = parseCompletedSubtitles(htmlForParsing, menu_subtitles);
+                const allSubtitlesCompleted = completedSubtitles.length === menu_subtitles.length;
+                
+                if (allSubtitlesCompleted) {
+                    console.log(`✅ [청크 ${chunkCount}] 모든 소제목이 완료되었습니다! 스트림을 즉시 중단합니다.`);
+                    console.log(`완료된 소제목: ${completedSubtitles.length}/${menu_subtitles.length}개`);
+                    console.log(`accumulatedText 길이: ${accumulatedText.length}자`);
+                    
+                    allSubtitlesCompletedEarly = true;
+                    break; // for await 루프를 즉시 종료하여 스트림 읽기 중단
+                } else {
+                    lastCompletionCheckChunk = chunkCount;
+                }
+            }
+        }
+
+        // HTML 정리
+        let cleanHtml = accumulatedText.trim();
+        const htmlBlockMatch = cleanHtml.match(/```html\s*([\s\S]*?)\s*```/);
+        if (htmlBlockMatch) {
+            cleanHtml = htmlBlockMatch[1].trim();
+        } else {
+            const codeBlockMatch = cleanHtml.match(/```\s*([\s\S]*?)\s*```/);
+            if (codeBlockMatch) {
+                cleanHtml = codeBlockMatch[1].trim();
+            }
+        }
+        
+        cleanHtml = cleanHtml.replace(/(<\/h3>)\s+(<div class="subtitle-content">)/g, '$1$2');
+        cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content"[^>]*>)/g, '$1$2');
+        cleanHtml = cleanHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>');
+        cleanHtml = cleanHtml.replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3');
+        cleanHtml = cleanHtml.replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2');
+        cleanHtml = cleanHtml.replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2');
+        cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3');
+        cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3');
+        cleanHtml = cleanHtml.replace(/\*\*/g, '');
+
+        // finishReason 확인 (response에서 가져오기)
+        let finishReason = 'STOP';
+        let isTruncated = false;
+        
+        try {
+            const response = await result.response;
+            finishReason = response.candidates?.[0]?.finishReason || 'STOP';
+            
+            // finishReason이 MAX_TOKENS인 경우에도 실제로 모든 소제목이 완료되었는지 확인
+            if (finishReason === 'MAX_TOKENS') {
+                console.log('=== MAX_TOKENS 감지: 실제 점사 완료 여부 확인 ===');
+                const { completedSubtitles } = parseCompletedSubtitles(cleanHtml, menu_subtitles);
+                const allSubtitlesCompleted = completedSubtitles.length === menu_subtitles.length;
+                
+                console.log(`전체 소제목: ${menu_subtitles.length}개`);
+                console.log(`완료된 소제목: ${completedSubtitles.length}개`);
+                console.log(`모든 소제목 완료 여부: ${allSubtitlesCompleted ? '✅ 예' : '❌ 아니오'}`);
+                
+                if (allSubtitlesCompleted) {
+                    console.log('✅ 점사가 모두 완료되었습니다. MAX_TOKENS는 점사 완료 후 추가 생성이 발생한 것으로 보입니다.');
+                    console.log('✅ isTruncated를 false로 설정하고 finishReason을 STOP으로 변경합니다.');
+                    isTruncated = false;
+                    finishReason = 'STOP';
+                } else {
+                    console.log('❌ 일부 소제목이 미완료 상태입니다. MAX_TOKENS로 인한 잘림으로 처리합니다.');
+                    isTruncated = true;
+                }
+                console.log('=== MAX_TOKENS 확인 완료 ===');
+            }
+        } catch (responseError) {
+            console.error('응답 대기 중 에러:', responseError);
+            // 에러가 발생해도 계속 처리
+        }
+
+        // 조기 완료 처리된 경우 isTruncated를 false로 설정
+        if (allSubtitlesCompletedEarly) {
+            isTruncated = false;
+            finishReason = 'STOP';
+            console.log('✅ 조기 완료 처리: isTruncated=false, finishReason=STOP');
         }
 
         // done 이벤트 전송
-        res.write(`data: ${JSON.stringify({ type: 'done', html: accumulatedText })}\n\n`);
+        res.write(`data: ${JSON.stringify({ 
+            type: 'done', 
+            html: cleanHtml,
+            isTruncated: isTruncated,
+            finishReason: finishReason
+        })}\n\n`);
         res.end();
 
         console.log(`스트리밍 완료, 총 청크: ${chunkCount}개, 총 텍스트 길이: ${accumulatedText.length}자`);
+        console.log(`finishReason: ${finishReason}, isTruncated: ${isTruncated}`);
+        console.log(`조기 완료 여부: ${allSubtitlesCompletedEarly ? '예' : '아니오'}`);
 
     } catch (error) {
         console.error('에러 발생:', error);
