@@ -1260,7 +1260,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
     .jeminai-results .subtitle-section:not(:last-child)::after {
       content: '';
       display: block;
-      width: 600px;
+      width: 300px;
       height: 2px;
       background: linear-gradient(to right, transparent, #e5e7eb, transparent);
       margin: 24px auto 0;
@@ -2150,7 +2150,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 .subtitle-section:not(:last-child)::after {
                   content: '';
                   display: block;
-                  width: 600px;
+                  width: 300px;
                   height: 2px;
                   background: linear-gradient(to right, transparent, #e5e7eb, transparent);
                   margin: 24px auto 0;
