@@ -1251,6 +1251,24 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
     .jeminai-results .subtitle-content {
       font-size: ${bodyFontSize}px !important;
     }
+    /* 소제목 구분선 - 마지막 소제목이 아닌 경우에만 */
+    .jeminai-results .subtitle-section {
+      padding-top: 24px;
+      padding-bottom: 24px;
+      position: relative;
+    }
+    .jeminai-results .subtitle-section:not(:last-child)::after {
+      content: '';
+      display: block;
+      width: 600px;
+      height: 2px;
+      background: linear-gradient(to right, transparent, #e5e7eb, transparent);
+      margin: 24px auto 0;
+    }
+    .jeminai-results .subtitle-section:last-child {
+      padding-top: 24px;
+      padding-bottom: 24px;
+    }
     .loading-dots {
       display: inline-flex;
       gap: 4px;
@@ -2123,8 +2141,23 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                   margin-bottom: 24px;
                   display: block;
                 }
-                .subtitle-section {
+                .subtitle-section:not(:last-child) {
                   padding-top: 24px;
+                  padding-bottom: 24px;
+                  margin-bottom: 24px;
+                  position: relative;
+                }
+                .subtitle-section:not(:last-child)::after {
+                  content: '';
+                  display: block;
+                  width: 600px;
+                  height: 2px;
+                  background: linear-gradient(to right, transparent, #e5e7eb, transparent);
+                  margin: 24px auto 0;
+                }
+                .subtitle-section:last-child {
+                  padding-top: 24px;
+                  padding-bottom: 24px;
                 }
                 .subtitle-title {
                   font-size: 18px;
@@ -2881,8 +2914,12 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                     {menu.subtitles.map((sub, subIndex) => {
                       const globalIndex = menu.startIndex + subIndex
                       const isRevealed = globalIndex < revealedCount
+                      const isLastSubtitle = subIndex === menu.subtitles.length - 1
                       return (
-                        <div key={`subtitle-${menuIndex}-${subIndex}`} className="subtitle-section space-y-2">
+                        <div 
+                          key={`subtitle-${menuIndex}-${subIndex}`} 
+                          className="subtitle-section space-y-2"
+                        >
                           {sub.title && (
                             <div className="subtitle-title font-semibold text-gray-900">
                               {sub.title}

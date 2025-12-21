@@ -110,8 +110,8 @@ export async function callJeminaiAPIStream(
     console.log('Edge Function URL:', edgeFunctionUrl)
 
     // fetch 타임아웃 설정
-    // Cloudways: 30분 (1800초), Supabase: 390초
-    const timeout = useCloudways ? 1800000 : 390000 // Cloudways는 30분, Supabase는 390초
+    // Cloudways: 29분 (1740초) - 서버 타임아웃(30분)보다 약간 짧게 설정하여 서버 타임아웃 전에 감지, Supabase: 390초
+    const timeout = useCloudways ? 1740000 : 390000 // Cloudways는 29분, Supabase는 390초
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), timeout)
     
@@ -213,7 +213,9 @@ export async function callJeminaiAPIStream(
     let hasReceivedPartialDone = false // partial_done 이벤트 수신 여부
     let lastChunkTime = Date.now() // 마지막 청크 수신 시간
     const streamStartTime = Date.now() // 스트림 시작 시간 (280초 경과 체크용)
-    const STREAM_TIMEOUT = 300000 // 5분 (300초)
+    // Cloudways 사용 시: 29분 (1740초) - 서버 타임아웃(30분)보다 약간 짧게 설정
+    // Supabase 사용 시: 5분 (300초) - 기존 유지
+    const STREAM_TIMEOUT = useCloudways ? 1740000 : 300000 // Cloudways: 29분, Supabase: 5분
     const TIMEOUT_PARTIAL = 280000 // 280초 (1차 요청 중단, 2차 요청으로 이어가기)
     
     // 백그라운드에서도 스트림이 계속 읽히도록 보장
@@ -268,13 +270,22 @@ export async function callJeminaiAPIStream(
         // 전화 통화 중에도 스트림이 계속 읽히므로 타임아웃 체크 불필요
         if (!isInBackground) {
           const now = Date.now()
-          if (now - lastChunkTime > STREAM_TIMEOUT) {
+          const timeSinceLastChunk = now - lastChunkTime
+          const totalElapsed = now - streamStartTime
+          
+          // 경고 로그 (28분 경과 시점 - 서버 타임아웃 30분 전 경고)
+          if (totalElapsed > 1680000 && totalElapsed < 1685000) {
+            console.warn(`⚠️ 스트림 진행 중: 경과 시간 ${Math.round(totalElapsed / 1000)}초, 누적 HTML 길이: ${accumulatedHtml.length}자 (서버 타임아웃 30분까지 약 2분 남음)`)
+          }
+          
+          if (timeSinceLastChunk > STREAM_TIMEOUT) {
+            console.error(`❌ 스트림 타임아웃 발생: 마지막 청크로부터 ${Math.round(timeSinceLastChunk / 1000)}초 경과, 전체 경과 시간: ${Math.round(totalElapsed / 1000)}초, 누적 HTML 길이: ${accumulatedHtml.length}자`)
             // 타임아웃이지만 부분 데이터가 있으면 fallback 처리
             if (accumulatedHtml.trim() && accumulatedHtml.trim().length > 100) {
               console.warn('스트림 타임아웃 발생했지만 부분 데이터가 충분함. fallback 처리합니다.')
               break // 루프 종료하여 fallback 처리로 이동
             }
-            throw new Error('응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.')
+            throw new Error(`응답 시간이 초과되었습니다. (경과 시간: ${Math.round(totalElapsed / 1000)}초, 누적 데이터: ${accumulatedHtml.length}자)`)
           }
         } else {
           // 백그라운드에 있는 동안에는 타임아웃 체크 건너뛰기
@@ -373,6 +384,19 @@ export async function callJeminaiAPIStream(
                 })
               } else if (data.type === 'done') {
                 lastChunkTime = Date.now() // done 수신 시 시간 갱신
+                console.log('=== 스트림 완료 (done 타입 수신) ===')
+                console.log('Finish Reason:', data.finishReason || '없음')
+                console.log('Is Truncated:', data.isTruncated || false)
+                console.log('HTML 길이:', data.html?.length || 0, '자')
+                console.log('Usage:', data.usage ? JSON.stringify(data.usage) : '없음')
+                
+                // MAX_TOKENS로 종료된 경우 경고
+                if (data.finishReason === 'MAX_TOKENS') {
+                  console.error('❌ 제미나이 API: MAX_TOKENS 한계에 도달하여 응답이 잘렸습니다.')
+                  console.error('❌ HTML 길이:', data.html?.length || 0, '자')
+                  console.error('❌ 현재 maxOutputTokens: 65536 (약 20000-30000자 한글 기준)')
+                }
+                
                 if (data.html) {
                   finalResponse = {
                     html: data.html,
