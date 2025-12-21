@@ -1249,7 +1249,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           <div className="grid grid-cols-4 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-300 mb-1">
-                소제목당 글자수
+                소메뉴당 글자수
               </label>
               <input
                 type="text"
@@ -1275,7 +1275,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-300 mb-1">
-                소제목 폰트크기
+                소메뉴 폰트크기
               </label>
               <input
                 type="text"
@@ -1336,9 +1336,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="p-6 space-y-4 flex-1 overflow-y-auto">
-              {/* 대제목 입력 영역 */}
+              {/* 대메뉴 입력 영역 */}
               <div className="bg-gray-700 border border-gray-600 rounded-lg h-72 p-4 flex flex-col">
-                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">대제목</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">대메뉴</label>
                 <textarea
                   value={easyUploadData.menus}
                   onChange={(e) => setEasyUploadData(prev => ({ ...prev, menus: e.target.value }))}
@@ -1347,9 +1347,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 />
               </div>
               
-              {/* 소제목 입력 영역 */}
+              {/* 소메뉴 입력 영역 */}
               <div className="bg-gray-700 border border-gray-600 rounded-lg p-4 flex flex-col" style={{ height: '332.8px' }}>
-                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">소제목</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">소메뉴</label>
                 <textarea
                   value={easyUploadData.subtitles}
                   onChange={(e) => setEasyUploadData(prev => ({ ...prev, subtitles: e.target.value }))}
@@ -1365,7 +1365,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   value={easyUploadData.tools}
                   onChange={(e) => setEasyUploadData(prev => ({ ...prev, tools: e.target.value }))}
                   className="flex-1 w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none min-h-0"
-                  placeholder="메모장에서 복사한 해석도구를 붙여넣으세요&#10;예: 1-1 해석도구 내용&#10;1-2 해석도구 내용"
+                  placeholder="메모장에서 복사한 해석도구를 붙여넣으세요&#10;예: 1-1. 해석도구 내용&#10;1-2. 해석도구 내용"
                 />
               </div>
             </div>
