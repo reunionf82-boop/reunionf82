@@ -59,6 +59,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const [showDeleteMenuConfirm, setShowDeleteMenuConfirm] = useState(false)
   const [menuFieldToDelete, setMenuFieldToDelete] = useState<number | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showEasyUploadModal, setShowEasyUploadModal] = useState(false)
+  const [easyUploadData, setEasyUploadData] = useState({
+    menus: '',
+    subtitles: '',
+    tools: ''
+  })
 
   // 초기 데이터 로드 (수정 모드)
   useEffect(() => {
@@ -453,6 +459,128 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     setShowThumbnailModal(true)
   }
 
+  // 쉬운 업로드 파싱 및 적용 함수
+  const parseAndApplyEasyUpload = () => {
+    try {
+      // 각 텍스트를 줄바꿈으로 분리
+      const menuLines = easyUploadData.menus.split('\n').filter(line => line.trim())
+      const subtitleLines = easyUploadData.subtitles.split('\n').filter(line => line.trim())
+      const toolLines = easyUploadData.tools.split('\n').filter(line => line.trim())
+      
+      // 첫번째 숫자 추출 함수
+      const extractFirstNumber = (text: string): number | null => {
+        const match = text.match(/^(\d+)/)
+        return match ? parseInt(match[1]) : null
+      }
+      
+      // 그룹별로 데이터 정리
+      interface MenuGroup {
+        menuNumber: number
+        menuTitle: string
+        subtitles: Array<{ subtitle: string; tool: string }>
+      }
+      
+      const groups: { [key: number]: MenuGroup } = {}
+      
+      // 대제목 파싱 (숫자 포함하여 그대로 사용)
+      menuLines.forEach(line => {
+        const menuNumber = extractFirstNumber(line)
+        if (menuNumber) {
+          const menuTitle = line.trim()
+          if (!groups[menuNumber]) {
+            groups[menuNumber] = {
+              menuNumber,
+              menuTitle,
+              subtitles: []
+            }
+          } else {
+            groups[menuNumber].menuTitle = menuTitle
+          }
+        }
+      })
+      
+      // 소제목 파싱 (숫자 포함하여 그대로 사용)
+      subtitleLines.forEach(line => {
+        const menuNumber = extractFirstNumber(line)
+        if (menuNumber) {
+          const subtitleText = line.trim()
+          if (!groups[menuNumber]) {
+            groups[menuNumber] = {
+              menuNumber,
+              menuTitle: '',
+              subtitles: []
+            }
+          }
+          groups[menuNumber].subtitles.push({ subtitle: subtitleText, tool: '' })
+        }
+      })
+      
+      // 해석도구 파싱 (소제목과 순서대로 매칭, 숫자 포함하여 그대로 사용)
+      toolLines.forEach((line, toolIndex) => {
+        const menuNumber = extractFirstNumber(line)
+        if (menuNumber && groups[menuNumber]) {
+          // 해석도구는 그대로 사용 (숫자 포함)
+          const toolText = line.trim()
+          
+          // 해당 메뉴의 해석도구만 필터링
+          const sameMenuToolLines = toolLines.filter(l => extractFirstNumber(l) === menuNumber)
+          const toolIndexInMenu = sameMenuToolLines.indexOf(line)
+          
+          // 같은 인덱스의 소제목에 해석도구 할당
+          if (groups[menuNumber].subtitles[toolIndexInMenu]) {
+            groups[menuNumber].subtitles[toolIndexInMenu].tool = toolText
+          }
+        }
+      })
+      
+      // 그룹 번호 순서대로 정렬
+      const sortedGroups = Object.values(groups).sort((a, b) => a.menuNumber - b.menuNumber)
+      
+      if (sortedGroups.length === 0) {
+        alert('파싱할 데이터가 없습니다. 형식을 확인해주세요.')
+        return
+      }
+      
+      // 첫 번째 그룹은 firstMenuField에, 나머지는 menuFields에 추가
+      const firstGroup = sortedGroups[0]
+      const remainingGroups = sortedGroups.slice(1)
+      
+      // firstMenuField 업데이트 (썸네일은 기존 것 유지, 소제목 썸네일은 비움)
+      setFirstMenuField({
+        value: firstGroup.menuTitle,
+        thumbnail: firstMenuField.thumbnail || '', // 기존 썸네일 유지
+        subtitles: firstGroup.subtitles.map((sub) => ({
+          id: Date.now() + Math.random(),
+          subtitle: sub.subtitle,
+          interpretation_tool: sub.tool,
+          thumbnail: undefined // 소제목 썸네일은 따로 업로드
+        }))
+      })
+      
+      // menuFields 업데이트 (새로 생성, 기존 썸네일은 유지하지 않음)
+      const newMenuFields = remainingGroups.map((group, groupIndex) => ({
+        id: Date.now() + 1000 + groupIndex,
+        value: group.menuTitle,
+        thumbnail: undefined,
+        subtitles: group.subtitles.map((sub, subIndex) => ({
+          id: Date.now() + 2000 + groupIndex * 100 + subIndex,
+          subtitle: sub.subtitle,
+          interpretation_tool: sub.tool,
+          thumbnail: undefined // 소제목 썸네일은 따로 업로드
+        }))
+      }))
+      
+      setMenuFields(newMenuFields)
+      
+      // 모달 닫기
+      setShowEasyUploadModal(false)
+      setEasyUploadData({ menus: '', subtitles: '', tools: '' })
+    } catch (error) {
+      console.error('파싱 오류:', error)
+      alert('데이터 파싱 중 오류가 발생했습니다. 형식을 확인해주세요.')
+    }
+  }
+
   const handleThumbnailSelect = (url: string) => {
     if (currentThumbnailField === 'main') {
       setFormData(prev => ({ ...prev, thumbnailUrl: url }))
@@ -767,14 +895,23 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
 
         {/* 상품 메뉴 구성 섹션 */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            상품 메뉴 구성
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-gray-300">
+              상품 메뉴 구성
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowEasyUploadModal(true)}
+              className="bg-pink-600 hover:bg-pink-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 text-sm"
+            >
+              쉬운 업로드
+            </button>
+          </div>
           
           {/* 북커버 썸네일 (첫 번째 대제목 전) */}
           <div className="mb-4">
             <label className="block text-xs font-medium text-gray-400 mb-2 text-center">
-              북커버 썸네일 (첫 번째 대제목 전, 9:16 비율)
+              북커버 (첫 번째 대제목 전, 9:16 비율)
             </label>
             <div className="flex justify-center">
             <button
@@ -1043,7 +1180,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           {/* 엔딩북커버 썸네일 (마지막 대제목 밑) */}
           <div className="mt-4">
             <label className="block text-xs font-medium text-gray-400 mb-2 text-center">
-              엔딩북커버 썸네일 (마지막 대제목 밑, 9:16 비율)
+              엔딩북커버 (마지막 대제목 밑, 9:16 비율)
             </label>
             <div className="flex justify-center">
             <button
@@ -1194,6 +1331,69 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       </form>
 
       {/* 썸네일 모달 */}
+      {/* 쉬운 업로드 모달 */}
+      {showEasyUploadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+              {/* 대제목 입력 영역 */}
+              <div className="bg-gray-700 border border-gray-600 rounded-lg h-72 p-4 flex flex-col">
+                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">대제목</label>
+                <textarea
+                  value={easyUploadData.menus}
+                  onChange={(e) => setEasyUploadData(prev => ({ ...prev, menus: e.target.value }))}
+                  className="flex-1 w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none min-h-0"
+                  placeholder="메모장에서 복사한 대제목을 붙여넣으세요&#10;예: 1. 첫 번째 대제목&#10;2. 두 번째 대제목"
+                />
+              </div>
+              
+              {/* 소제목 입력 영역 */}
+              <div className="bg-gray-700 border border-gray-600 rounded-lg p-4 flex flex-col" style={{ height: '332.8px' }}>
+                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">소제목</label>
+                <textarea
+                  value={easyUploadData.subtitles}
+                  onChange={(e) => setEasyUploadData(prev => ({ ...prev, subtitles: e.target.value }))}
+                  className="flex-1 w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none min-h-0"
+                  placeholder="메모장에서 복사한 소제목을 붙여넣으세요&#10;예: 1-1. 첫 번째 소제목&#10;1-2. 두 번째 소제목"
+                />
+              </div>
+              
+              {/* 해석도구 입력 영역 */}
+              <div className="bg-gray-700 border border-gray-600 rounded-lg p-4 flex flex-col" style={{ height: '332.8px' }}>
+                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">해석도구</label>
+                <textarea
+                  value={easyUploadData.tools}
+                  onChange={(e) => setEasyUploadData(prev => ({ ...prev, tools: e.target.value }))}
+                  className="flex-1 w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none min-h-0"
+                  placeholder="메모장에서 복사한 해석도구를 붙여넣으세요&#10;예: 1-1 해석도구 내용&#10;1-2 해석도구 내용"
+                />
+              </div>
+            </div>
+            
+            {/* 하단 버튼 */}
+            <div className="p-4 border-t border-gray-600 flex gap-3 justify-center">
+              <button
+                onClick={() => {
+                  parseAndApplyEasyUpload()
+                }}
+                className="bg-pink-600 hover:bg-pink-500 text-white font-medium px-8 py-3 rounded-lg transition-colors duration-200"
+              >
+                반영
+              </button>
+              <button
+                onClick={() => {
+                  setShowEasyUploadModal(false)
+                  setEasyUploadData({ menus: '', subtitles: '', tools: '' })
+                }}
+                className="bg-gray-700 hover:bg-gray-600 text-white font-medium px-8 py-3 rounded-lg transition-colors duration-200"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ThumbnailModal
         isOpen={showThumbnailModal}
         onClose={() => setShowThumbnailModal(false)}
