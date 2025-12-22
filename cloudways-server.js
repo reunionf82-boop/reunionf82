@@ -42,9 +42,9 @@ app.options('*', (req, res) => {
 
 // 4. 점사 API 엔드포인트
 app.post('/chat', async (req, res) => {
-    // 타임아웃을 20분(1200초)으로 넉넉하게 설정
-    req.setTimeout(1200000); // 20분
-    res.setTimeout(1200000);
+    // 타임아웃을 30분(1800초)으로 넉넉하게 설정
+    req.setTimeout(1800000); // 30분
+    res.setTimeout(1800000);
 
     console.log('=== 점사 API 요청 수신 ===');
     console.log('요청 본문 키:', Object.keys(req.body));

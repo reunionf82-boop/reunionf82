@@ -13,3 +13,5 @@ ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS fortune_view_mode TEXT DEFAULT
 
 
 
+
+

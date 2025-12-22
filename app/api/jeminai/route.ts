@@ -537,60 +537,28 @@ ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 �
           return { completedSubtitles, completedMenus }
         }
         
-        try {
-          // 재시도 로직 (최대 3번)
-          let lastError: any = null
-          const maxRetries = 3
-          let streamResult: any = null
-          
-          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        // 재시도 로직 (최대 3번) - API 호출 + 스트림 읽기 전체를 재시도
+        let lastError: any = null
+        const maxRetries = 3
+        let streamResult: any = null
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-              console.log(`스트리밍 API 호출 시도 ${attempt}/${maxRetries}`)
+              // 매 시도마다 초기화 (단, hasSentPartialDone과 hasSentTimeoutWarning은 유지)
+              fullText = ''
+              isFirstChunk = true
+              streamResult = null
+              
+              console.log(`스트리밍 API 호출 + 스트림 읽기 시도 ${attempt}/${maxRetries}`)
               streamResult = await geminiModel.generateContentStream(prompt)
-              lastError = null
-              break // 성공하면 루프 종료
-            } catch (apiError: any) {
-              lastError = apiError
-              const errorMessage = apiError.message || String(apiError)
-              console.error(`API 호출 실패 (시도 ${attempt}/${maxRetries}):`, errorMessage)
-              console.error('에러 상세:', {
-                name: apiError.name,
-                code: apiError.code,
-                status: apiError.status,
-                stack: apiError.stack?.substring(0, 500)
-              })
               
-              // 재시도 가능한 에러 체크
-              const is429Error = errorMessage.includes('429') || apiError.status === 429
-              const isRetryableError = 
-                errorMessage.includes('500') ||
-                errorMessage.includes('503') ||
-                is429Error || // Rate limit
-                errorMessage.includes('timeout') ||
-                errorMessage.includes('ECONNRESET') ||
-                errorMessage.includes('ETIMEDOUT') ||
-                errorMessage.includes('network')
-              
-              // 재시도 가능한 에러이고 마지막 시도가 아니면 재시도
-              if (attempt < maxRetries && isRetryableError) {
-                const waitTime = attempt * 2000 // 2초, 4초, 6초 대기
-                console.log(`${waitTime}ms 대기 후 재시도... (재시도 가능한 에러: ${errorMessage})`)
-                await new Promise(resolve => setTimeout(resolve, waitTime))
-                continue
-              }
-              
-              // 마지막 시도이거나 재시도 불가능한 에러면 throw
-              throw apiError
-            }
-          }
-          
-          if (lastError) {
-            throw lastError
-          }
-          
-          // 스트림 데이터 읽기
-          try {
+              // 스트림 데이터 읽기
+              try {
             let chunkIndex = 0
+            let lastCompletionCheckChunk = 0 // 마지막 완료 체크 청크 인덱스
+            const COMPLETION_CHECK_INTERVAL = 50 // 50번째 청크마다 완료 여부 체크
+            let allSubtitlesCompletedEarly = false // 모든 소제목이 조기에 완료되었는지 플래그
+            
             for await (const chunk of streamResult.stream) {
               chunkIndex++
               // 타임아웃 직전 부분 완료 처리 (1차 요청 중단, 2차 요청으로 이어가기)
@@ -599,6 +567,65 @@ ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 �
               // 매 100번째 청크마다 경과 시간 로깅 (디버깅용)
               if (chunkIndex % 100 === 0 || elapsed >= 270000) {
                 console.log(`[청크 ${chunkIndex}] 경과 시간: ${Math.round(elapsed / 1000)}초 (${elapsed}ms), fullText 길이: ${fullText.length}자`)
+              }
+              
+              // chunkText를 먼저 처리
+              let chunkText = ''
+              try {
+                chunkText = chunk.text()
+                if (chunkText) {
+                  fullText += chunkText
+                  
+                  // 첫 번째 청크인 경우 시작 신호 전송
+                  if (isFirstChunk) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'start' })}\n\n`))
+                    isFirstChunk = false
+                  }
+                  
+                  // 청크 데이터 전송
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                    type: 'chunk', 
+                    text: chunkText,
+                    accumulatedLength: fullText.length
+                  })}\n\n`))
+                }
+              } catch (chunkError: any) {
+                console.error('청크 처리 중 에러:', chunkError)
+                // 청크 처리 에러는 로깅만 하고 계속 진행
+                // 전체 스트림이 실패하지 않도록 함
+              }
+              
+              // 모든 소제목 완료 여부 주기적 체크 (50번째 청크마다 또는 fullText가 충분히 길어졌을 때)
+              // chunkText 추가 후에 체크하여 최신 상태 확인
+              if (chunkIndex - lastCompletionCheckChunk >= COMPLETION_CHECK_INTERVAL && fullText.trim().length > 100) {
+                // HTML 코드 블록 제거 (있는 경우) - 파싱 전에 정리
+                let htmlForParsing = fullText.trim()
+                const htmlBlockMatch = htmlForParsing.match(/```html\s*([\s\S]*?)\s*```/)
+                if (htmlBlockMatch) {
+                  htmlForParsing = htmlBlockMatch[1].trim()
+                } else {
+                  const codeBlockMatch = htmlForParsing.match(/```\s*([\s\S]*?)\s*```/)
+                  if (codeBlockMatch) {
+                    htmlForParsing = codeBlockMatch[1].trim()
+                  }
+                }
+                
+                // 완료된 메뉴/소제목 파싱
+                const { completedSubtitles } = parseCompletedSubtitles(htmlForParsing, menu_subtitles)
+                const allSubtitlesCompleted = completedSubtitles.length === menu_subtitles.length
+                
+                if (allSubtitlesCompleted) {
+                  console.log(`✅ [청크 ${chunkIndex}] 모든 소제목이 완료되었습니다! 스트림을 즉시 중단합니다.`)
+                  console.log(`완료된 소제목: ${completedSubtitles.length}/${menu_subtitles.length}개`)
+                  console.log(`fullText 길이: ${fullText.length}자`)
+                  
+                  allSubtitlesCompletedEarly = true
+                  // 즉시 루프 종료하여 스트림 읽기 중단
+                  break // for await 루프를 즉시 종료
+                } else {
+                  lastCompletionCheckChunk = chunkIndex
+                  // 완료되지 않았으면 계속 진행
+                }
               }
               
               // 280초 경과 시 로그 출력 (디버깅용) - 매 청크마다 체크
@@ -695,30 +722,6 @@ ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 �
                 console.warn(`타임아웃 경고: ${Math.round(elapsed / 1000)}초 경과, 타임아웃까지 약 ${Math.round((MAX_DURATION - elapsed) / 1000)}초 남음`)
                 hasSentTimeoutWarning = true
               }
-              
-              try {
-                const chunkText = chunk.text()
-                if (chunkText) {
-                  fullText += chunkText
-                  
-                  // 첫 번째 청크인 경우 시작 신호 전송
-                  if (isFirstChunk) {
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'start' })}\n\n`))
-                    isFirstChunk = false
-                  }
-                  
-                  // 청크 데이터 전송
-                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                    type: 'chunk', 
-                    text: chunkText,
-                    accumulatedLength: fullText.length
-                  })}\n\n`))
-                }
-              } catch (chunkError: any) {
-                console.error('청크 처리 중 에러:', chunkError)
-                // 청크 처리 에러는 로깅만 하고 계속 진행
-                // 전체 스트림이 실패하지 않도록 함
-              }
             }
             
             // 스트림 루프 종료 시 경과 시간 로깅
@@ -730,18 +733,85 @@ ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 �
             console.log(`280초 경과 여부: ${finalElapsed >= TIMEOUT_PARTIAL ? '예' : '아니오'}`)
             console.log(`hasSentPartialDone: ${hasSentPartialDone}`)
             console.log(`isSecondRequest: ${isSecondRequest}`)
+            console.log(`allSubtitlesCompletedEarly: ${allSubtitlesCompletedEarly}`)
             console.log(`=== 스트림 루프 종료 ===`)
-          } catch (streamReadError: any) {
-            console.error('스트림 읽기 중 에러:', streamReadError)
-            // 스트림 읽기 에러 발생 시, 지금까지 받은 데이터로 처리 시도
-            if (fullText.trim() && fullText.trim().length > 100) {
-              console.warn('스트림 읽기 중 에러 발생했지만 부분 데이터가 충분함. 계속 처리합니다.')
-              // 부분 데이터가 충분하면 에러를 throw하지 않고 계속 진행
-            } else {
-              // 부분 데이터가 없거나 너무 적으면 에러 throw
-              throw streamReadError
+            
+            // 모든 소제목이 조기에 완료된 경우 즉시 완료 처리
+            if (allSubtitlesCompletedEarly) {
+              console.log('=== 모든 소제목 조기 완료: 즉시 완료 처리 ===')
+              
+              // HTML 코드 블록 제거 및 정리
+              let cleanHtml = fullText.trim()
+              const htmlBlockMatch = cleanHtml.match(/```html\s*([\s\S]*?)\s*```/)
+              if (htmlBlockMatch) {
+                cleanHtml = htmlBlockMatch[1].trim()
+                console.log('HTML 코드 블록 제거됨')
+              } else {
+                const codeBlockMatch = cleanHtml.match(/```\s*([\s\S]*?)\s*```/)
+                if (codeBlockMatch) {
+                  cleanHtml = codeBlockMatch[1].trim()
+                  console.log('코드 블록 제거됨')
+                }
+              }
+              
+              // HTML 정리
+              cleanHtml = cleanHtml.replace(/(<\/h3>)\s+(<div class="subtitle-content">)/g, '$1$2')
+              cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content"[^>]*>)/g, '$1$2')
+              cleanHtml = cleanHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
+              cleanHtml = cleanHtml.replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+              cleanHtml = cleanHtml.replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+              cleanHtml = cleanHtml.replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+              cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+              cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+              cleanHtml = cleanHtml.replace(/\*\*/g, '')
+              
+              console.log(`✅ 조기 완료 처리: HTML 길이 ${cleanHtml.length}자`)
+              
+              // 완료 신호 즉시 전송
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                type: 'done',
+                html: cleanHtml,
+                isTruncated: false,
+                finishReason: 'STOP',
+                usage: undefined,
+              })}\n\n`))
+              
+              controller.close()
+              console.log('✅ 모든 소제목 조기 완료: 스트림 종료')
+              return // 조기 완료 처리 완료, 이후 로직 건너뛰기
             }
-          }
+              } catch (streamReadError: any) {
+                console.error('스트림 읽기 중 에러:', streamReadError)
+                const streamErrorMessage = streamReadError?.message || String(streamReadError)
+                
+                // 재시도 가능한 에러 체크
+                const is429Error = streamErrorMessage.includes('429') || streamReadError?.status === 429
+                const isRetryableStreamError = 
+                  streamErrorMessage.includes('Failed to parse stream') ||
+                  streamErrorMessage.includes('500') ||
+                  streamErrorMessage.includes('503') ||
+                  is429Error || // Rate limit
+                  streamErrorMessage.includes('timeout') ||
+                  streamErrorMessage.includes('ECONNRESET') ||
+                  streamErrorMessage.includes('ETIMEDOUT') ||
+                  streamErrorMessage.includes('network')
+                
+                // 부분 데이터가 충분하면 에러를 throw하지 않고 계속 진행
+                if (fullText.trim() && fullText.trim().length > 100) {
+                  console.warn('스트림 읽기 중 에러 발생했지만 부분 데이터가 충분함. 계속 처리합니다.')
+                  // 부분 데이터가 충분하면 재시도하지 않고 계속 진행
+                  break // 스트림 읽기 루프 종료, 이후 처리 계속
+                } else {
+                  // 부분 데이터가 없거나 너무 적으면
+                  // 재시도 가능한 에러면 throw하여 외부 재시도 루프에서 처리
+                  if (isRetryableStreamError) {
+                    throw streamReadError // 재시도 루프로 전달
+                  } else {
+                    // 재시도 불가능한 에러면 throw
+                    throw streamReadError
+                  }
+                }
+              }
           
           // 응답 완료 처리
           let response: any
@@ -826,23 +896,54 @@ ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 �
           // ** 문자 제거 (마크다운 강조 표시 제거)
           cleanHtml = cleanHtml.replace(/\*\*/g, '')
           
+          // finishReason이 MAX_TOKENS인 경우에도 실제로 모든 소제목이 완료되었는지 확인
+          let actualIsTruncated = isTruncated
+          let actualFinishReason = finishReason
+          
+          if (finishReason === 'MAX_TOKENS') {
+            console.log('=== MAX_TOKENS 감지: 실제 점사 완료 여부 확인 ===')
+            const { completedSubtitles } = parseCompletedSubtitles(cleanHtml, menu_subtitles)
+            const allSubtitlesCompleted = completedSubtitles.length === menu_subtitles.length
+            
+            console.log(`전체 소제목: ${menu_subtitles.length}개`)
+            console.log(`완료된 소제목: ${completedSubtitles.length}개`)
+            console.log(`모든 소제목 완료 여부: ${allSubtitlesCompleted ? '✅ 예' : '❌ 아니오'}`)
+            
+            if (allSubtitlesCompleted) {
+              console.log('✅ 점사가 모두 완료되었습니다. MAX_TOKENS는 점사 완료 후 추가 생성이 발생한 것으로 보입니다.')
+              console.log('✅ isTruncated를 false로 설정하고 finishReason을 STOP으로 변경합니다.')
+              actualIsTruncated = false
+              actualFinishReason = 'STOP'
+            } else {
+              console.log('❌ 일부 소제목이 미완료 상태입니다. MAX_TOKENS로 인한 잘림으로 처리합니다.')
+              console.log(`미완료 소제목: ${menu_subtitles.length - completedSubtitles.length}개`)
+            }
+            console.log('=== MAX_TOKENS 확인 완료 ===')
+          }
+          
           if (isSecondRequest) {
             console.log('=== 2차 요청 완료 ===')
             console.log('2차 요청 응답 HTML 길이:', cleanHtml.length, '자')
-            console.log('Finish Reason:', finishReason)
+            console.log('원본 Finish Reason:', finishReason)
+            console.log('실제 Finish Reason:', actualFinishReason)
+            console.log('원본 isTruncated:', isTruncated)
+            console.log('실제 isTruncated:', actualIsTruncated)
             console.log('=== 2차 요청 완료 ===')
           } else {
             console.log('Gemini API 스트리밍 완료 (1차 요청)')
             console.log('응답 HTML 길이:', cleanHtml.length, '자')
-            console.log('Finish Reason:', finishReason)
+            console.log('원본 Finish Reason:', finishReason)
+            console.log('실제 Finish Reason:', actualFinishReason)
+            console.log('원본 isTruncated:', isTruncated)
+            console.log('실제 isTruncated:', actualIsTruncated)
           }
           
           // 완료 신호 전송
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'done',
             html: cleanHtml,
-            isTruncated: isTruncated,
-            finishReason: finishReason,
+            isTruncated: actualIsTruncated,
+            finishReason: actualFinishReason,
             usage: response.usageMetadata ? {
               promptTokens: response.usageMetadata.promptTokenCount || 0,
               candidatesTokens: response.usageMetadata.candidatesTokenCount || 0,
@@ -850,36 +951,65 @@ ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 �
             } : undefined,
           })}\n\n`))
           
-          controller.close()
-        } catch (error: any) {
-          console.error('스트리밍 중 에러:', error)
-          console.error('에러 상세:', {
-            name: error?.name,
-            message: error?.message,
-            code: error?.code,
-            status: error?.status,
-            stack: error?.stack?.substring(0, 1000)
-          })
+              controller.close()
+              lastError = null
+              break // 스트림 처리 성공, 재시도 루프 종료
+            } catch (error: any) {
+              lastError = error
+              const errorMessage = error?.message || error?.toString() || ''
+              console.error(`스트리밍 중 에러 (시도 ${attempt}/${maxRetries}):`, errorMessage)
+              console.error('에러 상세:', {
+                name: error?.name,
+                message: error?.message,
+                code: error?.code,
+                status: error?.status,
+                stack: error?.stack?.substring(0, 1000)
+              })
+              
+              // 재시도 가능한 에러 체크
+              const is429Error = errorMessage.includes('429') || error?.status === 429
+              const isRetryableError = 
+                errorMessage.includes('Failed to parse stream') ||
+                errorMessage.includes('500') ||
+                errorMessage.includes('503') ||
+                is429Error || // Rate limit
+                errorMessage.includes('timeout') ||
+                errorMessage.includes('ECONNRESET') ||
+                errorMessage.includes('ETIMEDOUT') ||
+                errorMessage.includes('network')
+              
+              // 재시도 가능한 에러이고 마지막 시도가 아니면 재시도
+              if (attempt < maxRetries && isRetryableError) {
+                const waitTime = attempt * 2000 // 2초, 4초, 6초 대기
+                console.log(`${waitTime}ms 대기 후 재시도... (재시도 가능한 에러: ${errorMessage})`)
+                await new Promise(resolve => setTimeout(resolve, waitTime))
+                continue // 재시도
+              }
+              
+              // 마지막 시도이거나 재시도 불가능한 에러면 throw하지 않고 아래 에러 처리로 진행
+            }
+          }
           
-          // 타임아웃 에러이지만 부분 데이터가 있으면 완료 처리
-          const errorMessage = error?.message || error?.toString() || ''
-          const isTimeoutError = errorMessage.includes('timeout') || 
-                                 errorMessage.includes('타임아웃') || 
-                                 errorMessage.includes('Function execution timeout') ||
-                                 errorMessage.includes('maxDuration')
-          
-          // 280초 경과 체크 (타임아웃 에러가 아니어도) - catch 블록에서도 체크
-          const elapsed = Date.now() - streamStartTime
-          console.warn(`=== catch 블록: 경과 시간 체크 ===`)
-          console.warn(`경과 시간: ${Math.round(elapsed / 1000)}초 (${elapsed}ms), 데이터 길이: ${fullText.length}자`)
-          console.warn(`fullText.trim().length: ${fullText.trim().length}자`)
-          console.warn(`hasSentPartialDone: ${hasSentPartialDone}`)
-          console.warn(`isSecondRequest: ${isSecondRequest}`)
-          console.warn(`TIMEOUT_PARTIAL: ${TIMEOUT_PARTIAL}ms (${TIMEOUT_PARTIAL / 1000}초)`)
-          console.warn(`elapsed >= TIMEOUT_PARTIAL: ${elapsed >= TIMEOUT_PARTIAL}`)
-          console.warn(`fullText.trim().length > 50: ${fullText.trim().length > 50}`)
-          
-          if (elapsed >= TIMEOUT_PARTIAL && fullText.trim() && fullText.trim().length > 50 && !hasSentPartialDone && !isSecondRequest) {
+          // 재시도가 모두 실패한 경우 에러 처리
+          if (lastError) {
+            const errorMessage = lastError?.message || lastError?.toString() || ''
+            const isTimeoutError = errorMessage.includes('timeout') || 
+                                   errorMessage.includes('타임아웃') || 
+                                   errorMessage.includes('Function execution timeout') ||
+                                   errorMessage.includes('maxDuration')
+            
+            // 280초 경과 체크 (타임아웃 에러가 아니어도) - catch 블록에서도 체크
+            const elapsed = Date.now() - streamStartTime
+            console.warn(`=== 재시도 실패 후 에러 처리: 경과 시간 체크 ===`)
+            console.warn(`경과 시간: ${Math.round(elapsed / 1000)}초 (${elapsed}ms), 데이터 길이: ${fullText.length}자`)
+            console.warn(`fullText.trim().length: ${fullText.trim().length}자`)
+            console.warn(`hasSentPartialDone: ${hasSentPartialDone}`)
+            console.warn(`isSecondRequest: ${isSecondRequest}`)
+            console.warn(`TIMEOUT_PARTIAL: ${TIMEOUT_PARTIAL}ms (${TIMEOUT_PARTIAL / 1000}초)`)
+            console.warn(`elapsed >= TIMEOUT_PARTIAL: ${elapsed >= TIMEOUT_PARTIAL}`)
+            console.warn(`fullText.trim().length > 50: ${fullText.trim().length > 50}`)
+            
+            if (elapsed >= TIMEOUT_PARTIAL && fullText.trim() && fullText.trim().length > 50 && !hasSentPartialDone && !isSecondRequest) {
             console.warn(`=== catch 블록에서 280초 경과 감지, partial_done 전송 시도 ===`)
             console.warn(`경과 시간: ${Math.round(elapsed / 1000)}초 (${elapsed}ms), 데이터 길이: ${fullText.length}자`)
             
@@ -990,45 +1120,49 @@ ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 �
             }
           }
           
-          // 사용자 친화적 에러 메시지 생성
-          let userFriendlyMessage: string | null = '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
-          const errorStatus = error?.status || error?.code || ''
-          
-          // 429 Rate Limit 에러 처리 - 점사중... 메시지가 이미 떠 있으므로 에러 메시지 전송하지 않음
-          if (errorMessage.includes('429') || errorStatus === 429 || errorStatus === '429') {
-            userFriendlyMessage = null // 에러 메시지 전송하지 않음 (점사중... 메시지가 이미 표시됨)
-          } 
-          // 500, 503 서버 에러
-          else if (errorMessage.includes('500') || errorMessage.includes('503') || errorStatus === 500 || errorStatus === 503) {
-            userFriendlyMessage = '서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
-          }
-          // 타임아웃 에러
-          else if (isTimeoutError) {
-            userFriendlyMessage = '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
-          }
-          // 네트워크 에러
-          else if (errorMessage.includes('network') || errorMessage.includes('ECONNRESET') || errorMessage.includes('ETIMEDOUT')) {
-            userFriendlyMessage = '네트워크 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
-          }
-          
-          // 에러 메시지가 필요한 경우에만 전송
-          if (userFriendlyMessage) {
+            // 사용자 친화적 에러 메시지 생성
+            let userFriendlyMessage: string | null = '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
+            const errorStatus = lastError?.status || lastError?.code || ''
+            
+            // 429 Rate Limit 에러 처리 - 점사중... 메시지가 이미 떠 있으므로 에러 메시지 전송하지 않음
+            if (errorMessage.includes('429') || errorStatus === 429 || errorStatus === '429') {
+              userFriendlyMessage = null // 에러 메시지 전송하지 않음 (점사중... 메시지가 이미 표시됨)
+            } 
+            // 500, 503 서버 에러
+            else if (errorMessage.includes('500') || errorMessage.includes('503') || errorStatus === 500 || errorStatus === 503) {
+              userFriendlyMessage = '서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+            }
+            // 타임아웃 에러
+            else if (isTimeoutError) {
+              userFriendlyMessage = '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
+            }
+            // 네트워크 에러
+            else if (errorMessage.includes('network') || errorMessage.includes('ECONNRESET') || errorMessage.includes('ETIMEDOUT')) {
+              userFriendlyMessage = '네트워크 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+            }
+            // Failed to parse stream 에러
+            else if (errorMessage.includes('Failed to parse stream')) {
+              userFriendlyMessage = '점사 응답 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+            }
+            
+            // 에러 메시지가 필요한 경우에만 전송
+            if (userFriendlyMessage) {
+              try {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                  type: 'error', 
+                  error: userFriendlyMessage
+                })}\n\n`))
+              } catch (enqueueError: any) {
+                console.error('에러 메시지 전송 실패:', enqueueError)
+              }
+            }
+            
             try {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                type: 'error', 
-                error: userFriendlyMessage
-              })}\n\n`))
-            } catch (enqueueError: any) {
-              console.error('에러 메시지 전송 실패:', enqueueError)
+              controller.close()
+            } catch (closeError: any) {
+              console.error('스트림 닫기 실패:', closeError)
             }
           }
-          
-          try {
-            controller.close()
-          } catch (closeError: any) {
-            console.error('스트림 닫기 실패:', closeError)
-          }
-        }
       }
     })
     
@@ -1051,10 +1185,26 @@ ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 �
     console.error('에러 스택:', error?.stack)
     console.error('============================')
     
-    const errorMessage = error?.message || error?.toString() || '서버 에러 발생'
+    const rawErrorMessage = error?.message || error?.toString() || '서버 에러 발생'
+    
+    // 기술적인 에러 메시지를 사용자 친화적인 메시지로 변환
+    let userFriendlyMessage = '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
+    
+    if (rawErrorMessage.includes('Failed to parse stream')) {
+      userFriendlyMessage = '점사 응답 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+    } else if (rawErrorMessage.includes('429') || rawErrorMessage.includes('Rate limit')) {
+      userFriendlyMessage = '점사 서비스 사용량이 많습니다. 잠시 후 다시 시도해주세요.'
+    } else if (rawErrorMessage.includes('500') || rawErrorMessage.includes('503')) {
+      userFriendlyMessage = '서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+    } else if (rawErrorMessage.includes('timeout') || rawErrorMessage.includes('TIMEOUT')) {
+      userFriendlyMessage = '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
+    } else if (rawErrorMessage.includes('network') || rawErrorMessage.includes('ECONNRESET') || rawErrorMessage.includes('ETIMEDOUT')) {
+      userFriendlyMessage = '네트워크 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+    }
+    
     return NextResponse.json(
       { 
-        error: errorMessage,
+        error: userFriendlyMessage,
         details: error?.stack || error?.toString()
       },
       { status: 500 }

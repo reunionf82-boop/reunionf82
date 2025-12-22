@@ -690,6 +690,9 @@ serve(async (req) => {
           console.log(`타임아웃 설정: ${TIMEOUT_PARTIAL/1000}초 (부분 완료), ${MAX_DURATION/1000}초 (최대)`)
           
           let chunkCount = 0
+          let lastCompletionCheckChunk = 0
+          const COMPLETION_CHECK_INTERVAL = 50
+          let allSubtitlesCompletedEarly = false
           
           // Gemini API 스트리밍 호출
           const { finishReason } = await callGeminiStream(
@@ -720,11 +723,83 @@ serve(async (req) => {
                   accumulatedLength: fullText.length
                 })}\n\n`))
 
-                // 2차 요청 자동 시작 로직 제거 (사용자 요청)
-                // 타임아웃이 발생하면 그냥 완료 처리
+                // 모든 소제목 완료 여부 주기적 체크 (50번째 청크마다)
+                if (chunkCount - lastCompletionCheckChunk >= COMPLETION_CHECK_INTERVAL && fullText.trim().length > 100) {
+                  // HTML 코드 블록 제거
+                  let htmlForParsing = fullText.trim()
+                  const htmlBlockMatch = htmlForParsing.match(/```html\s*([\s\S]*?)\s*```/)
+                  if (htmlBlockMatch) {
+                    htmlForParsing = htmlBlockMatch[1].trim()
+                  } else {
+                    const codeBlockMatch = htmlForParsing.match(/```\s*([\s\S]*?)\s*```/)
+                    if (codeBlockMatch) {
+                      htmlForParsing = codeBlockMatch[1].trim()
+                    }
+                  }
+                  
+                  // 완료된 메뉴/소제목 파싱
+                  const { completedSubtitles } = parseCompletedSubtitles(htmlForParsing, menu_subtitles)
+                  const allSubtitlesCompleted = completedSubtitles.length === menu_subtitles.length
+                  
+                  if (allSubtitlesCompleted) {
+                    console.log(`✅ [청크 ${chunkCount}] 모든 소제목이 완료되었습니다! 스트림을 즉시 중단합니다.`)
+                    console.log(`완료된 소제목: ${completedSubtitles.length}/${menu_subtitles.length}개`)
+                    console.log(`fullText 길이: ${fullText.length}자`)
+                    
+                    allSubtitlesCompletedEarly = true
+                    
+                    // HTML 정리
+                    let cleanHtml = fullText.trim()
+                    const htmlBlockMatch2 = cleanHtml.match(/```html\s*([\s\S]*?)\s*```/)
+                    if (htmlBlockMatch2) {
+                      cleanHtml = htmlBlockMatch2[1].trim()
+                    } else {
+                      const codeBlockMatch2 = cleanHtml.match(/```\s*([\s\S]*?)\s*```/)
+                      if (codeBlockMatch2) {
+                        cleanHtml = codeBlockMatch2[1].trim()
+                      }
+                    }
+                    
+                    cleanHtml = cleanHtml.replace(/(<\/h3>)\s+(<div class="subtitle-content">)/g, '$1$2')
+                    cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content"[^>]*>)/g, '$1$2')
+                    cleanHtml = cleanHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
+                    cleanHtml = cleanHtml.replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                    cleanHtml = cleanHtml.replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                    cleanHtml = cleanHtml.replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                    cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                    cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                    cleanHtml = cleanHtml.replace(/\*\*/g, '')
+                    
+                    console.log(`✅ 조기 완료 처리: HTML 길이 ${cleanHtml.length}자`)
+                    
+                    // 완료 신호 즉시 전송
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                      type: 'done',
+                      html: cleanHtml,
+                      isTruncated: false,
+                      finishReason: 'STOP',
+                    })}\n\n`))
+                    
+                    controller.close()
+                    console.log('✅ 모든 소제목 조기 완료: 스트림 종료')
+                    
+                    // 조기 완료 신호 (callGeminiStream 함수에서 체크하여 스트림 종료할 수 있도록)
+                    // 하지만 callGeminiStream이 이를 지원하지 않으므로, 콜백에서 완료 처리만 수행
+                    // callGeminiStream은 계속 실행되지만 전송은 중단됨
+                    return // 콜백 종료 (하지만 callGeminiStream은 계속 실행됨)
+                  } else {
+                    lastCompletionCheckChunk = chunkCount
+                  }
+                }
               }
             }
           )
+          
+          // 조기 완료 처리된 경우 이후 로직 건너뛰기
+          if (allSubtitlesCompletedEarly) {
+            console.log('✅ 조기 완료 처리 완료, 이후 로직 건너뛰기')
+            return
+          }
 
           console.log(`=== Gemini API 스트리밍 완료 ===`)
           console.log(`총 청크 수: ${chunkCount}`)
@@ -762,13 +837,42 @@ serve(async (req) => {
           cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
           cleanHtml = cleanHtml.replace(/\*\*/g, '')
 
+          // finishReason이 MAX_TOKENS인 경우에도 실제로 모든 소제목이 완료되었는지 확인
+          let actualIsTruncated = finishReason === 'MAX_TOKENS' || !finishReason
+          let actualFinishReason = finishReason || 'STOP'
+          
+          if (finishReason === 'MAX_TOKENS') {
+            console.log('=== MAX_TOKENS 감지: 실제 점사 완료 여부 확인 ===')
+            const { completedSubtitles } = parseCompletedSubtitles(cleanHtml, menu_subtitles)
+            const allSubtitlesCompleted = completedSubtitles.length === menu_subtitles.length
+            
+            console.log(`전체 소제목: ${menu_subtitles.length}개`)
+            console.log(`완료된 소제목: ${completedSubtitles.length}개`)
+            console.log(`모든 소제목 완료 여부: ${allSubtitlesCompleted ? '✅ 예' : '❌ 아니오'}`)
+            
+            if (allSubtitlesCompleted) {
+              console.log('✅ 점사가 모두 완료되었습니다. MAX_TOKENS는 점사 완료 후 추가 생성이 발생한 것으로 보입니다.')
+              console.log('✅ isTruncated를 false로 설정하고 finishReason을 STOP으로 변경합니다.')
+              actualIsTruncated = false
+              actualFinishReason = 'STOP'
+            } else {
+              console.log('❌ 일부 소제목이 미완료 상태입니다. MAX_TOKENS로 인한 잘림으로 처리합니다.')
+              console.log(`미완료 소제목: ${menu_subtitles.length - completedSubtitles.length}개`)
+            }
+            console.log('=== MAX_TOKENS 확인 완료 ===')
+          }
+
           // 2차 요청 자동 시작 로직 제거됨 - 항상 done 전송
           console.log('✅ 스트림 완료, done 전송')
+          console.log('원본 Finish Reason:', finishReason)
+          console.log('실제 Finish Reason:', actualFinishReason)
+          console.log('원본 isTruncated:', finishReason === 'MAX_TOKENS' || !finishReason)
+          console.log('실제 isTruncated:', actualIsTruncated)
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'done',
             html: cleanHtml,
-            isTruncated: finishReason === 'MAX_TOKENS' || !finishReason,
-            finishReason: finishReason || 'STOP',
+            isTruncated: actualIsTruncated,
+            finishReason: actualFinishReason,
           })}\n\n`))
 
           controller.close()

@@ -390,11 +390,22 @@ export async function callJeminaiAPIStream(
                 console.log('HTML 길이:', data.html?.length || 0, '자')
                 console.log('Usage:', data.usage ? JSON.stringify(data.usage) : '없음')
                 
-                // MAX_TOKENS로 종료된 경우 경고
+                // MAX_TOKENS로 종료된 경우 처리
                 if (data.finishReason === 'MAX_TOKENS') {
-                  console.error('❌ 제미나이 API: MAX_TOKENS 한계에 도달하여 응답이 잘렸습니다.')
-                  console.error('❌ HTML 길이:', data.html?.length || 0, '자')
-                  console.error('❌ 현재 maxOutputTokens: 65536 (약 20000-30000자 한글 기준)')
+                  if (!data.isTruncated) {
+                    // 서버에서 모든 소제목이 완료되었는지 확인하여 isTruncated를 false로 설정한 경우
+                    console.log('✅ 제미나이 API: MAX_TOKENS로 종료되었지만, 서버에서 확인 결과 모든 소제목이 완료되었습니다.')
+                    console.log('✅ 점사가 정상적으로 완료되었습니다. (MAX_TOKENS는 점사 완료 후 추가 생성이 발생한 것으로 보입니다.)')
+                  } else {
+                    // 실제로 잘린 경우
+                    console.error('❌ 제미나이 API: MAX_TOKENS 한계에 도달하여 응답이 잘렸습니다.')
+                    console.error('❌ HTML 길이:', data.html?.length || 0, '자')
+                    console.error('❌ 현재 maxOutputTokens: 65536 (약 20000-30000자 한글 기준)')
+                  }
+                } else if (data.finishReason === 'STOP') {
+                  console.log('✅ 제미나이 API: 정상 완료 (STOP)')
+                } else if (!data.finishReason) {
+                  console.warn('⚠️ 제미나이 API: Finish Reason이 없습니다. 스트림이 완전히 전송되지 않았을 수 있습니다.')
                 }
                 
                 if (data.html) {
