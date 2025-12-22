@@ -268,33 +268,64 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         if (hasSubtitlesInMenuItems) {
           // 새 구조: menu_items에 subtitles가 포함되어 있음
           const firstItem = data.menu_items[0]
-          setFirstMenuField({
-            value: firstItem.value || '',
-            thumbnail: firstItem.thumbnail || '',
-            subtitles: firstItem.subtitles && firstItem.subtitles.length > 0 
-              ? firstItem.subtitles.map((s: any, idx: number) => ({
+          const firstMenuSubtitles = firstItem.subtitles && firstItem.subtitles.length > 0 
+            ? firstItem.subtitles.map((s: any, idx: number) => {
+                console.log('첫 번째 메뉴 소제목 썸네일 로드:', {
+                  subtitle: s.subtitle,
+                  thumbnail: s.thumbnail,
+                  thumbnailType: typeof s.thumbnail,
+                  hasThumbnail: !!s.thumbnail
+                })
+                return {
                   id: s.id || Date.now() + idx,
                   subtitle: s.subtitle || '',
                   interpretation_tool: s.interpretation_tool || '',
                   thumbnail: s.thumbnail || ''
-                }))
-              : [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
+                }
+              })
+            : [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
+          
+          const firstMenuValue = firstItem.value || ''
+          setFirstMenuField({
+            value: firstMenuValue,
+            thumbnail: firstItem.thumbnail || '',
+            // 대메뉴에 값이 있는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
+            subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
+              ? [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
+              : firstMenuSubtitles
           })
           
           // 나머지 메뉴 항목들
-          setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => ({
-            id: item.id || Date.now() + idx + 1000,
-            value: item.value || '',
-            thumbnail: item.thumbnail || '',
-            subtitles: item.subtitles && item.subtitles.length > 0
-              ? item.subtitles.map((s: any, subIdx: number) => ({
-                  id: s.id || Date.now() + idx * 1000 + subIdx,
-                  subtitle: s.subtitle || '',
-                  interpretation_tool: s.interpretation_tool || '',
-                  thumbnail: s.thumbnail || ''
-                }))
+          setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
+            const menuSubtitles = item.subtitles && item.subtitles.length > 0
+              ? item.subtitles.map((s: any, subIdx: number) => {
+                  console.log('메뉴 필드 소제목 썸네일 로드:', {
+                    menuValue: item.value,
+                    subtitle: s.subtitle,
+                    thumbnail: s.thumbnail,
+                    thumbnailType: typeof s.thumbnail,
+                    hasThumbnail: !!s.thumbnail
+                  })
+                  return {
+                    id: s.id || Date.now() + idx * 1000 + subIdx,
+                    subtitle: s.subtitle || '',
+                    interpretation_tool: s.interpretation_tool || '',
+                    thumbnail: s.thumbnail || ''
+                  }
+                })
               : [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '' }]
-          })))
+            
+            const menuValue = item.value || ''
+            return {
+              id: item.id || Date.now() + idx + 1000,
+              value: menuValue,
+              thumbnail: item.thumbnail || '',
+              // 대메뉴에 값이 있는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
+              subtitles: menuValue.trim().length > 0 && menuSubtitles.length === 0
+                ? [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '' }]
+                : menuSubtitles
+            }
+          }))
         } else {
           // 기존 구조: menu_subtitle과 interpretation_tool을 파싱 (하위 호환성)
           const menuSubtitles = data.menu_subtitle ? data.menu_subtitle.split('\n').filter((s: string) => s.trim()) : []
@@ -308,19 +339,29 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             thumbnail: '' // 기존 데이터에는 소제목 썸네일이 없음
           }))
           
-        setFirstMenuField({
-          value: data.menu_items[0].value || '',
-          thumbnail: data.menu_items[0].thumbnail || '',
-            subtitles: firstMenuSubtitles.length > 0 ? firstMenuSubtitles : [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
+          const firstMenuValue = data.menu_items[0].value || ''
+          setFirstMenuField({
+            value: firstMenuValue,
+            thumbnail: data.menu_items[0].thumbnail || '',
+            // 대메뉴에 값이 있는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
+            subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
+              ? [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
+              : (firstMenuSubtitles.length > 0 ? firstMenuSubtitles : [{ id: Date.now(), subtitle: '', interpretation_tool: '' }])
           })
           
-          // 나머지 메뉴 항목들 (소제목 없이)
-          setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => ({
-            id: item.id || Date.now() + idx + 1000,
-            value: item.value || '',
-            thumbnail: item.thumbnail || '',
-            subtitles: [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '' }]
-          })))
+          // 나머지 메뉴 항목들
+          setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
+            const menuValue = item.value || ''
+            return {
+              id: item.id || Date.now() + idx + 1000,
+              value: menuValue,
+              thumbnail: item.thumbnail || '',
+              // 대메뉴에 값이 있으면 디폴트 소메뉴 1개 추가
+              subtitles: menuValue.trim().length > 0
+                ? [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '' }]
+                : []
+            }
+          }))
         }
       } else {
         // 메뉴 항목이 없으면 기본값
@@ -541,34 +582,75 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         return
       }
       
+      // 숫자 접두사 추출 함수 (예: "1. " → "1.", "1-1. " → "1-1.")
+      const extractNumberPrefix = (text: string): string | null => {
+        const match = text.match(/^(\d+(?:-\d+)?\.)/)
+        return match ? match[1] : null
+      }
+      
       // 첫 번째 그룹은 firstMenuField에, 나머지는 menuFields에 추가
       const firstGroup = sortedGroups[0]
       const remainingGroups = sortedGroups.slice(1)
       
-      // firstMenuField 업데이트 (썸네일은 기존 것 유지, 소제목 썸네일은 비움)
+      // firstMenuField 업데이트 (썸네일은 기존 것 유지, 소제목 썸네일도 기존 것 유지)
+      const firstMenuPrefix = extractNumberPrefix(firstGroup.menuTitle)
+      const existingFirstMenu = firstMenuPrefix 
+        ? (extractNumberPrefix(firstMenuField.value) === firstMenuPrefix ? firstMenuField : null)
+        : firstMenuField // 접두사가 없으면 기존 firstMenuField 유지
+      
       setFirstMenuField({
         value: firstGroup.menuTitle,
-        thumbnail: firstMenuField.thumbnail || '', // 기존 썸네일 유지
-        subtitles: firstGroup.subtitles.map((sub) => ({
-          id: Date.now() + Math.random(),
-          subtitle: sub.subtitle,
-          interpretation_tool: sub.tool,
-          thumbnail: undefined // 소제목 썸네일은 따로 업로드
-        }))
+        thumbnail: existingFirstMenu?.thumbnail || '', // 기존 썸네일 유지
+        subtitles: firstGroup.subtitles.map((sub) => {
+          // 숫자 접두사로 매칭
+          const subtitlePrefix = extractNumberPrefix(sub.subtitle)
+          const existingSubtitle = subtitlePrefix 
+            ? existingFirstMenu?.subtitles.find(
+                existing => extractNumberPrefix(existing.subtitle) === subtitlePrefix
+              )
+            : undefined
+          
+          return {
+            id: existingSubtitle?.id || Date.now() + Math.random(),
+            subtitle: sub.subtitle,
+            interpretation_tool: sub.tool,
+            thumbnail: existingSubtitle?.thumbnail || undefined // 기존 썸네일 유지 (없으면 undefined)
+          }
+        })
       })
       
-      // menuFields 업데이트 (새로 생성, 기존 썸네일은 유지하지 않음)
-      const newMenuFields = remainingGroups.map((group, groupIndex) => ({
-        id: Date.now() + 1000 + groupIndex,
-        value: group.menuTitle,
-        thumbnail: undefined,
-        subtitles: group.subtitles.map((sub, subIndex) => ({
-          id: Date.now() + 2000 + groupIndex * 100 + subIndex,
-          subtitle: sub.subtitle,
-          interpretation_tool: sub.tool,
-          thumbnail: undefined // 소제목 썸네일은 따로 업로드
-        }))
-      }))
+      // menuFields 업데이트 (기존 썸네일 유지)
+      const newMenuFields = remainingGroups.map((group, groupIndex) => {
+        // 숫자 접두사로 매칭
+        const menuPrefix = extractNumberPrefix(group.menuTitle)
+        const existingMenu = menuPrefix
+          ? menuFields.find(
+              existing => extractNumberPrefix(existing.value) === menuPrefix
+            )
+          : undefined
+        
+        return {
+          id: existingMenu?.id || Date.now() + 1000 + groupIndex,
+          value: group.menuTitle,
+          thumbnail: existingMenu?.thumbnail || undefined, // 기존 썸네일 유지 (없으면 undefined)
+          subtitles: group.subtitles.map((sub, subIndex) => {
+            // 숫자 접두사로 매칭
+            const subtitlePrefix = extractNumberPrefix(sub.subtitle)
+            const existingSubtitle = subtitlePrefix && existingMenu
+              ? existingMenu.subtitles.find(
+                  existing => extractNumberPrefix(existing.subtitle) === subtitlePrefix
+                )
+              : undefined
+            
+            return {
+              id: existingSubtitle?.id || Date.now() + 2000 + groupIndex * 100 + subIndex,
+              subtitle: sub.subtitle,
+              interpretation_tool: sub.tool,
+              thumbnail: existingSubtitle?.thumbnail || undefined // 기존 썸네일 유지 (없으면 undefined)
+            }
+          })
+        }
+      })
       
       setMenuFields(newMenuFields)
       
@@ -619,14 +701,27 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       
       if (parts[1] === 'first') {
         // subtitle-first-{subtitleId} 형식
-        const subtitleId = parseInt(parts[2])
-        console.log('첫 번째 메뉴의 소제목 썸네일 업데이트:', subtitleId, url)
-        setFirstMenuField(prev => ({
-          ...prev,
-          subtitles: prev.subtitles.map(s => 
-            s.id === subtitleId ? { ...s, thumbnail: url } : s
-          )
-        }))
+        // 소수점이 포함된 ID를 처리하기 위해 parseFloat 사용
+        const subtitleIdStr = parts[2]
+        const subtitleId = parseFloat(subtitleIdStr)
+        console.log('첫 번째 메뉴의 소제목 썸네일 업데이트:', subtitleIdStr, subtitleId, url)
+        setFirstMenuField(prev => {
+          const updated = {
+            ...prev,
+            subtitles: prev.subtitles.map(s => {
+              // ID를 문자열로 변환하여 비교 (소수점 포함 ID 대응)
+              const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+              const targetId = parseFloat(subtitleIdStr)
+              if (sId === targetId || String(s.id) === subtitleIdStr) {
+                console.log('매칭된 소제목 찾음:', s.id, '->', url)
+                return { ...s, thumbnail: url }
+              }
+              return s
+            })
+          }
+          console.log('업데이트된 첫 번째 메뉴 subtitles:', updated.subtitles.map(s => ({ id: s.id, thumbnail: s.thumbnail })))
+          return updated
+        })
       } else if (parts[1] === 'menu') {
         // subtitle-menu-{menuId}-{subtitleId} 형식
         const menuIdStr = parts[2]
@@ -651,13 +746,16 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         
         setMenuFields(prevFields => {
           const updated = prevFields.map(f => {
-            // 타입 안전한 비교
-            const fId = Number(f.id)
-            if (fId === menuId) {
+            // 타입 안전한 비교 (소수점 포함 ID 대응)
+            const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+            const menuIdNum = parseFloat(menuIdStr)
+            if (fId === menuIdNum || String(f.id) === menuIdStr) {
               console.log('매칭된 메뉴 필드 찾음:', f.id, '소제목 개수:', f.subtitles.length)
               const updatedSubtitles = f.subtitles.map(s => {
-                const sId = Number(s.id)
-                if (sId === subtitleId) {
+                // 소수점 포함 ID 대응
+                const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+                const targetSubtitleId = parseFloat(subtitleIdStr)
+                if (sId === targetSubtitleId || String(s.id) === subtitleIdStr) {
                   console.log('소제목 썸네일 업데이트:', s.id, '->', url)
                   return { ...s, thumbnail: url }
                 }
@@ -937,14 +1035,29 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             <input
               type="text"
               value={firstMenuField.value}
-              onChange={(e) => setFirstMenuField(prev => ({ ...prev, value: e.target.value }))}
+              onChange={(e) => {
+                const newValue = e.target.value
+                setFirstMenuField(prev => {
+                  // 대메뉴에 값이 입력되었는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
+                  const hasValue = newValue.trim().length > 0
+                  const hasSubtitles = prev.subtitles && prev.subtitles.length > 0
+                  if (hasValue && !hasSubtitles) {
+                    return {
+                      ...prev,
+                      value: newValue,
+                      subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
+                    }
+                  }
+                  return { ...prev, value: newValue }
+                })
+              }}
               className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
               placeholder="상품 메뉴 구성을 입력하세요"
             />
             <button
               type="button"
               onClick={() => handleThumbnailClick('firstMenu')}
-              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-6 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
+              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden min-w-[85px] h-[48px] flex items-center justify-center"
             >
               {firstMenuField.thumbnail ? (
                 <img 
@@ -953,7 +1066,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   className="absolute inset-0 w-full h-full object-contain"
                 />
               ) : (
-                <span>썸네일</span>
+                <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
               )}
             </button>
             <button
@@ -966,9 +1079,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           </div>
           
           {/* 첫 번째 메뉴 필드의 소제목들 */}
-          {firstMenuField.value && (
+          {(firstMenuField.value || (firstMenuField.subtitles && firstMenuField.subtitles.length > 0)) && (
             <div className="mt-3 ml-4 border-l-2 border-gray-600 pl-4 space-y-3">
-              {firstMenuField.subtitles.map((subtitle, subIndex) => (
+              {(firstMenuField.subtitles && firstMenuField.subtitles.length > 0 ? firstMenuField.subtitles : [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]).map((subtitle, subIndex) => (
                 <div key={subtitle.id} className="flex gap-2 items-start">
                   <input
                     type="text"
@@ -1004,11 +1117,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     }}
                     className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
                   >
-                    {subtitle.thumbnail ? (
+                    {subtitle.thumbnail && subtitle.thumbnail.trim() ? (
                       <img 
                         src={subtitle.thumbnail} 
                         alt="썸네일" 
                         className="absolute inset-0 w-full h-full object-contain"
+                        onError={(e) => {
+                          console.error('소메뉴 썸네일 로드 실패:', subtitle.thumbnail, e)
+                          // 이미지 로드 실패 시 텍스트로 대체
+                          const target = e.target as HTMLImageElement
+                          target.style.display = 'none'
+                          const parent = target.parentElement
+                          if (parent && !parent.querySelector('span')) {
+                            const span = document.createElement('span')
+                            span.className = 'text-[10px] leading-tight whitespace-nowrap'
+                            span.textContent = '썸네일'
+                            parent.appendChild(span)
+                          }
+                        }}
                       />
                     ) : (
                       <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
@@ -1049,9 +1175,25 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 <input
                   type="text"
                   value={field.value}
-                  onChange={(e) => setMenuFields(menuFields.map(f => 
-                    f.id === field.id ? { ...f, value: e.target.value } : f
-                  ))}
+                  onChange={(e) => {
+                    const newValue = e.target.value
+                    setMenuFields(menuFields.map(f => {
+                      if (f.id === field.id) {
+                        // 대메뉴에 값이 입력되었는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
+                        const hasValue = newValue.trim().length > 0
+                        const hasSubtitles = f.subtitles && f.subtitles.length > 0
+                        if (hasValue && !hasSubtitles) {
+                          return {
+                            ...f,
+                            value: newValue,
+                            subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
+                          }
+                        }
+                        return { ...f, value: newValue }
+                      }
+                      return f
+                    }))
+                  }}
                   className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                   placeholder="상품 메뉴 구성을 입력하세요"
                 />
@@ -1067,7 +1209,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       className="absolute inset-0 w-full h-full object-contain"
                     />
                   ) : (
-                    <span className="text-xs">썸네일</span>
+                    <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
                   )}
                 </button>
                 <button
@@ -1082,9 +1224,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 </button>
               </div>
               {/* 각 메뉴 필드의 소제목들 */}
-              {field.value && (
+              {(field.value || (field.subtitles && field.subtitles.length > 0)) && (
                 <div className="mt-3 ml-4 border-l-2 border-gray-600 pl-4 space-y-3">
-                  {field.subtitles.map((subtitle, subIndex) => (
+                  {(field.subtitles && field.subtitles.length > 0 ? field.subtitles : [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]).map((subtitle, subIndex) => (
                     <div key={subtitle.id} className="flex gap-2 items-start">
                       <input
                         type="text"
@@ -1421,31 +1563,38 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   menuFields: menuFields.map(f => ({ id: f.id, value: f.value, subtitlesCount: f.subtitles.length }))
                 })
                 if (parts[1] === 'first') {
-                  const subtitleId = parseInt(parts[2])
-                  const thumbnail = firstMenuField.subtitles.find(s => s.id === subtitleId)?.thumbnail
-                  console.log('첫 번째 메뉴 소제목 썸네일:', { subtitleId, thumbnail })
+                  // 소수점이 포함된 ID를 처리하기 위해 parseFloat 사용
+                  const subtitleIdStr = parts[2]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const thumbnail = firstMenuField.subtitles.find(s => {
+                    // ID를 문자열 또는 숫자로 비교 (소수점 포함 ID 대응)
+                    const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+                    return sId === subtitleIdNum || String(s.id) === subtitleIdStr
+                  })?.thumbnail
+                  console.log('첫 번째 메뉴 소제목 썸네일:', { subtitleIdStr, subtitleIdNum, thumbnail, allSubtitleIds: firstMenuField.subtitles.map(s => ({ id: s.id, idType: typeof s.id, thumbnail: s.thumbnail })) })
                   return thumbnail
                 } else if (parts[1] === 'menu') {
-                  const menuId = parseInt(parts[2])
-                  // subtitleId는 소수점이 있을 수 있으므로 parseFloat 사용
+                  // 소수점이 포함된 ID를 처리하기 위해 parseFloat 사용
+                  const menuIdStr = parts[2]
+                  const menuIdNum = parseFloat(menuIdStr)
                   const subtitleIdStr = parts[3] // 문자열로 유지
-                  const subtitleIdNum = parseFloat(parts[3]) // 숫자 비교용
-                  console.log('메뉴 필드 소제목 썸네일 찾기:', { menuId, subtitleIdStr, subtitleIdNum, menuIdType: typeof menuId, subtitleIdType: typeof subtitleIdStr })
+                  const subtitleIdNum = parseFloat(subtitleIdStr) // 숫자 비교용
+                  console.log('메뉴 필드 소제목 썸네일 찾기:', { menuIdStr, menuIdNum, subtitleIdStr, subtitleIdNum })
                   const menuField = menuFields.find(f => {
-                    // 숫자 비교 시 타입 변환하여 비교
-                    const fieldIdNum = typeof f.id === 'number' ? f.id : parseInt(String(f.id))
-                    const menuIdNum = typeof menuId === 'number' ? menuId : parseInt(String(menuId))
-                    console.log('메뉴 필드 비교:', { fieldId: f.id, fieldIdNum, menuId, menuIdNum, match: fieldIdNum === menuIdNum })
-                    return fieldIdNum === menuIdNum
+                    // 숫자 비교 시 타입 변환하여 비교 (소수점 포함 ID 대응)
+                    const fieldIdNum = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+                    const match = fieldIdNum === menuIdNum || String(f.id) === menuIdStr
+                    console.log('메뉴 필드 비교:', { fieldId: f.id, fieldIdNum, menuIdStr, menuIdNum, match })
+                    return match
                   })
                   console.log('찾은 메뉴 필드:', menuField)
                   if (menuField) {
                     const subtitle = menuField.subtitles.find(s => {
-                      // ID를 문자열로 변환하여 비교 (소수점 포함 ID 대응)
-                      const sIdStr = String(s.id)
-                      const targetIdStr = String(subtitleIdStr)
-                      console.log('소제목 비교:', { subtitleId: s.id, sIdStr, targetSubtitleId: subtitleIdStr, targetIdStr, match: sIdStr === targetIdStr })
-                      return sIdStr === targetIdStr
+                      // ID를 문자열 또는 숫자로 비교 (소수점 포함 ID 대응)
+                      const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+                      const match = sId === subtitleIdNum || String(s.id) === subtitleIdStr
+                      console.log('소제목 비교:', { subtitleId: s.id, sId, subtitleIdStr, subtitleIdNum, match })
+                      return match
                     })
                     console.log('찾은 소제목:', subtitle)
                     const thumbnail = subtitle?.thumbnail
@@ -1536,17 +1685,32 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               <button
                 onClick={() => {
                   if (subtitleToDelete.menuId === 'first') {
-                    setFirstMenuField(prev => ({
-                      ...prev,
-                      subtitles: prev.subtitles.filter(s => s.id !== subtitleToDelete.subtitleId)
-                    }))
+                    setFirstMenuField(prev => {
+                      const filtered = prev.subtitles.filter(s => s.id !== subtitleToDelete.subtitleId)
+                      // 소메뉴가 모두 삭제되면 디폴트 소메뉴 1개 추가
+                      const newSubtitles = filtered.length === 0 
+                        ? [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
+                        : filtered
+                      return {
+                        ...prev,
+                        subtitles: newSubtitles
+                      }
+                    })
                   } else {
-                    setMenuFields(menuFields.map(f => 
-                      f.id === subtitleToDelete.menuId ? {
-                        ...f,
-                        subtitles: f.subtitles.filter(s => s.id !== subtitleToDelete.subtitleId)
-                      } : f
-                    ))
+                    setMenuFields(menuFields.map(f => {
+                      if (f.id === subtitleToDelete.menuId) {
+                        const filtered = f.subtitles.filter(s => s.id !== subtitleToDelete.subtitleId)
+                        // 소메뉴가 모두 삭제되면 디폴트 소메뉴 1개 추가
+                        const newSubtitles = filtered.length === 0
+                          ? [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
+                          : filtered
+                        return {
+                          ...f,
+                          subtitles: newSubtitles
+                        }
+                      }
+                      return f
+                    }))
                   }
                   setShowDeleteSubtitleConfirm(false)
                   setSubtitleToDelete(null)

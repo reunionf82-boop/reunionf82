@@ -159,6 +159,102 @@ export async function saveContent(contentData: ContentData) {
   if (contentData.id) {
     // 업데이트
     console.log('업데이트 모드: id =', contentData.id);
+    
+    // 기존 데이터 로드하여 사용되지 않는 썸네일 찾기
+    try {
+      const { data: existingData } = await supabase
+        .from('contents')
+        .select('menu_items, thumbnail_url, preview_thumbnails, book_cover_thumbnail, ending_book_cover_thumbnail')
+        .eq('id', contentData.id)
+        .single()
+      
+      if (existingData) {
+        // 사용되지 않는 썸네일 찾기 및 삭제
+        const extractThumbnailUrls = (items: any[]): string[] => {
+          const urls: string[] = []
+          items?.forEach((item: any) => {
+            if (item.thumbnail) urls.push(item.thumbnail)
+            if (item.subtitles) {
+              item.subtitles.forEach((sub: any) => {
+                if (sub.thumbnail) urls.push(sub.thumbnail)
+              })
+            }
+          })
+          return urls
+        }
+        
+        // 기존 썸네일 URL 수집
+        const existingThumbnails = new Set<string>()
+        if (existingData.thumbnail_url) existingThumbnails.add(existingData.thumbnail_url)
+        if (existingData.book_cover_thumbnail) existingThumbnails.add(existingData.book_cover_thumbnail)
+        if (existingData.ending_book_cover_thumbnail) existingThumbnails.add(existingData.ending_book_cover_thumbnail)
+        if (existingData.preview_thumbnails) {
+          const previewThumbs = typeof existingData.preview_thumbnails === 'string' 
+            ? JSON.parse(existingData.preview_thumbnails) 
+            : existingData.preview_thumbnails
+          previewThumbs?.forEach((thumb: string) => {
+            if (thumb) existingThumbnails.add(thumb)
+          })
+        }
+        if (existingData.menu_items) {
+          const existingMenuItems = typeof existingData.menu_items === 'string'
+            ? JSON.parse(existingData.menu_items)
+            : existingData.menu_items
+          extractThumbnailUrls(existingMenuItems || []).forEach(url => existingThumbnails.add(url))
+        }
+        
+        // 새로운 썸네일 URL 수집
+        const newThumbnails = new Set<string>()
+        if (contentData.thumbnail_url) newThumbnails.add(contentData.thumbnail_url)
+        if (contentData.book_cover_thumbnail) newThumbnails.add(contentData.book_cover_thumbnail)
+        if (contentData.ending_book_cover_thumbnail) newThumbnails.add(contentData.ending_book_cover_thumbnail)
+        if (contentData.preview_thumbnails) {
+          contentData.preview_thumbnails.forEach((thumb: string) => {
+            if (thumb) newThumbnails.add(thumb)
+          })
+        }
+        if (menu_items) {
+          extractThumbnailUrls(menu_items).forEach(url => newThumbnails.add(url))
+        }
+        
+        // 사용되지 않는 썸네일 찾기
+        const unusedThumbnails = Array.from(existingThumbnails).filter(url => !newThumbnails.has(url))
+        
+        // 사용되지 않는 썸네일 삭제
+        if (unusedThumbnails.length > 0) {
+          console.log('사용되지 않는 썸네일 삭제:', unusedThumbnails)
+          for (const thumbnailUrl of unusedThumbnails) {
+            try {
+              // URL에서 파일 경로 추출
+              let filePath = ''
+              if (thumbnailUrl.includes('/storage/v1/object/public/thumbnails/')) {
+                const parts = thumbnailUrl.split('/storage/v1/object/public/thumbnails/')
+                if (parts.length > 1) {
+                  filePath = `thumbnails/${parts[1].split('?')[0]}` // 쿼리 파라미터 제거
+                }
+              } else if (thumbnailUrl.includes('thumbnails/')) {
+                const parts = thumbnailUrl.split('thumbnails/')
+                if (parts.length > 1) {
+                  filePath = `thumbnails/${parts[1].split('?')[0]}`
+                }
+              }
+              
+              if (filePath) {
+                await deleteThumbnail(filePath)
+                console.log('썸네일 삭제 완료:', filePath)
+              }
+            } catch (error) {
+              console.error('썸네일 삭제 실패 (계속 진행):', thumbnailUrl, error)
+              // 삭제 실패해도 저장은 계속 진행
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('기존 데이터 로드 실패 (썸네일 삭제 건너뜀):', error)
+      // 기존 데이터 로드 실패해도 저장은 계속 진행
+    }
+    
     const { data, error } = await supabase
       .from('contents')
       .update(dataToSave)
@@ -211,6 +307,97 @@ export async function saveContent(contentData: ContentData) {
 
 // 컨텐츠 삭제
 export async function deleteContent(id: number) {
+  // 삭제 전에 모든 썸네일 찾기
+  try {
+    const { data: contentData } = await supabase
+      .from('contents')
+      .select('menu_items, thumbnail_url, preview_thumbnails, book_cover_thumbnail, ending_book_cover_thumbnail')
+      .eq('id', id)
+      .single()
+    
+    if (contentData) {
+      // 모든 썸네일 URL 수집
+      const allThumbnails: string[] = []
+      
+      // 메인 썸네일
+      if (contentData.thumbnail_url) allThumbnails.push(contentData.thumbnail_url)
+      
+      // 북커버 썸네일
+      if (contentData.book_cover_thumbnail) allThumbnails.push(contentData.book_cover_thumbnail)
+      
+      // 엔딩북커버 썸네일
+      if (contentData.ending_book_cover_thumbnail) allThumbnails.push(contentData.ending_book_cover_thumbnail)
+      
+      // 미리보기 썸네일
+      if (contentData.preview_thumbnails) {
+        const previewThumbs = typeof contentData.preview_thumbnails === 'string'
+          ? JSON.parse(contentData.preview_thumbnails)
+          : contentData.preview_thumbnails
+        if (Array.isArray(previewThumbs)) {
+          previewThumbs.forEach((thumb: string) => {
+            if (thumb) allThumbnails.push(thumb)
+          })
+        }
+      }
+      
+      // menu_items의 썸네일
+      if (contentData.menu_items) {
+        const menuItems = typeof contentData.menu_items === 'string'
+          ? JSON.parse(contentData.menu_items)
+          : contentData.menu_items
+        
+        if (Array.isArray(menuItems)) {
+          menuItems.forEach((item: any) => {
+            // 메뉴 썸네일
+            if (item.thumbnail) allThumbnails.push(item.thumbnail)
+            
+            // 소제목 썸네일
+            if (item.subtitles && Array.isArray(item.subtitles)) {
+              item.subtitles.forEach((sub: any) => {
+                if (sub.thumbnail) allThumbnails.push(sub.thumbnail)
+              })
+            }
+          })
+        }
+      }
+      
+      // 모든 썸네일 삭제
+      console.log('컨텐츠 삭제: 썸네일 삭제 시작, 총', allThumbnails.length, '개')
+      for (const thumbnailUrl of allThumbnails) {
+        try {
+          // URL에서 파일 경로 추출
+          let filePath = ''
+          if (thumbnailUrl.includes('/storage/v1/object/public/thumbnails/')) {
+            const parts = thumbnailUrl.split('/storage/v1/object/public/thumbnails/')
+            if (parts.length > 1) {
+              filePath = `thumbnails/${parts[1].split('?')[0]}` // 쿼리 파라미터 제거
+            }
+          } else if (thumbnailUrl.includes('thumbnails/')) {
+            const parts = thumbnailUrl.split('thumbnails/')
+            if (parts.length > 1) {
+              filePath = `thumbnails/${parts[1].split('?')[0]}` // 쿼리 파라미터 제거
+            }
+          }
+          
+          if (filePath) {
+            await deleteThumbnail(filePath)
+            console.log('썸네일 삭제 완료:', filePath)
+          } else {
+            console.warn('썸네일 URL에서 파일 경로를 추출할 수 없음:', thumbnailUrl)
+          }
+        } catch (error) {
+          console.error('썸네일 삭제 실패 (계속 진행):', thumbnailUrl, error)
+          // 삭제 실패해도 레코드 삭제는 계속 진행
+        }
+      }
+      console.log('컨텐츠 삭제: 모든 썸네일 삭제 완료')
+    }
+  } catch (error) {
+    console.error('컨텐츠 삭제: 썸네일 삭제 중 오류 (레코드 삭제는 계속 진행):', error)
+    // 썸네일 삭제 실패해도 레코드 삭제는 계속 진행
+  }
+  
+  // 레코드 삭제
   const { error } = await supabase
     .from('contents')
     .delete()
