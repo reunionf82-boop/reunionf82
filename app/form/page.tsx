@@ -8,6 +8,8 @@ import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { calculateManseRyeok, generateManseRyeokTable, generateManseRyeokText, getDayGanji, type ManseRyeokCaptionInfo, convertSolarToLunarAccurate, convertLunarToSolarAccurate } from '@/lib/manse-ryeok'
 import TermsPopup from '@/components/TermsPopup'
 import PrivacyPopup from '@/components/PrivacyPopup'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 
 function FormContent() {
   const searchParams = useSearchParams()
@@ -597,6 +599,640 @@ function FormContent() {
     console.log('Form 페이지: savedResults 내용:', savedResults)
   }, [savedResults])
 
+
+  // 클라이언트 사이드 PDF 생성 함수 ("보기" 버튼과 동일한 HTML 처리)
+  const handleClientSidePdf = async (saved: any) => {
+    if (typeof window === 'undefined') return
+    
+    // 로딩 상태 표시
+    const btnText = document.getElementById(`pdf-btn-text-${saved.id}`)
+    const btnIcon = document.getElementById(`pdf-btn-icon-${saved.id}`)
+    const btn = btnText?.parentElement as HTMLButtonElement
+    const originalText = btnText ? btnText.innerText : 'PDF 생성'
+    const originalHtml = btnText ? btnText.innerHTML : 'PDF 생성'
+    
+    if (btnText) {
+      btnText.innerHTML = `
+        <span class="flex items-center gap-1">
+          생성 중
+          <span class="flex space-x-1 items-center h-full pt-1">
+            <span class="w-1 h-1 bg-white rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+            <span class="w-1 h-1 bg-white rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+            <span class="w-1 h-1 bg-white rounded-full animate-bounce"></span>
+          </span>
+        </span>
+      `
+    }
+    if (btnIcon) btnIcon.style.display = 'none'
+    
+    let styleElement: HTMLStyleElement | null = null;
+    let container: HTMLElement | null = null;
+    
+    try {
+      // "보기" 버튼과 동일한 HTML 처리
+      let htmlContent = saved.html || '';
+      htmlContent = htmlContent.replace(/\*\*/g, '');
+      
+      // 테이블 정제
+      htmlContent = htmlContent
+        .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+        .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+        .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+        .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+        .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+      
+      const contentObj = saved.content || {};
+      const menuItems = contentObj?.menu_items || [];
+      const bookCoverThumbnail = contentObj?.book_cover_thumbnail || '';
+      const endingBookCoverThumbnail = contentObj?.ending_book_cover_thumbnail || '';
+      
+      // DOMParser로 썸네일 추가 ("보기" 버튼과 동일)
+      if (menuItems.length > 0 || bookCoverThumbnail || endingBookCoverThumbnail) {
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(htmlContent, 'text/html');
+          const menuSections = Array.from(doc.querySelectorAll('.menu-section'));
+          
+          // 북커버 썸네일
+          if (bookCoverThumbnail && menuSections.length > 0) {
+            const firstSection = menuSections[0];
+            const bookCoverDiv = doc.createElement('div');
+            bookCoverDiv.className = 'book-cover-thumbnail-container';
+            bookCoverDiv.style.cssText = 'width: 100%; margin-bottom: 2.5rem; display: flex; justify-content: center;';
+            bookCoverDiv.innerHTML = `<img src="${bookCoverThumbnail}" alt="북커버" style="width: 100%; height: auto; object-fit: contain; display: block;" crossorigin="anonymous" />`;
+            if (firstSection.firstChild) firstSection.insertBefore(bookCoverDiv, firstSection.firstChild);
+            else firstSection.appendChild(bookCoverDiv);
+          }
+          
+          // 소제목 썸네일
+          menuSections.forEach((section, menuIndex) => {
+            const menuItem = menuItems[menuIndex];
+            if (menuItem?.subtitles) {
+              const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'));
+              subtitleSections.forEach((subSection, subIndex) => {
+                const subtitle = menuItem.subtitles[subIndex];
+                if (subtitle?.thumbnail) {
+                  const titleDiv = subSection.querySelector('.subtitle-title');
+                  if (titleDiv) {
+                    const thumbnailImg = doc.createElement('div');
+                    thumbnailImg.className = 'subtitle-thumbnail-container';
+                    thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto; margin-top: 10px; margin-bottom: 10px;';
+                    thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" crossorigin="anonymous" />`;
+                    titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling);
+                  }
+                }
+              });
+            }
+          });
+          
+          // 엔딩 북커버
+          if (endingBookCoverThumbnail && menuSections.length > 0) {
+            const lastSection = menuSections[menuSections.length - 1];
+            const endingBookCoverDiv = doc.createElement('div');
+            endingBookCoverDiv.className = 'ending-book-cover-thumbnail-container';
+            endingBookCoverDiv.style.cssText = 'width: 100%; margin-top: 1rem; display: flex; justify-content: center;';
+            endingBookCoverDiv.innerHTML = `<img src="${endingBookCoverThumbnail}" alt="엔딩북커버" style="width: 100%; height: auto; object-fit: contain; display: block;" crossorigin="anonymous" />`;
+            lastSection.appendChild(endingBookCoverDiv);
+          }
+          
+          htmlContent = doc.body.innerHTML;
+        } catch (e) {
+          console.error('HTML 처리 실패:', e);
+        }
+      }
+
+      // 템플릿 리터럴 특수 문자 이스케이프
+      const safeHtml = htmlContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
+      
+      // "보기" 버튼과 동일한 HTML 생성 변수
+      const savedMenuFontSize = saved.content?.menu_font_size || 16
+      const savedSubtitleFontSize = saved.content?.subtitle_font_size || 14
+      const savedBodyFontSize = saved.content?.body_font_size || 11
+      
+      const fontFace = saved.content?.font_face || ''
+      const extractFontFamily = (fontFaceCss: string): string | null => {
+        if (!fontFaceCss) return null
+        const match = fontFaceCss.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
+        return match ? (match[1] || match[2]?.trim()) : null
+      }
+      const fontFamilyName = extractFontFamily(fontFace)
+
+      const savedDynamicStyles = `
+        .menu-title { font-size: ${savedMenuFontSize}px !important; }
+        .subtitle-title { font-size: ${savedSubtitleFontSize}px !important; }
+        .subtitle-content { font-size: ${savedBodyFontSize}px !important; }
+      `
+      
+      const fontStyles = fontFamilyName ? `
+        * {
+          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+        }
+        body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
+          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+        }
+        .jeminai-results, .jeminai-results * {
+          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+        }
+        .menu-section, .menu-section * {
+          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+        }
+        .menu-title, .subtitle-title, .subtitle-content {
+          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+        }
+      ` : ''
+
+      // "보기" 버튼과 완전히 동일한 HTML 구조 생성
+      container = document.createElement('div');
+      const containerId = `pdf-container-${saved.id}`;
+      container.id = containerId;
+      container.style.position = 'absolute';
+      container.style.left = '-10000px';
+      container.style.top = '0';
+      container.style.width = '896px';
+      container.style.maxWidth = '896px';
+      container.style.zIndex = '-5000';
+      
+      // "보기" 버튼과 완전히 동일한 스타일 적용 (명확한 스코핑으로 UI 폰트 오염 방지)
+      styleElement = document.createElement('style');
+      styleElement.innerHTML = `
+        ${fontFace ? fontFace : ''}
+        /* 폰트 스타일을 containerId로 스코핑하여 UI 폰트 오염 방지 */
+        ${fontFamilyName ? `#${containerId} * { font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important; }` : ''}
+        #${containerId} {
+          font-family: ${fontFamilyName ? `'${fontFamilyName}', ` : ''}-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+          max-width: 896px;
+          margin: 0 auto;
+          padding: 32px 16px;
+          background: #ffffff;
+        }
+        #${containerId} .container {
+          background: transparent;
+          padding: 0;
+        }
+        #${containerId} .title-container {
+          text-align: center;
+          margin-bottom: 16px;
+        }
+        #${containerId} h1 {
+          font-size: 30px;
+          font-weight: bold;
+          margin: 0 0 16px 0;
+          color: #111;
+        }
+        #${containerId} .thumbnail-container {
+          width: 100%;
+          margin-bottom: 16px;
+        }
+        #${containerId} .thumbnail-container img {
+          width: 100%;
+          height: auto;
+          object-fit: cover;
+        }
+        #${containerId} .tts-button-container {
+          display: none;
+        }
+        #${containerId} .menu-section {
+          background: white;
+          border-radius: 12px;
+          padding: 24px;
+          margin-bottom: 24px;
+          box-shadow: none;
+        }
+        #${containerId} .menu-title {
+          font-size: 20px;
+          font-weight: bold;
+          margin-bottom: 16px;
+          color: #111;
+        }
+        #${containerId} .menu-thumbnail {
+          width: 100%;
+          height: auto;
+          object-fit: contain;
+          border-radius: 8px;
+          margin-bottom: 24px;
+          display: block;
+        }
+        #${containerId} .subtitle-section {
+          padding-top: 24px;
+          padding-bottom: 24px;
+          position: relative;
+          background-color: #ffffff;
+        }
+        #${containerId} .subtitle-section:not(:last-child) {
+          padding-bottom: 24px;
+          margin-bottom: 24px;
+        }
+        #${containerId} .subtitle-section:not(:last-child)::after {
+          content: '';
+          display: block;
+          width: 300px;
+          height: 2px;
+          background: linear-gradient(to right, transparent, #ffffff, transparent);
+          margin: 24px auto 0;
+        }
+        #${containerId} .subtitle-section:last-child {
+          padding-top: 24px;
+          padding-bottom: 24px;
+        }
+        #${containerId} .subtitle-title {
+          font-size: 18px;
+          font-weight: 600;
+          margin-bottom: 12px;
+          color: #333;
+        }
+        #${containerId} .subtitle-content {
+          color: #555;
+          line-height: 1.8;
+          white-space: pre-line;
+        }
+        #${containerId} .subtitle-thumbnail-container {
+          display: flex;
+          justify-content: center;
+          width: 50%;
+          margin-left: auto;
+          margin-right: auto;
+          margin-top: 8px;
+          margin-bottom: 8px;
+        }
+        #${containerId} .subtitle-thumbnail-container img {
+          width: 100%;
+          height: auto;
+          display: block;
+          border-radius: 8px;
+          object-fit: contain;
+        }
+        #${containerId} .menu-title { font-size: ${savedMenuFontSize}px !important; }
+        #${containerId} .subtitle-title { font-size: ${savedSubtitleFontSize}px !important; }
+        #${containerId} .subtitle-content { font-size: ${savedBodyFontSize}px !important; }
+      `;
+      document.head.appendChild(styleElement);
+      
+      // "보기" 버튼과 완전히 동일한 HTML 구조
+      const containerDiv = document.createElement('div');
+      containerDiv.className = 'container';
+      containerDiv.innerHTML = `
+        <div class="title-container">
+          <h1>${saved.title}</h1>
+        </div>
+        ${saved.content?.thumbnail_url ? `
+        <div class="thumbnail-container">
+          <img src="${saved.content.thumbnail_url}" alt="${saved.title}" />
+        </div>
+        ` : ''}
+        <div class="tts-button-container" style="display: none;">
+          <button id="ttsButton" class="tts-button">
+            <span id="ttsIcon">🔊</span>
+            <span id="ttsText">점사 듣기</span>
+          </button>
+        </div>
+        <div id="contentHtml">${safeHtml}</div>
+      `;
+      container.appendChild(containerDiv);
+      document.body.appendChild(container);
+      
+      // 프로그래스 바 업데이트 함수
+      const updateProgress = (progress: number) => {
+        if (btn) {
+          btn.style.background = `linear-gradient(to right, #1e40af ${progress}%, #60a5fa ${progress}%)`
+        }
+      }
+      
+      updateProgress(10);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // 이미지 로딩 대기
+      const images = Array.from(container.querySelectorAll('img'));
+      await Promise.all(images.map(img => {
+        if (img.complete) return Promise.resolve();
+        return new Promise(resolve => {
+          img.onload = resolve;
+          img.onerror = resolve;
+          setTimeout(resolve, 5000);
+        });
+      }));
+      
+      updateProgress(30);
+      
+      // 폰트 로딩 대기
+      if (fontFamilyName) {
+        try {
+          await document.fonts.ready;
+          let fontLoaded = false;
+          for (let i = 0; i < 50; i++) {
+            fontLoaded = document.fonts.check(`12px "${fontFamilyName}"`) ||
+                        document.fonts.check(`16px "${fontFamilyName}"`) ||
+                        document.fonts.check(`24px "${fontFamilyName}"`);
+            if (fontLoaded) break;
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          if (!fontLoaded) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        } catch (e) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+      
+      updateProgress(50);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // PDF 생성
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = 210; // A4 가로 210mm
+      const pageHeight = 297; // A4 세로 297mm
+      const margin = 5; // 최소 여백 5mm (상하좌우 동일)
+      const contentWidth = pageWidth - (margin * 2); // 200mm (최대 너비 활용)
+      const contentHeight = pageHeight - (margin * 2); // 287mm
+      const maxCanvasHeight = 16000; // 최대 캔버스 높이 제한 (약 8페이지 분량)
+      
+      // 제목 제거
+      const titleEl = container.querySelector('h1');
+      if (titleEl) {
+        titleEl.remove();
+      }
+      
+      // "보기" 버튼과 동일한 HTML을 그대로 캡처 (WYSIWYG)
+      
+      // TTS 버튼 제거
+      const ttsButtonContainer = container.querySelector('.tts-button-container');
+      if (ttsButtonContainer) {
+        ttsButtonContainer.remove();
+      }
+      
+      updateProgress(60);
+      
+      // 섹션별로 나눠서 캡처 (긴 페이지 메모리 문제 해결)
+      const mainContainerDiv = container.querySelector('.container');
+      if (!mainContainerDiv) {
+        throw new Error('컨테이너를 찾을 수 없습니다.');
+      }
+      
+      // 각 menu-section을 개별적으로 캡처
+      const menuSections = Array.from(mainContainerDiv.querySelectorAll('.menu-section')) as HTMLElement[];
+      
+      if (menuSections.length === 0) {
+        throw new Error('캡처할 내용이 없습니다.');
+      }
+      
+      // 긴 페이지를 위해 scale 조정 (메모리 및 문자열 길이 문제 방지)
+      const totalSections = menuSections.length;
+      let scale = 2;
+      if (totalSections > 50) scale = 1.2; // 매우 많은 섹션
+      else if (totalSections > 30) scale = 1.5; // 섹션이 많으면 scale 낮춤
+      else if (totalSections > 15) scale = 1.8;
+      
+      let currentY = margin;
+      let processedSections = 0;
+      
+      // JPEG 품질 조정 (긴 페이지를 위해)
+      const jpegQuality = totalSections > 50 ? 0.85 : totalSections > 30 ? 0.88 : 0.92;
+      
+      // 각 섹션을 캡처
+      const captureSection = async (section: HTMLElement): Promise<void> => {
+        // 임시 컨테이너 생성 (섹션만 포함)
+        const tempContainer = document.createElement('div');
+        const tempContainerId = `temp-section-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        tempContainer.id = tempContainerId;
+        tempContainer.style.position = 'absolute';
+        tempContainer.style.left = '-10000px';
+        tempContainer.style.top = '0';
+        // tempContainer의 너비를 정확히 896px로 설정
+        tempContainer.style.width = '896px';
+        tempContainer.style.maxWidth = '896px';
+        tempContainer.style.minWidth = '896px'; // 최소 너비도 설정하여 정확한 너비 보장
+        tempContainer.style.boxSizing = 'border-box';
+        tempContainer.style.zIndex = '-7000';
+        tempContainer.style.backgroundColor = '#ffffff';
+        tempContainer.style.padding = '0';
+        tempContainer.style.margin = '0';
+        tempContainer.style.border = 'none';
+        
+        // 폰트 스타일 적용
+        if (fontFamilyName) {
+          tempContainer.style.fontFamily = `'${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`;
+          const scopedStyle = document.createElement('style');
+          scopedStyle.innerHTML = `
+            #${tempContainerId} * {
+              font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+              text-rendering: optimizeLegibility;
+              -webkit-font-smoothing: antialiased;
+              -moz-osx-font-smoothing: grayscale;
+            }
+            #${tempContainerId} {
+              background: #ffffff;
+            }
+            #${tempContainerId} .container {
+              background: transparent;
+              padding: 32px 16px; /* tempContainer에서 제거한 padding을 내부로 이동 */
+            }
+            #${tempContainerId} .menu-section {
+              background: white;
+              border-radius: 12px;
+              padding: 24px;
+              margin-bottom: 24px;
+              box-shadow: none;
+            }
+            #${tempContainerId} .menu-title {
+              font-size: ${savedMenuFontSize}px !important;
+              font-weight: bold;
+              margin-bottom: 16px;
+              color: #111;
+            }
+            #${tempContainerId} .subtitle-section {
+              padding-top: 24px;
+              padding-bottom: 24px;
+              position: relative;
+              background-color: #ffffff;
+            }
+            #${tempContainerId} .subtitle-section:not(:last-child) {
+              padding-bottom: 24px;
+              margin-bottom: 24px;
+            }
+            #${tempContainerId} .subtitle-section:not(:last-child)::after {
+              content: '';
+              display: block;
+              width: 300px;
+              height: 2px;
+              background: linear-gradient(to right, transparent, #ffffff, transparent);
+              margin: 24px auto 0;
+            }
+            #${tempContainerId} .subtitle-title {
+              font-size: ${savedSubtitleFontSize}px !important;
+              font-weight: 600;
+              margin-bottom: 12px;
+              color: #333;
+            }
+            #${tempContainerId} .subtitle-content {
+              font-size: ${savedBodyFontSize}px !important;
+              color: #555;
+              line-height: 1.8;
+              white-space: pre-line;
+            }
+          `;
+          tempContainer.appendChild(scopedStyle);
+        }
+        
+        const tempContainerDiv = document.createElement('div');
+        tempContainerDiv.className = 'container';
+        tempContainerDiv.appendChild(section.cloneNode(true) as HTMLElement);
+        tempContainer.appendChild(tempContainerDiv);
+        document.body.appendChild(tempContainer);
+        
+        await new Promise(resolve => setTimeout(resolve, 200)); // 렌더링 대기 시간 증가
+        
+        try {
+          // html2canvas가 정확히 896px 너비로 캡처하도록 명시적으로 지정
+          const canvas = await html2canvas(tempContainer, {
+            scale: scale,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+            width: 896, // 명시적으로 896px 지정
+            height: tempContainer.scrollHeight, // 실제 높이 사용
+            removeContainer: false
+          });
+          
+          const imgWidth = canvas.width; // 실제 캡처된 픽셀 너비
+          const imgHeight = canvas.height;
+          
+          if (imgHeight === 0) {
+            document.body.removeChild(tempContainer);
+            return;
+          }
+          
+          // A4 용지 너비(210mm)에서 좌우 여백(각 5mm)을 뺀 contentWidth(200mm)를 사용
+          // 실제 캡처된 이미지 픽셀 너비를 기준으로 정확한 PDF mm 너비 계산
+          // 이미지 비율 유지하면서 contentWidth(200mm)에 정확히 맞춤
+          const pdfImgWidth = contentWidth; // 200mm (정확히 contentWidth로 설정)
+          const pdfImgHeight = imgHeight * pdfImgWidth / imgWidth;
+          
+          // 디버깅: 실제 이미지 크기 확인
+          console.log('PDF 이미지 크기:', {
+            캡처된픽셀너비: imgWidth,
+            캡처된픽셀높이: imgHeight,
+            PDF너비mm: pdfImgWidth,
+            PDF높이mm: pdfImgHeight,
+            scale: scale,
+            예상픽셀너비: 896 * scale,
+            실제비율: imgWidth / imgHeight,
+            PDF비율: pdfImgWidth / pdfImgHeight
+          });
+          const spaceLeft = pageHeight - margin - currentY;
+          
+          // 새 페이지 필요 여부 확인
+          if (currentY > margin && pdfImgHeight > spaceLeft) {
+            pdf.addPage();
+            currentY = margin;
+          }
+          
+          // 이미지가 한 페이지보다 큰 경우 분할
+          if (pdfImgHeight <= contentHeight) {
+            try {
+              // JPEG 사용으로 파일 크기 감소 (Invalid string length 오류 방지)
+              const imgData = canvas.toDataURL('image/jpeg', jpegQuality);
+              // 이미지 너비를 정확히 contentWidth로 설정하여 좌우 여백 동일하게
+              pdf.addImage(imgData, 'JPEG', margin, currentY, pdfImgWidth, pdfImgHeight);
+              currentY += pdfImgHeight;
+            } catch (e) {
+              console.error('Canvas toDataURL failed:', e);
+            }
+          } else {
+            // 여러 페이지로 분할
+            let remainingHeight = imgHeight;
+            let currentSourceY = 0;
+            
+            while (remainingHeight > 0) {
+              const spaceLeft = pageHeight - margin - currentY;
+              const onePageCanvasHeight = (spaceLeft * imgWidth) / pdfImgWidth;
+              const sliceHeight = Math.min(remainingHeight, onePageCanvasHeight);
+              
+              // 새 페이지 필요
+              if (currentY > margin && sliceHeight * pdfImgWidth / imgWidth > spaceLeft) {
+                pdf.addPage();
+                currentY = margin;
+              }
+              
+              const sliceCanvas = document.createElement('canvas');
+              sliceCanvas.width = imgWidth;
+              sliceCanvas.height = sliceHeight;
+              const ctx = sliceCanvas.getContext('2d');
+              if (ctx) {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+                ctx.drawImage(canvas, 0, currentSourceY, imgWidth, sliceHeight, 0, 0, imgWidth, sliceHeight);
+              }
+              
+              try {
+                // JPEG 사용으로 파일 크기 감소 (Invalid string length 오류 방지)
+                const sliceImgData = sliceCanvas.toDataURL('image/jpeg', jpegQuality);
+                const slicePdfHeight = sliceHeight * pdfImgWidth / imgWidth;
+                
+                // 이미지 너비를 정확히 contentWidth로 설정하여 좌우 여백 동일하게
+                pdf.addImage(sliceImgData, 'JPEG', margin, currentY, pdfImgWidth, slicePdfHeight);
+                
+                remainingHeight -= sliceHeight;
+                currentSourceY += sliceHeight;
+                currentY += slicePdfHeight;
+                
+                if (remainingHeight > 0 && currentY >= pageHeight - margin) {
+                  pdf.addPage();
+                  currentY = margin;
+                }
+              } catch (e) {
+                console.error('Slice canvas toDataURL failed:', e);
+                break;
+              }
+            }
+          }
+        } finally {
+          document.body.removeChild(tempContainer);
+        }
+      };
+      
+      updateProgress(70);
+      
+      // 각 섹션을 순차적으로 캡처
+      for (const section of menuSections) {
+        await captureSection(section);
+        
+        processedSections++;
+        const progress = 70 + Math.round((processedSections / menuSections.length) * 25);
+        updateProgress(progress);
+        
+        // 메모리 정리를 위해 지연 (긴 페이지 처리 시 중요)
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      updateProgress(95);
+      pdf.save(`${saved.title || '재회 결과'}.pdf`);
+      updateProgress(100);
+      
+      // 정리
+      if (container && container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
+      if (styleElement && styleElement.parentNode) {
+        styleElement.parentNode.removeChild(styleElement);
+      }
+
+    } catch (error) {
+      console.error('PDF 생성 오류:', error);
+      alert(`PDF 생성 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`);
+      // 컨테이너 제거
+      if (container && container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
+      // 스타일 제거
+      if (styleElement && styleElement.parentNode) {
+        styleElement.parentNode.removeChild(styleElement);
+      }
+    } finally {
+      if (btnText) btnText.innerHTML = originalHtml
+      if (btnIcon) btnIcon.style.display = 'block'
+      if (btn) btn.style.background = ''
+    }
+  }
 
   const loadContent = async () => {
     if (!title) {
@@ -2484,6 +3120,18 @@ function FormContent() {
                           <span>PDF</span>
                         </button>
                         )}
+                        {/* 클라이언트 사이드 PDF 생성 버튼 */}
+                        <button
+                          data-id={saved.id}
+                          onClick={() => handleClientSidePdf(saved)}
+                          className="bg-blue-400 hover:bg-blue-500 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors duration-200 flex items-center gap-1 min-w-[100px] justify-center relative overflow-hidden"
+                          title="PDF 생성 및 다운로드"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" id={`pdf-btn-icon-${saved.id}`}>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          <span id={`pdf-btn-text-${saved.id}`}>PDF 생성</span>
+                        </button>
                         {/* 보기 버튼 */}
                         <button
                           onClick={() => {
