@@ -199,6 +199,8 @@ function FormContent() {
 
   // 포털 연동: JWT 토큰에서 사용자 정보 자동 입력
   const [formLocked, setFormLocked] = useState(false) // 포털에서 받은 정보는 읽기 전용
+  const [isLoadingFromStorage, setIsLoadingFromStorage] = useState(true) // LocalStorage 로딩 중 플래그
+  
   useEffect(() => {
     const token = searchParams.get('token')
     if (token) {
@@ -238,19 +240,97 @@ function FormContent() {
             
             // 폼 잠금 (포털에서 받은 정보는 수정 불가)
             setFormLocked(true)
+            setIsLoadingFromStorage(false)
             
             console.log('포털로부터 사용자 정보 자동 입력 완료:', userInfo)
           } else {
             console.error('토큰 검증 실패:', data.error)
             alert('유효하지 않은 접근입니다.')
+            setIsLoadingFromStorage(false)
           }
         })
         .catch((error) => {
           console.error('토큰 검증 오류:', error)
           alert('사용자 정보를 불러오는 중 오류가 발생했습니다.')
+          setIsLoadingFromStorage(false)
         })
+    } else {
+      // 포털 토큰이 없으면 LocalStorage에서 정보 불러오기
+      if (typeof window !== 'undefined') {
+        try {
+          const savedUserInfo = localStorage.getItem('userInfo')
+          if (savedUserInfo) {
+            const userInfo = JSON.parse(savedUserInfo)
+            console.log('LocalStorage에서 사용자 정보 불러오기:', userInfo)
+            
+            // 본인 정보
+            if (userInfo.name) setName(userInfo.name)
+            if (userInfo.gender) setGender(userInfo.gender)
+            if (userInfo.calendarType) setCalendarType(userInfo.calendarType)
+            if (userInfo.year) setYear(userInfo.year)
+            if (userInfo.month) setMonth(userInfo.month)
+            if (userInfo.day) setDay(userInfo.day)
+            if (userInfo.birthHour) setBirthHour(userInfo.birthHour)
+            
+            // 이성 정보 (공합 타입일 경우)
+            if (userInfo.partnerName) setPartnerName(userInfo.partnerName)
+            if (userInfo.partnerGender) setPartnerGender(userInfo.partnerGender)
+            if (userInfo.partnerCalendarType) setPartnerCalendarType(userInfo.partnerCalendarType)
+            if (userInfo.partnerYear) setPartnerYear(userInfo.partnerYear)
+            if (userInfo.partnerMonth) setPartnerMonth(userInfo.partnerMonth)
+            if (userInfo.partnerDay) setPartnerDay(userInfo.partnerDay)
+            if (userInfo.partnerBirthHour) setPartnerBirthHour(userInfo.partnerBirthHour)
+          }
+        } catch (error) {
+          console.error('LocalStorage에서 정보 불러오기 실패:', error)
+        } finally {
+          setIsLoadingFromStorage(false)
+        }
+      } else {
+        setIsLoadingFromStorage(false)
+      }
     }
   }, [searchParams])
+
+  // 사용자 정보 변경 시 LocalStorage에 자동 저장 (포털 토큰이 없을 때만)
+  useEffect(() => {
+    if (isLoadingFromStorage || formLocked) return // 로딩 중이거나 포털에서 받은 정보는 저장하지 않음
+    
+    if (typeof window !== 'undefined') {
+      try {
+        const userInfo: any = {
+          // 본인 정보
+          name,
+          gender,
+          calendarType,
+          year,
+          month,
+          day,
+          birthHour,
+        }
+        
+        // 이성 정보 (공합 타입일 경우)
+        if (isGonghapType) {
+          userInfo.partnerName = partnerName
+          userInfo.partnerGender = partnerGender
+          userInfo.partnerCalendarType = partnerCalendarType
+          userInfo.partnerYear = partnerYear
+          userInfo.partnerMonth = partnerMonth
+          userInfo.partnerDay = partnerDay
+          userInfo.partnerBirthHour = partnerBirthHour
+        }
+        
+        localStorage.setItem('userInfo', JSON.stringify(userInfo))
+        console.log('LocalStorage에 사용자 정보 저장 완료')
+      } catch (error) {
+        console.error('LocalStorage에 정보 저장 실패:', error)
+      }
+    }
+  }, [
+    name, gender, calendarType, year, month, day, birthHour,
+    partnerName, partnerGender, partnerCalendarType, partnerYear, partnerMonth, partnerDay, partnerBirthHour,
+    isGonghapType, isLoadingFromStorage, formLocked
+  ])
 
   // 저장된 결과 목록 로드 (서버)
   const loadSavedResults = async () => {
