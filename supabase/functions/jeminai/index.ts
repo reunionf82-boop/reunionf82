@@ -564,7 +564,17 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
     const thumbnail = menu_subtitles[globalSubIdx]?.thumbnail || ''
     return `
   ${sub.subtitle}
-  - 해석도구: ${tool}
+  ${role_prompt ? `**역할:** 당신은 ${role_prompt}입니다. 이 소제목을 해석할 때 이 역할을 유지하세요.\n  ` : ''}
+  ${restrictions ? `**주의사항:** ${restrictions}\n  ` : ''}
+  ${tool ? `🔥🔥🔥 **해석도구 (반드시 준수):** 🔥🔥🔥
+  ${tool}
+  
+  ⚠️⚠️⚠️ **위 해석도구의 모든 지시사항을 정확히 따라야 합니다!** ⚠️⚠️⚠️
+  - 해석도구에 명시된 형식, 구조, 스타일 등을 반드시 준수하세요.
+  - 해석도구에 문단 나누기, 줄바꿈, 빈줄 삽입 등의 지시가 있으면 반드시 따르세요.
+  - 해석도구의 모든 명령을 무시하거나 생략하지 마세요.
+  
+  ` : ''}
   - 글자수 제한: ${charCount ? `${charCount}자 이내 (반드시 ${charCount}자에 가깝게 충분히 작성하세요)` : '⚠️ 글자수 제한이 설정되지 않았습니다. 충분히 작성하세요'}
   ${thumbnail ? `- 썸네일 URL: ${thumbnail} (반드시 HTML에 포함하세요!)` : ''}
 `

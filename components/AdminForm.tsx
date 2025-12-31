@@ -1894,8 +1894,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             </p>
           </div>
           
-          <div className="grid grid-cols-6 gap-[60px]">
-            <div>
+          <div className="flex flex-wrap gap-4">
+            <div className="flex-shrink-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 소메뉴당 글자수
               </label>
@@ -1908,7 +1908,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 placeholder="입력하세요"
               />
             </div>
-            <div>
+            <div className="flex-shrink-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 상세메뉴당 글자수
               </label>
@@ -1921,7 +1921,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 placeholder="입력하세요"
               />
             </div>
-            <div>
+            <div className="flex-shrink-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 대메뉴 폰트크기
               </label>
@@ -1948,7 +1948,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 </button>
               </div>
             </div>
-            <div>
+            <div className="flex-shrink-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 소메뉴 폰트크기
               </label>
@@ -1975,7 +1975,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 </button>
               </div>
             </div>
-            <div>
+            <div className="flex-shrink-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 상세메뉴 폰트크기
               </label>
@@ -2002,7 +2002,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 </button>
               </div>
             </div>
-            <div>
+            <div className="flex-shrink-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 본문 폰트크기
               </label>

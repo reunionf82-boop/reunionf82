@@ -323,11 +323,11 @@ ${subtitlesForMenu.map((sub, subIdx) => {
     if (detailMenus.length > 0) {
         console.log(`[프롬프트 생성] 소제목 "${sub.subtitle}"에 상세메뉴 ${detailMenus.length}개 포함됨`);
         
-        // HTML 예시 생성
+        // HTML 예시 생성 (일반적인 구조만, 해석도구 지시사항은 별도로 강조)
         let htmlExample = '<div class="subtitle-section">\n    <h3 class="subtitle-title">' + sub.subtitle + '</h3>\n    <div class="subtitle-content">[소제목 해석]</div>\n    <div class="detail-menu-section">\n';
         detailMenus.forEach((dm) => {
             htmlExample += '      <div class="detail-menu-title">' + (dm.detailMenu || '') + '</div>\n';
-            htmlExample += '      <div class="detail-menu-content">[해석 내용]</div>\n';
+            htmlExample += '      <div class="detail-menu-content">[해석 내용 (해석도구 지시사항 준수)]</div>\n';
         });
         htmlExample += '    </div>\n  </div>';
         
@@ -335,10 +335,27 @@ ${subtitlesForMenu.map((sub, subIdx) => {
         let detailMenuListText = '';
         detailMenus.forEach((dm, dmIdx) => {
             const dmCharCount = dm.char_count || detailMenuCharCount;
+            const dmTool = dm.interpretation_tool || '';
             detailMenuListText += '  ' + (dmIdx + 1) + '. 제목: "' + (dm.detailMenu || '') + '"\n';
-            detailMenuListText += '     - 해석도구: ' + (dm.interpretation_tool || '') + '\n';
-            detailMenuListText += '     - 글자수: ' + dmCharCount + '자 이내\n';
+            if (role_prompt) {
+                detailMenuListText += '     **역할:** 당신은 ' + role_prompt + '입니다. 이 상세메뉴를 해석할 때 이 역할을 유지하세요.\n';
+            }
+            if (restrictions) {
+                detailMenuListText += '     **주의사항:** ' + restrictions + '\n';
+            }
+            if (dmTool) {
+                detailMenuListText += '     🔥🔥🔥 **해석도구 (반드시 준수):** 🔥🔥🔥\n';
+                detailMenuListText += '     ' + dmTool + '\n';
+                detailMenuListText += '     ⚠️⚠️⚠️ **위 해석도구의 모든 지시사항을 정확히 따라야 합니다!** ⚠️⚠️⚠️\n';
+                detailMenuListText += '     - 해석도구에 명시된 형식, 구조, 스타일 등을 반드시 준수하세요.\n';
+                detailMenuListText += '     - 해석도구에 문단 나누기, 줄바꿈, 빈줄 삽입 등의 지시가 있으면 반드시 따르세요.\n';
+                detailMenuListText += '     - 해석도구의 모든 명령을 무시하거나 생략하지 마세요.\n';
+            }
+            detailMenuListText += '     - 글자수: **' + dmCharCount + '자 이내 (반드시 ' + dmCharCount + '자에 가깝게 충분히 작성하세요! 절대 ' + dmCharCount + '자보다 훨씬 적게 작성하지 마세요!)**\n';
             detailMenuListText += '     - ⚠️ 반드시 해석 내용을 작성해야 합니다! 제목만 쓰면 안 됩니다!\n';
+            if (dmTool && (dmTool.includes('문단') || dmTool.includes('줄바꿈') || dmTool.includes('빈줄'))) {
+                detailMenuListText += '     - ⚠️⚠️⚠️ **해석도구에 문단 나누기 지시가 있으므로, 반드시 여러 문단으로 나누어 작성하고 문단 간 빈줄을 삽입하세요! 한 문단으로 작성하면 안 됩니다!** ⚠️⚠️⚠️\n';
+            }
         });
         
         const thumbnailText = thumbnail ? '- 썸네일 URL: ' + thumbnail + '\n' : '';
@@ -352,18 +369,29 @@ ${subtitlesForMenu.map((sub, subIdx) => {
   
   ⚠️⚠️⚠️ **이 소제목은 반드시 아래와 같은 HTML 구조를 가져야 합니다!** ⚠️⚠️⚠️
   
-  필수 HTML 구조 예시:
+  필수 HTML 구조 예시 (구조만 참고, 해석 내용은 각 상세메뉴의 해석도구 지시사항을 반드시 따르세요):
 ${htmlExample}
   
   ⚠️⚠️⚠️ **반드시 준수해야 할 사항:**
   1. subtitle-content div를 닫은 직후 (</div>) 바로 detail-menu-section div를 열어야 합니다!
   2. detail-menu-section div 안에 ${detailMenus.length}개의 상세메뉴를 모두 순서대로 작성해야 합니다!
   3. 각 상세메뉴마다 detail-menu-title div와 detail-menu-content div를 반드시 작성해야 합니다!
-  4. detail-menu-section을 생략하거나 빠뜨리면 HTML 파싱 오류가 발생합니다!
+  4. **각 상세메뉴의 해석 내용은 반드시 해당 상세메뉴의 해석도구 지시사항을 우선적으로 따르세요! 위 HTML 예시는 구조만 보여주는 것이며, 해석도구의 지시사항(문단 나누기, 줄바꿈, 빈줄 삽입 등)을 반드시 적용하세요!**
+  5. detail-menu-section을 생략하거나 빠뜨리면 HTML 파싱 오류가 발생합니다!
   
   소제목 해석:
-  - 해석도구: ${tool}
-  - 글자수: ${charCount ? `${charCount}자 이내 (반드시 ${charCount}자에 가깝게 충분히 작성하세요)` : '⚠️ 글자수 제한이 설정되지 않았습니다. 충분히 작성하세요'}
+  ${role_prompt ? `**역할:** 당신은 ${role_prompt}입니다. 이 소제목을 해석할 때 이 역할을 유지하세요.\n  ` : ''}
+  ${restrictions ? `**주의사항:** ${restrictions}\n  ` : ''}
+  ${tool ? `🔥🔥🔥 **해석도구 (반드시 준수):** 🔥🔥🔥
+  ${tool}
+  
+  ⚠️⚠️⚠️ **위 해석도구의 모든 지시사항을 정확히 따라야 합니다!** ⚠️⚠️⚠️
+  - 해석도구에 명시된 형식, 구조, 스타일 등을 반드시 준수하세요.
+  - 해석도구에 문단 나누기, 줄바꿈, 빈줄 삽입 등의 지시가 있으면 반드시 따르세요.
+  - 해석도구의 모든 명령을 무시하거나 생략하지 마세요.
+  
+  ` : ''}
+  - 글자수: ${charCount ? `**${charCount}자 이내 (반드시 ${charCount}자에 가깝게 충분히 작성하세요! 절대 ${charCount}자보다 훨씬 적게 작성하지 마세요!)**` : '⚠️ 글자수 제한이 설정되지 않았습니다. 충분히 작성하세요'}
   ${thumbnailText}
   
   상세메뉴 해석 목록 (순서대로 모두 해석 필수):
@@ -374,8 +402,18 @@ ${detailMenuListText}
     } else {
         return `
   ${sub.subtitle}
-  - 해석도구: ${tool}
-  - 글자수 제한: ${charCount ? `${charCount}자 이내 (반드시 ${charCount}자에 가깝게 충분히 작성하세요)` : '⚠️ 글자수 제한이 설정되지 않았습니다. 충분히 작성하세요'}
+  ${role_prompt ? `**역할:** 당신은 ${role_prompt}입니다. 이 소제목을 해석할 때 이 역할을 유지하세요.\n  ` : ''}
+  ${restrictions ? `**주의사항:** ${restrictions}\n  ` : ''}
+  ${tool ? `🔥🔥🔥 **해석도구 (반드시 준수):** 🔥🔥🔥
+  ${tool}
+  
+  ⚠️⚠️⚠️ **위 해석도구의 모든 지시사항을 정확히 따라야 합니다!** ⚠️⚠️⚠️
+  - 해석도구에 명시된 형식, 구조, 스타일 등을 반드시 준수하세요.
+  - 해석도구에 문단 나누기, 줄바꿈, 빈줄 삽입 등의 지시가 있으면 반드시 따르세요.
+  - 해석도구의 모든 명령을 무시하거나 생략하지 마세요.
+  
+  ` : ''}
+  - 글자수 제한: ${charCount ? `**${charCount}자 이내 (반드시 ${charCount}자에 가깝게 충분히 작성하세요! 절대 ${charCount}자보다 훨씬 적게 작성하지 마세요!)**` : '⚠️ 글자수 제한이 설정되지 않았습니다. 충분히 작성하세요'}
   ${thumbnail ? `- 썸네일 URL: ${thumbnail} (반드시 HTML에 포함하세요!)` : ''}`;
     }
   }).join('\n')}
@@ -411,9 +449,9 @@ ${isSecondRequest ? `
     ⚠️⚠️⚠️ subtitle-content를 닫은 직후 반드시 detail-menu-section div를 열어야 합니다! ⚠️⚠️⚠️
     detail-menu-section div 시작
       detail-menu-title div: [상세메뉴 제목 1]
-      detail-menu-content div: [상세메뉴 1 해석 내용]
+      detail-menu-content div: [상세메뉴 1 해석 내용 (반드시 해당 상세메뉴의 해석도구 지시사항 준수)]
       detail-menu-title div: [상세메뉴 제목 2]
-      detail-menu-content div: [상세메뉴 2 해석 내용]
+      detail-menu-content div: [상세메뉴 2 해석 내용 (반드시 해당 상세메뉴의 해석도구 지시사항 준수)]
     detail-menu-section div 닫기
     subtitle-section div 닫기
   
