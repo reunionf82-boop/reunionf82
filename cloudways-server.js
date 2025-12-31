@@ -311,7 +311,11 @@ ${subtitlesForMenu.map((sub, subIdx) => {
     const tool = menu_subtitles[globalSubIdx]?.interpretation_tool || '';
     const detailMenus = menu_subtitles[globalSubIdx]?.detailMenus || [];
     // 관리자 form에서 설정한 char_count 값을 사용
-    const charCount = menu_subtitles[globalSubIdx]?.char_count || 500;
+    const charCount = menu_subtitles[globalSubIdx]?.char_count;
+    if (!charCount || charCount <= 0) {
+        console.error(`❌ 소제목 "${sub.subtitle}"의 char_count가 설정되지 않았거나 0 이하입니다. char_count: ${charCount}`);
+        // 기본값을 사용하지 않고 명시적으로 에러 표시
+    }
     const thumbnail = menu_subtitles[globalSubIdx]?.thumbnail || '';
     const detailMenuCharCount = menu_subtitles[globalSubIdx]?.detail_menu_char_count || 500;
     
@@ -359,7 +363,7 @@ ${htmlExample}
   
   소제목 해석:
   - 해석도구: ${tool}
-  - 글자수: ${charCount}자 이내
+  - 글자수: ${charCount ? `${charCount}자 이내 (반드시 ${charCount}자에 가깝게 충분히 작성하세요)` : '⚠️ 글자수 제한이 설정되지 않았습니다. 충분히 작성하세요'}
   ${thumbnailText}
   
   상세메뉴 해석 목록 (순서대로 모두 해석 필수):
@@ -371,7 +375,7 @@ ${detailMenuListText}
         return `
   ${sub.subtitle}
   - 해석도구: ${tool}
-  - 글자수 제한: ${charCount}자 이내
+  - 글자수 제한: ${charCount ? `${charCount}자 이내 (반드시 ${charCount}자에 가깝게 충분히 작성하세요)` : '⚠️ 글자수 제한이 설정되지 않았습니다. 충분히 작성하세요'}
   ${thumbnail ? `- 썸네일 URL: ${thumbnail} (반드시 HTML에 포함하세요!)` : ''}`;
     }
   }).join('\n')}

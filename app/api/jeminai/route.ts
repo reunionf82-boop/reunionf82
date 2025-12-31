@@ -188,7 +188,7 @@ ${hasDetailMenusInSubtitles ? `# 🚨🚨🚨 최우선 필수 규칙: 상세메
 
 <div class="subtitle-section">
   <h3 class="subtitle-title">[소제목]</h3>
-  <div class="subtitle-content">[소제목 해석 (150자 이내)]</div>
+  <div class="subtitle-content">[소제목 해석 (관리자에서 설정한 글자수 제한)]</div>
   <div class="detail-menu-section">
     <div class="detail-menu-title">[상세메뉴 제목 1]</div>
     <div class="detail-menu-content">[상세메뉴 1 해석]</div>
@@ -311,7 +311,7 @@ ${isSecondRequest ? `
 **⚠️⚠️⚠️ 매우 중요: 아래 소제목 목록에서 "═══ 상세메뉴 필수 포함 소제목 ═══"로 시작하는 소제목이 있으면, 반드시 해당 소제목의 HTML에 detail-menu-section div 태그를 포함해야 합니다! 이 태그를 생략하면 파싱 오류가 발생합니다! ⚠️⚠️⚠️**
 
 **상세메뉴가 있는 소제목 작성 방법:**
-1. 소제목 해석: 100-150자 이내로 간단히만 작성 (상세메뉴 해석에 집중하기 위해)
+1. 소제목 해석: 관리자에서 설정한 글자수 제한을 정확히 준수하여 작성 (설정된 글자수만큼 충분히 작성하세요)
 2. subtitle-content div를 닫은 직후 **반드시** detail-menu-section div 태그를 열어야 합니다!
 3. 각 상세메뉴는 해당 상세메뉴의 전용 해석도구로 개별 해석 (소제목 해석도구 아님!)
 4. 각 상세메뉴마다:
@@ -346,8 +346,12 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
     const globalSubIdx = menu_subtitles.findIndex((s: any) => s.subtitle === sub.subtitle)
     const tool = menu_subtitles[globalSubIdx]?.interpretation_tool || ''
     const detailMenus = menu_subtitles[globalSubIdx]?.detailMenus || []
-    // 상세메뉴가 있으면 소제목 글자수를 강제로 150자로 제한하여 상세메뉴 해석 비중을 높임
-    const charCount = detailMenus.length > 0 ? 150 : (menu_subtitles[globalSubIdx]?.char_count || 500)
+    // 관리자 form에서 설정한 char_count 값을 사용 (상세메뉴가 있어도 설정값 사용)
+    const charCount = menu_subtitles[globalSubIdx]?.char_count
+    if (!charCount || charCount <= 0) {
+      console.error(`❌ 소제목 "${sub.subtitle}"의 char_count가 설정되지 않았거나 0 이하입니다. char_count: ${charCount}`)
+      // 기본값을 사용하지 않고 명시적으로 에러 표시
+    }
     const thumbnail = menu_subtitles[globalSubIdx]?.thumbnail || ''
     const detailMenuCharCount = menu_subtitles[globalSubIdx]?.detail_menu_char_count || 500
     
@@ -395,7 +399,7 @@ ${htmlExample}
   
   소제목 해석:
   - 해석도구: ${tool}
-  - 글자수: ${charCount}자 이내 (간단히만, 상세메뉴 해석에 집중하기 위해)
+  - 글자수: ${charCount ? `${charCount}자 이내 (반드시 ${charCount}자에 가깝게 충분히 작성하세요)` : '⚠️ 글자수 제한이 설정되지 않았습니다. 충분히 작성하세요'}
   ${thumbnailText}
   
   상세메뉴 해석 목록 (순서대로 모두 해석 필수):
@@ -407,7 +411,7 @@ ${detailMenuListText}
       return `
   ${sub.subtitle}
   - 해석도구: ${tool}
-  - 글자수 제한: ${charCount}자 이내
+  - 글자수 제한: ${charCount ? `${charCount}자 이내 (반드시 ${charCount}자에 가깝게 충분히 작성하세요)` : '⚠️ 글자수 제한이 설정되지 않았습니다. 충분히 작성하세요'}
   ${thumbnail ? `- 썸네일 URL: ${thumbnail} (반드시 HTML에 포함하세요!)` : ''}`
     }
   }).join('\n')}
@@ -440,7 +444,7 @@ menu-section div:
     아래와 같은 HTML 구조로 작성해야 합니다:
     subtitle-section div 시작
     subtitle-title h3: [상세메뉴가 있는 소제목]
-    subtitle-content div: [소제목 해석: 간단히만 (150자 이내)]
+    subtitle-content div: [소제목 해석 (관리자에서 설정한 글자수 제한)]
     subtitle-content div 닫기
     ⚠️⚠️⚠️ subtitle-content를 닫은 직후 반드시 detail-menu-section div를 열어야 합니다! ⚠️⚠️⚠️
     detail-menu-section div 시작
@@ -471,7 +475,7 @@ ${isSecondRequest ? `
 6. **소제목 썸네일이 제공된 경우 (위 소제목 목록에 "썸네일 URL"이 표시된 경우), 반드시 <h3 class="subtitle-title"> 태그 바로 다음에 <div class="subtitle-thumbnail-container"><img src="[썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>를 포함하세요. 썸네일이 없으면 포함하지 마세요.**
 7. 해석 내용은 <div class="subtitle-content"> 안에 HTML 형식으로 작성
 8. 각 content는 해당 subtitle의 char_count를 초과하지 않도록 주의
-   - **⚠️ 중요: 소제목에 상세메뉴가 있는 경우, 소제목 해석은 간단히만 (최대 150자 이내) 하고, 상세메뉴 해석에 집중하세요!**
+   - **⚠️ 중요: 소제목에 상세메뉴가 있는 경우, 소제목 해석은 관리자에서 설정한 글자수 제한을 정확히 준수하여 작성하세요. 설정된 글자수만큼 충분히 작성한 후, 상세메뉴 해석도 작성하세요!**
 9. **🔥🔥🔥 상세메뉴 해석 필수 규칙 (절대 생략 금지!) 🔥🔥🔥: 
    - **소제목 목록에 "상세메뉴 목록"이 표시된 소제목이 있으면:**
      * <div class="subtitle-content">를 닫은 직후

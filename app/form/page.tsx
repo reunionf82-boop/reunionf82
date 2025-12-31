@@ -784,10 +784,15 @@ function FormContent() {
       // 템플릿 리터럴 특수 문자 이스케이프
       const safeHtml = htmlContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
       
-      // "보기" 버튼과 동일한 HTML 생성 변수
+      // "보기" 버튼과 동일한 HTML 생성 변수 (result 페이지와 완전히 동일)
       const savedMenuFontSize = saved.content?.menu_font_size || 16
+      const savedMenuFontBold = saved.content?.menu_font_bold || false
       const savedSubtitleFontSize = saved.content?.subtitle_font_size || 14
+      const savedSubtitleFontBold = saved.content?.subtitle_font_bold || false
+      const savedDetailMenuFontSize = saved.content?.detail_menu_font_size || 12
+      const savedDetailMenuFontBold = saved.content?.detail_menu_font_bold || false
       const savedBodyFontSize = saved.content?.body_font_size || 11
+      const savedBodyFontBold = saved.content?.body_font_bold || false
       
       const fontFace = saved.content?.font_face || ''
       const extractFontFamily = (fontFaceCss: string): string | null => {
@@ -797,10 +802,53 @@ function FormContent() {
       }
       const fontFamilyName = extractFontFamily(fontFace)
 
+      // result 페이지와 완전히 동일한 동적 스타일
       const savedDynamicStyles = `
-        .menu-title { font-size: ${savedMenuFontSize}px !important; }
-        .subtitle-title { font-size: ${savedSubtitleFontSize}px !important; }
-        .subtitle-content { font-size: ${savedBodyFontSize}px !important; }
+        ${fontFace ? fontFace : ''}
+        ${fontFamilyName ? `
+        .result-title {
+          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+        }
+        .jeminai-results {
+          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+        }
+        .jeminai-results * {
+          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+        }
+        ` : ''}
+        .jeminai-results .menu-title {
+          font-size: ${savedMenuFontSize}px !important;
+          font-weight: ${savedMenuFontBold ? 'bold' : 'normal'} !important;
+        }
+        .jeminai-results .subtitle-title {
+          font-size: ${savedSubtitleFontSize}px !important;
+          font-weight: ${savedSubtitleFontBold ? 'bold' : 'normal'} !important;
+        }
+        .jeminai-results .detail-menu-title {
+          font-size: ${savedDetailMenuFontSize}px !important;
+          font-weight: ${savedDetailMenuFontBold ? 'bold' : 'normal'} !important;
+        }
+        .jeminai-results .subtitle-content {
+          font-size: ${savedBodyFontSize}px !important;
+          font-weight: ${savedBodyFontBold ? 'bold' : 'normal'} !important;
+          margin-bottom: 2em !important;
+          line-height: 1.8 !important;
+        }
+        .jeminai-results .detail-menu-content {
+          font-size: ${savedBodyFontSize}px !important;
+          font-weight: ${savedBodyFontBold ? 'bold' : 'normal'} !important;
+          line-height: 1.8 !important;
+          margin-bottom: 0 !important;
+        }
+        .jeminai-results .detail-menu-container {
+          margin-bottom: 2em !important;
+        }
+        .jeminai-results .detail-menu-section {
+          margin-bottom: 2em !important;
+        }
+        .jeminai-results .detail-menu-section:last-child {
+          margin-bottom: 0 !important;
+        }
       `
       
       const fontStyles = fontFamilyName ? `
@@ -3264,7 +3312,7 @@ function FormContent() {
                               // userName을 안전하게 처리 (템플릿 리터럴 중첩 방지)
                               const userNameForScript = saved.userName ? JSON.stringify(saved.userName) : "''"
                               
-                              // HTML 처리 (result 페이지 batch 모드와 동일한 로직)
+                              // HTML 처리 (result 페이지 batch 모드와 완전히 동일한 로직)
                               let htmlContent = saved.html || '';
                               htmlContent = htmlContent.replace(/\*\*/g, '');
                               
@@ -3281,10 +3329,27 @@ function FormContent() {
                                 // 모든 종류의 태그 뒤의 연속된 줄바꿈과 공백을 제거하고 테이블 바로 붙이기
                                 .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
                               
+                              // 숫자 접두사 제거 함수 (result 페이지와 동일)
+                              const removeNumberPrefix = (text: string): string => {
+                                if (!text) return text;
+                                // "1. ", "1-1. ", "1-1-1. " 등의 패턴 제거
+                                return text.replace(/^\d+(?:-\d+)*(?:-\d+)?\.\s*/, '').trim();
+                              };
+                              
                               const contentObj = saved.content || {};
                               const menuItems = contentObj?.menu_items || [];
                               const bookCoverThumbnail = contentObj?.book_cover_thumbnail || '';
                               const endingBookCoverThumbnail = contentObj?.ending_book_cover_thumbnail || '';
+                              
+                              // 폰트 크기 및 볼드 설정 (result 페이지와 동일)
+                              const menuFontSize = contentObj?.menu_font_size || 16;
+                              const menuFontBold = contentObj?.menu_font_bold || false;
+                              const subtitleFontSize = contentObj?.subtitle_font_size || 14;
+                              const subtitleFontBold = contentObj?.subtitle_font_bold || false;
+                              const detailMenuFontSize = contentObj?.detail_menu_font_size || 12;
+                              const detailMenuFontBold = contentObj?.detail_menu_font_bold || false;
+                              const bodyFontSize = contentObj?.body_font_size || 11;
+                              const bodyFontBold = contentObj?.body_font_bold || false;
                               
                               if (menuItems.length > 0 || bookCoverThumbnail || endingBookCoverThumbnail) {
                                 try {
@@ -3298,7 +3363,7 @@ function FormContent() {
                                     const bookCoverDiv = doc.createElement('div');
                                     bookCoverDiv.className = 'book-cover-thumbnail-container';
                                     bookCoverDiv.style.cssText = 'width: 100%; margin-bottom: 2.5rem; display: flex; justify-content: center;';
-                                    bookCoverDiv.innerHTML = '<img src="' + bookCoverThumbnail + '" alt="북커버 썸네일" style="width: 100%; height: auto; object-fit: contain; display: block;" data-retry-count="0" data-original-src="' + bookCoverThumbnail.replace(/"/g, '&quot;') + '" onerror="if(this.dataset.retryCount===\'0\') { this.dataset.retryCount=\'1\'; this.src=this.dataset.originalSrc+\'?retry=\'+Date.now(); } else { this.onerror=null; this.style.display=\'none\'; if(this.parentElement) { this.parentElement.style.background=\'linear-gradient(to bottom right, #1e3a8a, #7c3aed, #ec4899)\'; this.parentElement.style.minHeight=\'200px\'; } }" />';
+                                    bookCoverDiv.innerHTML = '<img src="' + bookCoverThumbnail + '" alt="북커버 썸네일" style="width: calc(100% - 48px); max-width: calc(100% - 48px); height: auto; object-fit: contain; display: block;" />';
                                     // 첫 번째 자식 요소(menu-title) 앞에 삽입
                                     if (firstSection.firstChild) {
                                       firstSection.insertBefore(bookCoverDiv, firstSection.firstChild);
@@ -3307,21 +3372,107 @@ function FormContent() {
                                     }
                                   }
                                   
-                                  // 소제목 썸네일 추가
+                                  // 숫자 접두사 제거 및 상세메뉴 추가 (result 페이지와 동일)
                                   menuSections.forEach((section, menuIndex) => {
                                     const menuItem = menuItems[menuIndex];
+                                    
+                                    // 대메뉴 제목에서 숫자 접두사 제거 및 볼드 속성 적용
+                                    const menuTitle = section.querySelector('.menu-title');
+                                    if (menuTitle) {
+                                      menuTitle.textContent = removeNumberPrefix(menuTitle.textContent || '');
+                                      (menuTitle as HTMLElement).style.fontWeight = menuFontBold ? 'bold' : 'normal';
+                                    }
+                                    
                                     if (menuItem?.subtitles) {
                                       const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'));
                                       subtitleSections.forEach((subSection, subIndex) => {
                                         const subtitle = menuItem.subtitles[subIndex];
+                                        
+                                        // 소메뉴 제목에서 숫자 접두사 제거 및 볼드 속성 적용
+                                        const subtitleTitle = subSection.querySelector('.subtitle-title');
+                                        if (subtitleTitle) {
+                                          subtitleTitle.textContent = removeNumberPrefix(subtitleTitle.textContent || '');
+                                          (subtitleTitle as HTMLElement).style.fontWeight = subtitleFontBold ? 'bold' : 'normal';
+                                        }
+                                        
+                                        // 소제목 썸네일 추가
                                         if (subtitle?.thumbnail) {
-                                          const titleDiv = subSection.querySelector('.subtitle-title');
-                                          if (titleDiv) {
+                                          if (subtitleTitle) {
                                             const thumbnailImg = doc.createElement('div');
                                             thumbnailImg.className = 'subtitle-thumbnail-container';
                                             thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;';
-                                            thumbnailImg.innerHTML = '<img src="' + subtitle.thumbnail + '" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" data-retry-count="0" data-original-src="' + subtitle.thumbnail.replace(/"/g, '&quot;') + '" onerror="if(this.dataset.retryCount===\'0\') { this.dataset.retryCount=\'1\'; this.src=this.dataset.originalSrc+\'?retry=\'+Date.now(); } else { this.onerror=null; this.style.display=\'none\'; if(this.parentElement) { this.parentElement.style.background=\'linear-gradient(to bottom right, #1e3a8a, #7c3aed, #ec4899)\'; this.parentElement.style.minHeight=\'150px\'; this.parentElement.style.borderRadius=\'8px\'; } }" />';
-                                            titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling);
+                                            thumbnailImg.innerHTML = '<img src="' + subtitle.thumbnail + '" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" />';
+                                            subtitleTitle.parentNode?.insertBefore(thumbnailImg, subtitleTitle.nextSibling);
+                                          }
+                                        }
+                                        
+                                        // 상세메뉴 추가 (HTML에서 파싱한 내용 사용) - result 페이지와 동일
+                                        const existingDetailMenuSection = subSection.querySelector('.detail-menu-section');
+                                        
+                                        if (existingDetailMenuSection) {
+                                          // HTML에 이미 상세메뉴가 있으면 그대로 사용 (제미나이가 생성한 것)
+                                          // 숫자 접두사만 제거하고 스타일 적용
+                                          const detailMenuTitles = existingDetailMenuSection.querySelectorAll('.detail-menu-title');
+                                          detailMenuTitles.forEach((titleEl) => {
+                                            if (titleEl.textContent) {
+                                              titleEl.textContent = removeNumberPrefix(titleEl.textContent);
+                                            }
+                                            (titleEl as HTMLElement).style.fontSize = detailMenuFontSize + 'px';
+                                            (titleEl as HTMLElement).style.fontWeight = detailMenuFontBold ? 'bold' : 'normal';
+                                          });
+                                          
+                                          const detailMenuContents = existingDetailMenuSection.querySelectorAll('.detail-menu-content');
+                                          detailMenuContents.forEach((contentEl) => {
+                                            (contentEl as HTMLElement).style.fontSize = bodyFontSize + 'px';
+                                            (contentEl as HTMLElement).style.fontWeight = bodyFontBold ? 'bold' : 'normal';
+                                          });
+                                          
+                                          // 상세메뉴가 subtitle-content 앞에 있으면 subtitle-content 다음으로 이동
+                                          const subtitleContent = subSection.querySelector('.subtitle-content');
+                                          if (subtitleContent && existingDetailMenuSection) {
+                                            const detailMenuParent = existingDetailMenuSection.parentNode;
+                                            const subtitleContentParent = subtitleContent.parentNode;
+                                            
+                                            // subtitle-content가 detail-menu-section보다 뒤에 있는지 확인 (DOM 순서)
+                                            let isDetailMenuBeforeContent = false;
+                                            if (detailMenuParent === subtitleContentParent) {
+                                              let currentNode = subtitleContentParent?.firstChild;
+                                              while (currentNode) {
+                                                if (currentNode === existingDetailMenuSection) {
+                                                  isDetailMenuBeforeContent = true;
+                                                  break;
+                                                }
+                                                if (currentNode === subtitleContent) {
+                                                  break;
+                                                }
+                                                currentNode = currentNode.nextSibling;
+                                              }
+                                            }
+                                            
+                                            // detail-menu-section이 subtitle-content 앞에 있으면 이동
+                                            if (isDetailMenuBeforeContent) {
+                                              subtitleContentParent?.insertBefore(existingDetailMenuSection, subtitleContent.nextSibling);
+                                            }
+                                          }
+                                          
+                                          // 상세메뉴 썸네일 추가
+                                          if (subtitle?.detailMenus) {
+                                            const detailMenuSections = existingDetailMenuSection.querySelectorAll('.detail-menu-section') || [existingDetailMenuSection];
+                                            subtitle.detailMenus.forEach((detailMenu: any, detailIndex: number) => {
+                                              if (detailMenu?.thumbnail) {
+                                                const detailMenuSection = detailMenuSections[detailIndex] as HTMLElement;
+                                                if (detailMenuSection) {
+                                                  const detailMenuTitle = detailMenuSection.querySelector('.detail-menu-title');
+                                                  if (detailMenuTitle) {
+                                                    const thumbnailImg = doc.createElement('div');
+                                                    thumbnailImg.className = 'detail-menu-thumbnail-container';
+                                                    thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px;';
+                                                    thumbnailImg.innerHTML = '<img src="' + detailMenu.thumbnail + '" alt="상세메뉴 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" />';
+                                                    detailMenuTitle.parentNode?.insertBefore(thumbnailImg, detailMenuTitle.nextSibling);
+                                                  }
+                                                }
+                                              }
+                                            });
                                           }
                                         }
                                       });
@@ -3334,7 +3485,7 @@ function FormContent() {
                                     const endingBookCoverDiv = doc.createElement('div');
                                     endingBookCoverDiv.className = 'ending-book-cover-thumbnail-container';
                                     endingBookCoverDiv.style.cssText = 'width: 100%; margin-top: 1rem; display: flex; justify-content: center;';
-                                    endingBookCoverDiv.innerHTML = '<img src="' + endingBookCoverThumbnail + '" alt="엔딩북커버 썸네일" style="width: 100%; height: auto; object-fit: contain; display: block;" data-retry-count="0" data-original-src="' + endingBookCoverThumbnail.replace(/"/g, '&quot;') + '" onerror="if(this.dataset.retryCount===\'0\') { this.dataset.retryCount=\'1\'; this.src=this.dataset.originalSrc+\'?retry=\'+Date.now(); } else { this.onerror=null; this.style.display=\'none\'; if(this.parentElement) { this.parentElement.style.background=\'linear-gradient(to bottom right, #1e3a8a, #7c3aed, #ec4899)\'; this.parentElement.style.minHeight=\'200px\'; } }" />';
+                                    endingBookCoverDiv.innerHTML = '<img src="' + endingBookCoverThumbnail + '" alt="엔딩북커버 썸네일" style="width: 100%; height: auto; object-fit: contain; display: block;" />';
                                     // 마지막 자식 요소 뒤에 추가
                                     lastSection.appendChild(endingBookCoverDiv);
                                   }
@@ -3356,8 +3507,13 @@ function FormContent() {
                               const newWindow = window.open('', '_blank')
                               if (newWindow) {
                                 const savedMenuFontSize = saved.content?.menu_font_size || 16
+                                const savedMenuFontBold = saved.content?.menu_font_bold || false
                                 const savedSubtitleFontSize = saved.content?.subtitle_font_size || 14
+                                const savedSubtitleFontBold = saved.content?.subtitle_font_bold || false
+                                const savedDetailMenuFontSize = saved.content?.detail_menu_font_size || 12
+                                const savedDetailMenuFontBold = saved.content?.detail_menu_font_bold || false
                                 const savedBodyFontSize = saved.content?.body_font_size || 11
+                                const savedBodyFontBold = saved.content?.body_font_bold || false
                                 
                                 // 웹폰트 적용
                                 const fontFace = saved.content?.font_face || ''
@@ -3368,10 +3524,53 @@ function FormContent() {
                                 }
                                 const fontFamilyName = extractFontFamily(fontFace)
 
+                                // result 페이지와 완전히 동일한 동적 스타일
                                 const savedDynamicStyles = `
-                                  .menu-title { font-size: ${savedMenuFontSize}px !important; }
-                                  .subtitle-title { font-size: ${savedSubtitleFontSize}px !important; }
-                                  .subtitle-content { font-size: ${savedBodyFontSize}px !important; }
+                                  ${fontFace ? fontFace : ''}
+                                  ${fontFamilyName ? `
+                                  .result-title {
+                                    font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+                                  }
+                                  .jeminai-results {
+                                    font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+                                  }
+                                  .jeminai-results * {
+                                    font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+                                  }
+                                  ` : ''}
+                                  .jeminai-results .menu-title {
+                                    font-size: ${savedMenuFontSize}px !important;
+                                    font-weight: ${savedMenuFontBold ? 'bold' : 'normal'} !important;
+                                  }
+                                  .jeminai-results .subtitle-title {
+                                    font-size: ${savedSubtitleFontSize}px !important;
+                                    font-weight: ${savedSubtitleFontBold ? 'bold' : 'normal'} !important;
+                                  }
+                                  .jeminai-results .detail-menu-title {
+                                    font-size: ${savedDetailMenuFontSize}px !important;
+                                    font-weight: ${savedDetailMenuFontBold ? 'bold' : 'normal'} !important;
+                                  }
+                                  .jeminai-results .subtitle-content {
+                                    font-size: ${savedBodyFontSize}px !important;
+                                    font-weight: ${savedBodyFontBold ? 'bold' : 'normal'} !important;
+                                    margin-bottom: 2em !important;
+                                    line-height: 1.8 !important;
+                                  }
+                                  .jeminai-results .detail-menu-content {
+                                    font-size: ${savedBodyFontSize}px !important;
+                                    font-weight: ${savedBodyFontBold ? 'bold' : 'normal'} !important;
+                                    line-height: 1.8 !important;
+                                    margin-bottom: 0 !important;
+                                  }
+                                  .jeminai-results .detail-menu-container {
+                                    margin-bottom: 2em !important;
+                                  }
+                                  .jeminai-results .detail-menu-section {
+                                    margin-bottom: 2em !important;
+                                  }
+                                  .jeminai-results .detail-menu-section:last-child {
+                                    margin-bottom: 0 !important;
+                                  }
                                 `
                                 
                                 const fontStyles = fontFamilyName ? `
@@ -3400,7 +3599,7 @@ function FormContent() {
                                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
                                     <title>${saved.title}</title>
                                     <style>
-                                      ${fontFace ? fontFace : ''}
+                                      ${savedDynamicStyles}
                                       ${fontStyles}
                                       body {
                                         font-family: ${fontFamilyName ? `'${fontFamilyName}', ` : ''}-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -3408,6 +3607,9 @@ function FormContent() {
                                         margin: 0 auto;
                                         padding: 32px 16px;
                                         background: #f9fafb;
+                                      }
+                                      .jeminai-results {
+                                        font-family: ${fontFamilyName ? `'${fontFamilyName}', ` : ''}-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
                                       }
                                       .container {
                                         background: transparent;

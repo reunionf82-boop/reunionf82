@@ -15,7 +15,7 @@ interface ResultData {
 }
 
 interface ParsedSubtitle {
-  detailMenus?: Array<{ detailMenu: string; contentHtml?: string }>;
+  detailMenus?: Array<{ detailMenu: string; contentHtml?: string; thumbnail?: string }>;
   title: string
   contentHtml: string
   thumbnail?: string
@@ -1121,16 +1121,23 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         const detailMenuContents = Array.from(containerForSearch.querySelectorAll('.detail-menu-content'))
         
         if (detailMenuContents.length > 0) {
-          detailMenusWithContent = detailMenus.map((dm: { detailMenu: string; contentHtml?: string }, idx: number) => {
+          detailMenusWithContent = detailMenus.map((dm: { detailMenu: string; contentHtml?: string; thumbnail?: string }, idx: number) => {
             // 순서대로 매핑. 해당 인덱스의 컨텐츠가 아직 없으면 빈 문자열
             const contentEl = detailMenuContents[idx]
             const contentHtml = contentEl ? contentEl.innerHTML : ''
             
             return {
               ...dm,
-              contentHtml: contentHtml
+              contentHtml: contentHtml,
+              thumbnail: dm.thumbnail || undefined // 썸네일 정보 포함
             }
           })
+        } else {
+          // detailMenuContents가 없어도 썸네일 정보는 유지
+          detailMenusWithContent = detailMenus.map((dm: { detailMenu: string; contentHtml?: string; thumbnail?: string }) => ({
+            ...dm,
+            thumbnail: dm.thumbnail || undefined
+          }))
         }
         
         return {
@@ -3047,6 +3054,17 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                                     <div className="detail-menu-title text-gray-700 font-semibold">
                                       {removeNumberPrefix(detailMenu.detailMenu)}
                                     </div>
+                                    {/* 상세메뉴 썸네일 표시 */}
+                                    {detailMenu.thumbnail && detailMenu.thumbnail.trim() && (
+                                      <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto', marginTop: '8px', marginBottom: '8px' }}>
+                                        <img 
+                                          src={detailMenu.thumbnail} 
+                                          alt="상세메뉴 썸네일"
+                                          className="w-full h-auto rounded-lg"
+                                          style={{ display: 'block', objectFit: 'contain' }}
+                                        />
+                                      </div>
+                                    )}
                                     {hasDetailMenuContent ? (
                                       <div 
                                         className="detail-menu-content text-gray-800"

@@ -52,7 +52,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       subtitle: string; 
       interpretation_tool: string; 
       thumbnail?: string;
-      detailMenus: Array<{ id: number; detailMenu: string; interpretation_tool: string }>;
+      detailMenus: Array<{ id: number; detailMenu: string; interpretation_tool: string; thumbnail?: string }>;
     }>;
   }>>([])
   const [firstMenuField, setFirstMenuField] = useState<{ 
@@ -63,13 +63,13 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       subtitle: string; 
       interpretation_tool: string; 
       thumbnail?: string;
-      detailMenus: Array<{ id: number; detailMenu: string; interpretation_tool: string }>;
+      detailMenus: Array<{ id: number; detailMenu: string; interpretation_tool: string; thumbnail?: string }>;
     }>;
   }>({ value: '', thumbnail: '', subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }] })
   const [initialData, setInitialData] = useState<any>(null)
   const [hasChanges, setHasChanges] = useState(false)
   const [showThumbnailModal, setShowThumbnailModal] = useState(false)
-  const [currentThumbnailField, setCurrentThumbnailField] = useState<'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | 'bookCover' | 'endingBookCover' | number | `menu-${number}` | `subtitle-first-${number}` | `subtitle-menu-${number}-${number}`>('main')
+  const [currentThumbnailField, setCurrentThumbnailField] = useState<'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | 'bookCover' | 'endingBookCover' | number | `menu-${number}` | `subtitle-first-${number}` | `subtitle-menu-${number}-${number}` | `detail-menu-first-${number}-${number}` | `detail-menu-menu-${number}-${number}-${number}`>('main')
   const [showDeleteSubtitleConfirm, setShowDeleteSubtitleConfirm] = useState(false)
   const [subtitleToDelete, setSubtitleToDelete] = useState<{ menuId: number | 'first'; subtitleId: number } | null>(null)
   const [showCancelWarning, setShowCancelWarning] = useState(false)
@@ -317,7 +317,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   detailMenus: (s.detailMenus || []).map((dm: any) => ({
                     id: dm.id || Date.now() + Math.random(),
                     detailMenu: dm.detailMenu || '',
-                    interpretation_tool: dm.interpretation_tool || ''
+                    interpretation_tool: dm.interpretation_tool || '',
+                    thumbnail: dm.thumbnail || undefined
                   }))
                 }
               })
@@ -750,7 +751,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               detailMenus: sub.detailMenus.map((dm, idx) => ({
                 id: existingSubtitle?.detailMenus?.[idx]?.id || Date.now() + Math.random() + idx,
                 detailMenu: dm.detailMenu,
-                interpretation_tool: dm.interpretation_tool || ''
+                interpretation_tool: dm.interpretation_tool || '',
+                thumbnail: existingSubtitle?.detailMenus?.[idx]?.thumbnail || undefined
               })) || []
           }
         })
@@ -787,7 +789,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               detailMenus: sub.detailMenus.map((dm, idx) => ({
                 id: existingSubtitle?.detailMenus?.[idx]?.id || Date.now() + 3000 + groupIndex * 100 + subIndex * 10 + idx,
                 detailMenu: dm.detailMenu,
-                interpretation_tool: dm.interpretation_tool || ''
+                interpretation_tool: dm.interpretation_tool || '',
+                thumbnail: existingSubtitle?.detailMenus?.[idx]?.thumbnail || undefined
               })) || []
             }
           })
@@ -917,6 +920,93 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             value: f.value,
             subtitles: f.subtitles.map(s => ({ id: s.id, thumbnail: s.thumbnail }))
           })))
+          return updated
+        })
+      }
+    } else if (typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('detail-menu-')) {
+      // detail-menu-first-{subtitleId}-{detailMenuId} 또는 detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId} 형식
+      const parts = currentThumbnailField.split('-')
+      console.log('상세메뉴 썸네일 선택 - currentThumbnailField:', currentThumbnailField, 'parts:', parts)
+      
+      if (parts[2] === 'first') {
+        // detail-menu-first-{subtitleId}-{detailMenuId} 형식
+        const subtitleIdStr = parts[3]
+        const detailMenuIdStr = parts[4]
+        const subtitleId = parseFloat(subtitleIdStr)
+        const detailMenuId = parseFloat(detailMenuIdStr)
+        
+        console.log('첫 번째 메뉴의 상세메뉴 썸네일 업데이트:', { subtitleIdStr, subtitleId, detailMenuIdStr, detailMenuId, url })
+        setFirstMenuField(prev => {
+          const updated = {
+            ...prev,
+            subtitles: prev.subtitles.map(s => {
+              const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+              const targetSubtitleId = parseFloat(subtitleIdStr)
+              if (sId === targetSubtitleId || String(s.id) === subtitleIdStr) {
+                return {
+                  ...s,
+                  detailMenus: s.detailMenus.map(dm => {
+                    const dmId = typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))
+                    const targetDetailMenuId = parseFloat(detailMenuIdStr)
+                    if (dmId === targetDetailMenuId || String(dm.id) === detailMenuIdStr) {
+                      console.log('매칭된 상세메뉴 찾음:', dm.id, '->', url)
+                      return { ...dm, thumbnail: url }
+                    }
+                    return dm
+                  })
+                }
+              }
+              return s
+            })
+          }
+          console.log('업데이트된 첫 번째 메뉴 상세메뉴 썸네일:', updated.subtitles.map(s => ({
+            id: s.id,
+            detailMenus: s.detailMenus.map(dm => ({ id: dm.id, thumbnail: dm.thumbnail }))
+          })))
+          return updated
+        })
+      } else if (parts[2] === 'menu') {
+        // detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId} 형식
+        const menuIdStr = parts[3]
+        const subtitleIdStr = parts[4]
+        const detailMenuIdStr = parts[5]
+        const menuId = parseFloat(menuIdStr)
+        const subtitleId = parseFloat(subtitleIdStr)
+        const detailMenuId = parseFloat(detailMenuIdStr)
+        
+        console.log('메뉴 필드의 상세메뉴 썸네일 업데이트:', { menuIdStr, menuId, subtitleIdStr, subtitleId, detailMenuIdStr, detailMenuId, url })
+        
+        setMenuFields(prevFields => {
+          const updated = prevFields.map(f => {
+            const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+            const menuIdNum = parseFloat(menuIdStr)
+            if (fId === menuIdNum || String(f.id) === menuIdStr) {
+              const updatedSubtitles = f.subtitles.map(s => {
+                const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+                const targetSubtitleId = parseFloat(subtitleIdStr)
+                if (sId === targetSubtitleId || String(s.id) === subtitleIdStr) {
+                  return {
+                    ...s,
+                    detailMenus: s.detailMenus.map(dm => {
+                      const dmId = typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))
+                      const targetDetailMenuId = parseFloat(detailMenuIdStr)
+                      if (dmId === targetDetailMenuId || String(dm.id) === detailMenuIdStr) {
+                        console.log('상세메뉴 썸네일 업데이트:', dm.id, '->', url)
+                        return { ...dm, thumbnail: url }
+                      }
+                      return dm
+                    })
+                  }
+                }
+                return s
+              })
+              return {
+                ...f,
+                subtitles: updatedSubtitles
+              }
+            }
+            return f
+          })
           return updated
         })
       }
@@ -1348,6 +1438,37 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                           rows={1}
                           style={{ minHeight: '36px' }}
                         />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCurrentThumbnailField(`detail-menu-first-${subtitle.id}-${detailMenu.id}` as any)
+                            console.log('첫 번째 메뉴 상세메뉴 썸네일 클릭:', subtitle.id, detailMenu.id)
+                            setShowThumbnailModal(true)
+                          }}
+                          className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                        >
+                          {detailMenu.thumbnail && detailMenu.thumbnail.trim() ? (
+                            <img 
+                              src={detailMenu.thumbnail} 
+                              alt="썸네일" 
+                              className="absolute inset-0 w-full h-full object-contain"
+                              onError={(e) => {
+                                console.error('상세메뉴 썸네일 로드 실패:', detailMenu.thumbnail, e)
+                                const target = e.target as HTMLImageElement
+                                target.style.display = 'none'
+                                const parent = target.parentElement
+                                if (parent && !parent.querySelector('span')) {
+                                  const span = document.createElement('span')
+                                  span.className = 'text-[10px] leading-tight whitespace-nowrap'
+                                  span.textContent = '썸네일'
+                                  parent.appendChild(span)
+                                }
+                              }}
+                            />
+                          ) : (
+                            <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                          )}
+                        </button>
                         {detailIndex === 0 ? (
                           <button
                             type="button"
@@ -1356,7 +1477,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                               subtitles: prev.subtitles.map(s => 
                                 s.id === subtitle.id ? {
                                   ...s,
-                                  detailMenus: [...s.detailMenus, { id: Date.now(), detailMenu: '', interpretation_tool: '' }]
+                                  detailMenus: [...s.detailMenus, { id: Date.now(), detailMenu: '', interpretation_tool: '', thumbnail: undefined }]
                                 } : s
                               )
                             }))}
@@ -1391,7 +1512,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                           subtitles: prev.subtitles.map(s => 
                             s.id === subtitle.id ? {
                               ...s,
-                              detailMenus: [{ id: Date.now(), detailMenu: '', interpretation_tool: '' }]
+                              detailMenus: [{ id: Date.now(), detailMenu: '', interpretation_tool: '', thumbnail: undefined }]
                             } : s
                           )
                         }))}
@@ -1592,11 +1713,52 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                                   )
                                 } : f
                               ))}
-                          className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
-                          placeholder="상세메뉴 해석도구"
-                          rows={1}
-                          style={{ minHeight: '36px' }}
-                        />
+                              className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
+                              placeholder="상세메뉴 해석도구"
+                              rows={1}
+                              style={{ minHeight: '36px' }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const fieldId = field.id
+                                const subtitleId = subtitle.id
+                                const detailMenuId = detailMenu.id
+                                const fieldKey = `detail-menu-menu-${fieldId}-${subtitleId}-${detailMenuId}`
+                                console.log('메뉴 필드 상세메뉴 썸네일 클릭:', {
+                                  fieldId,
+                                  subtitleId,
+                                  detailMenuId,
+                                  fieldKey,
+                                  currentThumbnail: detailMenu.thumbnail
+                                })
+                                setCurrentThumbnailField(fieldKey as any)
+                                setShowThumbnailModal(true)
+                              }}
+                              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                            >
+                              {detailMenu.thumbnail && detailMenu.thumbnail.trim() ? (
+                                <img 
+                                  src={detailMenu.thumbnail} 
+                                  alt="썸네일" 
+                                  className="absolute inset-0 w-full h-full object-contain"
+                                  onError={(e) => {
+                                    console.error('상세메뉴 썸네일 로드 실패:', detailMenu.thumbnail, e)
+                                    const target = e.target as HTMLImageElement
+                                    target.style.display = 'none'
+                                    const parent = target.parentElement
+                                    if (parent && !parent.querySelector('span')) {
+                                      const span = document.createElement('span')
+                                      span.className = 'text-[10px] leading-tight whitespace-nowrap'
+                                      span.textContent = '썸네일'
+                                      parent.appendChild(span)
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                              )}
+                            </button>
                             {detailIndex === 0 ? (
                               <button
                                 type="button"
@@ -1606,7 +1768,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                                     subtitles: f.subtitles.map(s => 
                                       s.id === subtitle.id ? {
                                         ...s,
-                                        detailMenus: [...s.detailMenus, { id: Date.now(), detailMenu: '', interpretation_tool: '' }]
+                                        detailMenus: [...s.detailMenus, { id: Date.now(), detailMenu: '', interpretation_tool: '', thumbnail: undefined }]
                                       } : s
                                     )
                                   } : f
@@ -2048,6 +2210,62 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     const thumbnail = subtitle?.thumbnail
                     console.log('최종 썸네일:', thumbnail)
                     return thumbnail
+                  }
+                  return undefined
+                }
+                return undefined
+              })()
+            : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('detail-menu-')
+            ? (() => {
+                const parts = currentThumbnailField.split('-')
+                console.log('ThumbnailModal 상세메뉴 썸네일 계산:', {
+                  currentThumbnailField,
+                  parts
+                })
+                if (parts[2] === 'first') {
+                  // detail-menu-first-{subtitleId}-{detailMenuId} 형식
+                  const subtitleIdStr = parts[3]
+                  const detailMenuIdStr = parts[4]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const detailMenuIdNum = parseFloat(detailMenuIdStr)
+                  const subtitle = firstMenuField.subtitles.find(s => {
+                    const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+                    return sId === subtitleIdNum || String(s.id) === subtitleIdStr
+                  })
+                  if (subtitle) {
+                    const detailMenu = subtitle.detailMenus.find(dm => {
+                      const dmId = typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))
+                      return dmId === detailMenuIdNum || String(dm.id) === detailMenuIdStr
+                    })
+                    console.log('첫 번째 메뉴 상세메뉴 썸네일:', { subtitleIdStr, detailMenuIdStr, thumbnail: detailMenu?.thumbnail })
+                    return detailMenu?.thumbnail
+                  }
+                  return undefined
+                } else if (parts[2] === 'menu') {
+                  // detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId} 형식
+                  const menuIdStr = parts[3]
+                  const menuIdNum = parseFloat(menuIdStr)
+                  const subtitleIdStr = parts[4]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const detailMenuIdStr = parts[5]
+                  const detailMenuIdNum = parseFloat(detailMenuIdStr)
+                  const menuField = menuFields.find(f => {
+                    const fieldIdNum = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+                    return fieldIdNum === menuIdNum || String(f.id) === menuIdStr
+                  })
+                  if (menuField) {
+                    const subtitle = menuField.subtitles.find(s => {
+                      const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+                      return sId === subtitleIdNum || String(s.id) === subtitleIdStr
+                    })
+                    if (subtitle) {
+                      const detailMenu = subtitle.detailMenus.find(dm => {
+                        const dmId = typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))
+                        return dmId === detailMenuIdNum || String(dm.id) === detailMenuIdStr
+                      })
+                      console.log('메뉴 필드 상세메뉴 썸네일:', { menuIdStr, subtitleIdStr, detailMenuIdStr, thumbnail: detailMenu?.thumbnail })
+                      return detailMenu?.thumbnail
+                    }
                   }
                   return undefined
                 }

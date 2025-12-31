@@ -557,12 +557,15 @@ ${isSecondRequest ? `**⚠️ 이 메뉴의 아래 소제목들만 해석하세�
 ${subtitlesForMenu.map((sub: any, subIdx: number) => {
     const globalSubIdx = menu_subtitles.findIndex((s: any) => s.subtitle === sub.subtitle)
     const tool = menu_subtitles[globalSubIdx]?.interpretation_tool || ''
-    const charCount = menu_subtitles[globalSubIdx]?.char_count || 500
+    const charCount = menu_subtitles[globalSubIdx]?.char_count
+    if (!charCount || charCount <= 0) {
+      console.error(`❌ 소제목 "${sub.subtitle}"의 char_count가 설정되지 않았거나 0 이하입니다. char_count: ${charCount}`)
+    }
     const thumbnail = menu_subtitles[globalSubIdx]?.thumbnail || ''
     return `
   ${sub.subtitle}
   - 해석도구: ${tool}
-  - 글자수 제한: ${charCount}자 이내
+  - 글자수 제한: ${charCount ? `${charCount}자 이내 (반드시 ${charCount}자에 가깝게 충분히 작성하세요)` : '⚠️ 글자수 제한이 설정되지 않았습니다. 충분히 작성하세요'}
   ${thumbnail ? `- 썸네일 URL: ${thumbnail} (반드시 HTML에 포함하세요!)` : ''}
 `
   }).join('\n')}
