@@ -35,9 +35,15 @@ export interface ContentData {
   menu_subtitle?: string
   interpretation_tool?: string
   subtitle_char_count?: number
+  detail_menu_char_count?: number
   menu_font_size?: number
+  menu_font_bold?: boolean
   subtitle_font_size?: number
+  subtitle_font_bold?: boolean
+  detail_menu_font_size?: number
+  detail_menu_font_bold?: boolean
   body_font_size?: number
+  body_font_bold?: boolean
   font_face?: string // 웹폰트 CSS (@font-face)
   menu_items?: Array<{ id: number; value: string; thumbnail?: string }>
   is_new?: boolean

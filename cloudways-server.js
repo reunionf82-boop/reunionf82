@@ -148,6 +148,10 @@ app.post('/chat', async (req, res) => {
         });
         const currentYear = parseInt(koreaYearFormatter.format(now));
 
+        // 상세메뉴가 있는 소제목이 있는지 미리 확인
+        const hasDetailMenusInSubtitles = menu_subtitles.some((s) => s.detailMenus && s.detailMenus.length > 0);
+        console.log('프롬프트 생성 전 체크: 상세메뉴가 있는 소제목 존재 여부:', hasDetailMenusInSubtitles);
+
         const prompt = `
 ${isSecondRequest ? `
 🚨🚨🚨 **중요: 2차 요청입니다. 절대 처음부터 다시 시작하지 마세요!** 🚨🚨🚨
@@ -161,6 +165,26 @@ ${isSecondRequest ? `
 당신은 ${role_prompt}입니다.
 
 ---
+${hasDetailMenusInSubtitles ? `# 🚨🚨🚨 최우선 필수 규칙: 상세메뉴 구조 (이 문서에는 상세메뉴가 있는 소제목이 포함되어 있습니다!) 🚨🚨🚨
+
+**⚠️⚠️⚠️ 반드시 준수: 아래 소제목 목록에서 "═══ 상세메뉴 필수 포함 소제목 ═══"로 시작하는 소제목은 다음 HTML 구조를 정확히 따라야 합니다:**
+
+<div class="subtitle-section">
+  <h3 class="subtitle-title">[소제목]</h3>
+  <div class="subtitle-content">[소제목 해석 (관리자에서 설정한 글자수 제한)]</div>
+  <div class="detail-menu-section">
+    <div class="detail-menu-title">[상세메뉴 제목 1]</div>
+    <div class="detail-menu-content">[상세메뉴 1 해석]</div>
+    <div class="detail-menu-title">[상세메뉴 제목 2]</div>
+    <div class="detail-menu-content">[상세메뉴 2 해석]</div>
+    ... (모든 상세메뉴 순서대로)
+  </div>
+</div>
+
+**핵심: subtitle-content를 닫은 직후 반드시 detail-menu-section을 열고, 모든 상세메뉴를 해석해야 합니다. 이 구조를 생략하면 안 됩니다!**
+
+---
+` : ''}
 # ⚠️ 입력 데이터 (계산된 불변의 값 - 그대로 복사하여 사용)
 
 ${manse_ryeok_text ? `${manse_ryeok_text}` : '(만세력 텍스트 데이터 없음 - 해석 불가)'}
@@ -285,14 +309,71 @@ ${isSecondRequest ? `**⚠️ 이 메뉴의 아래 소제목들만 해석하세�
 ${subtitlesForMenu.map((sub, subIdx) => {
     const globalSubIdx = menu_subtitles.findIndex((s) => s.subtitle === sub.subtitle);
     const tool = menu_subtitles[globalSubIdx]?.interpretation_tool || '';
+    const detailMenus = menu_subtitles[globalSubIdx]?.detailMenus || [];
+    // 관리자 form에서 설정한 char_count 값을 사용
     const charCount = menu_subtitles[globalSubIdx]?.char_count || 500;
     const thumbnail = menu_subtitles[globalSubIdx]?.thumbnail || '';
-    return `
+    const detailMenuCharCount = menu_subtitles[globalSubIdx]?.detail_menu_char_count || 500;
+    
+    // 상세메뉴가 있는 경우 특별한 강조
+    if (detailMenus.length > 0) {
+        console.log(`[프롬프트 생성] 소제목 "${sub.subtitle}"에 상세메뉴 ${detailMenus.length}개 포함됨`);
+        
+        // HTML 예시 생성
+        let htmlExample = '<div class="subtitle-section">\n    <h3 class="subtitle-title">' + sub.subtitle + '</h3>\n    <div class="subtitle-content">[소제목 해석]</div>\n    <div class="detail-menu-section">\n';
+        detailMenus.forEach((dm) => {
+            htmlExample += '      <div class="detail-menu-title">' + (dm.detailMenu || '') + '</div>\n';
+            htmlExample += '      <div class="detail-menu-content">[해석 내용]</div>\n';
+        });
+        htmlExample += '    </div>\n  </div>';
+        
+        // 상세메뉴 목록 텍스트 생성
+        let detailMenuListText = '';
+        detailMenus.forEach((dm, dmIdx) => {
+            const dmCharCount = dm.char_count || detailMenuCharCount;
+            detailMenuListText += '  ' + (dmIdx + 1) + '. 제목: "' + (dm.detailMenu || '') + '"\n';
+            detailMenuListText += '     - 해석도구: ' + (dm.interpretation_tool || '') + '\n';
+            detailMenuListText += '     - 글자수: ' + dmCharCount + '자 이내\n';
+            detailMenuListText += '     - ⚠️ 반드시 해석 내용을 작성해야 합니다! 제목만 쓰면 안 됩니다!\n';
+        });
+        
+        const thumbnailText = thumbnail ? '- 썸네일 URL: ' + thumbnail + '\n' : '';
+        
+        return `
+  ════════════════════════════════════════════════════════════
+  🔥🔥🔥 상세메뉴 필수 포함 소제목 🔥🔥🔥
+  ════════════════════════════════════════════════════════════
+  
+  소제목: ${sub.subtitle}
+  
+  ⚠️⚠️⚠️ **이 소제목은 반드시 아래와 같은 HTML 구조를 가져야 합니다!** ⚠️⚠️⚠️
+  
+  필수 HTML 구조 예시:
+${htmlExample}
+  
+  ⚠️⚠️⚠️ **반드시 준수해야 할 사항:**
+  1. subtitle-content div를 닫은 직후 (</div>) 바로 detail-menu-section div를 열어야 합니다!
+  2. detail-menu-section div 안에 ${detailMenus.length}개의 상세메뉴를 모두 순서대로 작성해야 합니다!
+  3. 각 상세메뉴마다 detail-menu-title div와 detail-menu-content div를 반드시 작성해야 합니다!
+  4. detail-menu-section을 생략하거나 빠뜨리면 HTML 파싱 오류가 발생합니다!
+  
+  소제목 해석:
+  - 해석도구: ${tool}
+  - 글자수: ${charCount}자 이내
+  ${thumbnailText}
+  
+  상세메뉴 해석 목록 (순서대로 모두 해석 필수):
+${detailMenuListText}
+  
+  ⚠️⚠️⚠️ 다시 한 번 강조: subtitle-content를 닫은 직후 반드시 detail-menu-section을 열고, 모든 상세메뉴를 해석해야 합니다! ⚠️⚠️⚠️
+  ════════════════════════════════════════════════════════════`;
+    } else {
+        return `
   ${sub.subtitle}
   - 해석도구: ${tool}
   - 글자수 제한: ${charCount}자 이내
-  ${thumbnail ? `- 썸네일 URL: ${thumbnail} (반드시 HTML에 포함하세요!)` : ''}
-`;
+  ${thumbnail ? `- 썸네일 URL: ${thumbnail} (반드시 HTML에 포함하세요!)` : ''}`;
+    }
   }).join('\n')}
 `;
 }).filter((menuText) => menuText.trim().length > 0).join('\n\n')}
@@ -312,17 +393,25 @@ ${isSecondRequest ? `
   <h2 class="menu-title">[메뉴 제목]</h2>
   ${menuItemsInfo.some((m) => m.thumbnail) ? '<img src="[썸네일 URL]" alt="[메뉴 제목]" class="menu-thumbnail" />' : ''}
   
-  <div class="subtitle-section">
-    <h3 class="subtitle-title">[소제목]</h3>
-    ${menu_subtitles.some((s) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[소제목 썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
-    <div class="subtitle-content">[해석 내용 (HTML 형식, 글자수 제한 준수)]</div>
-  </div>
+  subtitle-section div:
+    subtitle-title h3: [소제목]
+    ${menu_subtitles.some((s) => s.thumbnail) ? 'subtitle-thumbnail-container div: [썸네일]' : ''}
+    subtitle-content div: [해석 내용]
   
-  <div class="subtitle-section">
-    <h3 class="subtitle-title">[다음 소제목]</h3>
-    ${menu_subtitles.some((s) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[소제목 썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
-    <div class="subtitle-content">[해석 내용 (HTML 형식, 글자수 제한 준수)]</div>
-  </div>
+  ⚠️⚠️⚠️ 중요: 위 소제목 목록에서 "═══ 상세메뉴 필수 포함 소제목 ═══"로 시작하는 소제목이 있으면:
+    아래와 같은 HTML 구조로 작성해야 합니다:
+    subtitle-section div 시작
+    subtitle-title h3: [상세메뉴가 있는 소제목]
+    subtitle-content div: [소제목 해석 (관리자에서 설정한 글자수 제한)]
+    subtitle-content div 닫기
+    ⚠️⚠️⚠️ subtitle-content를 닫은 직후 반드시 detail-menu-section div를 열어야 합니다! ⚠️⚠️⚠️
+    detail-menu-section div 시작
+      detail-menu-title div: [상세메뉴 제목 1]
+      detail-menu-content div: [상세메뉴 1 해석 내용]
+      detail-menu-title div: [상세메뉴 제목 2]
+      detail-menu-content div: [상세메뉴 2 해석 내용]
+    detail-menu-section div 닫기
+    subtitle-section div 닫기
   
   ...
 </div>
@@ -352,6 +441,7 @@ ${isSecondRequest ? `
 6. **소제목 썸네일이 제공된 경우 (위 소제목 목록에 "썸네일 URL"이 표시된 경우), 반드시 <h3 class="subtitle-title"> 태그 바로 다음에 <div class="subtitle-thumbnail-container"><img src="[썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>를 포함하세요. 썸네일이 없으면 포함하지 마세요.**
 7. 해석 내용은 <div class="subtitle-content"> 안에 HTML 형식으로 작성
 8. 각 content는 해당 subtitle의 char_count를 초과하지 않도록 주의
+   ${hasDetailMenusInSubtitles ? '**⚠️ 중요: 소제목에 상세메뉴가 있는 경우 (위 소제목 목록에서 "═══ 상세메뉴 필수 포함 소제목 ═══"로 시작하는 소제목), 소제목 해석은 설정된 글자수 제한을 준수하고, subtitle-content를 닫은 직후 반드시 detail-menu-section을 열고, 모든 상세메뉴를 해석해야 합니다!**' : ''}
 ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 메뉴/소제목만 포함하세요. 이전에 완료된 내용은 절대 포함하지 마세요. 처음부터 다시 시작하지 말고, 남은 소제목부터만 해석하세요. 메뉴 제목이나 썸네일을 다시 생성하지 마세요. 오직 남은 소제목의 해석 내용만 생성하세요. 위에 나열된 완료된 소제목 목록을 다시 확인하고, 그 소제목들은 절대 포함하지 마세요!** 🚨🚨🚨' : '9. 모든 메뉴와 소제목을 순서대로 포함'}
 10. 소제목 제목에 마침표가 없으면 자동으로 마침표를 추가하세요 (TTS 재생 시 자연스러운 구분을 위해)
 11. 소제목 제목과 해석 내용 사이에 빈 줄이나 공백을 절대 넣지 마세요. <h3 class="subtitle-title"> 태그와 <div class="subtitle-content"> 태그 사이에 줄바꿈이나 공백 문자를 넣지 말고 바로 붙여서 작성하세요. 단, 썸네일이 있는 경우 <h3> 태그와 썸네일 사이, 썸네일과 <div class="subtitle-content"> 사이에는 줄바꿈이 있어도 됩니다. 예: <h3 class="subtitle-title">1-1. 소제목.</h3><div class="subtitle-thumbnail-container"><img src="[URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div><div class="subtitle-content">본문 내용</div>

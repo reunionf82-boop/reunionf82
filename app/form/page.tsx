@@ -1447,9 +1447,12 @@ function FormContent() {
       const menuSubtitles = content.menu_subtitle ? content.menu_subtitle.split('\n').filter((s: string) => s.trim()) : []
       const interpretationTools = content.interpretation_tool ? content.interpretation_tool.split('\n').filter((s: string) => s.trim()) : []
       const subtitleCharCount = parseInt(content.subtitle_char_count) || 500
+      const detailMenuCharCount = parseInt(content.detail_menu_char_count) || 500
 
       console.log('메뉴 소제목:', menuSubtitles)
       console.log('해석도구:', interpretationTools)
+      console.log('소메뉴 글자수:', subtitleCharCount)
+      console.log('상세메뉴 글자수:', detailMenuCharCount)
 
       if (menuSubtitles.length === 0) {
         alert('상품 메뉴 소제목이 설정되지 않았습니다.')
@@ -1457,18 +1460,59 @@ function FormContent() {
         return
       }
 
+      // menu_items에서 상세메뉴 정보 추출
+      const menuItems = content.menu_items || []
+      const subtitleMap = new Map<string, { detailMenus?: Array<{ detailMenu: string; interpretation_tool: string }> }>()
+      
+      console.log('menu_items:', JSON.stringify(menuItems, null, 2))
+      
+      menuItems.forEach((item: any) => {
+        if (item.subtitles && Array.isArray(item.subtitles)) {
+          item.subtitles.forEach((sub: any) => {
+            if (sub.subtitle && sub.detailMenus) {
+              console.log('상세메뉴가 있는 소제목 발견:', sub.subtitle.trim(), '상세메뉴 개수:', sub.detailMenus.length)
+              subtitleMap.set(sub.subtitle.trim(), {
+                detailMenus: sub.detailMenus.map((dm: any) => ({
+                  detailMenu: dm.detailMenu || '',
+                  interpretation_tool: dm.interpretation_tool || '',
+                  char_count: dm.char_count || detailMenuCharCount
+                }))
+              })
+            }
+          })
+        }
+      })
+      
+      console.log('subtitleMap 크기:', subtitleMap.size)
+      subtitleMap.forEach((value, key) => {
+        console.log('subtitleMap 항목:', key, '상세메뉴 개수:', value.detailMenus?.length || 0)
+      })
+
       // 상품 메뉴 소제목과 해석도구 1:1 페어링
       const menuSubtitlePairs = menuSubtitles.map((subtitle: string, index: number) => {
         // 해석도구가 소제목보다 적으면 첫 번째 해석도구를 반복 사용
         const tool = interpretationTools[index] || interpretationTools[0] || ''
+        const trimmedSubtitle = subtitle.trim()
+        const subtitleInfo = subtitleMap.get(trimmedSubtitle) || {}
+        
+        if (subtitleInfo.detailMenus && subtitleInfo.detailMenus.length > 0) {
+          console.log(`소제목 "${trimmedSubtitle}"에 상세메뉴 ${subtitleInfo.detailMenus.length}개 매칭됨`)
+        } else {
+          console.log(`소제목 "${trimmedSubtitle}"에 상세메뉴 없음 (subtitleMap에서 찾지 못함)`)
+        }
+        
         return {
-          subtitle: subtitle.trim(),
+          subtitle: trimmedSubtitle,
           interpretation_tool: tool,
-          char_count: subtitleCharCount
+          char_count: subtitleCharCount,
+          detailMenus: subtitleInfo.detailMenus || [],
+          detail_menu_char_count: detailMenuCharCount
         }
       })
 
-      console.log('페어링된 데이터:', menuSubtitlePairs)
+      console.log('페어링된 데이터:', JSON.stringify(menuSubtitlePairs, null, 2))
+      const hasDetailMenusCount = menuSubtitlePairs.filter((pair: { subtitle: string; interpretation_tool: string; char_count: number; detailMenus: any[]; detail_menu_char_count: number }) => pair.detailMenus && pair.detailMenus.length > 0).length
+      console.log(`상세메뉴가 있는 소제목 개수: ${hasDetailMenusCount}/${menuSubtitlePairs.length}`)
 
       // 현재 사용할 모델 확인 (최신 상태 - URL 파라미터 우선, 없으면 Supabase, 그것도 없으면 기본값)
       const urlModelParam = searchParams.get('model')

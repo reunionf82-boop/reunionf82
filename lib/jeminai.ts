@@ -8,6 +8,12 @@ interface JeminaiRequest {
     interpretation_tool: string
     char_count: number
     thumbnail?: string
+    detailMenus?: Array<{
+      detailMenu: string
+      interpretation_tool: string
+      char_count?: number
+    }>
+    detail_menu_char_count?: number
   }>
   menu_items?: Array<any> // menu_items 추가
   user_info: {

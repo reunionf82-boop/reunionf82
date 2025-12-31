@@ -15,9 +15,11 @@ interface ResultData {
 }
 
 interface ParsedSubtitle {
+  detailMenus?: Array<{ detailMenu: string; contentHtml?: string }>;
   title: string
   contentHtml: string
   thumbnail?: string
+  detailMenuSectionHtml?: string
 }
 
 interface ParsedMenu {
@@ -1029,7 +1031,24 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
     const parser = new DOMParser()
     const doc = parser.parseFromString(sourceHtml, 'text/html')
+    
+    // 디버깅: 스트리밍 중 상세메뉴 섹션 존재 여부 확인
+    const hasDetailMenuSection = sourceHtml.includes('detail-menu-section')
+    if (isStreaming && !hasDetailMenuSection && sourceHtml.length > 500) {
+      console.log('경고: 스트리밍 중이지만 detail-menu-section이 발견되지 않음. HTML 끝부분:', sourceHtml.slice(-500))
+    } else if (isStreaming && hasDetailMenuSection) {
+       // 너무 자주 찍히지 않도록 길이 변화가 클 때만 찍거나 해야겠지만, 일단 확인을 위해
+       // console.log('상세메뉴 섹션 발견됨')
+    }
+
     const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
+
+    // 숫자 접두사 제거 함수 (예: "1. " → "", "1-1. " → "", "1-1-1. " → "")
+    const removeNumberPrefix = (text: string): string => {
+      if (!text) return text
+      // "1. ", "1-1. ", "1-1-1. " 등의 패턴 제거
+      return text.replace(/^\d+(?:-\d+)*(?:-\d+)?\.\s*/, '').trim()
+    }
 
     // content.menu_items 가져오기
     const content = resultData?.content
@@ -1072,25 +1091,66 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       const menuSubtitles = currentMenuItem?.subtitles || []
       
       const subtitles: ParsedSubtitle[] = subtitleSections.map((sub, subIdx) => {
-        // menu_items의 subtitles에서 썸네일 찾기 (순서로 매칭)
+        // menu_items의 subtitles에서 썸네일과 상세메뉴 찾기 (순서로 매칭)
         const subtitleThumbnail = menuSubtitles[subIdx]?.thumbnail || ''
+        const detailMenus = menuSubtitles[subIdx]?.detailMenus || []
+        
+        // HTML에서 detail-menu-section 추출
+        // 1. subtitle-section 내부에서 검색 (정상적인 경우)
+        let detailMenuSection = sub.querySelector('.detail-menu-section')
+        
+        // 2. 내부에서 못 찾았을 경우, subtitle-section 바로 다음 형제 요소에서 검색
+        // (Gemini가 실수로 subtitle-section을 일찍 닫았을 경우 대비)
+        if (!detailMenuSection) {
+          const nextSibling = sub.nextElementSibling
+          if (nextSibling && nextSibling.classList.contains('detail-menu-section')) {
+            detailMenuSection = nextSibling
+          }
+        }
+
+        const detailMenuSectionHtml = detailMenuSection ? detailMenuSection.outerHTML : undefined
+        
+        // detail-menu-section이 있으면 detailMenus에 내용 추가
+        // [수정] 제목 매칭 로직 제거 -> 순서(Index) 기반 매핑으로 단순화
+        // 이유: 스트리밍 중에는 제목이 잘리거나 미세하게 달라 매칭 실패할 확률이 높음. 순서가 가장 정확함.
+        let detailMenusWithContent = detailMenus
+        
+        // 섹션이 없더라도 혹시 모를 개별 태그 파싱을 위해 sub 전체에서 검색 시도 가능하지만
+        // 일단 구조를 지킨다는 가정하에 섹션 내부 또는 sub 내부에서 content 검색
+        const containerForSearch = detailMenuSection || sub
+        const detailMenuContents = Array.from(containerForSearch.querySelectorAll('.detail-menu-content'))
+        
+        if (detailMenuContents.length > 0) {
+          detailMenusWithContent = detailMenus.map((dm: { detailMenu: string; contentHtml?: string }, idx: number) => {
+            // 순서대로 매핑. 해당 인덱스의 컨텐츠가 아직 없으면 빈 문자열
+            const contentEl = detailMenuContents[idx]
+            const contentHtml = contentEl ? contentEl.innerHTML : ''
+            
+            return {
+              ...dm,
+              contentHtml: contentHtml
+            }
+          })
+        }
         
         return {
           title: sub.querySelector('.subtitle-title')?.textContent?.trim() || '',
           contentHtml: sub.querySelector('.subtitle-content')?.innerHTML || '',
-          thumbnail: subtitleThumbnail
+          thumbnail: subtitleThumbnail,
+          detailMenus: detailMenusWithContent,
+          detailMenuSectionHtml: detailMenuSectionHtml
         }
       })
       const startIndex = cursor
       cursor += subtitles.length
 
-      return {
-        title: titleText,
-        subtitles,
-        startIndex,
-        thumbnailHtml,
-        manseHtml,
-      }
+        return {
+          title: removeNumberPrefix(titleText),
+          subtitles,
+          startIndex,
+          thumbnailHtml,
+          manseHtml,
+        }
     })
 
     // 썸네일/만세력 HTML이 변경되지 않았으면 기존 parsedMenus의 값을 유지 (깜빡임 방지)
@@ -1192,41 +1252,41 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
   // 경과 시간 계산 (로깅용)
   const elapsedTime = startTime ? Date.now() - startTime : 0
 
-  console.log('결과 페이지: 데이터 분석 시작')
-  console.log('결과 페이지: 경과 시간:', currentTime, `(${elapsedTime}ms)`)
-  console.log('결과 페이지: HTML 길이:', html?.length)
-
   // 폰트 크기 설정 (관리자 페이지에서 설정한 값 사용)
   const menuFontSize = content?.menu_font_size || 16
+  const menuFontBold = content?.menu_font_bold || false
   const subtitleFontSize = content?.subtitle_font_size || 14
+  const subtitleFontBold = content?.subtitle_font_bold || false
+  const detailMenuFontSize = content?.detail_menu_font_size || 12
+  const detailMenuFontBold = content?.detail_menu_font_bold || false
   const bodyFontSize = content?.body_font_size || 11
+  const bodyFontBold = content?.body_font_bold || false
+  
+  // 숫자 접두사 제거 함수 (예: "1. " → "", "1-1. " → "", "1-1-1. " → "")
+  const removeNumberPrefix = (text: string): string => {
+    if (!text) return text
+    // "1. ", "1-1. ", "1-1-1. " 등의 패턴 제거
+    return text.replace(/^\d+(?:-\d+)*(?:-\d+)?\.\s*/, '').trim()
+  }
   
   // 웹폰트 설정 (관리자 페이지에서 설정한 값 사용)
   const fontFace = content?.font_face || ''
   
-  // 디버깅: font_face 확인
-  console.log('결과 페이지: content 객체:', content)
-  console.log('결과 페이지: font_face 값:', fontFace)
-  
   // @font-face에서 font-family 추출
   const extractFontFamily = (fontFaceCss: string): string | null => {
     if (!fontFaceCss) {
-      console.log('결과 페이지: fontFaceCss가 비어있음')
       return null
     }
     // 여러 패턴 지원: font-family: 'FontName' 또는 font-family: FontName
     const match = fontFaceCss.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
     if (match) {
       const fontFamily = (match[1] || match[2]?.trim()) || null
-      console.log('결과 페이지: 추출된 font-family:', fontFamily)
       return fontFamily
     }
-    console.log('결과 페이지: font-family 추출 실패')
     return null
   }
   
   const fontFamilyName = extractFontFamily(fontFace)
-  console.log('결과 페이지: 최종 fontFamilyName:', fontFamilyName)
 
   // 동적 스타일 생성
   const dynamicStyles = `
@@ -1244,12 +1304,36 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
     ` : ''}
     .jeminai-results .menu-title {
       font-size: ${menuFontSize}px !important;
+      font-weight: ${menuFontBold ? 'bold' : 'normal'} !important;
     }
     .jeminai-results .subtitle-title {
       font-size: ${subtitleFontSize}px !important;
+      font-weight: ${subtitleFontBold ? 'bold' : 'normal'} !important;
+    }
+    .jeminai-results .detail-menu-title {
+      font-size: ${detailMenuFontSize}px !important;
+      font-weight: ${detailMenuFontBold ? 'bold' : 'normal'} !important;
     }
     .jeminai-results .subtitle-content {
       font-size: ${bodyFontSize}px !important;
+      font-weight: ${bodyFontBold ? 'bold' : 'normal'} !important;
+      margin-bottom: 2em !important;
+      line-height: 1.8 !important;
+    }
+    .jeminai-results .detail-menu-content {
+      font-size: ${bodyFontSize}px !important;
+      font-weight: ${bodyFontBold ? 'bold' : 'normal'} !important;
+      line-height: 1.8 !important;
+      margin-bottom: 0 !important;
+    }
+    .jeminai-results .detail-menu-container {
+      margin-bottom: 2em !important;
+    }
+    .jeminai-results .detail-menu-section {
+      margin-bottom: 2em !important;
+    }
+    .jeminai-results .detail-menu-section:last-child {
+      margin-bottom: 0 !important;
     }
     /* 소제목 구분선 - 마지막 소제목이 아닌 경우에만 */
     .jeminai-results .subtitle-section {
@@ -2922,7 +3006,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                         >
                           {sub.title && (
                             <div className="subtitle-title font-semibold text-gray-900">
-                              {sub.title}
+                              {removeNumberPrefix(sub.title)}
                             </div>
                           )}
                           {sub.thumbnail && (
@@ -2948,6 +3032,39 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                                 <span className="dot" />
                                 <span className="dot" />
                               </span>
+                            </div>
+                          )}
+                          {/* 상세메뉴 렌더링 (소제목 내용 아래, 소제목이 공개된 경우에만 표시) */}
+                          {isRevealed && sub.detailMenus && sub.detailMenus.length > 0 && (
+                            <div className="detail-menu-container ml-4">
+                              {sub.detailMenus.map((detailMenu, detailIndex) => {
+                                // 상세메뉴 내용이 있으면 표시, 없으면 "점사중입니다" 표시
+                                // 스트리밍 중에는 상세메뉴가 순차적으로 완료되므로 contentHtml 존재 여부로 판단
+                                const hasDetailMenuContent = detailMenu.contentHtml && detailMenu.contentHtml.trim().length > 0
+                                
+                                return (
+                                  <div key={detailIndex} className="detail-menu-section">
+                                    <div className="detail-menu-title text-gray-700 font-semibold">
+                                      {removeNumberPrefix(detailMenu.detailMenu)}
+                                    </div>
+                                    {hasDetailMenuContent ? (
+                                      <div 
+                                        className="detail-menu-content text-gray-800"
+                                        dangerouslySetInnerHTML={{ __html: detailMenu.contentHtml || '' }}
+                                      />
+                                    ) : (
+                                      <div className="detail-menu-content text-gray-400 flex items-center gap-2">
+                                        점사중입니다
+                                        <span className="loading-dots">
+                                          <span className="dot" />
+                                          <span className="dot" />
+                                          <span className="dot" />
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
                             </div>
                           )}
                         </div>
@@ -3030,23 +3147,96 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                         }
                       }
                       
-                      // 소제목 썸네일 추가
+                      // 숫자 접두사 제거 및 상세메뉴 추가
                       menuSections.forEach((section, menuIndex) => {
                         const menuItem = menuItems[menuIndex]
+                        
+                        // 대메뉴 제목에서 숫자 접두사 제거 및 볼드 속성 적용
+                        const menuTitle = section.querySelector('.menu-title')
+                        if (menuTitle) {
+                          menuTitle.textContent = removeNumberPrefix(menuTitle.textContent || '')
+                          const menuBold = content?.menu_font_bold || false
+                          ;(menuTitle as HTMLElement).style.fontWeight = menuBold ? 'bold' : 'normal'
+                        }
+                        
                         if (menuItem?.subtitles) {
                           const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'))
                           subtitleSections.forEach((subSection, subIndex) => {
                             const subtitle = menuItem.subtitles[subIndex]
+                            
+                            // 소메뉴 제목에서 숫자 접두사 제거 및 볼드 속성 적용
+                            const subtitleTitle = subSection.querySelector('.subtitle-title')
+                            if (subtitleTitle) {
+                              subtitleTitle.textContent = removeNumberPrefix(subtitleTitle.textContent || '')
+                              const subtitleBold = content?.subtitle_font_bold || false
+                              ;(subtitleTitle as HTMLElement).style.fontWeight = subtitleBold ? 'bold' : 'normal'
+                            }
+                            
+                            // 소제목 썸네일 추가
                             if (subtitle?.thumbnail) {
-                              const titleDiv = subSection.querySelector('.subtitle-title')
-                              if (titleDiv) {
+                              if (subtitleTitle) {
                                 const thumbnailImg = doc.createElement('div')
                                 thumbnailImg.className = 'subtitle-thumbnail-container'
                                 thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;'
                                 thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" />`
-                                titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling)
+                                subtitleTitle.parentNode?.insertBefore(thumbnailImg, subtitleTitle.nextSibling)
                               }
                             }
+                            
+                            // 상세메뉴 추가 (HTML에서 파싱한 내용 사용)
+                            // 먼저 HTML에서 detail-menu-section이 있는지 확인
+                            const existingDetailMenuSection = subSection.querySelector('.detail-menu-section')
+                            
+                            if (existingDetailMenuSection) {
+                              // HTML에 이미 상세메뉴가 있으면 그대로 사용 (제미나이가 생성한 것)
+                              // 숫자 접두사만 제거하고 스타일 적용
+                              const detailMenuTitles = existingDetailMenuSection.querySelectorAll('.detail-menu-title')
+                              detailMenuTitles.forEach((titleEl) => {
+                                if (titleEl.textContent) {
+                                  titleEl.textContent = removeNumberPrefix(titleEl.textContent)
+                                }
+                                const detailMenuBold = content?.detail_menu_font_bold || false
+                                ;(titleEl as HTMLElement).style.fontSize = `${detailMenuFontSize}px`
+                                ;(titleEl as HTMLElement).style.fontWeight = detailMenuBold ? 'bold' : 'normal'
+                              })
+                              
+                              const detailMenuContents = existingDetailMenuSection.querySelectorAll('.detail-menu-content')
+                              detailMenuContents.forEach((contentEl) => {
+                                const bodyBold = content?.body_font_bold || false
+                                ;(contentEl as HTMLElement).style.fontSize = `${bodyFontSize}px`
+                                ;(contentEl as HTMLElement).style.fontWeight = bodyBold ? 'bold' : 'normal'
+                              })
+                              
+                              // 상세메뉴가 subtitle-content 앞에 있으면 subtitle-content 다음으로 이동
+                              const subtitleContent = subSection.querySelector('.subtitle-content')
+                              if (subtitleContent && existingDetailMenuSection) {
+                                const detailMenuParent = existingDetailMenuSection.parentNode
+                                const subtitleContentParent = subtitleContent.parentNode
+                                
+                                // subtitle-content가 detail-menu-section보다 뒤에 있는지 확인 (DOM 순서)
+                                let isDetailMenuBeforeContent = false
+                                if (detailMenuParent === subtitleContentParent) {
+                                  let currentNode = subtitleContentParent?.firstChild
+                                  while (currentNode) {
+                                    if (currentNode === existingDetailMenuSection) {
+                                      isDetailMenuBeforeContent = true
+                                      break
+                                    }
+                                    if (currentNode === subtitleContent) {
+                                      break
+                                    }
+                                    currentNode = currentNode.nextSibling
+                                  }
+                                }
+                                
+                                // detail-menu-section이 subtitle-content 앞에 있으면 이동
+                                if (isDetailMenuBeforeContent) {
+                                  subtitleContentParent?.insertBefore(existingDetailMenuSection, subtitleContent.nextSibling)
+                                }
+                              }
+                            }
+                            // 참고: HTML에 상세메뉴가 없는 경우(제미나이가 생성하지 않은 경우)는 처리하지 않음
+                            // 제미나이가 상세메뉴를 생성해야 하므로, 생성되지 않은 경우는 표시하지 않음
                           })
                         }
                       })

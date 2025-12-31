@@ -61,9 +61,15 @@ CREATE TABLE contents (
   menu_subtitle TEXT,
   interpretation_tool TEXT,
   subtitle_char_count INTEGER DEFAULT 500,
+  detail_menu_char_count INTEGER DEFAULT 500,
   menu_font_size INTEGER DEFAULT 16,
+  menu_font_bold BOOLEAN DEFAULT false,
   subtitle_font_size INTEGER DEFAULT 14,
+  subtitle_font_bold BOOLEAN DEFAULT false,
+  detail_menu_font_size INTEGER DEFAULT 12,
+  detail_menu_font_bold BOOLEAN DEFAULT false,
   body_font_size INTEGER DEFAULT 11,
+  body_font_bold BOOLEAN DEFAULT false,
   menu_items JSONB,
   is_new BOOLEAN DEFAULT false,
   tts_speaker TEXT DEFAULT 'nara',
@@ -113,9 +119,15 @@ ALTER TABLE contents ADD COLUMN IF NOT EXISTS recommendation TEXT;
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS menu_subtitle TEXT;
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS interpretation_tool TEXT;
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS subtitle_char_count INTEGER DEFAULT 500;
+ALTER TABLE contents ADD COLUMN IF NOT EXISTS detail_menu_char_count INTEGER DEFAULT 500;
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS menu_font_size INTEGER DEFAULT 16;
+ALTER TABLE contents ADD COLUMN IF NOT EXISTS menu_font_bold BOOLEAN DEFAULT false;
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS subtitle_font_size INTEGER DEFAULT 14;
+ALTER TABLE contents ADD COLUMN IF NOT EXISTS subtitle_font_bold BOOLEAN DEFAULT false;
+ALTER TABLE contents ADD COLUMN IF NOT EXISTS detail_menu_font_size INTEGER DEFAULT 12;
+ALTER TABLE contents ADD COLUMN IF NOT EXISTS detail_menu_font_bold BOOLEAN DEFAULT false;
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS body_font_size INTEGER DEFAULT 11;
+ALTER TABLE contents ADD COLUMN IF NOT EXISTS body_font_bold BOOLEAN DEFAULT false;
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS menu_items JSONB;
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS is_new BOOLEAN DEFAULT false;
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS tts_speaker TEXT DEFAULT 'nara';
