@@ -3395,7 +3395,7 @@ function FormContent() {
                                           (subtitleTitle as HTMLElement).style.fontWeight = subtitleFontBold ? 'bold' : 'normal';
                                         }
                                         
-                                        // 소제목 썸네일 추가
+                                        // 소제목 썸네일 추가 (result 페이지 batch 모드와 동일)
                                         if (subtitle?.thumbnail) {
                                           if (subtitleTitle) {
                                             const thumbnailImg = doc.createElement('div');
@@ -3455,21 +3455,21 @@ function FormContent() {
                                             }
                                           }
                                           
-                                          // 상세메뉴 썸네일 추가
+                                          // 상세메뉴 썸네일 추가 (result 페이지 batch 모드와 동일하게 처리)
+                                          // HTML에서 detail-menu-title을 찾아서 썸네일 추가
                                           if (subtitle?.detailMenus) {
-                                            const detailMenuSections = existingDetailMenuSection.querySelectorAll('.detail-menu-section') || [existingDetailMenuSection];
-                                            subtitle.detailMenus.forEach((detailMenu: any, detailIndex: number) => {
+                                            const detailMenuTitles = existingDetailMenuSection.querySelectorAll('.detail-menu-title');
+                                            detailMenuTitles.forEach((detailMenuTitle, detailIndex: number) => {
+                                              const detailMenu = subtitle.detailMenus[detailIndex];
                                               if (detailMenu?.thumbnail) {
-                                                const detailMenuSection = detailMenuSections[detailIndex] as HTMLElement;
-                                                if (detailMenuSection) {
-                                                  const detailMenuTitle = detailMenuSection.querySelector('.detail-menu-title');
-                                                  if (detailMenuTitle) {
-                                                    const thumbnailImg = doc.createElement('div');
-                                                    thumbnailImg.className = 'detail-menu-thumbnail-container';
-                                                    thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px;';
-                                                    thumbnailImg.innerHTML = '<img src="' + detailMenu.thumbnail + '" alt="상세메뉴 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" />';
-                                                    detailMenuTitle.parentNode?.insertBefore(thumbnailImg, detailMenuTitle.nextSibling);
-                                                  }
+                                                // 썸네일이 이미 있는지 확인 (중복 방지)
+                                                const existingThumbnail = detailMenuTitle.nextElementSibling;
+                                                if (!existingThumbnail || !existingThumbnail.classList.contains('detail-menu-thumbnail-container')) {
+                                                  const thumbnailImg = doc.createElement('div');
+                                                  thumbnailImg.className = 'detail-menu-thumbnail-container';
+                                                  thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px;';
+                                                  thumbnailImg.innerHTML = '<img src="' + detailMenu.thumbnail + '" alt="상세메뉴 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" />';
+                                                  detailMenuTitle.parentNode?.insertBefore(thumbnailImg, detailMenuTitle.nextSibling);
                                                 }
                                               }
                                             });
@@ -3571,6 +3571,24 @@ function FormContent() {
                                   .jeminai-results .detail-menu-section:last-child {
                                     margin-bottom: 0 !important;
                                   }
+                                  /* 소제목 구분선 - 마지막 소제목이 아닌 경우에만 */
+                                  .jeminai-results .subtitle-section {
+                                    padding-top: 24px;
+                                    padding-bottom: 24px;
+                                    position: relative;
+                                  }
+                                  .jeminai-results .subtitle-section:not(:last-child)::after {
+                                    content: '';
+                                    display: block;
+                                    width: 300px;
+                                    height: 2px;
+                                    background: linear-gradient(to right, transparent, #e5e7eb, transparent);
+                                    margin: 24px auto 0;
+                                  }
+                                  .jeminai-results .subtitle-section:last-child {
+                                    padding-top: 24px;
+                                    padding-bottom: 24px;
+                                  }
                                 `
                                 
                                 const fontStyles = fontFamilyName ? `
@@ -3619,15 +3637,21 @@ function FormContent() {
                                         text-align: center;
                                         margin-bottom: 16px;
                                       }
-                                      h1 {
-                                        font-size: 30px;
+                                      .result-title {
+                                        font-size: 1.875rem;
                                         font-weight: bold;
-                                        margin: 0 0 16px 0;
-                                        color: #111;
+                                        margin: 0 0 1rem 0;
+                                        color: #111827;
+                                        text-align: center;
+                                      }
+                                      @media (min-width: 768px) {
+                                        .result-title {
+                                          font-size: 2.25rem;
+                                        }
                                       }
                                       .thumbnail-container {
                                         width: 100%;
-                                        margin-bottom: 16px;
+                                        margin-bottom: 1rem;
                                       }
                                       .thumbnail-container img {
                                         width: 100%;
@@ -3636,7 +3660,9 @@ function FormContent() {
                                       }
                                       .tts-button-container {
                                         text-align: center;
-                                        margin-bottom: 16px;
+                                        margin-bottom: 1rem;
+                                        display: flex;
+                                        justify-content: center;
                                       }
                                       .tts-button {
                                         background: linear-gradient(to right, #f9fafb, #f3f4f6);
@@ -3684,20 +3710,20 @@ function FormContent() {
                                         margin-bottom: 32px;
                                         text-align: center;
                                       }
-                                      .menu-section {
+                                      .jeminai-results .menu-section {
                                         background: white;
                                         border-radius: 12px;
                                         padding: 24px;
                                         margin-bottom: 24px;
                                         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
                                       }
-                                      .menu-title {
+                                      .jeminai-results .menu-title {
                                         font-size: 20px;
                                         font-weight: bold;
                                         margin-bottom: 16px;
                                         color: #111;
                                       }
-                                      .menu-thumbnail {
+                                      .jeminai-results .menu-thumbnail {
                                         width: 100%;
                                         height: auto;
                                         object-fit: contain;
@@ -3705,16 +3731,16 @@ function FormContent() {
                                         margin-bottom: 24px;
                                         display: block;
                                       }
-                                      .subtitle-section {
+                                      .jeminai-results .subtitle-section {
                                         padding-top: 24px;
                                         padding-bottom: 24px;
                                         position: relative;
                                       }
-                                      .subtitle-section:not(:last-child) {
+                                      .jeminai-results .subtitle-section:not(:last-child) {
                                         padding-bottom: 24px;
                                         margin-bottom: 24px;
                                       }
-                                      .subtitle-section:not(:last-child)::after {
+                                      .jeminai-results .subtitle-section:not(:last-child)::after {
                                         content: '';
                                         display: block;
                                         width: 300px;
@@ -3722,22 +3748,22 @@ function FormContent() {
                                         background: linear-gradient(to right, transparent, #e5e7eb, transparent);
                                         margin: 24px auto 0;
                                       }
-                                      .subtitle-section:last-child {
+                                      .jeminai-results .subtitle-section:last-child {
                                         padding-top: 24px;
                                         padding-bottom: 24px;
                                       }
-                                      .subtitle-title {
+                                      .jeminai-results .subtitle-title {
                                         font-size: 18px;
                                         font-weight: 600;
                                         margin-bottom: 12px;
                                         color: #333;
                                       }
-                                      .subtitle-content {
+                                      .jeminai-results .subtitle-content {
                                         color: #555;
                                         line-height: 1.8;
                                         white-space: pre-line;
                                       }
-                                      .subtitle-thumbnail-container {
+                                      .jeminai-results .subtitle-thumbnail-container {
                                         display: flex;
                                         justify-content: center;
                                         width: 50%;
@@ -3746,12 +3772,53 @@ function FormContent() {
                                         margin-top: 8px;
                                         margin-bottom: 8px;
                                       }
-                                      .subtitle-thumbnail-container img {
+                                      .jeminai-results .subtitle-thumbnail-container img {
                                         width: 100%;
                                         height: auto;
                                         display: block;
                                         border-radius: 8px;
                                         object-fit: contain;
+                                      }
+                                      .jeminai-results .detail-menu-thumbnail-container {
+                                        display: flex;
+                                        justify-content: center;
+                                        width: 50%;
+                                        margin-left: auto;
+                                        margin-right: auto;
+                                        margin-top: 8px;
+                                        margin-bottom: 8px;
+                                      }
+                                      .jeminai-results .detail-menu-thumbnail-container img {
+                                        width: 100%;
+                                        height: auto;
+                                        display: block;
+                                        border-radius: 8px;
+                                        object-fit: contain;
+                                      }
+                                      .jeminai-results .book-cover-thumbnail-container {
+                                        width: 100%;
+                                        margin-bottom: 2.5rem;
+                                        display: flex;
+                                        justify-content: center;
+                                      }
+                                      .jeminai-results .book-cover-thumbnail-container img {
+                                        width: calc(100% - 48px);
+                                        max-width: calc(100% - 48px);
+                                        height: auto;
+                                        object-fit: contain;
+                                        display: block;
+                                      }
+                                      .jeminai-results .ending-book-cover-thumbnail-container {
+                                        width: 100%;
+                                        margin-top: 1rem;
+                                        display: flex;
+                                        justify-content: center;
+                                      }
+                                      .jeminai-results .ending-book-cover-thumbnail-container img {
+                                        width: 100%;
+                                        height: auto;
+                                        object-fit: contain;
+                                        display: block;
                                       }
                                       .spinner {
                                         width: 20px;
@@ -4057,7 +4124,7 @@ function FormContent() {
                                   <body>
                                     <div class="container">
                                       <div class="title-container">
-                                        <h1>${saved.title}</h1>
+                                        <h1 class="result-title">${saved.title}</h1>
                                       </div>
                                       ${saved.content?.thumbnail_url ? `
                                       <div class="thumbnail-container">
@@ -4070,7 +4137,7 @@ function FormContent() {
                                           <span id="ttsText">점사 듣기</span>
                                         </button>
                                       </div>
-                                      <div id="contentHtml">${safeHtml}</div>
+                                      <div id="contentHtml" class="jeminai-results">${safeHtml}</div>
                                     </div>
                                     
                                     <!-- 추가 질문하기 팝업 -->
