@@ -165,26 +165,6 @@ ${isSecondRequest ? `
 당신은 ${role_prompt}입니다.
 
 ---
-${hasDetailMenusInSubtitles ? `# 🚨🚨🚨 최우선 필수 규칙: 상세메뉴 구조 (이 문서에는 상세메뉴가 있는 소제목이 포함되어 있습니다!) 🚨🚨🚨
-
-**⚠️⚠️⚠️ 반드시 준수: 아래 소제목 목록에서 "═══ 상세메뉴 필수 포함 소제목 ═══"로 시작하는 소제목은 다음 HTML 구조를 정확히 따라야 합니다:**
-
-<div class="subtitle-section">
-  <h3 class="subtitle-title">[소제목]</h3>
-  <div class="subtitle-content">[소제목 해석 (관리자에서 설정한 글자수 제한)]</div>
-  <div class="detail-menu-section">
-    <div class="detail-menu-title">[상세메뉴 제목 1]</div>
-    <div class="detail-menu-content">[상세메뉴 1 해석]</div>
-    <div class="detail-menu-title">[상세메뉴 제목 2]</div>
-    <div class="detail-menu-content">[상세메뉴 2 해석]</div>
-    ... (모든 상세메뉴 순서대로)
-  </div>
-</div>
-
-**핵심: subtitle-content를 닫은 직후 반드시 detail-menu-section을 열고, 모든 상세메뉴를 해석해야 합니다. 이 구조를 생략하면 안 됩니다!**
-
----
-` : ''}
 # ⚠️ 입력 데이터 (계산된 불변의 값 - 그대로 복사하여 사용)
 
 ${manse_ryeok_text ? `${manse_ryeok_text}` : '(만세력 텍스트 데이터 없음 - 해석 불가)'}
@@ -240,12 +220,7 @@ ${!hasManseRyeokData ? `
 
 ---
 
-**중요: 현재 날짜 정보**
-- 오늘은 ${koreaDateString}입니다.
-- 현재 연도는 ${currentYear}년입니다.
-- 해석할 때 반드시 이 날짜 정보를 기준으로 하세요. 과거 연도(예: 2024년)를 언급하지 마세요.
-
-${restrictions ? `금칙사항: ${restrictions}` : ''}
+${restrictions ? `주의사항: ${restrictions}` : ''}
 
 사용자 정보:
 - 이름: ${user_info.name}
@@ -285,7 +260,8 @@ ${isSecondRequest ? `
 **⚠️ 아래에 나열된 남은 소제목만 해석하세요. 위에 나열된 완료된 소제목은 절대 포함하지 마세요!**
 ` : ''}
 
-다음 상품 메뉴 구성과 소제목들을 각각 해석해주세요:
+다음 상품 메뉴 구성과 소제목들을 각각 해석해주세요.
+
 
 ${menuItemsInfo.map((menuItem, menuIdx) => {
   const menuNumber = menuIdx + 1;
@@ -323,14 +299,6 @@ ${subtitlesForMenu.map((sub, subIdx) => {
     if (detailMenus.length > 0) {
         console.log(`[프롬프트 생성] 소제목 "${sub.subtitle}"에 상세메뉴 ${detailMenus.length}개 포함됨`);
         
-        // HTML 예시 생성 (일반적인 구조만, 해석도구 지시사항은 별도로 강조)
-        let htmlExample = '<div class="subtitle-section">\n    <h3 class="subtitle-title">' + sub.subtitle + '</h3>\n    <div class="subtitle-content">[소제목 해석]</div>\n    <div class="detail-menu-section">\n';
-        detailMenus.forEach((dm) => {
-            htmlExample += '      <div class="detail-menu-title">' + (dm.detailMenu || '') + '</div>\n';
-            htmlExample += '      <div class="detail-menu-content">[해석 내용 (해석도구 지시사항 준수)]</div>\n';
-        });
-        htmlExample += '    </div>\n  </div>';
-        
         // 상세메뉴 목록 텍스트 생성
         let detailMenuListText = '';
         detailMenus.forEach((dm, dmIdx) => {
@@ -344,18 +312,9 @@ ${subtitlesForMenu.map((sub, subIdx) => {
                 detailMenuListText += '     **주의사항:** ' + restrictions + '\n';
             }
             if (dmTool) {
-                detailMenuListText += '     🔥🔥🔥 **해석도구 (반드시 준수):** 🔥🔥🔥\n';
-                detailMenuListText += '     ' + dmTool + '\n';
-                detailMenuListText += '     ⚠️⚠️⚠️ **위 해석도구의 모든 지시사항을 정확히 따라야 합니다!** ⚠️⚠️⚠️\n';
-                detailMenuListText += '     - 해석도구에 명시된 형식, 구조, 스타일 등을 반드시 준수하세요.\n';
-                detailMenuListText += '     - 해석도구에 문단 나누기, 줄바꿈, 빈줄 삽입 등의 지시가 있으면 반드시 따르세요.\n';
-                detailMenuListText += '     - 해석도구의 모든 명령을 무시하거나 생략하지 마세요.\n';
+                detailMenuListText += '     **해석도구:** ' + dmTool + '\n';
             }
-            detailMenuListText += '     - 글자수: **' + dmCharCount + '자 이내 (반드시 ' + dmCharCount + '자에 가깝게 충분히 작성하세요! 절대 ' + dmCharCount + '자보다 훨씬 적게 작성하지 마세요!)**\n';
-            detailMenuListText += '     - ⚠️ 반드시 해석 내용을 작성해야 합니다! 제목만 쓰면 안 됩니다!\n';
-            if (dmTool && (dmTool.includes('문단') || dmTool.includes('줄바꿈') || dmTool.includes('빈줄'))) {
-                detailMenuListText += '     - ⚠️⚠️⚠️ **해석도구에 문단 나누기 지시가 있으므로, 반드시 여러 문단으로 나누어 작성하고 문단 간 빈줄을 삽입하세요! 한 문단으로 작성하면 안 됩니다!** ⚠️⚠️⚠️\n';
-            }
+            detailMenuListText += '     - 글자수: ' + dmCharCount + '자 이내\n';
         });
         
         const thumbnailText = thumbnail ? '- 썸네일 URL: ' + thumbnail + '\n' : '';
@@ -367,126 +326,60 @@ ${subtitlesForMenu.map((sub, subIdx) => {
   
   소제목: ${sub.subtitle}
   
-  ⚠️⚠️⚠️ **이 소제목은 반드시 아래와 같은 HTML 구조를 가져야 합니다!** ⚠️⚠️⚠️
-  
-  필수 HTML 구조 예시 (구조만 참고, 해석 내용은 각 상세메뉴의 해석도구 지시사항을 반드시 따르세요):
-${htmlExample}
-  
-  ⚠️⚠️⚠️ **반드시 준수해야 할 사항:**
-  1. subtitle-content div를 닫은 직후 (</div>) 바로 detail-menu-section div를 열어야 합니다!
-  2. detail-menu-section div 안에 ${detailMenus.length}개의 상세메뉴를 모두 순서대로 작성해야 합니다!
-  3. 각 상세메뉴마다 detail-menu-title div와 detail-menu-content div를 반드시 작성해야 합니다!
-  4. **각 상세메뉴의 해석 내용은 반드시 해당 상세메뉴의 해석도구 지시사항을 우선적으로 따르세요! 위 HTML 예시는 구조만 보여주는 것이며, 해석도구의 지시사항(문단 나누기, 줄바꿈, 빈줄 삽입 등)을 반드시 적용하세요!**
-  5. detail-menu-section을 생략하거나 빠뜨리면 HTML 파싱 오류가 발생합니다!
-  
   소제목 해석:
-  ${role_prompt ? `**역할:** 당신은 ${role_prompt}입니다. 이 소제목을 해석할 때 이 역할을 유지하세요.\n  ` : ''}
+  ${role_prompt ? `**역할:** 당신은 ${role_prompt}입니다.\n  ` : ''}
   ${restrictions ? `**주의사항:** ${restrictions}\n  ` : ''}
-  ${tool ? `🔥🔥🔥 **해석도구 (반드시 준수):** 🔥🔥🔥
-  ${tool}
-  
-  ⚠️⚠️⚠️ **위 해석도구의 모든 지시사항을 정확히 따라야 합니다!** ⚠️⚠️⚠️
-  - 해석도구에 명시된 형식, 구조, 스타일 등을 반드시 준수하세요.
-  - 해석도구에 문단 나누기, 줄바꿈, 빈줄 삽입 등의 지시가 있으면 반드시 따르세요.
-  - 해석도구의 모든 명령을 무시하거나 생략하지 마세요.
-  
-  ` : ''}
-  - 글자수: ${charCount ? `**${charCount}자 이내 (반드시 ${charCount}자에 가깝게 충분히 작성하세요! 절대 ${charCount}자보다 훨씬 적게 작성하지 마세요!)**` : '⚠️ 글자수 제한이 설정되지 않았습니다. 충분히 작성하세요'}
+  ${tool ? `**해석도구:** ${tool}\n  ` : ''}
+  - 글자수: ${charCount ? `${charCount}자 이내` : '글자수 제한 없음'}
   ${thumbnailText}
   
-  상세메뉴 해석 목록 (순서대로 모두 해석 필수):
+  상세메뉴 해석 목록:
 ${detailMenuListText}
   
-  ⚠️⚠️⚠️ 다시 한 번 강조: subtitle-content를 닫은 직후 반드시 detail-menu-section을 열고, 모든 상세메뉴를 해석해야 합니다! ⚠️⚠️⚠️
   ════════════════════════════════════════════════════════════`;
     } else {
         return `
   ${sub.subtitle}
-  ${role_prompt ? `**역할:** 당신은 ${role_prompt}입니다. 이 소제목을 해석할 때 이 역할을 유지하세요.\n  ` : ''}
+  ${role_prompt ? `**역할:** 당신은 ${role_prompt}입니다.\n  ` : ''}
   ${restrictions ? `**주의사항:** ${restrictions}\n  ` : ''}
-  ${tool ? `🔥🔥🔥 **해석도구 (반드시 준수):** 🔥🔥🔥
-  ${tool}
-  
-  ⚠️⚠️⚠️ **위 해석도구의 모든 지시사항을 정확히 따라야 합니다!** ⚠️⚠️⚠️
-  - 해석도구에 명시된 형식, 구조, 스타일 등을 반드시 준수하세요.
-  - 해석도구에 문단 나누기, 줄바꿈, 빈줄 삽입 등의 지시가 있으면 반드시 따르세요.
-  - 해석도구의 모든 명령을 무시하거나 생략하지 마세요.
-  
-  ` : ''}
-  - 글자수 제한: ${charCount ? `**${charCount}자 이내 (반드시 ${charCount}자에 가깝게 충분히 작성하세요! 절대 ${charCount}자보다 훨씬 적게 작성하지 마세요!)**` : '⚠️ 글자수 제한이 설정되지 않았습니다. 충분히 작성하세요'}
-  ${thumbnail ? `- 썸네일 URL: ${thumbnail} (반드시 HTML에 포함하세요!)` : ''}`;
+  ${tool ? `**해석도구:** ${tool}\n  ` : ''}
+  - 글자수: ${charCount ? `${charCount}자 이내` : '글자수 제한 없음'}
+  ${thumbnail ? `- 썸네일 URL: ${thumbnail}` : ''}`;
     }
   }).join('\n')}
 `;
 }).filter((menuText) => menuText.trim().length > 0).join('\n\n')}
 
-각 메뉴별로 다음 HTML 형식으로 결과를 작성해주세요:
-${isSecondRequest ? `
-🚨🚨🚨 **2차 요청 주의사항 (반드시 준수):** 🚨🚨🚨
-1. **위에 나열된 남은 메뉴/소제목만 HTML로 작성하세요.**
-2. **이전에 완료된 메뉴나 소제목은 절대 포함하지 마세요.**
-3. **처음부터 다시 시작하지 마세요.**
-4. **메뉴 제목이나 썸네일을 다시 생성하지 마세요. 남은 소제목의 해석 내용만 생성하세요.**
-5. **이전 요청의 HTML 구조를 반복하지 마세요.**
-6. **완료된 소제목 목록을 다시 확인하고, 그 소제목들은 절대 HTML에 포함하지 마세요!**
-` : ''}
+각 메뉴별로 다음 HTML 구조로 결과를 작성해주세요:
 
 <div class="menu-section">
   <h2 class="menu-title">[메뉴 제목]</h2>
   ${menuItemsInfo.some((m) => m.thumbnail) ? '<img src="[썸네일 URL]" alt="[메뉴 제목]" class="menu-thumbnail" />' : ''}
   
-  subtitle-section div:
-    subtitle-title h3: [소제목]
-    ${menu_subtitles.some((s) => s.thumbnail) ? 'subtitle-thumbnail-container div: [썸네일]' : ''}
-    subtitle-content div: [해석 내용]
+  <div class="subtitle-section">
+    <h3 class="subtitle-title">[소제목]</h3>
+    ${menu_subtitles.some((s) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[소제목 썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
+    <div class="subtitle-content">[해석 내용]</div>
+  </div>
   
-  ⚠️⚠️⚠️ 중요: 위 소제목 목록에서 "═══ 상세메뉴 필수 포함 소제목 ═══"로 시작하는 소제목이 있으면:
-    아래와 같은 HTML 구조로 작성해야 합니다:
-    subtitle-section div 시작
-    subtitle-title h3: [상세메뉴가 있는 소제목]
-    subtitle-content div: [소제목 해석 (관리자에서 설정한 글자수 제한)]
-    subtitle-content div 닫기
-    ⚠️⚠️⚠️ subtitle-content를 닫은 직후 반드시 detail-menu-section div를 열어야 합니다! ⚠️⚠️⚠️
-    detail-menu-section div 시작
-      detail-menu-title div: [상세메뉴 제목 1]
-      detail-menu-content div: [상세메뉴 1 해석 내용 (반드시 해당 상세메뉴의 해석도구 지시사항 준수)]
-      detail-menu-title div: [상세메뉴 제목 2]
-      detail-menu-content div: [상세메뉴 2 해석 내용 (반드시 해당 상세메뉴의 해석도구 지시사항 준수)]
-    detail-menu-section div 닫기
-    subtitle-section div 닫기
+  <div class="subtitle-section">
+    <h3 class="subtitle-title">[다음 소제목]</h3>
+    <div class="subtitle-content">[해석 내용]</div>
+    <div class="detail-menu-section">
+      <div class="detail-menu-title">[상세메뉴 제목]</div>
+      <div class="detail-menu-content">[상세메뉴 해석 내용]</div>
+    </div>
+  </div>
   
   ...
 </div>
 
-<div class="menu-section">
-  <h2 class="menu-title">[다음 메뉴 제목]</h2>
-  ...
-</div>
-${isSecondRequest ? `
-🚨🚨🚨 **중요: 위 HTML 예시는 형식만 보여주는 것입니다.** 🚨🚨🚨
-**실제로는:**
-1. 위에 나열된 남은 메뉴/소제목만 작성하세요.
-2. 이전에 완료된 메뉴나 소제목은 절대 포함하지 마세요.
-3. 처음부터 다시 시작하지 마세요.
-4. 메뉴 제목이나 썸네일을 다시 생성하지 마세요.
-5. 오직 남은 소제목의 해석 내용만 생성하세요.
-6. 완료된 소제목 목록을 다시 확인하고, 그 소제목들은 절대 HTML에 포함하지 마세요!
-7. 소제목 썸네일이 제공된 경우 (위 소제목 목록에 "썸네일 URL"이 표시된 경우), 반드시 포함하세요!
-` : ''}
+**중요한 HTML 형식 지시사항:**
+- 문단 간 한 줄 띄기가 필요한 경우, 반드시 <br> 태그 또는 <p> 태그를 사용하여 표현하세요.
+- HTML에서는 일반 텍스트의 줄바꿈이나 공백만으로는 화면에 빈 줄이 표시되지 않습니다.
+- 문단 사이에 빈 줄을 표시하려면: <p>첫 번째 문단</p><br><p>두 번째 문단</p> 또는 <p>첫 번째 문단<br><br>두 번째 문단</p> 형태로 작성하세요.
+- 해석도구에서 "문단간 한줄띄기" 지시가 있으면, 반드시 <br> 또는 <p> 태그로 표현하세요.
 
-중요:
-1. 각 메뉴는 <div class="menu-section">으로 구분
-2. 메뉴 제목은 <h2 class="menu-title">으로 표시
-3. 썸네일이 있으면 <img src="[URL]" alt="[제목]" class="menu-thumbnail" />로 표시
-4. 각 소제목은 <div class="subtitle-section">으로 구분
-5. 소제목 제목은 <h3 class="subtitle-title">으로 표시하되, 소제목 끝에 반드시 마침표(.)를 추가하세요. 예: <h3 class="subtitle-title">1-1. 나의 타고난 '기본 성격'과 '가치관'.</h3>
-6. **소제목 썸네일이 제공된 경우 (위 소제목 목록에 "썸네일 URL"이 표시된 경우), 반드시 <h3 class="subtitle-title"> 태그 바로 다음에 <div class="subtitle-thumbnail-container"><img src="[썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>를 포함하세요. 썸네일이 없으면 포함하지 마세요.**
-7. 해석 내용은 <div class="subtitle-content"> 안에 HTML 형식으로 작성
-8. 각 content는 해당 subtitle의 char_count를 초과하지 않도록 주의
-   ${hasDetailMenusInSubtitles ? '**⚠️ 중요: 소제목에 상세메뉴가 있는 경우 (위 소제목 목록에서 "═══ 상세메뉴 필수 포함 소제목 ═══"로 시작하는 소제목), 소제목 해석은 설정된 글자수 제한을 준수하고, subtitle-content를 닫은 직후 반드시 detail-menu-section을 열고, 모든 상세메뉴를 해석해야 합니다!**' : ''}
-${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 메뉴/소제목만 포함하세요. 이전에 완료된 내용은 절대 포함하지 마세요. 처음부터 다시 시작하지 말고, 남은 소제목부터만 해석하세요. 메뉴 제목이나 썸네일을 다시 생성하지 마세요. 오직 남은 소제목의 해석 내용만 생성하세요. 위에 나열된 완료된 소제목 목록을 다시 확인하고, 그 소제목들은 절대 포함하지 마세요!** 🚨🚨🚨' : '9. 모든 메뉴와 소제목을 순서대로 포함'}
-10. 소제목 제목에 마침표가 없으면 자동으로 마침표를 추가하세요 (TTS 재생 시 자연스러운 구분을 위해)
-11. 소제목 제목과 해석 내용 사이에 빈 줄이나 공백을 절대 넣지 마세요. <h3 class="subtitle-title"> 태그와 <div class="subtitle-content"> 태그 사이에 줄바꿈이나 공백 문자를 넣지 말고 바로 붙여서 작성하세요. 단, 썸네일이 있는 경우 <h3> 태그와 썸네일 사이, 썸네일과 <div class="subtitle-content"> 사이에는 줄바꿈이 있어도 됩니다. 예: <h3 class="subtitle-title">1-1. 소제목.</h3><div class="subtitle-thumbnail-container"><img src="[URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div><div class="subtitle-content">본문 내용</div>
 `;
 
         console.log('프롬프트 생성 완료, 길이:', prompt.length);
@@ -624,7 +517,25 @@ ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 �
         };
 
         // 스트리밍 방식으로 생성
-        const result = await geminiModel.generateContentStream(prompt);
+        let result;
+        try {
+            result = await geminiModel.generateContentStream(prompt);
+        } catch (streamInitError) {
+            console.error('스트림 생성 실패:', streamInitError);
+            console.error('에러 메시지:', streamInitError?.message || String(streamInitError));
+            console.error('에러 스택:', streamInitError?.stack || 'N/A');
+            
+            if (!res.headersSent) {
+                return res.status(500).json({
+                    error: '스트림 생성 실패',
+                    message: streamInitError?.message || '스트림을 생성하는 중 오류가 발생했습니다.'
+                });
+            } else {
+                res.write(`data: ${JSON.stringify({ type: 'error', error: streamInitError?.message || '스트림을 생성하는 중 오류가 발생했습니다.' })}\n\n`);
+                res.end();
+                return;
+            }
+        }
 
         // 헤더 설정 (스트리밍 전송용)
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -640,20 +551,46 @@ ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 �
         let lastCompletionCheckChunk = 0;
         const COMPLETION_CHECK_INTERVAL = 50;
         let allSubtitlesCompletedEarly = false;
+        let streamErrorOccurred = false;
+        let streamErrorMessage = '';
 
         // 스트림 읽기
-        for await (const chunk of result.stream) {
-            chunkCount++;
-            const chunkText = chunk.text();
-            accumulatedText += chunkText;
+        try {
+            for await (const chunk of result.stream) {
+                try {
+                    chunkCount++;
+                    let chunkText = '';
+                    
+                    // chunk.text() 메서드가 있는지 확인
+                    if (chunk && typeof chunk.text === 'function') {
+                        chunkText = chunk.text();
+                    } else if (chunk && typeof chunk === 'string') {
+                        chunkText = chunk;
+                    } else if (chunk && chunk.text) {
+                        chunkText = chunk.text;
+                    } else {
+                        console.warn(`청크 ${chunkCount}: 텍스트를 추출할 수 없음, chunk 타입: ${typeof chunk}`);
+                        continue;
+                    }
+                    
+                    if (!chunkText || chunkText.trim().length === 0) {
+                        continue;
+                    }
+                    
+                    accumulatedText += chunkText;
 
-            // chunk 이벤트 전송
-            res.write(`data: ${JSON.stringify({ type: 'chunk', text: chunkText, accumulatedLength: accumulatedText.length })}\n\n`);
+                    // chunk 이벤트 전송
+                    res.write(`data: ${JSON.stringify({ type: 'chunk', text: chunkText, accumulatedLength: accumulatedText.length })}\n\n`);
 
-            // 100개 청크마다 진행 상황 로그
-            if (chunkCount % 100 === 0) {
-                console.log(`전송된 청크: ${chunkCount}개, 누적 텍스트 길이: ${accumulatedText.length}자`);
-            }
+                    // 100개 청크마다 진행 상황 로그
+                    if (chunkCount % 100 === 0) {
+                        console.log(`전송된 청크: ${chunkCount}개, 누적 텍스트 길이: ${accumulatedText.length}자`);
+                    }
+                } catch (chunkError) {
+                    console.error(`청크 ${chunkCount} 처리 중 에러:`, chunkError);
+                    // 개별 청크 에러는 로그만 남기고 계속 진행
+                    continue;
+                }
 
             // 모든 소제목 완료 여부 주기적 체크 (50번째 청크마다)
             if (chunkCount - lastCompletionCheckChunk >= COMPLETION_CHECK_INTERVAL && accumulatedText.trim().length > 100) {
@@ -683,6 +620,34 @@ ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 �
                 } else {
                     lastCompletionCheckChunk = chunkCount;
                 }
+            }
+            }
+        } catch (streamError) {
+            console.error('스트림 읽기 중 에러 발생:', streamError);
+            console.error('에러 메시지:', streamError?.message || String(streamError));
+            console.error('에러 스택:', streamError?.stack || 'N/A');
+            console.error(`에러 발생 시점 - 청크: ${chunkCount}개, 누적 텍스트: ${accumulatedText.length}자`);
+            
+            streamErrorOccurred = true;
+            streamErrorMessage = streamError?.message || '스트림을 읽는 중 오류가 발생했습니다.';
+            
+            // 스트림 에러가 발생했지만 이미 일부 데이터가 있으면 계속 진행
+            if (accumulatedText.trim().length > 0) {
+                console.log('일부 데이터가 수집되었으므로 계속 진행합니다.');
+                // 에러가 발생했지만 데이터가 있으면 경고만 전송하고 계속 진행
+                res.write(`data: ${JSON.stringify({ type: 'warning', message: '스트림 파싱 중 일부 에러가 발생했지만 수집된 데이터를 계속 전송합니다.' })}\n\n`);
+            } else {
+                // 데이터가 없으면 에러 전송
+                if (!res.headersSent) {
+                    res.status(500).json({
+                        error: '스트림 파싱 에러',
+                        message: streamErrorMessage
+                    });
+                } else {
+                    res.write(`data: ${JSON.stringify({ type: 'error', error: streamErrorMessage })}\n\n`);
+                    res.end();
+                }
+                return;
             }
         }
 
@@ -749,18 +714,25 @@ ${isSecondRequest ? '9. 🚨🚨🚨 **2차 요청: 아래에 나열된 남은 �
             console.log('✅ 조기 완료 처리: isTruncated=false, finishReason=STOP');
         }
 
-        // done 이벤트 전송
-        res.write(`data: ${JSON.stringify({ 
-            type: 'done', 
+        // done 이벤트 전송 (스트림 에러가 발생했어도 수집된 데이터는 전송)
+        const donePayload = {
+            type: 'done',
             html: cleanHtml,
             isTruncated: isTruncated,
             finishReason: finishReason
-        })}\n\n`);
+        };
+        if (streamErrorOccurred) {
+            donePayload.streamError = streamErrorMessage;
+        }
+        res.write(`data: ${JSON.stringify(donePayload)}\n\n`);
         res.end();
 
         console.log(`스트리밍 완료, 총 청크: ${chunkCount}개, 총 텍스트 길이: ${accumulatedText.length}자`);
         console.log(`finishReason: ${finishReason}, isTruncated: ${isTruncated}`);
         console.log(`조기 완료 여부: ${allSubtitlesCompletedEarly ? '예' : '아니오'}`);
+        if (streamErrorOccurred) {
+            console.log(`⚠️ 스트림 에러 발생했지만 데이터 전송 완료: ${streamErrorMessage}`);
+        }
 
     } catch (error) {
         console.error('에러 발생:', error);

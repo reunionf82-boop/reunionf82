@@ -1895,7 +1895,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           </div>
           
           <div className="flex flex-wrap gap-4">
-            <div className="flex-shrink-0">
+            <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 소메뉴당 글자수
               </label>
@@ -1904,11 +1904,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 name="subtitleCharCount"
                 value={formData.subtitleCharCount}
                 onChange={handleChange}
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
+                className="w-20 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
                 placeholder="입력하세요"
+                maxLength={4}
               />
             </div>
-            <div className="flex-shrink-0">
+            <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 상세메뉴당 글자수
               </label>
@@ -1917,11 +1918,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 name="detailMenuCharCount"
                 value={formData.detailMenuCharCount}
                 onChange={handleChange}
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
+                className="w-20 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
                 placeholder="입력하세요"
+                maxLength={4}
               />
             </div>
-            <div className="flex-shrink-0">
+            <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 대메뉴 폰트크기
               </label>
@@ -1948,7 +1950,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 </button>
               </div>
             </div>
-            <div className="flex-shrink-0">
+            <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 소메뉴 폰트크기
               </label>
@@ -1975,7 +1977,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 </button>
               </div>
             </div>
-            <div className="flex-shrink-0">
+            <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 상세메뉴 폰트크기
               </label>
@@ -2002,7 +2004,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 </button>
               </div>
             </div>
-            <div className="flex-shrink-0">
+            <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 본문 폰트크기
               </label>

@@ -77,19 +77,11 @@ export async function callJeminaiAPIStream(
   
   try {
     const selectedModel = request.model || 'gemini-3-flash-preview'
-    const modelDisplayName = selectedModel === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : selectedModel === 'gemini-3-flash-preview' ? 'Gemini 3.0 Flash' : selectedModel === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : selectedModel
-    console.log('=== 재미나이 API 스트리밍 호출 시작 ===')
-    console.log('선택된 모델:', modelDisplayName, `(${selectedModel})`)
     
     // Cloudways 서버 URL 확인 (우선 사용)
     const cloudwaysUrl = process.env.NEXT_PUBLIC_CLOUDWAYS_URL || ''
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-    
-    // 디버깅: 환경 변수 확인
-    console.log('=== 환경 변수 확인 ===')
-    console.log('NEXT_PUBLIC_CLOUDWAYS_URL:', cloudwaysUrl ? `${cloudwaysUrl.substring(0, 50)}...` : '❌ 설정되지 않음')
-    console.log('NEXT_PUBLIC_SUPABASE_URL:', supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : '없음')
     
     // Cloudways가 설정되어 있으면 우선 사용, 없으면 Supabase Edge Function 사용
     let edgeFunctionUrl: string
@@ -98,22 +90,13 @@ export async function callJeminaiAPIStream(
     if (cloudwaysUrl && cloudwaysUrl.trim() !== '') {
       useCloudways = true
       edgeFunctionUrl = `${cloudwaysUrl}/chat`
-      console.log('=== ✅ Cloudways 서버 사용 ===')
-      console.log('Cloudways URL:', cloudwaysUrl)
     } else {
-      console.log('=== ⚠️ Supabase Edge Function 사용 (Cloudways URL이 설정되지 않음) ===')
-      console.log('Supabase URL:', supabaseUrl ? `${supabaseUrl.substring(0, 30)}...` : '없음')
-      console.log('Supabase Anon Key:', supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : '없음')
-      
       if (!supabaseUrl || !supabaseAnonKey) {
         console.error('Supabase 환경 변수 오류:', { supabaseUrl: !!supabaseUrl, supabaseAnonKey: !!supabaseAnonKey })
         throw new Error('Supabase 환경 변수가 설정되지 않았습니다.')
       }
-      
       edgeFunctionUrl = `${supabaseUrl}/functions/v1/jeminai`
     }
-    
-    console.log('Edge Function URL:', edgeFunctionUrl)
 
     // fetch 타임아웃 설정
     // Cloudways: 29분 (1740초) - 서버 타임아웃(30분)보다 약간 짧게 설정하여 서버 타임아웃 전에 감지, Supabase: 390초
@@ -167,8 +150,10 @@ export async function callJeminaiAPIStream(
       throw fetchError
     }
 
-    console.log('API 응답 상태:', response.status, response.statusText)
-    console.log('Content-Type:', response.headers.get('content-type'))
+    // API 응답 확인 (에러 시에만 로그)
+    if (!response.ok) {
+      console.error('API 응답 상태:', response.status, response.statusText)
+    }
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -210,7 +195,6 @@ export async function callJeminaiAPIStream(
       throw new Error(errorMsg)
     }
 
-    console.log('스트림 리더 생성 완료, 데이터 읽기 시작')
     let buffer = ''
     let finalResponse: JeminaiResponse | null = null
     let chunkCount = 0
@@ -239,26 +223,17 @@ export async function callJeminaiAPIStream(
           isInBackground = true
           backgroundStartTime = now
           lastVisibilityChangeTime = now
-          console.log('페이지가 백그라운드로 전환됨 (전화/메신저/다른 앱 등), 스트림은 계속 진행됩니다.')
+          // 백그라운드로 전환됨
         } else {
-          // 페이지가 다시 보이게 되면 (전화 종료, 메신저 닫고 복귀 등)
+          // 페이지가 다시 보이게 되면
           const timeInBackground = now - lastVisibilityChangeTime
           isInBackground = false
-          console.log(`페이지가 다시 보이게 됨 (백그라운드 시간: ${Math.round(timeInBackground / 1000)}초), 스트림 상태 확인`)
           
           // 백그라운드에 있었던 시간만큼 lastChunkTime 보정
-          // 백그라운드에 있는 동안에는 타임아웃이 발생하지 않도록 보정
           if (backgroundStartTime > 0) {
-            const backgroundDuration = now - backgroundStartTime
-            lastChunkTime = Date.now() // 복귀 시점을 기준으로 갱신
-            console.log(`백그라운드 시간 보정: ${Math.round(backgroundDuration / 1000)}초 동안 백그라운드에 있었음`)
+            lastChunkTime = Date.now()
           } else {
             lastChunkTime = Date.now()
-          }
-          
-          // 백그라운드에 오래 있었으면 스트림이 끊겼을 수 있으므로 확인
-          if (timeInBackground > 60000) { // 1분 이상 백그라운드에 있었으면
-            console.warn('백그라운드에 오래 있었음, 스트림 상태 확인 필요')
           }
         }
       }
@@ -307,7 +282,6 @@ export async function callJeminaiAPIStream(
         // reader.read()는 계속 작동하며 데이터를 받을 수 있음
         
         if (done) {
-          console.log('스트림 읽기 완료, 총 청크:', chunkCount)
           // 스트림 종료 시 버퍼에 남은 데이터 처리
           if (buffer.trim()) {
             console.log('버퍼에 남은 데이터 처리:', buffer.substring(0, 200))
@@ -316,7 +290,6 @@ export async function callJeminaiAPIStream(
               if (line.trim() && line.startsWith('data: ')) {
                 try {
                   const data = JSON.parse(line.slice(6))
-                  console.log('버퍼에서 스트림 데이터 수신:', data.type)
                   
                   if (data.type === 'done') {
                     finalResponse = {
@@ -356,7 +329,6 @@ export async function callJeminaiAPIStream(
           if (line.trim() && line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6))
-              console.log('스트림 데이터 수신:', data.type, data.accumulatedLength || 'N/A')
               
               if (data.type === 'start') {
                 hasReceivedStart = true
@@ -390,9 +362,6 @@ export async function callJeminaiAPIStream(
                 })
               } else if (data.type === 'done') {
                 lastChunkTime = Date.now() // done 수신 시 시간 갱신
-                console.log('=== 스트림 완료 (done 타입 수신) ===')
-                console.log('Finish Reason:', data.finishReason || '없음')
-                console.log('Is Truncated:', data.isTruncated || false)
                 console.log('HTML 길이:', data.html?.length || 0, '자')
                 console.log('Usage:', data.usage ? JSON.stringify(data.usage) : '없음')
                 
@@ -400,8 +369,6 @@ export async function callJeminaiAPIStream(
                 if (data.finishReason === 'MAX_TOKENS') {
                   if (!data.isTruncated) {
                     // 서버에서 모든 소제목이 완료되었는지 확인하여 isTruncated를 false로 설정한 경우
-                    console.log('✅ 제미나이 API: MAX_TOKENS로 종료되었지만, 서버에서 확인 결과 모든 소제목이 완료되었습니다.')
-                    console.log('✅ 점사가 정상적으로 완료되었습니다. (MAX_TOKENS는 점사 완료 후 추가 생성이 발생한 것으로 보입니다.)')
                   } else {
                     // 실제로 잘린 경우
                     console.error('❌ 제미나이 API: MAX_TOKENS 한계에 도달하여 응답이 잘렸습니다.')
@@ -409,9 +376,9 @@ export async function callJeminaiAPIStream(
                     console.error('❌ 현재 maxOutputTokens: 65536 (약 20000-30000자 한글 기준)')
                   }
                 } else if (data.finishReason === 'STOP') {
-                  console.log('✅ 제미나이 API: 정상 완료 (STOP)')
+                  // 정상 완료
                 } else if (!data.finishReason) {
-                  console.warn('⚠️ 제미나이 API: Finish Reason이 없습니다. 스트림이 완전히 전송되지 않았을 수 있습니다.')
+                  console.warn('⚠️ 제미나이 API: Finish Reason이 없습니다.')
                 }
                 
                 if (data.html) {
@@ -556,7 +523,6 @@ export async function callJeminaiAPIStream(
       document.removeEventListener('visibilitychange', visibilityHandler)
     }
     
-    console.log('=== 재미나이 API 스트리밍 완료 ===')
     return finalResponse
   } catch (error: any) {
     console.error('=== 재미나이 API 스트리밍 에러 ===')
