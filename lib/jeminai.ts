@@ -364,6 +364,13 @@ export async function callJeminaiAPIStream(
                 lastChunkTime = Date.now() // done 수신 시 시간 갱신
                 console.log('HTML 길이:', data.html?.length || 0, '자')
                 console.log('Usage:', data.usage ? JSON.stringify(data.usage) : '없음')
+                console.log('done 이벤트 데이터:', {
+                  finishReason: data.finishReason,
+                  isTruncated: data.isTruncated,
+                  completedSubtitleIndices: data.completedSubtitleIndices,
+                  hasCompletedSubtitleIndices: !!data.completedSubtitleIndices,
+                  completedSubtitleIndicesLength: data.completedSubtitleIndices?.length || 0
+                })
                 
                 // MAX_TOKENS로 종료된 경우 처리
                 if (data.finishReason === 'MAX_TOKENS') {
@@ -382,19 +389,118 @@ export async function callJeminaiAPIStream(
                 }
                 
                 if (data.html) {
-                  finalResponse = {
-                    html: data.html,
-                    isTruncated: data.isTruncated,
-                    finishReason: data.finishReason,
-                    usage: data.usage
+                  // MAX_TOKENS로 인한 잘림이고 미완료 소제목이 있으면 재요청
+                  if (data.finishReason === 'MAX_TOKENS' && data.isTruncated && data.completedSubtitleIndices && data.completedSubtitleIndices.length > 0) {
+                    console.log('=== MAX_TOKENS 감지: 재요청 시작 ===')
+                    console.log('완료된 소제목 인덱스:', data.completedSubtitleIndices)
+                    
+                    // 완료된 HTML 저장
+                    const completedHtml = data.html
+                    
+                    // 재요청 준비
+                    const retryRequest: JeminaiRequest = {
+                      ...request,
+                      isSecondRequest: true,
+                      completedSubtitleIndices: data.completedSubtitleIndices
+                    }
+                    
+                    // 재요청 실행
+                    try {
+                      console.log('재요청 시작: 남은 소제목 점사')
+                      let retryAccumulatedHtml = ''
+                      const retryResponse = await callJeminaiAPIStream(retryRequest, (retryChunk) => {
+                        // 재요청의 chunk를 누적하여 첫 번째 HTML과 병합하여 전달
+                        if (retryChunk.type === 'chunk') {
+                          if (retryChunk.text) {
+                            retryAccumulatedHtml += retryChunk.text
+                          }
+                          // 첫 번째 HTML과 재요청 chunk를 병합하여 전달 (html 필드에 포함)
+                          const mergedHtml = completedHtml + retryAccumulatedHtml
+                          onChunk({
+                            type: 'chunk',
+                            text: retryChunk.text || '', // 재요청의 새로운 chunk만 전달
+                            html: mergedHtml // 병합된 전체 HTML 전달
+                          })
+                        } else if (retryChunk.type === 'start') {
+                          // 재요청 시작 시 첫 번째 HTML 유지
+                          retryAccumulatedHtml = ''
+                          onChunk(retryChunk)
+                        } else {
+                          // 기타 이벤트는 그대로 전달
+                          onChunk(retryChunk)
+                        }
+                      })
+                      
+                      // 재요청이 완료되면 완료된 HTML과 재요청 HTML 병합
+                      // retryResponse.html이 있으면 사용, 없으면 retryAccumulatedHtml 사용
+                      const retryHtml = retryResponse.html || retryAccumulatedHtml
+                      if (retryHtml) {
+                        // 완료된 HTML과 재요청 HTML 병합 (서버에서 이미 깨진 부분 제거됨)
+                        const mergedHtml = completedHtml + retryHtml
+                        // done 이벤트 전송 (최종 병합된 HTML)
+                        onChunk({
+                          type: 'done',
+                          html: mergedHtml,
+                          isTruncated: retryResponse.isTruncated || false,
+                          finishReason: retryResponse.finishReason || 'STOP',
+                          usage: retryResponse.usage
+                        })
+                        finalResponse = {
+                          html: mergedHtml,
+                          isTruncated: retryResponse.isTruncated || false,
+                          finishReason: retryResponse.finishReason || 'STOP',
+                          usage: retryResponse.usage
+                        }
+                      } else {
+                        // retryHtml이 없으면 completedHtml만 반환
+                        console.warn('재요청 완료되었지만 retryHtml이 없음. completedHtml만 반환')
+                        onChunk({
+                          type: 'done',
+                          html: completedHtml,
+                          isTruncated: true,
+                          finishReason: 'MAX_TOKENS',
+                          usage: data.usage
+                        })
+                        finalResponse = {
+                          html: completedHtml,
+                          isTruncated: true,
+                          finishReason: 'MAX_TOKENS',
+                          usage: data.usage
+                        }
+                      }
+                    } catch (retryError: any) {
+                      console.error('재요청 실패:', retryError)
+                      // 재요청이 실패해도 완료된 HTML은 반환
+                      onChunk({
+                        type: 'done',
+                        html: completedHtml,
+                        isTruncated: true,
+                        finishReason: 'MAX_TOKENS',
+                        usage: data.usage
+                      })
+                      finalResponse = {
+                        html: completedHtml,
+                        isTruncated: true,
+                        finishReason: 'MAX_TOKENS',
+                        usage: data.usage
+                      }
+                    }
+                  } else {
+                    // 일반적인 done 이벤트 처리
+                    finalResponse = {
+                      html: data.html,
+                      isTruncated: data.isTruncated,
+                      finishReason: data.finishReason,
+                      usage: data.usage
+                    }
+                    onChunk({
+                      type: 'done',
+                      html: data.html,
+                      isTruncated: data.isTruncated,
+                      finishReason: data.finishReason,
+                      usage: data.usage
+                    })
                   }
-                  onChunk({
-                    type: 'done',
-                    html: data.html,
-                    isTruncated: data.isTruncated,
-                    finishReason: data.finishReason,
-                    usage: data.usage
-                  })
                 } else {
                   console.warn('done 타입을 받았지만 html이 없음. accumulatedHtml 사용.')
                   // done 타입을 받았지만 html이 없는 경우 fallback
@@ -496,13 +602,233 @@ export async function callJeminaiAPIStream(
         // ** 문자 제거 (마크다운 강조 표시 제거)
         cleanHtml = cleanHtml.replace(/\*\*/g, '')
         
-        finalResponse = {
-          html: cleanHtml
+        // 100000자 이상이고 재요청이 아닌 경우, 완료된 소제목 확인 후 재요청 시도
+        const MAX_TEXT_LENGTH_BEFORE_RETRY = 100000
+        if (cleanHtml.length >= MAX_TEXT_LENGTH_BEFORE_RETRY && !request.isSecondRequest && request.menu_subtitles && request.menu_subtitles.length > 0) {
+          console.log('⚠️ Fallback: 100000자 이상 HTML 감지. 완료된 소제목 파싱 후 재요청 시도')
+          
+          // 클라이언트에서 완료된 소제목 파싱 (서버와 동일한 로직)
+          const parseCompletedSubtitles = (html: string, allMenuSubtitles: any[]) => {
+            const completedSubtitles: number[] = []
+            
+            // HTML에서 모든 소제목 섹션 추출
+            const subtitleSectionStartRegex = /<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>/gi
+            const subtitleSectionMatches: RegExpMatchArray[] = []
+            let match: RegExpMatchArray | null
+            while ((match = subtitleSectionStartRegex.exec(html)) !== null) {
+              subtitleSectionMatches.push(match)
+            }
+            
+            const subtitleSections: string[] = []
+            
+            // 각 subtitle-section의 시작 위치에서 닫는 태그까지 찾기
+            for (let i = 0; i < subtitleSectionMatches.length; i++) {
+              const match = subtitleSectionMatches[i]
+              const startIndex = match.index!
+              const startTag = match[0]
+              
+              let depth = 1
+              let currentIndex = startIndex + startTag.length
+              let endIndex = -1
+              
+              while (currentIndex < html.length && depth > 0) {
+                const nextOpenDiv = html.indexOf('<div', currentIndex)
+                const nextCloseDiv = html.indexOf('</div>', currentIndex)
+                
+                if (nextCloseDiv === -1) break
+                
+                if (nextOpenDiv !== -1 && nextOpenDiv < nextCloseDiv) {
+                  depth++
+                  currentIndex = nextOpenDiv + 4
+                } else {
+                  depth--
+                  if (depth === 0) {
+                    endIndex = nextCloseDiv + 6
+                    break
+                  }
+                  currentIndex = nextCloseDiv + 6
+                }
+              }
+              
+              if (endIndex > startIndex) {
+                const section = html.substring(startIndex, endIndex)
+                subtitleSections.push(section)
+              }
+            }
+            
+            // 각 소제목이 완료되었는지 확인
+            allMenuSubtitles.forEach((subtitle, index) => {
+              const menuMatch = subtitle.subtitle.match(/^(\d+)-(\d+)/)
+              if (!menuMatch) return
+              
+              const menuNumber = parseInt(menuMatch[1])
+              const subtitleNumber = parseInt(menuMatch[2])
+              
+              const subtitleTitleEscaped = subtitle.subtitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+              const subtitleTitlePattern1 = new RegExp(
+                `<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)${subtitleTitleEscaped}([\\s\\S]*?)</h3>`,
+                'i'
+              )
+              const subtitleTitleWithoutDot = subtitle.subtitle.replace(/\./g, '')
+              const subtitleTitlePattern2 = new RegExp(
+                `<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)${subtitleTitleWithoutDot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s\\S]*?)</h3>`,
+                'i'
+              )
+              const numberPattern = new RegExp(
+                `<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)${menuNumber}-${subtitleNumber}([\\s\\S]*?)</h3>`,
+                'i'
+              )
+              const h3TextPattern = new RegExp(
+                `<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)</h3>`,
+                'i'
+              )
+              
+              const subtitleContentPattern = /<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>[\s\S]*?<\/div>/i
+              
+              let found = false
+              for (const section of subtitleSections) {
+                let titleMatches = subtitleTitlePattern1.test(section) || 
+                                 subtitleTitlePattern2.test(section) || 
+                                 numberPattern.test(section)
+                
+                if (!titleMatches) {
+                  const h3Match = section.match(h3TextPattern)
+                  if (h3Match) {
+                    const h3Text = h3Match[1].replace(/<[^>]+>/g, '').trim()
+                    if (h3Text.includes(subtitle.subtitle) || 
+                        h3Text.includes(subtitleTitleWithoutDot) ||
+                        h3Text.includes(`${menuNumber}-${subtitleNumber}`)) {
+                      titleMatches = true
+                    }
+                  }
+                }
+                
+                if (titleMatches && subtitleContentPattern.test(section)) {
+                  const contentMatch = section.match(/<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+                  if (contentMatch && contentMatch[1].trim().length > 10) {
+                    if (!completedSubtitles.includes(index)) {
+                      completedSubtitles.push(index)
+                      found = true
+                      break
+                    }
+                  }
+                }
+              }
+            })
+            
+            return { completedSubtitles }
+          }
+          
+          const parseResult = parseCompletedSubtitles(cleanHtml, request.menu_subtitles)
+          const allSubtitlesCompleted = parseResult.completedSubtitles.length === request.menu_subtitles.length
+          
+          console.log(`Fallback: 전체 소제목 ${request.menu_subtitles.length}개, 완료된 소제목 ${parseResult.completedSubtitles.length}개`)
+          
+          if (!allSubtitlesCompleted && parseResult.completedSubtitles.length > 0) {
+            console.log('⚠️ Fallback: 미완료 소제목 감지. 재요청 수행')
+            
+            // 재요청 준비
+            const retryRequest: JeminaiRequest = {
+              ...request,
+              isSecondRequest: true,
+              completedSubtitleIndices: parseResult.completedSubtitles
+            }
+            
+            // 재요청 실행
+            try {
+              console.log('Fallback 재요청 시작: 남은 소제목 점사')
+              let retryAccumulatedHtml = ''
+              const retryResponse = await callJeminaiAPIStream(retryRequest, (retryChunk) => {
+                // 재요청의 chunk를 누적하여 첫 번째 HTML과 병합하여 전달
+                if (retryChunk.type === 'chunk') {
+                  if (retryChunk.text) {
+                    retryAccumulatedHtml += retryChunk.text
+                  }
+                  // 첫 번째 HTML과 재요청 chunk를 병합하여 전달 (html 필드에 포함)
+                  const mergedHtml = cleanHtml + retryAccumulatedHtml
+                  onChunk({
+                    type: 'chunk',
+                    text: retryChunk.text || '', // 재요청의 새로운 chunk만 전달
+                    html: mergedHtml // 병합된 전체 HTML 전달
+                  })
+                } else if (retryChunk.type === 'start') {
+                  // 재요청 시작 시 첫 번째 HTML 유지
+                  retryAccumulatedHtml = ''
+                  onChunk(retryChunk)
+                } else {
+                  // 기타 이벤트는 그대로 전달
+                  onChunk(retryChunk)
+                }
+              })
+              
+              // 재요청이 완료되면 완료된 HTML과 재요청 HTML 병합
+              // retryResponse.html이 있으면 사용, 없으면 retryAccumulatedHtml 사용
+              const retryHtml = retryResponse.html || retryAccumulatedHtml
+              if (retryHtml) {
+                const mergedHtml = cleanHtml + retryHtml
+                onChunk({
+                  type: 'done',
+                  html: mergedHtml,
+                  isTruncated: retryResponse.isTruncated || false,
+                  finishReason: retryResponse.finishReason || 'STOP',
+                  usage: retryResponse.usage
+                })
+                finalResponse = {
+                  html: mergedHtml,
+                  isTruncated: retryResponse.isTruncated || false,
+                  finishReason: retryResponse.finishReason || 'STOP',
+                  usage: retryResponse.usage
+                }
+              } else {
+                // retryHtml이 없으면 cleanHtml만 반환
+                console.warn('Fallback 재요청 완료되었지만 retryHtml이 없음. cleanHtml만 반환')
+                onChunk({
+                  type: 'done',
+                  html: cleanHtml,
+                  isTruncated: true,
+                  finishReason: 'MAX_TOKENS'
+                })
+                finalResponse = {
+                  html: cleanHtml,
+                  isTruncated: true,
+                  finishReason: 'MAX_TOKENS'
+                }
+              }
+            } catch (retryError: any) {
+              console.error('Fallback 재요청 실패:', retryError)
+              // 재요청이 실패해도 완료된 HTML은 반환
+              finalResponse = {
+                html: cleanHtml,
+                isTruncated: true,
+                finishReason: 'MAX_TOKENS'
+              }
+              onChunk({
+                type: 'done',
+                html: cleanHtml,
+                isTruncated: true,
+                finishReason: 'MAX_TOKENS'
+              })
+            }
+          } else {
+            // 모든 소제목이 완료되었거나 completedSubtitles가 없는 경우 정상 완료로 처리
+            finalResponse = {
+              html: cleanHtml
+            }
+            onChunk({
+              type: 'done',
+              html: cleanHtml
+            })
+          }
+        } else {
+          // 100000자 미만이거나 재요청인 경우 정상 완료로 처리
+          finalResponse = {
+            html: cleanHtml
+          }
+          onChunk({
+            type: 'done',
+            html: cleanHtml
+          })
         }
-        onChunk({
-          type: 'done',
-          html: cleanHtml
-        })
       } else {
         // accumulatedHtml이 비어있거나 너무 적은 경우
         // 네트워크/제미나이 정상일 때는 발생하지 않아야 하지만, 방어적 코딩
