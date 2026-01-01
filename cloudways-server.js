@@ -323,6 +323,8 @@ ${subtitlesForMenu.map((sub, subIdx) => {
             }
             if (dmTool) {
                 detailMenuListText += '     **해석도구:** ' + dmTool + '\n';
+                detailMenuListText += '     ⚠️⚠️⚠️ **해석도구에 "한줄 띄어서", "문단간 한줄띄기", "줄바꿈" 등의 지시가 있으면, 반드시 <br> 태그 또는 <p> 태그를 사용하여 표현하세요!** ⚠️⚠️⚠️\n';
+                detailMenuListText += '     ⚠️ **일반 텍스트의 줄바꿈(\\n)은 HTML에서 빈 줄로 표시되지 않습니다! 반드시 <br> 또는 <p> 태그를 사용하세요!** ⚠️\n';
             }
             detailMenuListText += '     - 글자수: ' + dmCharCount + '자 이내\n';
         });
@@ -340,6 +342,8 @@ ${subtitlesForMenu.map((sub, subIdx) => {
   ${role_prompt ? `**역할:** 당신은 ${role_prompt}입니다.\n  ` : ''}
   ${restrictions ? `**주의사항:** ${restrictions}\n  ` : ''}
   ${tool ? `**해석도구:** ${tool}\n  ` : ''}
+  ${tool ? `⚠️⚠️⚠️ **해석도구에 "한줄 띄어서", "문단간 한줄띄기", "줄바꿈" 등의 지시가 있으면, 반드시 <br> 태그 또는 <p> 태그를 사용하여 표현하세요!** ⚠️⚠️⚠️\n  ` : ''}
+  ${tool ? `⚠️ **일반 텍스트의 줄바꿈(\\n)은 HTML에서 빈 줄로 표시되지 않습니다! 반드시 <br> 또는 <p> 태그를 사용하세요!** ⚠️\n  ` : ''}
   - 글자수: ${charCount ? `${charCount}자 이내` : '글자수 제한 없음'}
   ${thumbnailText}
   
@@ -358,6 +362,8 @@ ${detailMenuListText}
   ${role_prompt ? `**역할:** 당신은 ${role_prompt}입니다.\n  ` : ''}
   ${restrictions ? `**주의사항:** ${restrictions}\n  ` : ''}
   ${tool ? `**해석도구:** ${tool}\n  ` : ''}
+  ${tool ? `⚠️⚠️⚠️ **해석도구에 "한줄 띄어서", "문단간 한줄띄기", "줄바꿈" 등의 지시가 있으면, 반드시 <br> 태그 또는 <p> 태그를 사용하여 표현하세요!** ⚠️⚠️⚠️\n  ` : ''}
+  ${tool ? `⚠️ **일반 텍스트의 줄바꿈(\\n)은 HTML에서 빈 줄로 표시되지 않습니다! 반드시 <br> 또는 <p> 태그를 사용하세요!** ⚠️\n  ` : ''}
   - 글자수: ${charCount ? `${charCount}자 이내` : '글자수 제한 없음'}
   ${thumbnail ? `- 썸네일 URL: ${thumbnail}` : ''}`;
     }
