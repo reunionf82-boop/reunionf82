@@ -71,7 +71,6 @@ function ResultContent() {
       // 사용 후 삭제 (한 번만 사용)
       sessionStorage.removeItem('result_requestKey')
       sessionStorage.removeItem('result_stream')
-      console.log('Result 페이지: sessionStorage에서 requestKey 가져옴:', storedRequestKey)
       setDataLoaded(true)
       return
     }
@@ -80,7 +79,6 @@ function ResultContent() {
       setSavedId(storedSavedId)
       // 사용 후 삭제 (한 번만 사용)
       sessionStorage.removeItem('result_savedId')
-      console.log('Result 페이지: sessionStorage에서 savedId 가져옴:', storedSavedId)
       setDataLoaded(true)
       return
     }
@@ -89,7 +87,6 @@ function ResultContent() {
       setStorageKey(storedStorageKey)
       // 사용 후 삭제 (한 번만 사용)
       sessionStorage.removeItem('result_key')
-      console.log('Result 페이지: sessionStorage에서 storageKey 가져옴:', storedStorageKey)
       setDataLoaded(true)
       return
     }
@@ -102,19 +99,16 @@ function ResultContent() {
     
     if (urlStorageKey) {
       setStorageKey(urlStorageKey)
-      console.log('Result 페이지: URL에서 storageKey 가져옴:', urlStorageKey)
     }
     
     if (urlSavedId) {
       setSavedId(urlSavedId)
-      console.log('Result 페이지: URL에서 savedId 가져옴:', urlSavedId)
     }
     
     if (urlRequestKey) {
       setRequestKey(urlRequestKey)
       setIsStreaming(urlIsStreaming)
       setIsRealtime(urlIsStreaming && !!urlRequestKey)
-      console.log('Result 페이지: URL에서 requestKey 가져옴:', urlRequestKey)
     }
     
     setDataLoaded(true)
@@ -157,12 +151,6 @@ function ResultContent() {
   const detailMenuStableCountRef = useRef<Map<string, number>>(new Map()) // 상세메뉴별 안정화 카운트
   const parsingTimeoutRef = useRef<NodeJS.Timeout | null>(null) // 파싱 딜레이를 위한 타임아웃 ref
 
-  // savedResults 변경 시 로깅
-  useEffect(() => {
-    console.log('결과 페이지: savedResults 변경됨, 길이:', savedResults.length)
-    console.log('결과 페이지: savedResults 내용:', savedResults)
-  }, [savedResults])
-
   // firstSubtitleReady ref 동기화 (타이머/인터벌에서 최신 값 사용)
   useEffect(() => {
     firstSubtitleReadyRef.current = firstSubtitleReady
@@ -174,7 +162,6 @@ function ResultContent() {
       try {
         const mode = await getFortuneViewMode()
         setFortuneViewMode(mode === 'realtime' ? 'realtime' : 'batch')
-        console.log('결과 페이지: 점사 모드 로드', mode)
         // 결제 성공 진입 시 팝업 없이 바로 결과 화면으로 전환
         setShowRealtimeLoading(false)
       } catch (e) {
@@ -192,16 +179,13 @@ function ResultContent() {
     }
   }, [searchParams])
   
-
   // 저장된 결과 목록 로드 함수 (useEffect 위에 정의)
   const loadSavedResults = async () => {
     if (typeof window === 'undefined') return
     try {
-      console.log('=== 저장된 결과 목록 로드 시작 (결과 페이지) ===')
       const response = await fetch('/api/saved-results/list', {
         cache: 'no-store' // 프로덕션 환경에서 캐싱 방지
       })
-      console.log('API 응답 상태:', response.status, response.statusText)
       
       if (!response.ok) {
         const errorText = await response.text()
@@ -210,28 +194,15 @@ function ResultContent() {
       }
       
       const result = await response.json()
-      console.log('API 응답 데이터:', result)
-      console.log('result.success:', result.success)
-      console.log('result.data:', result.data)
-      console.log('result.data 길이:', result.data?.length || 0)
       
       if (result.success) {
         const data = result.data || []
-        console.log('저장된 결과 설정:', data.length, '개')
-        // 디버깅: 첫 번째 항목의 savedAtISO 확인
-        if (data.length > 0) {
-          console.log('첫 번째 저장된 결과 샘플:', data[0])
-          console.log('첫 번째 항목의 savedAtISO:', data[0].savedAtISO)
-        }
         setSavedResults(data)
       } else {
-        console.warn('API 응답에서 success가 false:', result.error || result.details)
         setSavedResults([])
       }
-      console.log('=== 저장된 결과 목록 로드 완료 (결과 페이지) ===')
     } catch (e) {
       console.error('저장된 결과 불러오기 실패:', e)
-      console.error('에러 상세:', e instanceof Error ? e.stack : e)
       setSavedResults([])
     }
   }
@@ -247,7 +218,6 @@ function ResultContent() {
 
   // 오디오 중지 함수 (여러 곳에서 재사용)
   const stopAndResetAudio = () => {
-    console.log('오디오 중지 요청')
     shouldStopRef.current = true // ref 업데이트 (즉시 반영)
     if (currentAudioRef.current) {
       currentAudioRef.current.pause()
@@ -267,18 +237,15 @@ function ResultContent() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        console.log('페이지 숨김 감지, 오디오 중지')
         stopAndResetAudio()
       }
     }
 
     const handlePopState = (e: PopStateEvent) => {
-      console.log('popstate 이벤트 감지 (뒤로가기/앞으로가기), 오디오 중지', e)
       stopAndResetAudio()
     }
 
     const handleBeforeUnload = () => {
-      console.log('beforeunload 이벤트 감지, 오디오 중지')
       stopAndResetAudio()
     }
 
@@ -289,7 +256,6 @@ function ResultContent() {
     
     // cleanup: 페이지 언마운트 시 오디오 중지
     return () => {
-      console.log('컴포넌트 언마운트, 오디오 중지')
       stopAndResetAudio()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('popstate', handlePopState, true)
@@ -303,15 +269,12 @@ function ResultContent() {
       // realtime 모드이거나 savedId가 없으면 이 경로는 사용하지 않음
       // 기존 key 파라미터 지원 (하위 호환성)
       if (storageKey && !isRealtime) {
-        console.warn('결과 페이지: 구버전 key 파라미터 사용 중. savedId를 사용하세요.')
         setError('결과 데이터를 찾을 수 없습니다. 다시 시도해주세요.')
         setLoading(false)
       }
       return
     }
 
-    console.log('결과 페이지: savedId로 데이터 찾기 시작, ID:', savedId)
-    
     // Supabase에서 완료된 결과 로드
     const loadData = async () => {
       try {
@@ -330,8 +293,6 @@ function ResultContent() {
           throw new Error('저장된 결과를 찾을 수 없습니다.')
         }
 
-        console.log('결과 페이지: 저장된 결과 조회 완료, HTML 길이:', savedResult.html?.length || 0)
-        
         // ResultData 형식으로 변환
         const parsedData: ResultData = {
           content: savedResult.content || null,
@@ -344,10 +305,7 @@ function ResultContent() {
         setResultData(parsedData)
         
         // 저장된 결과 목록 로드
-        console.log('결과 페이지: loadSavedResults 호출')
         loadSavedResults()
-
-        console.log('결과 페이지: 데이터 로드 완료')
       } catch (e: any) {
         console.error('결과 데이터 로드 실패:', e)
         setError('결과 데이터를 불러오는 중 오류가 발생했습니다.')
@@ -363,8 +321,6 @@ function ResultContent() {
   useEffect(() => {
     if (!isRealtime || !requestKey) return
     if (typeof window === 'undefined') return
-
-    console.log('결과 페이지: realtime 모드 진입, requestKey:', requestKey)
 
     let cancelled = false
     let fakeProgressInterval: NodeJS.Timeout | null = null
@@ -447,14 +403,6 @@ function ResultContent() {
 
         // 2차 요청을 위한 헬퍼 함수
         const startSecondRequest = async (firstHtml: string, remainingSubtitleIndices: number[], completedSubtitleIndices: number[] = []) => {
-          console.log('=== 2차 요청 시작 ===')
-          console.log('남은 소제목 개수:', remainingSubtitleIndices.length, '개')
-          console.log('남은 소제목 인덱스:', remainingSubtitleIndices.join(', '))
-          console.log('완료된 소제목 개수:', completedSubtitleIndices.length, '개')
-          console.log('완료된 소제목 인덱스:', completedSubtitleIndices.join(', '))
-          console.log('1차 HTML 길이:', firstHtml.length, '자')
-          console.log('=== 2차 요청 시작 ===')
-          
           // 남은 소제목만 추출
           const remainingSubtitles = remainingSubtitleIndices.map((index: number) => requestData.menu_subtitles[index])
           
@@ -474,11 +422,8 @@ function ResultContent() {
           await callJeminaiAPIStream(secondRequestData, (data) => {
             if (cancelled) return
             
-            console.log('결과 페이지: 2차 스트리밍 콜백:', data.type)
-            
             if (data.type === 'start') {
               // 2차 요청 시작 시 1차 HTML 유지 및 로딩 상태 활성화
-              console.log('2차 요청 스트리밍 시작, 1차 HTML 길이:', firstHtml.length, '자')
               setIsStreamingActive(true)
               setStreamingFinished(false)
             } else if (data.type === 'chunk') {
@@ -538,14 +483,6 @@ function ResultContent() {
               
               setStreamingHtml(mergedHtml)
               
-              // 2차 요청 완료 상세 로그
-              console.log('=== 2차 요청 완료 및 HTML 병합 완료 ===')
-              console.log('1차 HTML 길이:', firstHtml.length, '자')
-              console.log('2차 HTML 길이:', secondHtml.length, '자')
-              console.log('병합된 HTML 길이:', mergedHtml.length, '자')
-              console.log('병합 비율: 1차', Math.round((firstHtml.length / mergedHtml.length) * 100) + '%', '/ 2차', Math.round((secondHtml.length / mergedHtml.length) * 100) + '%')
-              console.log('=== 2차 요청 완료 및 HTML 병합 완료 ===')
-              
               const finalResult: ResultData = {
                 content,
                 html: mergedHtml,
@@ -556,14 +493,11 @@ function ResultContent() {
               }
               setResultData(finalResult)
               
-              console.log('결과 페이지: 2차 요청 완료, 전체 결과 완료')
-              
               setIsStreamingActive(false)
               setStreamingFinished(true)
               setStreamingProgress(100)
               setLoading(false)
               setShowRealtimePopup(false)
-              console.log('=== 재미나이 API 스트리밍 완료 (1차 + 2차) ===')
             } else if (data.type === 'error') {
               console.error('결과 페이지: 2차 스트리밍 에러:', data.error)
               setError(data.error || '2차 점사 진행 중 문제가 발생했습니다.')
@@ -576,24 +510,10 @@ function ResultContent() {
         await callJeminaiAPIStream(requestData, (data) => {
           if (cancelled) return
 
-          // 디버깅: 콜백 호출 및 data.type 확인
-          console.log('🔔 [CALLBACK] 콜백 호출됨:', {
-            type: data.type,
-            hasText: !!data.text,
-            textLength: data.text?.length || 0,
-            timestamp: new Date().toISOString()
-          })
-
           if (data.type === 'start') {
             accumulatedHtml = ''
           } else if (data.type === 'partial_done') {
             // 1차 요청 부분 완료: 2차 요청 자동 시작
-            console.log('=== 1차 요청 부분 완료, 2차 요청 시작 ===')
-            console.log('1차 요청 완료된 HTML 길이:', (data.html || accumulatedHtml).length, '자')
-            console.log('완료된 소제목 인덱스:', data.completedSubtitles || [])
-            console.log('남은 소제목 인덱스:', data.remainingSubtitles || [])
-            console.log('남은 소제목 개수:', (data.remainingSubtitles || []).length, '개')
-            console.log('=== 1차 요청 부분 완료, 2차 요청 시작 ===')
             
             const firstHtml = data.html || accumulatedHtml
             const remainingIndices = data.remainingSubtitles || []
@@ -683,16 +603,10 @@ function ResultContent() {
             }
 
             // 디버깅: chunk 수신 및 상태 업데이트 로그
-            console.log('📥 [CHUNK] 수신:', {
-              chunkLength: chunkText.length,
-              accumulatedLength: accumulatedHtml.length,
-              timestamp: new Date().toISOString()
-            })
             
             setStreamingHtml(accumulatedHtml)
             
             // 디버깅: setStreamingHtml 호출 확인
-            console.log('✅ [CHUNK] setStreamingHtml 호출 완료, 누적 길이:', accumulatedHtml.length)
           } else if (data.type === 'done') {
             let finalHtml = data.html || accumulatedHtml
 
@@ -756,14 +670,12 @@ function ResultContent() {
 
             // sessionStorage 대신 Supabase에 저장하므로 여기서는 저장하지 않음
             // (이미 saved_results 테이블에 저장됨)
-            console.log('결과 페이지: realtime 모드, 최종 결과 완료')
 
             setIsStreamingActive(false)
             setStreamingFinished(true)
             setStreamingProgress(100)
             setLoading(false)
             setShowRealtimePopup(false)
-            console.log('=== 재미나이 API 스트리밍 완료 ===')
           } else if (data.type === 'error') {
             console.error('결과 페이지: realtime 스트리밍 에러:', data.error)
             // 429 Rate Limit 에러는 점사중... 메시지가 이미 떠 있으므로 에러 메시지 표시하지 않음
@@ -820,28 +732,23 @@ function ResultContent() {
       if (!document.hidden) {
         if (isRealtime) {
           // 스트리밍 중일 때는 백그라운드 복귀 시 스트림 상태 확인
-          console.log('결과 페이지: 스트리밍 중 페이지가 다시 보이게 됨 (전화/메신저 종료 후 복귀 등)')
           // 스트림은 백그라운드에서도 계속 진행되므로 별도 처리 불필요
           // lib/jeminai.ts의 visibilitychange 핸들러가 타임아웃 방지 처리
         } else {
-          console.log('결과 페이지: 페이지가 보이게 됨, 저장된 결과 동기화')
           loadSavedResults()
         }
       } else {
         if (isRealtime) {
           // 스트리밍 중 백그라운드로 전환 (전화 수신, 메신저 알림 탭, 다른 앱으로 이동 등)
-          console.log('결과 페이지: 스트리밍 중 백그라운드로 전환됨 (전화/메신저/다른 앱 등), 스트림은 계속 진행됩니다.')
         }
       }
     }
 
     const handleFocus = () => {
       if (!isRealtime) {
-        console.log('결과 페이지: 윈도우 포커스, 저장된 결과 동기화')
         loadSavedResults()
       } else {
         // 스트리밍 중 포커스 복귀
-        console.log('결과 페이지: 스트리밍 중 윈도우 포커스 복귀')
       }
     }
 
@@ -1024,8 +931,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       const result = await response.json()
       
       if (result.success) {
-        console.log('저장된 결과:', result.data)
-        console.log('저장할 컨텐츠의 tts_speaker:', content?.tts_speaker)
         
         // 저장된 결과 ID 저장 (동기화 확인용)
         const savedResultId = result.data?.id
@@ -1043,19 +948,16 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         if (showAlert) {
           alert('결과가 저장되었습니다.')
         } else {
-          console.log('점사 완료: 결과가 자동으로 저장되었습니다.')
         }
         // 저장된 결과 목록 다시 로드 (DB 동기화를 위해 충분한 시간 대기)
         // DB에 저장 후 인덱싱/캐싱 시간을 고려하여 1.5초 후 조회
         setTimeout(async () => {
-          console.log('저장 후 리스트 동기화 시작, 저장된 ID:', savedResultId)
           await loadSavedResults()
           
           // 동기화 후 새로 저장된 항목이 포함되어 있는지 확인
           setSavedResults((prev) => {
             const hasNewItem = prev.some((item: any) => item.id === savedResultId)
             if (!hasNewItem && result.data) {
-              console.warn('⚠️ 동기화 후 새로 저장된 항목이 없음, 다시 추가')
               // 새로 저장된 항목이 없으면 다시 추가
               const filtered = prev.filter((item: any) => item.id !== result.data.id)
               return [result.data, ...filtered]
@@ -1063,7 +965,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             return prev
           })
           
-          console.log('저장 후 리스트 동기화 완료')
         }, 1500)
       } else {
         throw new Error('결과 저장에 실패했습니다.')
@@ -1093,7 +994,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       (fortuneViewMode === 'batch' && resultData && htmlContent && !isStreamingActive)
     
     if (isCompleted && resultData && htmlContent) {
-      console.log('점사 완료 감지: 자동 저장 시작')
       autoSavedRef.current = true
       saveResultToLocal(false) // alert 없이 자동 저장
     }
@@ -1108,7 +1008,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       setCurrentTime(`${mins}:${secs.toString().padStart(2, '0')}`)
     }
   }, [resultData?.startTime])
-
 
   // 점진적 점사 모드: 섹션 파싱 및 순차 공개
   useEffect(() => {
@@ -1147,13 +1046,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
     }
     
     // 디버깅: streamingHtml 변경 감지
-    console.log('🔄 [USE_EFFECT] streamingHtml 변경 감지:', {
-      streamingHtmlLength: streamingHtml.length,
-      sourceHtmlLength: sourceHtml.length,
-      isStreamingActive,
-      streamingFinished,
-      timestamp: new Date().toISOString()
-    })
     
     // 성능 최적화: 파싱 작업을 딜레이하여 CPU 사용량 감소
     // 실시간 표시를 위해 딜레이를 0ms로 단축 (즉시 실행)
@@ -1164,7 +1056,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
     // requestAnimationFrame을 사용하여 브라우저 렌더링 사이클에 맞춤
     parsingTimeoutRef.current = setTimeout(() => {
       parsingTimeoutRef.current = null
-      console.log('⏱️ [PARSE] 파싱 시작, HTML 길이:', sourceHtml.length)
 
     // 원본 HTML에서 특정 detail-menu-content가 완성되었는지 확인하는 함수
     // menuIndex번째 menu-section 내의 subtitleIndex번째 subtitle-section의 detailMenuIndex번째 상세메뉴 확인
@@ -1359,10 +1250,8 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
     // 디버깅: 스트리밍 중 상세메뉴 섹션 존재 여부 확인
     const hasDetailMenuSection = sourceHtml.includes('detail-menu-section')
     if (isStreaming && !hasDetailMenuSection && sourceHtml.length > 500) {
-      console.log('경고: 스트리밍 중이지만 detail-menu-section이 발견되지 않음. HTML 끝부분:', sourceHtml.slice(-500))
     } else if (isStreaming && hasDetailMenuSection) {
        // 너무 자주 찍히지 않도록 길이 변화가 클 때만 찍거나 해야겠지만, 일단 확인을 위해
-       // console.log('상세메뉴 섹션 발견됨')
     }
 
     const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
@@ -1451,7 +1340,8 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             let contentHtml = ''
             let titleText = titleEl.textContent || ''
             
-            // contentEl이 있으면 내용 추출
+            // DOM에서 추출
+            let contentHtmlFromDom = ''
             if (contentEl) {
               // contentHtml에서 제목 요소 제거 (중복 방지)
               const contentClone = contentEl.cloneNode(true) as HTMLElement
@@ -1461,8 +1351,157 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               }
               
               // contentHtml 시작 부분에 제목 텍스트가 있을 수 있으므로 제거
-              contentHtml = contentClone.innerHTML || ''
+              contentHtmlFromDom = contentClone.innerHTML || ''
             }
+            
+            // 원본 HTML에서도 추출 시도 (DOM 파싱이 불완전할 수 있음)
+            // 소제목과 동일한 방식으로 원본 HTML에서 직접 추출
+            let contentHtmlFromSource = ''
+            if (sourceHtml) {
+              try {
+                // menu-section 찾기
+                const menuSectionRegex = /<div[^>]*class="[^"]*menu-section[^"]*"[^>]*>/gi
+                const menuMatches: RegExpMatchArray[] = []
+                let menuMatch
+                while ((menuMatch = menuSectionRegex.exec(sourceHtml)) !== null) {
+                  menuMatches.push(menuMatch as RegExpMatchArray)
+                }
+                
+                if (index < menuMatches.length) {
+                  const menuStartMatch = menuMatches[index]
+                  const menuStartIndex = menuStartMatch.index!
+                  const menuStartTag = menuStartMatch[0]
+                  
+                  // menu-section의 끝 찾기
+                  let menuDepth = 1
+                  let menuCurrentIndex = menuStartIndex + menuStartTag.length
+                  let menuEndIndex = sourceHtml.length
+                  
+                  while (menuCurrentIndex < sourceHtml.length && menuDepth > 0) {
+                    const nextOpenDiv = sourceHtml.indexOf('<div', menuCurrentIndex)
+                    const nextCloseDiv = sourceHtml.indexOf('</div>', menuCurrentIndex)
+                    
+                    if (nextCloseDiv === -1) break
+                    
+                    if (nextOpenDiv !== -1 && nextOpenDiv < nextCloseDiv) {
+                      menuDepth++
+                      menuCurrentIndex = nextOpenDiv + 4
+                    } else {
+                      menuDepth--
+                      if (menuDepth === 0) {
+                        menuEndIndex = nextCloseDiv + 6
+                        break
+                      }
+                      menuCurrentIndex = nextCloseDiv + 6
+                    }
+                  }
+                  
+                  // menu-section 내에서 subtitle-section 찾기
+                  const menuSectionHtml = sourceHtml.substring(menuStartIndex, menuEndIndex)
+                  const subtitleSectionRegex = /<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>/gi
+                  const subtitleMatches: RegExpMatchArray[] = []
+                  let subtitleMatch
+                  while ((subtitleMatch = subtitleSectionRegex.exec(menuSectionHtml)) !== null) {
+                    subtitleMatches.push(subtitleMatch as RegExpMatchArray)
+                  }
+                  
+                  if (subIdx < subtitleMatches.length) {
+                    const subtitleStartMatch = subtitleMatches[subIdx]
+                    const subtitleStartIndex = subtitleStartMatch.index!
+                    const subtitleStartTag = subtitleStartMatch[0]
+                    
+                    // subtitle-section의 끝 찾기
+                    let subtitleDepth = 1
+                    let subtitleCurrentIndex = subtitleStartIndex + subtitleStartTag.length
+                    let subtitleEndIndex = menuSectionHtml.length
+                    
+                    while (subtitleCurrentIndex < menuSectionHtml.length && subtitleDepth > 0) {
+                      const nextOpenDiv = menuSectionHtml.indexOf('<div', subtitleCurrentIndex)
+                      const nextCloseDiv = menuSectionHtml.indexOf('</div>', subtitleCurrentIndex)
+                      
+                      if (nextCloseDiv === -1) break
+                      
+                      if (nextOpenDiv !== -1 && nextOpenDiv < nextCloseDiv) {
+                        subtitleDepth++
+                        subtitleCurrentIndex = nextOpenDiv + 4
+                      } else {
+                        subtitleDepth--
+                        if (subtitleDepth === 0) {
+                          subtitleEndIndex = nextCloseDiv + 6
+                          break
+                        }
+                        subtitleCurrentIndex = nextCloseDiv + 6
+                      }
+                    }
+                    
+                    // subtitle-section 내에서 detail-menu-content 찾기
+                    const subtitleSectionHtml = menuSectionHtml.substring(subtitleStartIndex, subtitleEndIndex)
+                    const detailMenuContentRegex = /<div[^>]*class="[^"]*detail-menu-content[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
+                    const contentMatches: RegExpMatchArray[] = []
+                    let contentMatch
+                    while ((contentMatch = detailMenuContentRegex.exec(subtitleSectionHtml)) !== null) {
+                      contentMatches.push(contentMatch as RegExpMatchArray)
+                    }
+                    
+                    if (dmSectionIdx < contentMatches.length) {
+                      let extractedContent = contentMatches[dmSectionIdx][1] || ''
+                      // 제목 요소 제거
+                      extractedContent = extractedContent.replace(/<[^>]*class="[^"]*detail-menu-title[^"]*"[^>]*>[\s\S]*?<\/[^>]*>/gi, '').trim()
+                      contentHtmlFromSource = extractedContent
+                    } else {
+                      // 닫힌 태그를 못 찾은 경우 (스트리밍 중), 시작 태그 위치로 추출
+                      const detailMenuContentStartRegex = /<div[^>]*class="[^"]*detail-menu-content[^"]*"[^>]*>/gi
+                      const startMatches: RegExpMatchArray[] = []
+                      let startMatch
+                      while ((startMatch = detailMenuContentStartRegex.exec(subtitleSectionHtml)) !== null) {
+                        startMatches.push(startMatch as RegExpMatchArray)
+                      }
+                      
+                      if (dmSectionIdx < startMatches.length) {
+                        const startIndex = startMatches[dmSectionIdx].index! + startMatches[dmSectionIdx][0].length
+                        let endIndex = subtitleSectionHtml.length
+                        
+                        // 다음 detail-menu-content 시작 위치 찾기
+                        if (dmSectionIdx + 1 < startMatches.length) {
+                          endIndex = startMatches[dmSectionIdx + 1].index!
+                        } else {
+                          // 마지막 detail-menu-content인 경우
+                          const candidates = [
+                            subtitleSectionHtml.indexOf('<div class="detail-menu-section"', startIndex),
+                            subtitleSectionHtml.indexOf('</div>', startIndex)
+                          ].filter(idx => idx > startIndex)
+                          
+                          if (candidates.length > 0) {
+                            const candidateEnd = Math.min(...candidates)
+                            const beforeCandidate = subtitleSectionHtml.substring(startIndex, candidateEnd)
+                            const closeTagIndex = beforeCandidate.lastIndexOf('</div>')
+                            if (closeTagIndex > 0) {
+                              endIndex = startIndex + closeTagIndex
+                            } else {
+                              endIndex = candidateEnd
+                            }
+                          }
+                        }
+                        
+                        if (endIndex > startIndex) {
+                          let extractedContent = subtitleSectionHtml.substring(startIndex, endIndex)
+                          // 제목 요소 제거
+                          extractedContent = extractedContent.replace(/<[^>]*class="[^"]*detail-menu-title[^"]*"[^>]*>[\s\S]*?<\/[^>]*>/gi, '').trim()
+                          contentHtmlFromSource = extractedContent
+                        }
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                // 에러 발생 시 DOM에서 추출한 것만 사용
+              }
+            }
+            
+            // DOM에서 추출한 것과 원본 HTML에서 추출한 것 중 더 긴 것을 사용
+            contentHtml = (contentHtmlFromSource.length > contentHtmlFromDom.length) 
+              ? contentHtmlFromSource 
+              : contentHtmlFromDom
             
             // 제목에서 번호 접두사 제거 후 중복 체크
             titleText = removeNumberPrefix(titleText)
@@ -1667,42 +1706,17 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
     })
 
     // 디버깅: parsed 배열 생성 확인
-    console.log('📊 [PARSE] parsed 배열 생성 완료:', {
-      parsedLength: parsed.length,
-      menuSectionsLength: menuSections.length,
-      parsedMenuTitles: parsed.map(m => m.title),
-      cursor,
-      timestamp: new Date().toISOString()
-    })
     
     // 디버깅: 첫 번째 메뉴의 첫 번째 소제목 내용 확인
     if (parsed.length > 0 && parsed[0].subtitles.length > 0) {
       const firstSubtitle = parsed[0].subtitles[0]
-      console.log('🔍 [PARSE] 첫 번째 소제목 내용 확인:', {
-        title: firstSubtitle.title,
-        contentHtmlLength: firstSubtitle.contentHtml?.length || 0,
-        contentHtmlPreview: firstSubtitle.contentHtml?.substring(0, 100) || '(없음)',
-        detailMenusLength: firstSubtitle.detailMenus?.length || 0,
-        timestamp: new Date().toISOString()
-      })
     }
 
     // 썸네일/만세력 HTML이 변경되지 않았으면 기존 parsedMenus의 값을 유지 (깜빡임 방지)
     // 스트리밍 중에는 완성되지 않은 섹션은 이전 완성된 상태를 유지
-    console.log('🔍 [PARSE] setParsedMenus 호출 전:', {
-      parsedLength: parsed.length,
-      prevParsedMenusLength: 'will check in callback',
-      timestamp: new Date().toISOString()
-    })
     setParsedMenus((prevParsedMenus) => {
-      console.log('🔍 [PARSE] setParsedMenus 콜백 실행:', {
-        parsedLength: parsed.length,
-        prevParsedMenusLength: prevParsedMenus.length,
-        timestamp: new Date().toISOString()
-      })
       // 첫 번째 파싱이거나 메뉴 개수가 변경된 경우 새로 설정
       if (prevParsedMenus.length === 0 || prevParsedMenus.length !== parsed.length) {
-        console.log('✅ [PARSE] 새로 설정 (첫 파싱 또는 메뉴 개수 변경)')
         return parsed
       }
 
@@ -1748,25 +1762,10 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 const dmContentHtml = dm.contentHtml || ''
                 const hasDetailContent = dmContentHtml.trim().length > 0 // 내용이 있으면 완성으로 간주
                 
-                // 스트리밍 중일 때는 완성 여부 확인 (함수가 있으면 사용, 없으면 내용 길이로 판단)
-                if (isStreamingActive && !streamingFinished && hasDetailContent) {
-                  try {
-                    const isComplete = isDetailMenuContentComplete(sourceHtml, subIndex, menuIndex, dmIdx)
-                    if (!isComplete && dmContentHtml.trim().length < 50) {
-                      // 50자 미만이고 완성되지 않은 경우에만 빈 문자열
-                      return { ...dm, contentHtml: '' }
-                    }
-                    // 완성되었거나 50자 이상이면 표시
-                    return dm
-                  } catch (e) {
-                    // 함수 실행 오류 시 내용 길이로 판단 (50자 이상이면 완성으로 간주)
-                    if (dmContentHtml.trim().length >= 50) {
-                      return dm
-                    }
-                    // 50자 미만이면 미완성으로 간주
-                    return { ...dm, contentHtml: '' }
-                  }
-                }
+              // 스트리밍 중일 때도 내용이 있으면 무조건 표시 (실시간 타이핑 효과)
+              if (isStreamingActive && !streamingFinished && hasDetailContent) {
+                return dm
+              }
                 return dm
               }) || []
               
@@ -1789,30 +1788,9 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               const dmContentHtml = dm.contentHtml || ''
               const hasDetailContent = dmContentHtml.trim().length > 0 // 내용이 있으면 완성으로 간주
               
-              // 스트리밍 중일 때는 완성 여부 확인 (함수가 있으면 사용, 없으면 내용 길이로 판단)
+              // 스트리밍 중일 때도 내용이 있으면 무조건 표시 (실시간 타이핑 효과)
               if (isStreamingActive && !streamingFinished && hasDetailContent) {
-                try {
-                  const isComplete = isDetailMenuContentComplete(sourceHtml, subIndex, menuIndex, dmIdx)
-                  if (isComplete || dmContentHtml.trim().length >= 50) {
-                    // 완성되었거나 50자 이상이면 새 데이터 사용
-                    return dm
-                  } else if (prevDm && prevDm.contentHtml && prevDm.contentHtml.trim().length >= 50) {
-                    // 미완성이지만 이전에 완성된 내용이 있으면 이전 상태 유지
-                    return prevDm
-                  } else {
-                    // 미완성이고 이전 상태도 완성되지 않았으면 빈 상태 (50자 미만만)
-                    return { ...dm, contentHtml: dmContentHtml.trim().length >= 30 ? dmContentHtml : '' }
-                  }
-                } catch (e) {
-                  // 함수 실행 오류 시 내용 길이로 판단 (50자 이상이면 완성으로 간주)
-                  if (dmContentHtml.trim().length >= 50) {
-                    return dm
-                  } else if (prevDm && prevDm.contentHtml && prevDm.contentHtml.trim().length >= 50) {
-                    return prevDm
-                  } else {
-                    return { ...dm, contentHtml: dmContentHtml.trim().length >= 30 ? dmContentHtml : '' }
-                  }
-                }
+                return dm
               }
               
               // 스트리밍 완료 또는 contentHtml이 있으면 새 데이터 사용
@@ -1837,11 +1815,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         return { ...newMenu, subtitles: updatedSubtitles }
       })
       
-      console.log('✅ [PARSE] setParsedMenus 업데이트 완료:', {
-        updatedLength: updated.length,
-        updatedMenuTitles: updated.map(m => m.title),
-        timestamp: new Date().toISOString()
-      })
       return updated
     })
     setTotalSubtitles(cursor)
@@ -2140,7 +2113,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       // 1. 먼저 app_settings에서 선택된 화자 확인
       try {
         const selectedSpeaker = await getSelectedSpeaker()
-        console.log('결과 페이지: app_settings에서 선택된 화자:', selectedSpeaker)
         speaker = selectedSpeaker
       } catch (error) {
         console.error('결과 페이지: app_settings에서 화자 조회 실패:', error)
@@ -2149,16 +2121,12 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       // 2. content.id가 있으면 Supabase에서 컨텐츠의 tts_speaker도 확인
       if (content?.id) {
         try {
-          console.log('결과 페이지: Supabase에서 컨텐츠 정보 조회 중, content.id:', content.id)
           const freshContent = await getContentById(content.id)
-          console.log('결과 페이지: 컨텐츠의 tts_speaker:', freshContent?.tts_speaker)
           
           // 컨텐츠에 tts_speaker가 있고 'nara'가 아니면 사용 (컨텐츠별 설정이 우선)
           if (freshContent?.tts_speaker && freshContent.tts_speaker !== 'nara') {
             speaker = freshContent.tts_speaker
-            console.log('결과 페이지: 컨텐츠의 tts_speaker 사용:', speaker)
           } else {
-            console.log('결과 페이지: 컨텐츠의 tts_speaker가 없거나 nara이므로 app_settings의 화자 사용:', speaker)
           }
           
           // content 객체 업데이트
@@ -2170,19 +2138,12 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         }
       } else {
         // content.id가 없으면 app_settings의 화자 사용
-        console.log('결과 페이지: content.id가 없어서 app_settings의 화자 사용:', speaker)
       }
       
-      console.log('결과 페이지: 현재 content 객체:', content)
-      console.log('결과 페이지: content의 tts_speaker:', content?.tts_speaker)
-      console.log('결과 페이지: 최종 사용할 화자:', speaker)
-
       // 텍스트를 2000자 단위로 분할
       const maxLength = 2000
       const chunks = splitTextIntoChunks(textContent, maxLength)
       
-      console.log(`음성 변환 시작, 전체 텍스트 길이: ${textContent.length}자, 청크 수: ${chunks.length}, 화자: ${speaker}`)
-
       // 다음 청크를 미리 로드하는 함수
       const preloadNextChunk = async (chunkIndex: number): Promise<{ url: string; audio: HTMLAudioElement } | null> => {
         if (chunkIndex >= chunks.length || shouldStopRef.current) {
@@ -2191,7 +2152,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
         try {
           const chunk = chunks[chunkIndex]
-          console.log(`청크 ${chunkIndex + 1}/${chunks.length} 미리 로드 중, 길이: ${chunk.length}자`)
 
           // TTS API 호출 (화자 정보 포함)
           const response = await fetch('/api/tts', {
@@ -2230,7 +2190,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             audio.load()
           })
 
-          console.log(`청크 ${chunkIndex + 1} 미리 로드 완료`)
           return { url, audio }
         } catch (error) {
           console.error(`청크 ${chunkIndex + 1} 미리 로드 실패:`, error)
@@ -2244,7 +2203,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       for (let i = 0; i < chunks.length; i++) {
         // 중지 플래그 확인 (ref로 실시간 확인)
         if (shouldStopRef.current) {
-          console.log('재생 중지됨')
           if (preloadedChunk) {
             URL.revokeObjectURL(preloadedChunk.url)
           }
@@ -2252,7 +2210,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         }
 
         const chunk = chunks[i]
-        console.log(`청크 ${i + 1}/${chunks.length} 재생 시작, 길이: ${chunk.length}자`)
 
         // 다음 청크를 미리 로드 (현재 청크 재생 중에)
         const nextChunkPromise = i < chunks.length - 1 ? preloadNextChunk(i + 1) : Promise.resolve(null)
@@ -2266,7 +2223,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           currentAudio = preloadedChunk.audio
           currentUrl = preloadedChunk.url
           preloadedChunk = null
-          console.log(`청크 ${i + 1} 미리 로드된 오디오 사용`)
         } else {
           // 첫 번째 청크이거나 미리 로드 실패한 경우 즉시 요청
           const response = await fetch('/api/tts', {
@@ -2314,7 +2270,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           }
           
           currentAudio.onended = () => {
-            console.log(`청크 ${i + 1} 재생 완료`)
             cleanup()
             resolve()
           }
@@ -2323,7 +2278,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             console.error(`청크 ${i + 1} 재생 중 오류:`, e, currentAudio.error)
             cleanup()
             // 에러가 발생해도 다음 청크로 계속 진행하도록 resolve (reject 대신)
-            console.warn(`청크 ${i + 1} 재생 실패, 다음 청크로 진행`)
             resolve()
           }
           
@@ -2339,7 +2293,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             console.error(`청크 ${i + 1} play() 실패:`, err)
             cleanup()
             // play 실패해도 다음 청크로 계속 진행
-            console.warn(`청크 ${i + 1} play 실패, 다음 청크로 진행`)
             resolve()
           })
         })
@@ -2349,9 +2302,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           try {
             preloadedChunk = await nextChunkPromise
             if (preloadedChunk) {
-              console.log(`청크 ${i + 2} 미리 로드 완료`)
             } else {
-              console.warn(`청크 ${i + 2} 미리 로드 실패 (null 반환)`)
             }
           } catch (err) {
             console.error(`청크 ${i + 2} 미리 로드 중 에러:`, err)
@@ -2361,7 +2312,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
         // 중지 플래그 재확인
         if (shouldStopRef.current) {
-          console.log('재생 중지됨 (재생 후)')
           if (preloadedChunk) {
             URL.revokeObjectURL(preloadedChunk.url)
           }
@@ -2370,9 +2320,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       }
 
       if (!shouldStopRef.current) {
-        console.log('모든 청크 재생 완료')
       } else {
-        console.log('재생이 중지되었습니다')
       }
       setIsPlaying(false)
       currentAudioRef.current = null
@@ -2409,7 +2357,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       // 1. 먼저 app_settings에서 선택된 화자 확인
       try {
         const selectedSpeaker = await getSelectedSpeaker()
-        console.log('저장된 결과: app_settings에서 선택된 화자:', selectedSpeaker)
         speaker = selectedSpeaker
       } catch (error) {
         console.error('저장된 결과: app_settings에서 화자 조회 실패:', error)
@@ -2418,16 +2365,12 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       // 2. content.id가 있으면 Supabase에서 컨텐츠의 tts_speaker도 확인
       if (savedResult.content?.id) {
         try {
-          console.log('저장된 결과: Supabase에서 컨텐츠 정보 조회 중, content.id:', savedResult.content.id)
           const freshContent = await getContentById(savedResult.content.id)
-          console.log('저장된 결과: 컨텐츠의 tts_speaker:', freshContent?.tts_speaker)
           
           // 컨텐츠에 tts_speaker가 있고 'nara'가 아니면 사용 (컨텐츠별 설정이 우선)
           if (freshContent?.tts_speaker && freshContent.tts_speaker !== 'nara') {
             speaker = freshContent.tts_speaker
-            console.log('저장된 결과: 컨텐츠의 tts_speaker 사용:', speaker)
           } else {
-            console.log('저장된 결과: 컨텐츠의 tts_speaker가 없거나 nara이므로 app_settings의 화자 사용:', speaker)
           }
           
           // savedResult.content 객체 업데이트
@@ -2439,19 +2382,12 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         }
       } else {
         // content.id가 없으면 app_settings의 화자 사용
-        console.log('저장된 결과: content.id가 없어서 app_settings의 화자 사용:', speaker)
       }
       
-      console.log('저장된 결과의 content 객체:', savedResult.content)
-      console.log('저장된 결과의 tts_speaker:', savedResult.content?.tts_speaker)
-      console.log('저장된 결과: 최종 사용할 화자:', speaker)
-
       // 텍스트를 2000자 단위로 분할
       const maxLength = 2000
       const chunks = splitTextIntoChunks(textContent, maxLength)
       
-      console.log(`저장된 결과 음성 변환 시작, 전체 텍스트 길이: ${textContent.length}자, 청크 수: ${chunks.length}, 화자: ${speaker}`)
-
       // 다음 청크를 미리 로드하는 함수
       const preloadNextChunk = async (chunkIndex: number): Promise<{ url: string; audio: HTMLAudioElement } | null> => {
         if (chunkIndex >= chunks.length) {
@@ -2460,7 +2396,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
         try {
           const chunk = chunks[chunkIndex]
-          console.log(`저장된 결과: 청크 ${chunkIndex + 1}/${chunks.length} 미리 로드 중, 길이: ${chunk.length}자`)
 
           // TTS API 호출 (화자 정보 포함)
           const response = await fetch('/api/tts', {
@@ -2499,7 +2434,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             audio.load()
           })
 
-          console.log(`저장된 결과: 청크 ${chunkIndex + 1} 미리 로드 완료`)
           return { url, audio }
         } catch (error) {
           console.error(`저장된 결과: 청크 ${chunkIndex + 1} 미리 로드 실패:`, error)
@@ -2512,7 +2446,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
-        console.log(`저장된 결과: 청크 ${i + 1}/${chunks.length} 재생 시작, 길이: ${chunk.length}자`)
 
         // 다음 청크를 미리 로드 (현재 청크 재생 중에)
         const nextChunkPromise = i < chunks.length - 1 ? preloadNextChunk(i + 1) : Promise.resolve(null)
@@ -2526,7 +2459,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           currentAudio = preloadedChunk.audio
           currentUrl = preloadedChunk.url
           preloadedChunk = null
-          console.log(`저장된 결과: 청크 ${i + 1} 미리 로드된 오디오 사용`)
         } else {
           // 첫 번째 청크이거나 미리 로드 실패한 경우 즉시 요청
           const response = await fetch('/api/tts', {
@@ -2567,7 +2499,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           }
           
           currentAudio.onended = () => {
-            console.log(`저장된 결과: 청크 ${i + 1} 재생 완료`)
             cleanup()
             resolve()
           }
@@ -2576,7 +2507,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             console.error(`저장된 결과: 청크 ${i + 1} 재생 중 오류:`, e, currentAudio.error)
             cleanup()
             // 에러가 발생해도 다음 청크로 계속 진행
-            console.warn(`저장된 결과: 청크 ${i + 1} 재생 실패, 다음 청크로 진행`)
             resolve()
           }
           
@@ -2592,7 +2522,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             console.error(`저장된 결과: 청크 ${i + 1} play() 실패:`, err)
             cleanup()
             // play 실패해도 다음 청크로 계속 진행
-            console.warn(`저장된 결과: 청크 ${i + 1} play 실패, 다음 청크로 진행`)
             resolve()
           })
         })
@@ -2602,9 +2531,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           try {
             preloadedChunk = await nextChunkPromise
             if (preloadedChunk) {
-              console.log(`저장된 결과: 청크 ${i + 2} 미리 로드 완료`)
             } else {
-              console.warn(`저장된 결과: 청크 ${i + 2} 미리 로드 실패 (null 반환)`)
             }
           } catch (err) {
             console.error(`저장된 결과: 청크 ${i + 2} 미리 로드 중 에러:`, err)
@@ -2613,7 +2540,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         }
       }
 
-      console.log('저장된 결과: 모든 청크 재생 완료')
       setPlayingResultId(null)
       currentAudioRef.current = null
     } catch (error: any) {
@@ -2655,28 +2581,22 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
   // 저장된 결과 보기
   const viewSavedResult = (resultId: string) => {
-    console.log('=== viewSavedResult 함수 실행 시작 ===', resultId)
     if (typeof window === 'undefined') return
     
     try {
       const saved = savedResults.find((r: any) => r.id === resultId)
-      console.log('저장된 결과 찾기:', saved ? '찾음' : '없음')
       
       if (saved) {
-        console.log('저장된 결과 원본:', saved)
         // content가 문자열인 경우 파싱
         let contentObj = saved.content
-        console.log('저장된 결과 content 타입:', typeof saved.content)
         if (typeof saved.content === 'string') {
           try {
             contentObj = JSON.parse(saved.content)
-            console.log('content 파싱 성공:', contentObj)
           } catch (e) {
             console.error('content 파싱 실패:', e)
             contentObj = saved.content
           }
         } else {
-          console.log('content는 이미 객체:', contentObj)
         }
         
         // userName을 안전하게 처리 (템플릿 리터럴 중첩 방지)
@@ -2699,12 +2619,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         
         // 소제목 썸네일 추가 (저장된 결과) - batch 모드와 동일한 방식
         const menuItems = contentObj?.menu_items || []
-        console.log('=== 저장된 결과: 소제목 썸네일 추가 시작 ===')
-        console.log('저장된 결과: contentObj:', contentObj)
-        console.log('저장된 결과: contentObj 타입:', typeof contentObj)
-        console.log('저장된 결과: menuItems:', menuItems)
-        console.log('저장된 결과: menuItems.length:', menuItems.length)
-        console.log('저장된 결과: htmlContent 길이:', htmlContent?.length || 0)
         
         if (menuItems.length > 0 && htmlContent) {
           try {
@@ -2715,20 +2629,13 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             const doc = parser.parseFromString(processedHtml, 'text/html')
             const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
             
-            console.log('저장된 결과: menuSections.length:', menuSections.length)
-            
             menuSections.forEach((section, menuIndex) => {
               const menuItem = menuItems[menuIndex]
-              console.log(`저장된 결과: menu[${menuIndex}]:`, menuItem)
               if (menuItem?.subtitles) {
-                console.log(`저장된 결과: menu[${menuIndex}] subtitles:`, menuItem.subtitles)
                 const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'))
-                console.log(`저장된 결과: menu[${menuIndex}] subtitleSections.length:`, subtitleSections.length)
                 subtitleSections.forEach((subSection, subIndex) => {
                   const subtitle = menuItem.subtitles[subIndex]
-                  console.log(`저장된 결과: menu[${menuIndex}] subtitle[${subIndex}]:`, subtitle)
                   if (subtitle?.thumbnail) {
-                    console.log(`저장된 결과: menu[${menuIndex}] subtitle[${subIndex}] thumbnail:`, subtitle.thumbnail)
                     const titleDiv = subSection.querySelector('.subtitle-title')
                     if (titleDiv) {
                       const thumbnailImg = doc.createElement('div')
@@ -2736,16 +2643,12 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;'
                       thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" />`
                       titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling)
-                      console.log(`저장된 결과: 썸네일 추가 완료 - menu[${menuIndex}] subtitle[${subIndex}]`)
                     } else {
-                      console.warn(`저장된 결과: .subtitle-title을 찾을 수 없음 - menu[${menuIndex}] subtitle[${subIndex}]`)
                     }
                   } else {
-                    console.log(`저장된 결과: 썸네일 없음 - menu[${menuIndex}] subtitle[${subIndex}]`)
                   }
                 })
               } else {
-                console.log(`저장된 결과: menu[${menuIndex}]에 subtitles 없음`)
               }
             })
             
@@ -2757,17 +2660,13 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             }
             
             htmlContent = processedHtml
-            console.log('저장된 결과: 소제목 썸네일 추가 완료, htmlContent 길이:', htmlContent.length)
-            console.log('저장된 결과: htmlContent에 썸네일 포함 여부:', htmlContent.includes('subtitle-thumbnail-container'))
             // 썸네일이 실제로 추가되었는지 확인
             const thumbnailCount = (htmlContent.match(/subtitle-thumbnail-container/g) || []).length
-            console.log('저장된 결과: 추가된 썸네일 개수:', thumbnailCount)
           } catch (e) {
             console.error('소제목 썸네일 추가 실패:', e)
             console.error('에러 스택:', e instanceof Error ? e.stack : '')
           }
         } else {
-          console.log('저장된 결과: menuItems가 없거나 htmlContent가 비어있음', { menuItemsLength: menuItems.length, hasHtmlContent: !!htmlContent })
           // ** 제거는 여기서도 처리
           if (htmlContent) {
             htmlContent = htmlContent.replace(/\*\*/g, '')
@@ -2977,53 +2876,35 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
               
               <script>
                 // 저장된 컨텐츠의 화자 정보를 전역 변수로 설정 (초기값)
-                console.log('=== 새 창: 페이지 로드 ===');
                 let contentObj;
                 try {
                   contentObj = ${contentObjJson};
-                  console.log('새 창: contentObj 파싱 성공:', contentObj);
                 } catch (e) {
                   console.error('새 창: contentObj 파싱 실패:', e);
                   contentObj = {};
                 }
-                console.log('저장된 content 객체:', contentObj);
-                console.log('저장된 content.id:', contentObj?.id ? contentObj.id : 'null');
-                console.log('저장된 content.tts_speaker:', contentObj?.tts_speaker ? contentObj.tts_speaker : '없음');
-                console.log('저장된 content.font_face:', contentObj?.font_face || '없음');
                 
                 window.savedContentSpeaker = ${contentObj?.tts_speaker ? `'${contentObj.tts_speaker.replace(/'/g, "\\'")}'` : "'nara'"};
                 window.savedContentId = ${contentObj?.id ? contentObj.id : 'null'};
                 
-                console.log('초기 window.savedContentSpeaker:', window.savedContentSpeaker);
-                console.log('초기 window.savedContentId:', window.savedContentId);
-                
                 // content.id가 있으면 Supabase에서 최신 화자 정보 조회
                 if (window.savedContentId) {
-                  console.log('새 창: 페이지 로드 시 Supabase에서 화자 정보 조회 시작');
-                  console.log('  - API URL: /api/content/' + window.savedContentId);
                   
                   fetch('/api/content/' + window.savedContentId)
                     .then(response => {
-                      console.log('  - 페이지 로드 시 API 응답 상태:', response.status, response.statusText);
                       return response.json();
                     })
                     .then(data => {
-                      console.log('  - 페이지 로드 시 API 응답 데이터:', data);
-                      console.log('  - 페이지 로드 시 API 응답의 tts_speaker:', data.tts_speaker);
                       if (data.tts_speaker) {
                         window.savedContentSpeaker = data.tts_speaker;
-                        console.log('  - 페이지 로드 시 Supabase에서 조회한 화자:', data.tts_speaker);
                       } else {
-                        console.warn('  - 페이지 로드 시 API 응답에 tts_speaker가 없음');
                       }
                     })
                     .catch(error => {
                       console.error('새 창: 페이지 로드 시 Supabase에서 화자 조회 실패:', error);
                     });
                 } else {
-                  console.log('새 창: window.savedContentId가 없어서 페이지 로드 시 Supabase 조회 건너뜀');
                 }
-                console.log('==============================');
                 
                 let isPlaying = false;
                 let currentAudio = null;
@@ -3031,7 +2912,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 
                 // 오디오 중지 함수 (여러 곳에서 재사용)
                 function stopAndResetAudio() {
-                  console.log('새 창: 오디오 중지 요청');
                   shouldStop = true;
                   if (currentAudio) {
                     currentAudio.pause();
@@ -3058,20 +2938,17 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 // 페이지가 비활성화되면 음성 재생 중지
                 document.addEventListener('visibilitychange', function() {
                   if (document.hidden) {
-                    console.log('새 창: 페이지 숨김 감지, 오디오 중지');
                     stopAndResetAudio();
                   }
                 });
 
                 // 브라우저 뒤로 가기/앞으로 가기 시 음성 재생 중지
                 window.addEventListener('popstate', function(e) {
-                  console.log('새 창: popstate 이벤트 감지 (뒤로가기/앞으로가기), 오디오 중지', e);
                   stopAndResetAudio();
                 }, true); // 캡처링 단계에서 처리
 
                 // 페이지 언로드 시 음성 재생 중지
                 window.addEventListener('beforeunload', function() {
-                  console.log('새 창: beforeunload 이벤트 감지, 오디오 중지');
                   stopAndResetAudio();
                 });
 
@@ -3135,12 +3012,10 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
                 // 음성으로 듣기 기능 - 청크 단위로 나누어 재생
                 async function handleTextToSpeech() {
-                  console.log('=== handleTextToSpeech 함수 호출됨 ===');
                   
                   try {
                     // 재생 중이면 중지
                     if (isPlaying) {
-                      console.log('이미 재생 중이므로 중지');
                       stopTextToSpeech();
                       return;
                     }
@@ -3153,10 +3028,8 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                     }
                     
                     const contentHtml = contentHtmlEl.innerHTML;
-                    console.log('contentHtml 길이:', contentHtml.length);
                     
                     const textContent = extractTextFromHtml(contentHtml);
-                    console.log('추출된 텍스트 길이:', textContent.length);
 
                     if (!textContent.trim()) {
                       alert('읽을 내용이 없습니다.');
@@ -3164,22 +3037,14 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                     }
 
                     // 화자 정보 가져오기 (항상 Supabase에서 최신 정보 확인)
-                    console.log('=== 새 창: 음성으로 듣기 시작 ===');
-                    console.log('초기 window.savedContentSpeaker:', window.savedContentSpeaker);
-                    console.log('초기 window.savedContentId:', window.savedContentId);
                     
                     let speaker = window.savedContentSpeaker || 'nara';
-                    console.log('초기 speaker 값:', speaker);
                     
                     // content.id가 있으면 Supabase에서 최신 화자 정보 조회
                     if (window.savedContentId) {
                       try {
-                        console.log('새 창: Supabase에서 화자 정보 조회 시작');
-                        console.log('  - API URL: /api/content/' + window.savedContentId);
-                        console.log('  - content.id:', window.savedContentId);
                         
                         const response = await fetch('/api/content/' + window.savedContentId);
-                        console.log('  - API 응답 상태:', response.status, response.statusText);
                         
                         if (!response.ok) {
                           const errorText = await response.text();
@@ -3188,31 +3053,21 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                         }
                         
                         const data = await response.json();
-                        console.log('  - API 응답 데이터:', data);
-                        console.log('  - API 응답의 tts_speaker:', data.tts_speaker);
                         
                         if (data.tts_speaker) {
                           speaker = data.tts_speaker;
                           window.savedContentSpeaker = speaker; // 전역 변수 업데이트
-                          console.log('  - Supabase에서 조회한 화자:', speaker);
                         } else {
-                          console.warn('  - API 응답에 tts_speaker가 없음, 기존 값 사용:', speaker);
                         }
                       } catch (error) {
                         console.error('새 창: Supabase에서 화자 조회 실패:', error);
                         console.error('  - 에러 상세:', error);
                         // 조회 실패 시 기존 값 사용
                         speaker = window.savedContentSpeaker || 'nara';
-                        console.log('  - 조회 실패로 인한 기존 값 사용:', speaker);
                       }
                     } else {
-                      console.log('새 창: window.savedContentId가 없어서 Supabase 조회 건너뜀');
-                      console.log('  - 기존 window.savedContentSpeaker 사용:', speaker);
                     }
                     
-                    console.log('새 창: 최종 사용할 화자:', speaker);
-                    console.log('==============================');
-
                     // 버튼 상태 변경
                     const button = document.getElementById('ttsButton');
                     const icon = document.getElementById('ttsIcon');
@@ -3227,8 +3082,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                     const maxLength = 2000;
                     const chunks = splitTextIntoChunks(textContent, maxLength);
                     
-                    console.log('음성 변환 시작, 전체 텍스트 길이:', textContent.length, '자, 청크 수:', chunks.length, ', 화자:', speaker);
-
                     // 다음 청크를 미리 로드하는 함수
                     const preloadNextChunk = async (chunkIndex) => {
                       if (chunkIndex >= chunks.length || shouldStop) {
@@ -3237,7 +3090,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
                       try {
                         const chunk = chunks[chunkIndex];
-                        console.log('새 창: 청크', chunkIndex + 1, '/', chunks.length, '미리 로드 중, 길이:', chunk.length, '자');
 
                         // TTS API 호출 (화자 정보 포함)
                         const response = await fetch('/api/tts', {
@@ -3276,7 +3128,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                           audio.load();
                         });
 
-                        console.log('새 창: 청크', chunkIndex + 1, '미리 로드 완료');
                         return { url, audio };
                       } catch (error) {
                         console.error('새 창: 청크', chunkIndex + 1, '미리 로드 실패:', error);
@@ -3290,7 +3141,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                     for (let i = 0; i < chunks.length; i++) {
                       // 중지 플래그 확인
                       if (shouldStop) {
-                        console.log('재생 중지됨');
                         if (preloadedChunk) {
                           URL.revokeObjectURL(preloadedChunk.url);
                         }
@@ -3298,7 +3148,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       }
 
                       const chunk = chunks[i];
-                      console.log('새 창: 청크', i + 1, '/', chunks.length, '재생 시작, 길이:', chunk.length, '자');
 
                       // 다음 청크를 미리 로드 (현재 청크 재생 중에)
                       const nextChunkPromise = i < chunks.length - 1 ? preloadNextChunk(i + 1) : Promise.resolve(null);
@@ -3312,13 +3161,8 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                         currentAudioElement = preloadedChunk.audio;
                         currentUrl = preloadedChunk.url;
                         preloadedChunk = null;
-                        console.log('새 창: 청크', i + 1, '미리 로드된 오디오 사용');
                       } else {
                         // 첫 번째 청크이거나 미리 로드 실패한 경우 즉시 요청
-                        console.log('새 창: TTS API 호출 전 화자 확인');
-                        console.log('  - window.savedContentSpeaker:', window.savedContentSpeaker);
-                        console.log('  - 사용할 speaker 변수:', speaker);
-                        console.log('  - API 요청 body (일부):', JSON.stringify({ text: chunk.substring(0, 50) + '...', speaker }));
                         
                         const response = await fetch('/api/tts', {
                           method: 'POST',
@@ -3328,8 +3172,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                           body: JSON.stringify({ text: chunk, speaker }),
                         });
                         
-                        console.log('새 창: TTS API 응답 상태:', response.status);
-
                         if (!response.ok) {
                           const error = await response.json();
                           throw new Error(error.error || '청크 ' + (i + 1) + ' 음성 변환에 실패했습니다.');
@@ -3367,7 +3209,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                         };
                         
                         currentAudioElement.onended = function() {
-                          console.log('새 창: 청크 ' + (i + 1) + ' 재생 완료');
                           cleanup();
                           resolve();
                         };
@@ -3376,7 +3217,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                           console.error('새 창: 청크 ' + (i + 1) + ' 재생 중 오류:', e, currentAudioElement.error);
                           cleanup();
                           // 에러가 발생해도 다음 청크로 계속 진행
-                          console.warn('새 창: 청크 ' + (i + 1) + ' 재생 실패, 다음 청크로 진행');
                           resolve();
                         };
                         
@@ -3395,7 +3235,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                           console.error('새 창: 청크 ' + (i + 1) + ' play() 실패:', err);
                           cleanup();
                           // play 실패해도 다음 청크로 계속 진행
-                          console.warn('새 창: 청크 ' + (i + 1) + ' play 실패, 다음 청크로 진행');
                           resolve();
                         });
                       });
@@ -3405,9 +3244,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                         try {
                           preloadedChunk = await nextChunkPromise;
                           if (preloadedChunk) {
-                            console.log('새 창: 청크 ' + (i + 2) + ' 미리 로드 완료');
                           } else {
-                            console.warn('새 창: 청크 ' + (i + 2) + ' 미리 로드 실패 (null 반환)');
                           }
                         } catch (err) {
                           console.error('새 창: 청크 ' + (i + 2) + ' 미리 로드 중 에러:', err);
@@ -3417,7 +3254,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
                       // 중지 플래그 재확인
                       if (shouldStop) {
-                        console.log('재생 중지됨 (재생 후)');
                         if (preloadedChunk) {
                           URL.revokeObjectURL(preloadedChunk.url);
                         }
@@ -3426,9 +3262,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                     }
 
                     if (!shouldStop) {
-                      console.log('새 창: 모든 청크 재생 완료');
                     } else {
-                      console.log('새 창: 재생이 중지되었습니다');
                     }
                     isPlaying = false;
                     shouldStop = false;
@@ -3462,18 +3296,15 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 
                 // 함수를 전역 스코프에 명시적으로 할당 (onclick 핸들러가 작동하도록)
                 window.handleTextToSpeech = handleTextToSpeech;
-                console.log('handleTextToSpeech 함수를 전역 스코프에 할당 완료');
                 
                 // 버튼에 이벤트 리스너 연결
                 function connectTTSButton() {
                   const ttsButton = document.getElementById('ttsButton');
                   if (ttsButton) {
-                    console.log('TTS 버튼 발견, 이벤트 리스너 추가');
                     // 기존 이벤트 리스너가 있는지 확인하고 제거 (중복 방지)
                     const newHandler = function(e) {
                       e.preventDefault();
                       e.stopPropagation();
-                      console.log('TTS 버튼 클릭 이벤트 발생');
                       if (typeof handleTextToSpeech === 'function') {
                         handleTextToSpeech();
                       } else if (typeof window.handleTextToSpeech === 'function') {
@@ -3487,10 +3318,8 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                     // 기존 이벤트 리스너 제거 후 새로 추가
                     ttsButton.removeEventListener('click', newHandler);
                     ttsButton.addEventListener('click', newHandler);
-                    console.log('TTS 버튼 이벤트 리스너 연결 완료');
                     return true;
                   } else {
-                    console.warn('TTS 버튼을 찾을 수 없습니다.');
                     return false;
                   }
                 }
@@ -3502,10 +3331,8 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                   
                   const tryConnect = () => {
                     if (connectTTSButton()) {
-                      console.log('TTS 버튼 연결 성공');
                     } else if (retryCount < maxRetries) {
                       retryCount++;
-                      console.log('TTS 버튼 연결 재시도:', retryCount);
                       setTimeout(tryConnect, 200 * retryCount);
                     } else {
                       console.error('TTS 버튼 연결 실패: 최대 재시도 횟수 초과');
@@ -3525,7 +3352,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                   setTimeout(function() {
                     const ttsButton = document.getElementById('ttsButton');
                     if (ttsButton) {
-                      console.log('추가 안전장치: 버튼 확인 및 재연결');
                       connectTTSButton();
                     }
                   }, 1000);
@@ -3740,13 +3566,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       
                       // 디버깅: 첫 번째 소제목 렌더링 조건 확인 (계산 후)
                       if (menuIndex === 0 && subIndex === 0) {
-                        console.log('🎨 [RENDER] 첫 번째 소제목 렌더링 조건 (계산 후):', {
-                          canShowSubtitle,
-                          isSubtitleComplete,
-                          contentHtmlLength: sub.contentHtml?.length || 0,
-                          willRender: canShowSubtitle,
-                          timestamp: new Date().toISOString()
-                        })
                       }
                       
                       return (
@@ -4124,4 +3943,3 @@ export default function ResultPage() {
     </Suspense>
   )
 }
-
