@@ -68,7 +68,44 @@ Vercel의 5분(300초) 제한을 피하기 위해 **프론트엔드는 Vercel, A
 
 ---
 
-## 4단계: 패키지 설치 (SSH 터미널)
+## 4단계: 환경 변수 설정 (.env 파일)
+
+클라우드웨이즈 서버에서 Supabase Connection Pooling 등을 사용하려면 `.env` 파일을 설정해야 합니다.
+
+**상세 가이드**: `CLOUDWAYS_SUPABASE_SETUP.md` 파일 참조
+
+### 빠른 설정
+
+1. **SSH 접속** (위 참조)
+2. **public_html 폴더로 이동**:
+   ```bash
+   cd public_html
+   ```
+3. **.env 파일 생성**:
+   ```bash
+   nano .env
+   ```
+4. **환경 변수 추가** (최소 필수 항목):
+   ```env
+   # Gemini API Key
+   GEMINI_API_KEY=your_gemini_api_key
+
+   # Supabase Connection Pooling (필요한 경우)
+   SUPABASE_DB_URL=postgresql://postgres.xxx:[PASSWORD]@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require
+
+   # Supabase API (Next.js와 동일)
+   NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+   ```
+5. **파일 저장**: `Ctrl + X` → `Y` → `Enter`
+6. **권한 설정**:
+   ```bash
+   chmod 600 .env
+   ```
+
+---
+
+## 5단계: 패키지 설치 (SSH 터미널)
 
 ### SSH 접속 방법
 

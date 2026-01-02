@@ -338,11 +338,20 @@ export async function callJeminaiAPIStream(
                 lastChunkTime = Date.now() // chunk 수신 시 시간 갱신
                 if (data.text) {
                   accumulatedHtml += data.text
+                  // 디버깅: chunk 수신 및 콜백 호출 로그
+                  console.log('📨 [JEMINAI] chunk 수신 및 onChunk 호출:', {
+                    chunkLength: data.text.length,
+                    accumulatedLength: accumulatedHtml.length,
+                    timestamp: new Date().toISOString()
+                  })
                   onChunk({
                     type: 'chunk',
                     text: data.text,
                     accumulatedLength: data.accumulatedLength
                   })
+                  console.log('✅ [JEMINAI] onChunk 호출 완료')
+                } else {
+                  console.warn('⚠️ [JEMINAI] chunk 수신했지만 data.text가 없음')
                 }
               } else if (data.type === 'partial_done') {
                 console.log('=== 클라이언트: 1차 요청 부분 완료 수신 ===')

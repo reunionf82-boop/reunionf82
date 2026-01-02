@@ -576,6 +576,14 @@ function ResultContent() {
         await callJeminaiAPIStream(requestData, (data) => {
           if (cancelled) return
 
+          // 디버깅: 콜백 호출 및 data.type 확인
+          console.log('🔔 [CALLBACK] 콜백 호출됨:', {
+            type: data.type,
+            hasText: !!data.text,
+            textLength: data.text?.length || 0,
+            timestamp: new Date().toISOString()
+          })
+
           if (data.type === 'start') {
             accumulatedHtml = ''
           } else if (data.type === 'partial_done') {
@@ -624,7 +632,8 @@ function ResultContent() {
               setShowRealtimePopup(false)
             }
           } else if (data.type === 'chunk') {
-            accumulatedHtml += data.text || ''
+            const chunkText = data.text || ''
+            accumulatedHtml += chunkText
 
             // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
             // 테이블 태그 앞의 모든 줄바꿈을 제거하고 CSS로 간격 조정
@@ -673,7 +682,17 @@ function ResultContent() {
               }
             }
 
+            // 디버깅: chunk 수신 및 상태 업데이트 로그
+            console.log('📥 [CHUNK] 수신:', {
+              chunkLength: chunkText.length,
+              accumulatedLength: accumulatedHtml.length,
+              timestamp: new Date().toISOString()
+            })
+            
             setStreamingHtml(accumulatedHtml)
+            
+            // 디버깅: setStreamingHtml 호출 확인
+            console.log('✅ [CHUNK] setStreamingHtml 호출 완료, 누적 길이:', accumulatedHtml.length)
           } else if (data.type === 'done') {
             let finalHtml = data.html || accumulatedHtml
 
@@ -1127,13 +1146,25 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       return
     }
     
-    // 성능 최적화: 파싱 작업을 딜레이하여 CPU 사용량 감소 (스레드 슬립)
+    // 디버깅: streamingHtml 변경 감지
+    console.log('🔄 [USE_EFFECT] streamingHtml 변경 감지:', {
+      streamingHtmlLength: streamingHtml.length,
+      sourceHtmlLength: sourceHtml.length,
+      isStreamingActive,
+      streamingFinished,
+      timestamp: new Date().toISOString()
+    })
+    
+    // 성능 최적화: 파싱 작업을 딜레이하여 CPU 사용량 감소
+    // 실시간 표시를 위해 딜레이를 0ms로 단축 (즉시 실행)
     if (parsingTimeoutRef.current) {
       clearTimeout(parsingTimeoutRef.current)
     }
     
+    // requestAnimationFrame을 사용하여 브라우저 렌더링 사이클에 맞춤
     parsingTimeoutRef.current = setTimeout(() => {
       parsingTimeoutRef.current = null
+      console.log('⏱️ [PARSE] 파싱 시작, HTML 길이:', sourceHtml.length)
 
     // 원본 HTML에서 특정 detail-menu-content가 완성되었는지 확인하는 함수
     // menuIndex번째 menu-section 내의 subtitleIndex번째 subtitle-section의 detailMenuIndex번째 상세메뉴 확인
@@ -1415,17 +1446,23 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         detailMenuSections.forEach((section, dmSectionIdx) => {
           const titleEl = section.querySelector('.detail-menu-title')
           const contentEl = section.querySelector('.detail-menu-content')
-          if (titleEl && contentEl) {
-            // contentHtml에서 제목 요소 제거 (중복 방지)
-            const contentClone = contentEl.cloneNode(true) as HTMLElement
-            const titleInContent = contentClone.querySelector('.detail-menu-title')
-            if (titleInContent) {
-              titleInContent.remove()
-            }
-            
-            // contentHtml 시작 부분에 제목 텍스트가 있을 수 있으므로 제거
-            let contentHtml = contentClone.innerHTML || ''
+          // titleEl만 있어도 처리 (스트리밍 중에는 contentEl이 아직 없을 수 있음)
+          if (titleEl) {
+            let contentHtml = ''
             let titleText = titleEl.textContent || ''
+            
+            // contentEl이 있으면 내용 추출
+            if (contentEl) {
+              // contentHtml에서 제목 요소 제거 (중복 방지)
+              const contentClone = contentEl.cloneNode(true) as HTMLElement
+              const titleInContent = contentClone.querySelector('.detail-menu-title')
+              if (titleInContent) {
+                titleInContent.remove()
+              }
+              
+              // contentHtml 시작 부분에 제목 텍스트가 있을 수 있으므로 제거
+              contentHtml = contentClone.innerHTML || ''
+            }
             
             // 제목에서 번호 접두사 제거 후 중복 체크
             titleText = removeNumberPrefix(titleText)
@@ -1629,11 +1666,43 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         }
     })
 
+    // 디버깅: parsed 배열 생성 확인
+    console.log('📊 [PARSE] parsed 배열 생성 완료:', {
+      parsedLength: parsed.length,
+      menuSectionsLength: menuSections.length,
+      parsedMenuTitles: parsed.map(m => m.title),
+      cursor,
+      timestamp: new Date().toISOString()
+    })
+    
+    // 디버깅: 첫 번째 메뉴의 첫 번째 소제목 내용 확인
+    if (parsed.length > 0 && parsed[0].subtitles.length > 0) {
+      const firstSubtitle = parsed[0].subtitles[0]
+      console.log('🔍 [PARSE] 첫 번째 소제목 내용 확인:', {
+        title: firstSubtitle.title,
+        contentHtmlLength: firstSubtitle.contentHtml?.length || 0,
+        contentHtmlPreview: firstSubtitle.contentHtml?.substring(0, 100) || '(없음)',
+        detailMenusLength: firstSubtitle.detailMenus?.length || 0,
+        timestamp: new Date().toISOString()
+      })
+    }
+
     // 썸네일/만세력 HTML이 변경되지 않았으면 기존 parsedMenus의 값을 유지 (깜빡임 방지)
     // 스트리밍 중에는 완성되지 않은 섹션은 이전 완성된 상태를 유지
+    console.log('🔍 [PARSE] setParsedMenus 호출 전:', {
+      parsedLength: parsed.length,
+      prevParsedMenusLength: 'will check in callback',
+      timestamp: new Date().toISOString()
+    })
     setParsedMenus((prevParsedMenus) => {
+      console.log('🔍 [PARSE] setParsedMenus 콜백 실행:', {
+        parsedLength: parsed.length,
+        prevParsedMenusLength: prevParsedMenus.length,
+        timestamp: new Date().toISOString()
+      })
       // 첫 번째 파싱이거나 메뉴 개수가 변경된 경우 새로 설정
       if (prevParsedMenus.length === 0 || prevParsedMenus.length !== parsed.length) {
+        console.log('✅ [PARSE] 새로 설정 (첫 파싱 또는 메뉴 개수 변경)')
         return parsed
       }
 
@@ -1768,6 +1837,11 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         return { ...newMenu, subtitles: updatedSubtitles }
       })
       
+      console.log('✅ [PARSE] setParsedMenus 업데이트 완료:', {
+        updatedLength: updated.length,
+        updatedMenuTitles: updated.map(m => m.title),
+        timestamp: new Date().toISOString()
+      })
       return updated
     })
     setTotalSubtitles(cursor)
@@ -1805,7 +1879,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
     if (cursor > 0) {
       setShowRealtimeLoading(false) // (기존 플래그, 현재는 사용 안 함)
     }
-    }, 50) // 50ms 딜레이로 CPU 사용량 감소 (스레드 슬립)
+    }, 0) // 실시간 표시를 위해 딜레이 제거 (즉시 실행)
     
     // 클린업: 컴포넌트 언마운트 시 타임아웃 정리
     return () => {
@@ -3664,6 +3738,17 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       // 현재 소제목이 표시 가능한지 체크 (첫 번째 소제목이거나, 이전 소제목이 완성되고 마지막 상세메뉴를 제외한 모든 상세메뉴가 완성되었으면)
                       const canShowSubtitle = (subIndex === 0) || (prevSubtitleComplete && prevSubtitleDetailMenusComplete)
                       
+                      // 디버깅: 첫 번째 소제목 렌더링 조건 확인 (계산 후)
+                      if (menuIndex === 0 && subIndex === 0) {
+                        console.log('🎨 [RENDER] 첫 번째 소제목 렌더링 조건 (계산 후):', {
+                          canShowSubtitle,
+                          isSubtitleComplete,
+                          contentHtmlLength: sub.contentHtml?.length || 0,
+                          willRender: canShowSubtitle,
+                          timestamp: new Date().toISOString()
+                        })
+                      }
+                      
                       return (
                         <div 
                           key={`subtitle-${menuIndex}-${subIndex}`} 
@@ -3728,8 +3813,8 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                             }
                             return null
                           })()}
-                          {/* 상세메뉴 렌더링 (소제목이 완성되어야 표시, 각 상세메뉴는 순차적으로 완성된 것만 표시) */}
-                          {canShowSubtitle && isSubtitleComplete && sub.detailMenus && sub.detailMenus.length > 0 && (
+                          {/* 상세메뉴 렌더링 (소제목이 표시 가능하면 상세메뉴도 표시, 각 상세메뉴는 순차적으로 완성된 것만 표시) */}
+                          {canShowSubtitle && sub.detailMenus && sub.detailMenus.length > 0 && (
                             <div className="detail-menu-container ml-4">
                               {sub.detailMenus.map((detailMenu, detailIndex) => {
                                 // 상세메뉴 내용이 있으면 완성
