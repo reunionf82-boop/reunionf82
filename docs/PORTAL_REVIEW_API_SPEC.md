@@ -47,7 +47,7 @@ Content-Type: application/json
         "title": "2024년 운세",
         "availableUntil": "2024-12-31T23:59:59Z",
         "createdAt": "2024-01-01T10:00:00Z",
-        "model": "gemini-2.5-pro"
+        "model": "gemini-1.5-pro"
       },
       {
         "id": 124,
@@ -125,7 +125,7 @@ Content-Type: application/json
       "subtitle_font_size": 14,
       "body_font_size": 11
     },
-    "model": "gemini-2.5-pro",
+    "model": "gemini-1.5-pro",
     "processingTime": "45초",
     "userName": "홍길동",
     "savedAt": "2024-01-01T10:00:00Z",

@@ -346,9 +346,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     hasThumbnail: !!s.thumbnail
                   })
                   return {
-                    id: s.id || Date.now() + idx * 1000 + subIdx,
-                    subtitle: s.subtitle || '',
-                    interpretation_tool: s.interpretation_tool || '',
+                  id: s.id || Date.now() + idx * 1000 + subIdx,
+                  subtitle: s.subtitle || '',
+                  interpretation_tool: s.interpretation_tool || '',
                     thumbnail: s.thumbnail || '',
                     detailMenus: (s.detailMenus || []).map((dm: any) => ({
                     id: dm.id || Date.now() + Math.random(),
@@ -385,9 +385,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           }))
           
           const firstMenuValue = data.menu_items[0].value || ''
-          setFirstMenuField({
+        setFirstMenuField({
             value: firstMenuValue,
-            thumbnail: data.menu_items[0].thumbnail || '',
+          thumbnail: data.menu_items[0].thumbnail || '',
             // 대메뉴에 값이 있는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
             subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
               ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
@@ -398,9 +398,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
             const menuValue = item.value || ''
             return {
-              id: item.id || Date.now() + idx + 1000,
+            id: item.id || Date.now() + idx + 1000,
               value: menuValue,
-              thumbnail: item.thumbnail || '',
+            thumbnail: item.thumbnail || '',
               // 대메뉴에 값이 있으면 디폴트 소메뉴 1개 추가
               subtitles: menuValue.trim().length > 0
                 ? [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '', detailMenus: [] }]
@@ -852,7 +852,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         console.log('첫 번째 메뉴의 소제목 썸네일 업데이트:', subtitleIdStr, subtitleId, url)
         setFirstMenuField(prev => {
           const updated = {
-            ...prev,
+          ...prev,
             subtitles: prev.subtitles.map(s => {
               // ID를 문자열로 변환하여 비교 (소수점 포함 ID 대응)
               const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
@@ -1227,8 +1227,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="block text-sm font-medium text-gray-300">
-              상품 메뉴 구성
-            </label>
+            상품 메뉴 구성
+          </label>
             <button
               type="button"
               onClick={() => setShowEasyUploadModal(true)}
@@ -1317,45 +1317,45 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 <div key={subtitle.id} className="space-y-2">
                   <div className="flex gap-2 items-start">
                     <textarea
-                      value={subtitle.subtitle}
-                      onChange={(e) => setFirstMenuField(prev => ({
-                        ...prev,
-                        subtitles: prev.subtitles.map(s => 
-                          s.id === subtitle.id ? { ...s, subtitle: e.target.value } : s
-                        )
-                      }))}
+                    value={subtitle.subtitle}
+                    onChange={(e) => setFirstMenuField(prev => ({
+                      ...prev,
+                      subtitles: prev.subtitles.map(s => 
+                        s.id === subtitle.id ? { ...s, subtitle: e.target.value } : s
+                      )
+                    }))}
                       className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
-                      placeholder="상품 메뉴 소제목"
+                    placeholder="상품 메뉴 소제목"
                       rows={1}
                       style={{ minHeight: '36px' }}
-                    />
-                    <textarea
-                      value={subtitle.interpretation_tool}
-                      onChange={(e) => setFirstMenuField(prev => ({
-                        ...prev,
-                        subtitles: prev.subtitles.map(s => 
-                          s.id === subtitle.id ? { ...s, interpretation_tool: e.target.value } : s
-                        )
-                      }))}
-                      rows={1}
+                  />
+                  <textarea
+                    value={subtitle.interpretation_tool}
+                    onChange={(e) => setFirstMenuField(prev => ({
+                      ...prev,
+                      subtitles: prev.subtitles.map(s => 
+                        s.id === subtitle.id ? { ...s, interpretation_tool: e.target.value } : s
+                      )
+                    }))}
+                    rows={1}
                       className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
-                      placeholder="해석도구"
-                      style={{ minHeight: '36px' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCurrentThumbnailField(`subtitle-first-${subtitle.id}` as any)
-                        console.log('첫 번째 메뉴 소제목 썸네일 클릭:', subtitle.id)
-                        setShowThumbnailModal(true)
-                      }}
-                      className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
-                    >
+                    placeholder="해석도구"
+                    style={{ minHeight: '36px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentThumbnailField(`subtitle-first-${subtitle.id}` as any)
+                      console.log('첫 번째 메뉴 소제목 썸네일 클릭:', subtitle.id)
+                      setShowThumbnailModal(true)
+                    }}
+                    className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                  >
                       {subtitle.thumbnail && subtitle.thumbnail.trim() ? (
-                        <img 
-                          src={subtitle.thumbnail} 
-                          alt="썸네일" 
-                          className="absolute inset-0 w-full h-full object-contain"
+                      <img 
+                        src={subtitle.thumbnail} 
+                        alt="썸네일" 
+                        className="absolute inset-0 w-full h-full object-contain"
                           onError={(e) => {
                             console.error('소메뉴 썸네일 로드 실패:', subtitle.thumbnail, e)
                             // 이미지 로드 실패 시 텍스트로 대체
@@ -1369,29 +1369,29 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                               parent.appendChild(span)
                             }
                           }}
-                        />
-                      ) : (
-                        <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
-                      )}
-                    </button>
-                    {subIndex === 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => setFirstMenuField(prev => ({
-                          ...prev,
-                          subtitles: [...prev.subtitles, { id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
-                        }))}
-                        className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
-                      >
-                        +
-                      </button>
+                      />
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSubtitleToDelete({ menuId: 'first', subtitleId: subtitle.id })
-                          setShowDeleteSubtitleConfirm(true)
-                        }}
+                      <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                    )}
+                  </button>
+                  {subIndex === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setFirstMenuField(prev => ({
+                        ...prev,
+                          subtitles: [...prev.subtitles, { id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
+                      }))}
+                      className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                    >
+                      +
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSubtitleToDelete({ menuId: 'first', subtitleId: subtitle.id })
+                        setShowDeleteSubtitleConfirm(true)
+                      }}
                         className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
                       >
                         ×
@@ -1497,11 +1497,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                                 } : s
                               )
                             }))}
-                            className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
-                          >
-                            ×
-                          </button>
-                        )}
+                      className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                    >
+                      ×
+                    </button>
+                  )}
                       </div>
                     ))}
                     {(!subtitle.detailMenus || subtitle.detailMenus.length === 0) && (
@@ -1589,91 +1589,91 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     <div key={subtitle.id} className="space-y-2">
                       <div className="flex gap-2 items-start">
                         <textarea
-                          value={subtitle.subtitle}
-                          onChange={(e) => setMenuFields(menuFields.map(f => 
-                            f.id === field.id ? {
-                              ...f,
-                              subtitles: f.subtitles.map(s => 
-                                s.id === subtitle.id ? { ...s, subtitle: e.target.value } : s
-                              )
-                            } : f
-                          ))}
+                        value={subtitle.subtitle}
+                        onChange={(e) => setMenuFields(menuFields.map(f => 
+                          f.id === field.id ? {
+                            ...f,
+                            subtitles: f.subtitles.map(s => 
+                              s.id === subtitle.id ? { ...s, subtitle: e.target.value } : s
+                            )
+                          } : f
+                        ))}
                           className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
-                          placeholder="상품 메뉴 소제목"
+                        placeholder="상품 메뉴 소제목"
                           rows={1}
                           style={{ minHeight: '36px' }}
-                        />
-                        <textarea
-                          value={subtitle.interpretation_tool}
-                          onChange={(e) => setMenuFields(menuFields.map(f => 
+                      />
+            <textarea
+                        value={subtitle.interpretation_tool}
+                        onChange={(e) => setMenuFields(menuFields.map(f => 
+                          f.id === field.id ? {
+                            ...f,
+                            subtitles: f.subtitles.map(s => 
+                              s.id === subtitle.id ? { ...s, interpretation_tool: e.target.value } : s
+                            )
+                          } : f
+                        ))}
+                        rows={1}
+                          className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
+                        placeholder="해석도구"
+                        style={{ minHeight: '36px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const fieldId = field.id
+                          const subtitleId = subtitle.id
+                          const fieldKey = `subtitle-menu-${fieldId}-${subtitleId}`
+                          console.log('메뉴 필드 소제목 썸네일 클릭:', {
+                            fieldId,
+                            fieldIdType: typeof fieldId,
+                            subtitleId,
+                            subtitleIdType: typeof subtitleId,
+                            fieldKey,
+                            currentThumbnail: subtitle.thumbnail,
+                            fieldValue: field.value
+                          })
+                          setCurrentThumbnailField(fieldKey as any)
+                          setShowThumbnailModal(true)
+                        }}
+                        className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                      >
+                        {subtitle.thumbnail ? (
+                          <img 
+                            src={subtitle.thumbnail} 
+                            alt="썸네일" 
+                            className="absolute inset-0 w-full h-full object-contain"
+                          />
+                        ) : (
+                          <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                        )}
+                      </button>
+                      {subIndex === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setMenuFields(menuFields.map(f => 
                             f.id === field.id ? {
                               ...f,
-                              subtitles: f.subtitles.map(s => 
-                                s.id === subtitle.id ? { ...s, interpretation_tool: e.target.value } : s
-                              )
+                                subtitles: [...f.subtitles, { id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
                             } : f
                           ))}
-                          rows={1}
-                          className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
-                          placeholder="해석도구"
-                          style={{ minHeight: '36px' }}
-                        />
+                          className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                        >
+                          +
+                        </button>
+                      ) : (
                         <button
                           type="button"
                           onClick={() => {
-                            const fieldId = field.id
-                            const subtitleId = subtitle.id
-                            const fieldKey = `subtitle-menu-${fieldId}-${subtitleId}`
-                            console.log('메뉴 필드 소제목 썸네일 클릭:', {
-                              fieldId,
-                              fieldIdType: typeof fieldId,
-                              subtitleId,
-                              subtitleIdType: typeof subtitleId,
-                              fieldKey,
-                              currentThumbnail: subtitle.thumbnail,
-                              fieldValue: field.value
-                            })
-                            setCurrentThumbnailField(fieldKey as any)
-                            setShowThumbnailModal(true)
+                            setSubtitleToDelete({ menuId: field.id, subtitleId: subtitle.id })
+                            setShowDeleteSubtitleConfirm(true)
                           }}
-                          className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                          className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
                         >
-                          {subtitle.thumbnail ? (
-                            <img 
-                              src={subtitle.thumbnail} 
-                              alt="썸네일" 
-                              className="absolute inset-0 w-full h-full object-contain"
-                            />
-                          ) : (
-                            <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
-                          )}
+                          ×
                         </button>
-                        {subIndex === 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => setMenuFields(menuFields.map(f => 
-                              f.id === field.id ? {
-                                ...f,
-                                subtitles: [...f.subtitles, { id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
-                              } : f
-                            ))}
-                            className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
-                          >
-                            +
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSubtitleToDelete({ menuId: field.id, subtitleId: subtitle.id })
-                              setShowDeleteSubtitleConfirm(true)
-                            }}
-                            className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
-                          >
-                            ×
-                          </button>
-                        )}
-                      </div>
+                      )}
+          </div>
                       {/* 상세메뉴 필드들 */}
                       <div className="ml-4 border-l-2 border-gray-500 pl-4 space-y-2">
                         {(subtitle.detailMenus && subtitle.detailMenus.length > 0 ? subtitle.detailMenus : []).map((detailMenu, detailIndex) => (
@@ -1796,7 +1796,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                                 ×
                               </button>
                             )}
-                          </div>
+                </div>
                         ))}
                         {(!subtitle.detailMenus || subtitle.detailMenus.length === 0) && (
                           <button
@@ -1928,11 +1928,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 대메뉴 폰트크기
               </label>
               <div className="flex">
-                <input
-                  type="text"
-                  name="menuFontSize"
-                  value={formData.menuFontSize}
-                  onChange={handleChange}
+              <input
+                type="text"
+                name="menuFontSize"
+                value={formData.menuFontSize}
+                onChange={handleChange}
                   className="w-16 bg-gray-700 border border-gray-600 border-r-0 rounded-l-lg rounded-r-none px-2 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm text-center"
                   placeholder="16"
                   maxLength={2}
@@ -1948,18 +1948,18 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 >
                   B
                 </button>
-              </div>
+            </div>
             </div>
             <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
                 소메뉴 폰트크기
               </label>
               <div className="flex">
-                <input
-                  type="text"
-                  name="subtitleFontSize"
-                  value={formData.subtitleFontSize}
-                  onChange={handleChange}
+              <input
+                type="text"
+                name="subtitleFontSize"
+                value={formData.subtitleFontSize}
+                onChange={handleChange}
                   className="w-16 bg-gray-700 border border-gray-600 border-r-0 rounded-l-lg rounded-r-none px-2 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm text-center"
                   placeholder="14"
                   maxLength={2}
@@ -1975,7 +1975,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 >
                   B
                 </button>
-              </div>
+            </div>
             </div>
             <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
@@ -2009,11 +2009,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 본문 폰트크기
               </label>
               <div className="flex">
-                <input
-                  type="text"
-                  name="bodyFontSize"
-                  value={formData.bodyFontSize}
-                  onChange={handleChange}
+              <input
+                type="text"
+                name="bodyFontSize"
+                value={formData.bodyFontSize}
+                onChange={handleChange}
                   className="w-16 bg-gray-700 border border-gray-600 border-r-0 rounded-l-lg rounded-r-none px-2 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm text-center"
                   placeholder="11"
                   maxLength={2}
@@ -2360,7 +2360,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
                         : filtered
                       return {
-                        ...prev,
+                      ...prev,
                         subtitles: newSubtitles
                       }
                     })
@@ -2373,7 +2373,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                           ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
                           : filtered
                         return {
-                          ...f,
+                        ...f,
                           subtitles: newSubtitles
                         }
                       }

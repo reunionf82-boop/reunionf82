@@ -133,7 +133,11 @@ export default function AdminPage() {
   }
 
   const handleModelChange = async (model: string) => {
-    const modelDisplayName = model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : model === 'gemini-3-flash-preview' ? 'Gemini 3.0 Flash' : model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' : model
+    const modelDisplayName = 
+      model === 'gemini-3-flash-preview' ? 'Gemini 3.0 Flash' :
+      model === 'gemini-3-pro-preview' ? 'Gemini 3.0 Pro' :
+      model === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' :
+      model === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' : model
     console.log('=== 관리자 페이지: 모델 변경 ===')
     console.log('선택된 모델:', modelDisplayName, `(${model})`)
     
@@ -316,6 +320,9 @@ export default function AdminPage() {
                 <option value="ndain">다인 (여성)</option>
                 <option value="jinho">진호 (남성)</option>
               </select>
+            </div>
+            {/* 모델 선택 */}
+            <div className="flex items-center gap-2 mt-2 bg-gray-800 rounded-lg p-2 border border-gray-700">
               <button
                 onClick={() => handleModelChange('gemini-3-flash-preview')}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
@@ -325,6 +332,26 @@ export default function AdminPage() {
                 }`}
               >
                 Gemini 3.0 Flash
+              </button>
+              <button
+                onClick={() => handleModelChange('gemini-3-pro-preview')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+                  selectedModel === 'gemini-3-pro-preview'
+                    ? 'bg-pink-500 text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Gemini 3.0 Pro
+              </button>
+              <button
+                onClick={() => handleModelChange('gemini-2.5-flash')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 ${
+                  selectedModel === 'gemini-2.5-flash'
+                    ? 'bg-pink-500 text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                Gemini 2.5 Flash
               </button>
               <button
                 onClick={() => handleModelChange('gemini-2.5-pro')}

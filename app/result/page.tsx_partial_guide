@@ -1,0 +1,160 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+'use client'
+
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Header from '@/components/Header'
+import ThumbnailModal from '@/components/ThumbnailModal'
+import { v4 as uuidv4 } from 'uuid'
+import ServiceList from '@/components/ServiceList'
+
+interface Subtitle {
+  subtitle: string
+  thumbnail?: string
+  content?: string
+  detailMenus?: DetailMenu[]
+}
+
+interface DetailMenu {
+  detailMenu: string
+  thumbnail?: string
+  content?: string
+  interpretation_tool?: string
+}
+
+interface MenuItem {
+  menu: string
+  subtitles?: Subtitle[]
+}
+
+// ... (기타 인터페이스는 생략하고 필요한 부분만 수정) ...
+
+// 숫자 접두사 제거 함수 (예: "1. 제목" -> "제목")
+const removeNumberPrefix = (text: string) => {
+  return text.replace(/^\d+[\.\)]\s*/, '').trim()
+}
+
+// [수정] 상세메뉴 파싱 및 매핑 로직 개선을 위한 헬퍼 함수
+const extractSections = (html: string, className: string) => {
+  const regex = new RegExp(`<div[^>]*class="[^"]*${className}[^"]*"[^>]*>`, 'gi')
+  const matches: { start: number; end: number; content: string }[] = []
+  let match
+  
+  while ((match = regex.exec(html)) !== null) {
+    const startIndex = match.index
+    const startTagLength = match[0].length
+    
+    // 닫는 태그 찾기 (중첩 div 고려)
+    let depth = 1
+    let currentIndex = startIndex + startTagLength
+    let endIndex = html.length
+    
+    while (currentIndex < html.length && depth > 0) {
+      const nextOpenDiv = html.indexOf('<div', currentIndex)
+      const nextCloseDiv = html.indexOf('</div>', currentIndex)
+      
+      if (nextCloseDiv === -1) break // 닫는 태그 없으면 끝까지
+      
+      if (nextOpenDiv !== -1 && nextOpenDiv < nextCloseDiv) {
+        depth++
+        currentIndex = nextOpenDiv + 4
+      } else {
+        depth--
+        if (depth === 0) {
+          endIndex = nextCloseDiv + 6
+          break
+        }
+        currentIndex = nextCloseDiv + 6
+      }
+    }
+    
+    matches.push({
+      start: startIndex,
+      end: endIndex,
+      content: html.substring(startIndex, endIndex)
+    })
+  }
+  return matches
+}
+
+// ... (중략) ...
+
+// 상세메뉴 파싱 로직 (parseStreamingHtml 내부)
+// 기존 로직을 대체하여 아래와 같이 수정
+
+/*
+// menu-section 내에서 subtitle-section 찾기
+const menuSectionHtml = sourceHtml.substring(menuStartIndex, menuEndIndex)
+
+// 1. 모든 소제목 섹션 위치 찾기
+const subtitleRanges = extractSections(menuSectionHtml, 'subtitle-section')
+
+// 2. 모든 상세메뉴 섹션 위치 찾기
+const detailMenuRanges = extractSections(menuSectionHtml, 'detail-menu-section')
+
+// 각 소제목 인덱스별로 상세메뉴 할당을 위한 맵 초기화
+const subtitleDetailMenusMap: { [key: number]: { title: string; content: string }[] } = {}
+
+detailMenuRanges.forEach(dmRange => {
+  // 이 상세메뉴가 어느 소제목에 속하는지 찾기
+  // 자신의 시작 위치보다 앞에 있는 소제목 중 가장 가까운 것 (가장 큰 시작 인덱스)
+  let targetSubtitleIndex = -1
+  
+  for (let i = 0; i < subtitleRanges.length; i++) {
+    if (subtitleRanges[i].start < dmRange.start) {
+      targetSubtitleIndex = i
+    } else {
+      break // 소제목이 상세메뉴보다 뒤에 있으면 중단
+    }
+  }
+  
+  // 첫 번째 소제목보다 앞에 있는 경우 (거의 없겠지만) 0번 소제목에 할당하거나 무시
+  if (targetSubtitleIndex === -1 && subtitleRanges.length > 0) {
+      targetSubtitleIndex = 0
+  }
+
+  if (targetSubtitleIndex !== -1) {
+    if (!subtitleDetailMenusMap[targetSubtitleIndex]) {
+      subtitleDetailMenusMap[targetSubtitleIndex] = []
+    }
+    
+    // 상세메뉴 내용 추출 (제목, 본문)
+    const dmHtml = dmRange.content
+    
+    // 제목 추출
+    let title = ''
+    const titleMatch = /<div[^>]*class="[^"]*detail-menu-title[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(dmHtml)
+    if (titleMatch) {
+      title = titleMatch[1].replace(/<[^>]*>/g, '').trim() // 태그 제거
+    }
+    
+    // 본문 추출
+    let content = ''
+    const contentMatch = /<div[^>]*class="[^"]*detail-menu-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(dmHtml)
+    if (contentMatch) {
+      content = contentMatch[1]
+      // 제목이 본문에 포함된 경우 제거
+      content = content.replace(/<[^>]*class="[^"]*detail-menu-title[^"]*"[^>]*>[\s\S]*?<\/[^>]*>/gi, '').trim()
+    }
+    
+    subtitleDetailMenusMap[targetSubtitleIndex].push({ title, content })
+  }
+})
+
+// 매핑된 상세메뉴를 subtitles 배열에 적용
+if (subIdx < subtitleRanges.length) {
+    // ... 기존 소제목 처리 로직 ...
+    
+    // 상세메뉴 적용
+    const mappedDetailMenus = subtitleDetailMenusMap[subIdx] || []
+    
+    // 기존 detailMenus(순서 기반)와 병합하되, 파싱된 내용이 있으면 우선 사용
+    mappedDetailMenus.forEach((parsedDm, parsedDmIdx) => {
+        if (parsedDmIdx < detailMenuContents.length) {
+             detailMenuContents[parsedDmIdx] = parsedDm 
+        } else {
+             detailMenuContents.push(parsedDm)
+        }
+    })
+}
+*/

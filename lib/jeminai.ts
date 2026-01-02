@@ -117,25 +117,33 @@ export async function callJeminaiAPIStream(
         headers['Authorization'] = `Bearer ${supabaseAnonKey}`
       }
       
+      const requestBody = {
+        role_prompt: request.role_prompt,
+        restrictions: request.restrictions,
+        menu_subtitles: request.menu_subtitles,
+        menu_items: request.menu_items || [],
+        user_info: request.user_info,
+        partner_info: request.partner_info,
+          model: request.model || 'gemini-3-flash-preview',
+        manse_ryeok_table: request.manse_ryeok_table,
+        manse_ryeok_text: request.manse_ryeok_text,
+        manse_ryeok_json: request.manse_ryeok_json,
+        day_gan_info: request.day_gan_info,
+        isSecondRequest: request.isSecondRequest,
+        completedSubtitles: request.completedSubtitles,
+        completedSubtitleIndices: request.completedSubtitleIndices
+      }
+      
+      // 디버그: 전달되는 모델 값 확인
+      console.log('=== Gemini API 호출 ===')
+      console.log('전달되는 모델:', requestBody.model)
+      console.log('요청 URL:', edgeFunctionUrl)
+      console.log('=====================')
+      
       response = await fetch(edgeFunctionUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          role_prompt: request.role_prompt,
-          restrictions: request.restrictions,
-          menu_subtitles: request.menu_subtitles,
-          menu_items: request.menu_items || [],
-          user_info: request.user_info,
-          partner_info: request.partner_info,
-          model: request.model || 'gemini-3-flash-preview',
-          manse_ryeok_table: request.manse_ryeok_table,
-          manse_ryeok_text: request.manse_ryeok_text,
-          manse_ryeok_json: request.manse_ryeok_json,
-          day_gan_info: request.day_gan_info,
-          isSecondRequest: request.isSecondRequest,
-          completedSubtitles: request.completedSubtitles,
-          completedSubtitleIndices: request.completedSubtitleIndices
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal
       })
       clearTimeout(timeoutId)
@@ -164,6 +172,15 @@ export async function callJeminaiAPIStream(
       } catch {
         errorMessage = errorText || errorMessage
       }
+      
+      // 디버그: 에러 상세 정보 로그
+      const sentModel = request.model || 'gemini-3-flash-preview'
+      console.error('=== API 에러 상세 ===')
+      console.error('상태 코드:', response.status)
+      console.error('에러 메시지:', errorMessage)
+      console.error('전달된 모델:', sentModel)
+      console.error('에러 응답 본문:', errorText)
+      console.error('==================')
       
       // 사용자 친화적 에러 메시지 생성
       let userFriendlyMessage = '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
@@ -256,14 +273,12 @@ export async function callJeminaiAPIStream(
           
           // 경고 로그 (28분 경과 시점 - 서버 타임아웃 30분 전 경고)
           if (totalElapsed > 1680000 && totalElapsed < 1685000) {
-            console.warn(`⚠️ 스트림 진행 중: 경과 시간 ${Math.round(totalElapsed / 1000)}초, 누적 HTML 길이: ${accumulatedHtml.length}자 (서버 타임아웃 30분까지 약 2분 남음)`)
           }
           
           if (timeSinceLastChunk > STREAM_TIMEOUT) {
             console.error(`❌ 스트림 타임아웃 발생: 마지막 청크로부터 ${Math.round(timeSinceLastChunk / 1000)}초 경과, 전체 경과 시간: ${Math.round(totalElapsed / 1000)}초, 누적 HTML 길이: ${accumulatedHtml.length}자`)
             // 타임아웃이지만 부분 데이터가 있으면 fallback 처리
             if (accumulatedHtml.trim() && accumulatedHtml.trim().length > 100) {
-              console.warn('스트림 타임아웃 발생했지만 부분 데이터가 충분함. fallback 처리합니다.')
               break // 루프 종료하여 fallback 처리로 이동
             }
             throw new Error(`응답 시간이 초과되었습니다. (경과 시간: ${Math.round(totalElapsed / 1000)}초, 누적 데이터: ${accumulatedHtml.length}자)`)
@@ -284,7 +299,6 @@ export async function callJeminaiAPIStream(
         if (done) {
           // 스트림 종료 시 버퍼에 남은 데이터 처리
           if (buffer.trim()) {
-            console.log('버퍼에 남은 데이터 처리:', buffer.substring(0, 200))
             const lines = buffer.split('\n')
             for (const line of lines) {
               if (line.trim() && line.startsWith('data: ')) {
@@ -338,30 +352,13 @@ export async function callJeminaiAPIStream(
                 lastChunkTime = Date.now() // chunk 수신 시 시간 갱신
                 if (data.text) {
                   accumulatedHtml += data.text
-                  // 디버깅: chunk 수신 및 콜백 호출 로그
-                  console.log('📨 [JEMINAI] chunk 수신 및 onChunk 호출:', {
-                    chunkLength: data.text.length,
-                    accumulatedLength: accumulatedHtml.length,
-                    timestamp: new Date().toISOString()
-                  })
                   onChunk({
                     type: 'chunk',
                     text: data.text,
                     accumulatedLength: data.accumulatedLength
                   })
-                  console.log('✅ [JEMINAI] onChunk 호출 완료')
-                } else {
-                  console.warn('⚠️ [JEMINAI] chunk 수신했지만 data.text가 없음')
                 }
               } else if (data.type === 'partial_done') {
-                console.log('=== 클라이언트: 1차 요청 부분 완료 수신 ===')
-                console.log('1차 요청 완료된 HTML 길이:', (data.html || accumulatedHtml).length, '자')
-                console.log('완료된 소제목 인덱스:', data.completedSubtitles || [])
-                console.log('남은 소제목 인덱스:', data.remainingSubtitles || [])
-                console.log('남은 소제목 개수:', (data.remainingSubtitles || []).length, '개')
-                console.log('경과 시간:', Math.round((Date.now() - streamStartTime) / 1000), '초')
-                console.log('=== 클라이언트: 1차 요청 부분 완료 수신 ===')
-                
                 hasReceivedPartialDone = true
                 onChunk({
                   type: 'partial_done',
@@ -371,15 +368,6 @@ export async function callJeminaiAPIStream(
                 })
               } else if (data.type === 'done') {
                 lastChunkTime = Date.now() // done 수신 시 시간 갱신
-                console.log('HTML 길이:', data.html?.length || 0, '자')
-                console.log('Usage:', data.usage ? JSON.stringify(data.usage) : '없음')
-                console.log('done 이벤트 데이터:', {
-                  finishReason: data.finishReason,
-                  isTruncated: data.isTruncated,
-                  completedSubtitleIndices: data.completedSubtitleIndices,
-                  hasCompletedSubtitleIndices: !!data.completedSubtitleIndices,
-                  completedSubtitleIndicesLength: data.completedSubtitleIndices?.length || 0
-                })
                 
                 // MAX_TOKENS로 종료된 경우 처리
                 if (data.finishReason === 'MAX_TOKENS') {
@@ -394,14 +382,11 @@ export async function callJeminaiAPIStream(
                 } else if (data.finishReason === 'STOP') {
                   // 정상 완료
                 } else if (!data.finishReason) {
-                  console.warn('⚠️ 제미나이 API: Finish Reason이 없습니다.')
                 }
                 
                 if (data.html) {
                   // MAX_TOKENS로 인한 잘림이고 미완료 소제목이 있으면 재요청
                   if (data.finishReason === 'MAX_TOKENS' && data.isTruncated && data.completedSubtitleIndices && data.completedSubtitleIndices.length > 0) {
-                    console.log('=== MAX_TOKENS 감지: 재요청 시작 ===')
-                    console.log('완료된 소제목 인덱스:', data.completedSubtitleIndices)
                     
                     // 완료된 HTML 저장
                     const completedHtml = data.html
@@ -415,7 +400,6 @@ export async function callJeminaiAPIStream(
                     
                     // 재요청 실행
                     try {
-                      console.log('재요청 시작: 남은 소제목 점사')
                       let retryAccumulatedHtml = ''
                       const retryResponse = await callJeminaiAPIStream(retryRequest, (retryChunk) => {
                         // 재요청의 chunk를 누적하여 첫 번째 HTML과 병합하여 전달
@@ -462,7 +446,6 @@ export async function callJeminaiAPIStream(
                         }
                       } else {
                         // retryHtml이 없으면 completedHtml만 반환
-                        console.warn('재요청 완료되었지만 retryHtml이 없음. completedHtml만 반환')
                         onChunk({
                           type: 'done',
                           html: completedHtml,
@@ -511,7 +494,6 @@ export async function callJeminaiAPIStream(
                     })
                   }
                 } else {
-                  console.warn('done 타입을 받았지만 html이 없음. accumulatedHtml 사용.')
                   // done 타입을 받았지만 html이 없는 경우 fallback
                   if (accumulatedHtml.trim()) {
                     // fallback 처리로 이동 (아래 로직에서 처리)
@@ -546,7 +528,6 @@ export async function callJeminaiAPIStream(
       
       // 부분 데이터가 충분하면 에러 대신 성공 처리
       if (accumulatedHtml.trim() && accumulatedHtml.trim().length > 100) {
-        console.warn('스트림 읽기 중 에러 발생했지만 부분 데이터가 충분함. fallback 처리합니다.')
         // fallback 처리로 이동 (아래 로직에서 처리)
       } else {
         // 사용자 친화적 에러 메시지
@@ -570,12 +551,9 @@ export async function callJeminaiAPIStream(
     if (!finalResponse) {
       // start 타입을 받지 못한 경우 경고
       if (!hasReceivedStart) {
-        console.warn('start 타입을 받지 못함. 스트림이 제대로 시작되지 않았을 수 있습니다.')
       }
       
       if (accumulatedHtml.trim()) {
-        console.warn('done 타입을 받지 못했지만 accumulated HTML이 있음. fallback 처리.')
-        console.log('accumulatedHtml 길이:', accumulatedHtml.length)
         
         // 서버와 동일한 HTML 정리 로직 적용 (텍스트 깨짐 방지)
         let cleanHtml = accumulatedHtml.trim()
@@ -584,12 +562,10 @@ export async function callJeminaiAPIStream(
         const htmlBlockMatch = cleanHtml.match(/```html\s*([\s\S]*?)\s*```/)
         if (htmlBlockMatch) {
           cleanHtml = htmlBlockMatch[1].trim()
-          console.log('Fallback: HTML 코드 블록 제거됨')
         } else {
           const codeBlockMatch = cleanHtml.match(/```\s*([\s\S]*?)\s*```/)
           if (codeBlockMatch) {
             cleanHtml = codeBlockMatch[1].trim()
-            console.log('Fallback: 코드 블록 제거됨')
           }
         }
         
@@ -614,7 +590,6 @@ export async function callJeminaiAPIStream(
         // 100000자 이상이고 재요청이 아닌 경우, 완료된 소제목 확인 후 재요청 시도
         const MAX_TEXT_LENGTH_BEFORE_RETRY = 100000
         if (cleanHtml.length >= MAX_TEXT_LENGTH_BEFORE_RETRY && !request.isSecondRequest && request.menu_subtitles && request.menu_subtitles.length > 0) {
-          console.log('⚠️ Fallback: 100000자 이상 HTML 감지. 완료된 소제목 파싱 후 재요청 시도')
           
           // 클라이언트에서 완료된 소제목 파싱 (서버와 동일한 로직)
           const parseCompletedSubtitles = (html: string, allMenuSubtitles: any[]) => {
@@ -731,10 +706,7 @@ export async function callJeminaiAPIStream(
           const parseResult = parseCompletedSubtitles(cleanHtml, request.menu_subtitles)
           const allSubtitlesCompleted = parseResult.completedSubtitles.length === request.menu_subtitles.length
           
-          console.log(`Fallback: 전체 소제목 ${request.menu_subtitles.length}개, 완료된 소제목 ${parseResult.completedSubtitles.length}개`)
-          
           if (!allSubtitlesCompleted && parseResult.completedSubtitles.length > 0) {
-            console.log('⚠️ Fallback: 미완료 소제목 감지. 재요청 수행')
             
             // 재요청 준비
             const retryRequest: JeminaiRequest = {
@@ -745,7 +717,6 @@ export async function callJeminaiAPIStream(
             
             // 재요청 실행
             try {
-              console.log('Fallback 재요청 시작: 남은 소제목 점사')
               let retryAccumulatedHtml = ''
               const retryResponse = await callJeminaiAPIStream(retryRequest, (retryChunk) => {
                 // 재요청의 chunk를 누적하여 첫 번째 HTML과 병합하여 전달
@@ -790,7 +761,6 @@ export async function callJeminaiAPIStream(
                 }
               } else {
                 // retryHtml이 없으면 cleanHtml만 반환
-                console.warn('Fallback 재요청 완료되었지만 retryHtml이 없음. cleanHtml만 반환')
                 onChunk({
                   type: 'done',
                   html: cleanHtml,
@@ -902,7 +872,6 @@ export async function callJeminaiAPI(request: JeminaiRequest): Promise<JeminaiRe
 
 // 모의 응답 생성 함수
 function getMockResponse(request: JeminaiRequest): JeminaiResponse {
-  console.log('모의 응답 생성 중...')
   
   const menuItems = request.menu_items || []
   let mockHtml = ''

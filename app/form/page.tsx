@@ -32,13 +32,11 @@ function FormContent() {
         if (storedTitle) {
           setTitle(storedTitle)
           // 삭제하지 않음 (result에서 돌아올 때 재사용 가능하도록 유지)
-          console.log('Form 페이지: sessionStorage에서 title 가져옴:', storedTitle)
         }
         
         if (storedModel) {
           setModel(storedModel)
           // 삭제하지 않음 (result에서 돌아올 때 재사용 가능하도록 유지)
-          console.log('Form 페이지: sessionStorage에서 모델 가져옴:', storedModel)
           return // sessionStorage에서 가져왔으면 종료
         }
       }
@@ -49,18 +47,15 @@ function FormContent() {
       
       if (urlTitle) {
         setTitle(urlTitle)
-        console.log('Form 페이지: URL에서 title 가져옴:', urlTitle)
       }
       
       if (urlModel) {
         setModel(urlModel)
-        console.log('Form 페이지: URL에서 모델 가져옴:', urlModel)
       } else {
         // 3. Supabase에서 모델 가져오기 (기본값)
         try {
           const savedModel = await getSelectedModel()
           setModel(savedModel)
-          console.log('Form 페이지: Supabase에서 모델 가져옴:', savedModel)
         } catch (error) {
           console.error('모델 로드 실패, 기본값 사용:', error)
           setModel('gemini-3-flash-preview')
@@ -76,7 +71,6 @@ function FormContent() {
       if (!document.hidden && typeof window !== 'undefined') {
         const storedTitle = sessionStorage.getItem('form_title')
         if (storedTitle && storedTitle !== title) {
-          console.log('Form 페이지: 페이지 포커스 시 sessionStorage에서 title 재확인:', storedTitle)
           setTitle(storedTitle)
         }
       }
@@ -86,7 +80,6 @@ function FormContent() {
       if (typeof window !== 'undefined') {
         const storedTitle = sessionStorage.getItem('form_title')
         if (storedTitle && storedTitle !== title) {
-          console.log('Form 페이지: window focus 시 sessionStorage에서 title 재확인:', storedTitle)
           setTitle(storedTitle)
         }
       }
@@ -178,7 +171,6 @@ function FormContent() {
       if (storedThumbnailUrl) {
         setCachedThumbnailUrl(storedThumbnailUrl)
         // 사용 후 삭제하지 않음 (result에서 돌아올 때도 사용)
-        console.log('Form 페이지: sessionStorage에서 썸네일 URL 가져옴:', storedThumbnailUrl)
       }
     }
   }, [])
@@ -189,7 +181,6 @@ function FormContent() {
       const storedThumbnailUrl = sessionStorage.getItem('form_thumbnail_url')
       if (storedThumbnailUrl && !cachedThumbnailUrl) {
         setCachedThumbnailUrl(storedThumbnailUrl)
-        console.log('Form 페이지: title 변경 시 썸네일 URL 다시 확인:', storedThumbnailUrl)
       }
     }
   }, [title, cachedThumbnailUrl])
@@ -241,8 +232,6 @@ function FormContent() {
             // 폼 잠금 (포털에서 받은 정보는 수정 불가)
             setFormLocked(true)
             setIsLoadingFromStorage(false)
-            
-            console.log('포털로부터 사용자 정보 자동 입력 완료:', userInfo)
           } else {
             console.error('토큰 검증 실패:', data.error)
             alert('유효하지 않은 접근입니다.')
@@ -261,7 +250,6 @@ function FormContent() {
           const savedUserInfo = localStorage.getItem('userInfo')
           if (savedUserInfo) {
             const userInfo = JSON.parse(savedUserInfo)
-            console.log('LocalStorage에서 사용자 정보 불러오기:', userInfo)
             
             // 본인 정보
             if (userInfo.name) setName(userInfo.name)
@@ -321,7 +309,6 @@ function FormContent() {
         }
         
         localStorage.setItem('userInfo', JSON.stringify(userInfo))
-        console.log('LocalStorage에 사용자 정보 저장 완료')
       } catch (error) {
         console.error('LocalStorage에 정보 저장 실패:', error)
       }
@@ -336,9 +323,7 @@ function FormContent() {
   const loadSavedResults = async () => {
     if (typeof window === 'undefined') return
     try {
-      console.log('=== 저장된 결과 목록 로드 시작 ===')
       const response = await fetch('/api/saved-results/list')
-      console.log('API 응답 상태:', response.status, response.statusText)
       
       if (!response.ok) {
         const errorText = await response.text()
@@ -347,28 +332,15 @@ function FormContent() {
       }
       
       const result = await response.json()
-      console.log('API 응답 데이터:', result)
-      console.log('result.success:', result.success)
-      console.log('result.data:', result.data)
-      console.log('result.data 길이:', result.data?.length || 0)
       
       if (result.success) {
         const data = result.data || []
-        console.log('저장된 결과 설정:', data.length, '개')
-        // 디버깅: 첫 번째 항목의 savedAtISO 확인
-        if (data.length > 0) {
-          console.log('첫 번째 저장된 결과 샘플:', data[0])
-          console.log('첫 번째 항목의 savedAtISO:', data[0].savedAtISO)
-        }
         setSavedResults(data)
       } else {
-        console.warn('API 응답에서 success가 false:', result.error || result.details)
         setSavedResults([])
       }
-      console.log('=== 저장된 결과 목록 로드 완료 ===')
     } catch (e) {
       console.error('저장된 결과 불러오기 실패:', e)
-      console.error('에러 상세:', e instanceof Error ? e.stack : e)
       setSavedResults([])
     }
   }
@@ -432,8 +404,6 @@ function FormContent() {
         setTimeout(async () => {
           await loadSavedResults()
         }, 100)
-        // 성공 메시지 (선택적)
-        console.log('저장된 결과가 삭제되었습니다.')
       } else {
         throw new Error(result.error || '저장된 결과 삭제에 실패했습니다.')
       }
@@ -534,13 +504,10 @@ function FormContent() {
       // 텍스트를 2000자 단위로 분할
       const maxLength = 2000
       const chunks = splitTextIntoChunks(textContent, maxLength)
-      
-      console.log(`저장된 결과 음성 변환 시작, 전체 텍스트 길이: ${textContent.length}자, 청크 수: ${chunks.length}, 화자: ${speaker}`)
 
       // 각 청크를 순차적으로 변환하고 재생
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
-        console.log(`청크 ${i + 1}/${chunks.length} 처리 중, 길이: ${chunk.length}자`)
 
         // TTS API 호출 (화자 정보 포함)
         const response = await fetch('/api/tts', {
@@ -589,7 +556,6 @@ function FormContent() {
         })
       }
 
-      console.log('모든 청크 재생 완료')
       setPlayingResultId(null)
       setCurrentAudio(null)
     } catch (error: any) {
@@ -622,7 +588,7 @@ function FormContent() {
   useEffect(() => {
     if (title) {
       setLoading(true)
-      loadContent()
+    loadContent()
     }
   }, [title])
 
@@ -641,7 +607,6 @@ function FormContent() {
 
   // 저장된 결과는 컴포넌트 마운트 시와 title 변경 시 모두 로드
   useEffect(() => {
-    console.log('Form 페이지: useEffect에서 loadSavedResults 호출')
     loadSavedResults()
     
     // result 페이지 미리 로드 (페이지 이동 지연 최소화)
@@ -652,13 +617,11 @@ function FormContent() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        console.log('Form 페이지: 페이지 포커스 감지, 저장된 결과 동기화')
         loadSavedResults()
       }
     }
 
     const handleFocus = () => {
-      console.log('Form 페이지: window focus 감지, 저장된 결과 동기화')
       loadSavedResults()
     }
 
@@ -672,13 +635,6 @@ function FormContent() {
       window.removeEventListener('focus', handleFocus)
     }
   }, [])
-
-  // savedResults 변경 시 로깅
-  useEffect(() => {
-    console.log('Form 페이지: savedResults 변경됨, 길이:', savedResults.length)
-    console.log('Form 페이지: savedResults 내용:', savedResults)
-  }, [savedResults])
-
 
   // 클라이언트 사이드 PDF 생성 함수 ("보기" 버튼과 동일한 HTML 처리)
   const handleClientSidePdf = async (saved: any) => {
@@ -1236,16 +1192,6 @@ function FormContent() {
           const pdfImgHeight = imgHeight * pdfImgWidth / imgWidth;
           
           // 디버깅: 실제 이미지 크기 확인
-          console.log('PDF 이미지 크기:', {
-            캡처된픽셀너비: imgWidth,
-            캡처된픽셀높이: imgHeight,
-            PDF너비mm: pdfImgWidth,
-            PDF높이mm: pdfImgHeight,
-            scale: scale,
-            예상픽셀너비: 896 * scale,
-            실제비율: imgWidth / imgHeight,
-            PDF비율: pdfImgWidth / pdfImgHeight
-          });
           const spaceLeft = pageHeight - margin - currentY;
           
           // 새 페이지 필요 여부 확인
@@ -1364,7 +1310,6 @@ function FormContent() {
 
   const loadContent = async () => {
     if (!title) {
-      console.warn('Form 페이지: title이 없어 컨텐츠를 로드할 수 없습니다.')
       setContent(null)
       setLoading(false)
       return
@@ -1381,9 +1326,6 @@ function FormContent() {
         decodedTitle = title
       }
       const foundContent = data?.find((item: any) => item.content_name === decodedTitle)
-      console.log('Form 페이지: 로드된 컨텐츠:', foundContent)
-      console.log('Form 페이지: 컨텐츠의 tts_speaker (원본):', foundContent?.tts_speaker)
-      console.log('Form 페이지: 컨텐츠의 preview_thumbnails:', foundContent?.preview_thumbnails)
       
       if (!foundContent) {
         console.error('Form 페이지: 컨텐츠를 찾을 수 없습니다. title:', decodedTitle)
@@ -1393,9 +1335,7 @@ function FormContent() {
       if (foundContent && (!foundContent.tts_speaker || foundContent.tts_speaker === 'nara')) {
         try {
           const selectedSpeaker = await getSelectedSpeaker()
-          console.log('Form 페이지: app_settings에서 선택된 화자:', selectedSpeaker)
           foundContent.tts_speaker = selectedSpeaker
-          console.log('Form 페이지: 컨텐츠의 tts_speaker (업데이트됨):', foundContent.tts_speaker)
         } catch (error) {
           console.error('Form 페이지: 선택된 화자 조회 실패:', error)
         }
@@ -1488,7 +1428,6 @@ function FormContent() {
 
     // 시작 시간 기록
     const startTime = Date.now()
-    console.log('결제 처리 시작 시간:', new Date(startTime).toISOString())
 
     try {
       // 상품 메뉴 소제목 파싱
@@ -1496,11 +1435,6 @@ function FormContent() {
       const interpretationTools = content.interpretation_tool ? content.interpretation_tool.split('\n').filter((s: string) => s.trim()) : []
       const subtitleCharCount = parseInt(content.subtitle_char_count) || 500
       const detailMenuCharCount = parseInt(content.detail_menu_char_count) || 500
-
-      console.log('메뉴 소제목:', menuSubtitles)
-      console.log('해석도구:', interpretationTools)
-      console.log('소메뉴 글자수:', subtitleCharCount)
-      console.log('상세메뉴 글자수:', detailMenuCharCount)
 
       if (menuSubtitles.length === 0) {
         alert('상품 메뉴 소제목이 설정되지 않았습니다.')
@@ -1512,13 +1446,10 @@ function FormContent() {
       const menuItems = content.menu_items || []
       const subtitleMap = new Map<string, { detailMenus?: Array<{ detailMenu: string; interpretation_tool: string }> }>()
       
-      console.log('menu_items:', JSON.stringify(menuItems, null, 2))
-      
       menuItems.forEach((item: any) => {
         if (item.subtitles && Array.isArray(item.subtitles)) {
           item.subtitles.forEach((sub: any) => {
             if (sub.subtitle && sub.detailMenus) {
-              console.log('상세메뉴가 있는 소제목 발견:', sub.subtitle.trim(), '상세메뉴 개수:', sub.detailMenus.length)
               subtitleMap.set(sub.subtitle.trim(), {
                 detailMenus: sub.detailMenus.map((dm: any) => ({
                   detailMenu: dm.detailMenu || '',
@@ -1530,11 +1461,6 @@ function FormContent() {
           })
         }
       })
-      
-      console.log('subtitleMap 크기:', subtitleMap.size)
-      subtitleMap.forEach((value, key) => {
-        console.log('subtitleMap 항목:', key, '상세메뉴 개수:', value.detailMenus?.length || 0)
-      })
 
       // 상품 메뉴 소제목과 해석도구 1:1 페어링
       const menuSubtitlePairs = menuSubtitles.map((subtitle: string, index: number) => {
@@ -1542,12 +1468,6 @@ function FormContent() {
         const tool = interpretationTools[index] || interpretationTools[0] || ''
         const trimmedSubtitle = subtitle.trim()
         const subtitleInfo = subtitleMap.get(trimmedSubtitle) || {}
-        
-        if (subtitleInfo.detailMenus && subtitleInfo.detailMenus.length > 0) {
-          console.log(`소제목 "${trimmedSubtitle}"에 상세메뉴 ${subtitleInfo.detailMenus.length}개 매칭됨`)
-        } else {
-          console.log(`소제목 "${trimmedSubtitle}"에 상세메뉴 없음 (subtitleMap에서 찾지 못함)`)
-        }
         
         return {
           subtitle: trimmedSubtitle,
@@ -1558,9 +1478,7 @@ function FormContent() {
         }
       })
 
-      console.log('페어링된 데이터:', JSON.stringify(menuSubtitlePairs, null, 2))
       const hasDetailMenusCount = menuSubtitlePairs.filter((pair: { subtitle: string; interpretation_tool: string; char_count: number; detailMenus: any[]; detail_menu_char_count: number }) => pair.detailMenus && pair.detailMenus.length > 0).length
-      console.log(`상세메뉴가 있는 소제목 개수: ${hasDetailMenusCount}/${menuSubtitlePairs.length}`)
 
       // 현재 사용할 모델 확인 (최신 상태 - URL 파라미터 우선, 없으면 Supabase, 그것도 없으면 기본값)
       const urlModelParam = searchParams.get('model')
@@ -1569,16 +1487,11 @@ function FormContent() {
       if (!currentModel) {
         try {
           currentModel = await getSelectedModel()
-          console.log('Form 페이지: Supabase에서 모델 가져옴:', currentModel)
         } catch (error) {
           console.error('모델 로드 실패, 기본값 사용:', error)
           currentModel = 'gemini-3-flash-preview'
         }
-      } else {
-        console.log('Form 페이지: URL 파라미터 모델:', urlModelParam)
       }
-      
-      console.log('Form 페이지: 최종 사용할 모델:', currentModel)
 
       // 재미나이 API 호출
       const birthDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
@@ -1668,7 +1581,6 @@ function FormContent() {
           
           manseRyeokTable = generateManseRyeokTable(manseRyeokData, name, captionInfo) // HTML 테이블 (화면 표시용)
           manseRyeokText = generateManseRyeokText(manseRyeokData) // 텍스트 형식 (제미나이 프롬프트용)
-          console.log('만세력 테이블 생성 완료, 일간:', dayGanInfo.fullName)
         } catch (error) {
           console.error('만세력 계산 오류:', error)
         }
@@ -1676,15 +1588,6 @@ function FormContent() {
       
       // 만세력 생성 검증
       const manseRyeokJsonString = manseRyeokData ? JSON.stringify(manseRyeokData, null, 2) : ''
-      console.log('만세력 생성 검증:', {
-        year,
-        month,
-        day,
-        birthHour,
-        manseRyeokTextLength: manseRyeokText?.length || 0,
-        manseRyeokJsonLength: manseRyeokJsonString?.length || 0,
-        hasData: !!manseRyeokData
-      })
       if (!manseRyeokText || !manseRyeokText.trim() || !manseRyeokData) {
         console.error('만세력 데이터가 생성되지 않았습니다.', { manseRyeokTextLength: manseRyeokText?.length || 0, hasData: !!manseRyeokData })
         alert('만세력 데이터 생성에 실패했습니다. 생년월일/태어난 시를 다시 확인해주세요.')
@@ -1721,7 +1624,6 @@ function FormContent() {
       let fortuneViewMode: 'batch' | 'realtime' = 'batch'
       try {
         fortuneViewMode = await getFortuneViewMode()
-        console.log('Form 페이지: 점사 모드 확인:', fortuneViewMode)
       } catch (error) {
         console.error('Form 페이지: 점사 모드 로드 실패, 기본 batch 사용:', error)
         fortuneViewMode = 'batch'
@@ -1729,7 +1631,6 @@ function FormContent() {
 
       // realtime 모드일 경우 즉시 result 페이지로 리다이렉트
       if (fortuneViewMode === 'realtime') {
-        console.log('Form 페이지: realtime 모드 감지, result 페이지로 리다이렉트')
         
         // requestKey 생성 및 Supabase에 저장
         const requestKey = `request_${Date.now()}`
@@ -1760,11 +1661,9 @@ function FormContent() {
           }
 
           const saveResult = await saveResponse.json()
-          console.log('Form 페이지: Supabase에 requestKey 저장 완료:', requestKey)
         } catch (e: any) {
           console.error('Form 페이지: Supabase 저장 실패:', e?.message || e)
           // 저장 실패해도 페이지 이동은 진행 (에러는 result 페이지에서 처리)
-          console.warn('Form 페이지: 저장 실패했지만 페이지 이동 진행')
         }
         
         // result 페이지로 즉시 리다이렉트 (realtime 모드)
@@ -1787,7 +1686,6 @@ function FormContent() {
       
       // 소제목 수 계산
       const totalSubtitles = menuSubtitlePairs.length
-      console.log('전체 소제목 수:', totalSubtitles)
       
       // 가짜 로딩바 (스트리밍 도착 전까지 계속 증가)
       let fakeProgressInterval: NodeJS.Timeout | null = null
@@ -1829,20 +1727,10 @@ function FormContent() {
       let accumulatedHtml = ''
       let finalHtml = ''
       
-      console.log('=== 스트리밍 시작 ===')
-      console.log('요청 데이터:', {
-        ...requestData,
-        manse_ryeok_text_preview: manseRyeokText?.slice(0, 200),
-        manse_ryeok_text_length: manseRyeokText?.length,
-        manse_ryeok_json_length: requestData.manse_ryeok_json?.length
-      })
-      
       try {
         await callJeminaiAPIStream(requestData, async (data) => {
-          console.log('스트리밍 콜백 호출:', data.type, data)
           
           if (data.type === 'start') {
-            console.log('스트리밍 시작')
             accumulatedHtml = ''
             isStreamingStarted = true
             completedSubtitles = 0
@@ -1914,7 +1802,6 @@ function FormContent() {
               const detectedSubtitles = subtitleMatch.length
               if (detectedSubtitles > completedSubtitles) {
                 completedSubtitles = detectedSubtitles
-                console.log(`소제목 ${completedSubtitles}/${totalSubtitles} 감지됨`)
                 
                 // 소제목이 감지되면 진행도를 즉시 업데이트
                 // 스트리밍 시작 시점의 진행도부터 95%까지를 소제목 수에 따라 분배
@@ -1943,8 +1830,6 @@ function FormContent() {
               }
             }
           } else if (data.type === 'done') {
-            console.log('스트리밍 완료')
-            console.log('최종 HTML 길이:', (data.html || accumulatedHtml).length)
             
             // 가짜 로딩바 중지
             if (fakeProgressInterval) {
@@ -2022,9 +1907,6 @@ function FormContent() {
               userName: name // 사용자 이름 저장
             }
             
-            console.log('Form 페이지: 저장할 resultData의 content:', content)
-            console.log('Form 페이지: 저장할 content의 tts_speaker:', content?.tts_speaker)
-            
             // batch 모드: 완료된 결과를 Supabase에 저장 (비동기로 실행)
             ;(async () => {
               try {
@@ -2050,7 +1932,6 @@ function FormContent() {
 
                 const saveResult = await saveResponse.json()
                 const savedId = saveResult.data?.id
-                console.log('Form 페이지: batch 모드 결과 저장 완료, ID:', savedId)
                 
                 // 결과 페이지로 이동 (저장된 ID 사용)
                 // sessionStorage에 데이터 저장 (URL 파라미터 대신)
@@ -2082,7 +1963,6 @@ function FormContent() {
           }
         })
         
-        console.log('스트리밍 호출 완료')
       } catch (streamError: any) {
         console.error('=== 스트리밍 호출 실패 ===')
         console.error('에러 타입:', typeof streamError)
@@ -2278,7 +2158,6 @@ function FormContent() {
                   const img = e.currentTarget
                   if (!thumbnailRetried) {
                     const currentUrl = cachedThumbnailUrl || content?.thumbnail_url || ''
-                    console.warn('썸네일 이미지 로드 실패, 재시도 중...', currentUrl)
                     setThumbnailRetried(true)
                     // src를 강제로 다시 설정하여 재시도
                     img.src = currentUrl + '?retry=' + Date.now()
@@ -2368,13 +2247,6 @@ function FormContent() {
           {/* 재회상품 미리보기 섹션 */}
           {(() => {
             const previewThumbnails = content?.preview_thumbnails
-            console.log('Form 페이지: preview_thumbnails 체크', {
-              previewThumbnails,
-              type: typeof previewThumbnails,
-              isArray: Array.isArray(previewThumbnails),
-              length: previewThumbnails?.length,
-              content: content
-            })
             
             // preview_thumbnails가 배열이고, 하나 이상의 유효한 썸네일이 있는지 확인
             let validThumbnails: string[] = []
@@ -2400,10 +2272,7 @@ function FormContent() {
               }
             }
             
-            console.log('Form 페이지: validThumbnails', validThumbnails)
-            
             if (validThumbnails.length === 0) {
-              console.log('Form 페이지: 재회상품 미리보기 섹션 숨김 (유효한 썸네일 없음)')
               return null
             }
             
@@ -2500,16 +2369,15 @@ function FormContent() {
                   <div className="flex gap-4 flex-wrap">
                     {validThumbnails.map((thumbnail: string, index: number) => (
                       !previewThumbnailErrors[index] ? (
-                        <img
-                          key={index}
-                          src={thumbnail}
-                          alt={`재회상품 미리보기 ${index + 1}`}
-                          className="cursor-pointer rounded-lg shadow-md hover:shadow-lg transition-shadow max-h-48 object-contain"
-                          onClick={() => openPreviewModal(index)}
+                      <img
+                        key={index}
+                        src={thumbnail}
+                        alt={`재회상품 미리보기 ${index + 1}`}
+                        className="cursor-pointer rounded-lg shadow-md hover:shadow-lg transition-shadow max-h-48 object-contain"
+                        onClick={() => openPreviewModal(index)}
                           onError={(e) => {
                             const img = e.currentTarget
                             if (!previewThumbnailRetried[index]) {
-                              console.warn('Preview 썸네일 이미지 로드 실패, 재시도 중...', thumbnail, index)
                               setPreviewThumbnailRetried(prev => ({ ...prev, [index]: true }))
                               // src를 강제로 다시 설정하여 재시도
                               img.src = thumbnail + '?retry=' + Date.now()
@@ -2599,14 +2467,13 @@ function FormContent() {
                                   </svg>
                                 </button>
                                 {!previewThumbnailErrors[index] ? (
-                                  <img
-                                    src={thumbnail}
-                                    alt={`재회상품 미리보기 ${index + 1}`}
-                                    className="max-w-full max-h-[90vh] object-contain"
+                                <img
+                                  src={thumbnail}
+                                  alt={`재회상품 미리보기 ${index + 1}`}
+                                  className="max-w-full max-h-[90vh] object-contain"
                                     onError={(e) => {
                                       const img = e.currentTarget
                                       if (!previewThumbnailRetried[index]) {
-                                        console.warn('Preview 모달 썸네일 이미지 로드 실패, 재시도 중...', thumbnail, index)
                                         setPreviewThumbnailRetried(prev => ({ ...prev, [index]: true }))
                                         // src를 강제로 다시 설정하여 재시도
                                         img.src = thumbnail + '?retry=' + Date.now()
@@ -3215,12 +3082,10 @@ function FormContent() {
               <div className="space-y-2">
                 {savedResults.map((saved: any) => {
                   if (!saved || !saved.id) {
-                    console.warn('저장된 결과 항목에 id가 없음:', saved)
                     return null
                   }
                   
                   // 디버깅: saved 객체 전체 확인
-                  console.log(`저장된 결과 ${saved.id} 전체 데이터:`, saved)
                   
                   // 60일 경과 여부 확인 (텍스트 딤처리 및 보기 버튼 숨김용, 한국 시간 기준)
                   const isExpired60d = saved.savedAtISO ? (() => {
@@ -3234,11 +3099,8 @@ function FormContent() {
                     const diffDays = diffTime / (1000 * 60 * 60 * 24) // 밀리초를 일로 변환
                     const expired = diffDays >= 60
                     
-                    console.log(`[60일 체크 - 텍스트 딤처리 및 보기 버튼 숨김] 저장된 결과 ${saved.id}: savedAtISO=${saved.savedAtISO}, diffDays=${diffDays.toFixed(2)}, isExpired=${expired}`)
                     return expired
                   })() : false
-                  
-                  console.log(`[최종] 저장된 결과 ${saved.id}: isExpired60d=${isExpired60d}, 텍스트 딤처리=${isExpired60d}, 보기 버튼 표시=${!isExpired60d}`)
                   
                   return (
                   <div key={saved.id} className="bg-white rounded-lg p-4 border border-gray-200">
@@ -4295,13 +4157,11 @@ function FormContent() {
 
                                       // 오디오 중지 함수 (여러 곳에서 재사용)
                                       function stopAndResetAudio() {
-                                        console.log('새 창: 오디오 중지 요청');
                                         shouldStop = true;
                                         
                                         // 모든 오디오 즉시 중지
                                         if (currentAudio) {
                                           try {
-                                            console.log('새 창: 오디오 중지 시도:', currentAudio.src);
                                             currentAudio.pause();
                                             currentAudio.currentTime = 0;
                                             const url = currentAudio.src;
@@ -4309,7 +4169,6 @@ function FormContent() {
                                               URL.revokeObjectURL(url);
                                             }
                                             currentAudio = null;
-                                            console.log('새 창: 오디오 중지 완료');
                                           } catch (e) {
                                             console.error('새 창: 오디오 중지 중 오류:', e);
                                             currentAudio = null;
@@ -4321,7 +4180,6 @@ function FormContent() {
                                           const allAudios = document.querySelectorAll('audio');
                                           allAudios.forEach(audio => {
                                             if (!audio.paused) {
-                                              console.log('새 창: 추가 오디오 요소 중지:', audio.src);
                                               audio.pause();
                                               audio.currentTime = 0;
                                             }
@@ -4345,7 +4203,6 @@ function FormContent() {
 
                                       // 음성 재생 중지 함수
                                       function stopTextToSpeech() {
-                                        console.log('stopTextToSpeech 호출됨');
                                         stopAndResetAudio();
                                       }
 
@@ -4403,7 +4260,6 @@ function FormContent() {
                                           // content.id가 있으면 Supabase에서 최신 화자 정보 조회
                                           if (window.savedContentId) {
                                             try {
-                                              console.log('새 창: Supabase에서 화자 정보 조회 시작');
                                               const response = await fetch('/api/content/' + window.savedContentId);
                                               
                                               if (response.ok) {
@@ -4411,7 +4267,6 @@ function FormContent() {
                                                 if (data.tts_speaker) {
                                                   speaker = data.tts_speaker;
                                                   window.savedContentSpeaker = speaker; // 전역 변수 업데이트
-                                                  console.log('새 창: Supabase에서 조회한 화자:', speaker);
                                                 }
                                               }
                                             } catch (error) {
@@ -4424,8 +4279,6 @@ function FormContent() {
                                           // 텍스트를 2000자 단위로 분할
                                           const maxLength = 2000;
                                           const chunks = splitTextIntoChunks(textContent, maxLength);
-                                          
-                                          console.log('음성 변환 시작, 전체 텍스트 길이:', textContent.length, '자, 청크 수:', chunks.length, ', 화자:', speaker);
 
                                           // 다음 청크를 미리 로드하는 함수 (result 페이지와 동일)
                                           const preloadNextChunk = async (chunkIndex) => {
@@ -4438,11 +4291,8 @@ function FormContent() {
                                               
                                               // 로드 전에 shouldStop 재확인
                                               if (shouldStop) {
-                                                console.log('새 창: 미리 로드 중지 (shouldStop)');
                                                 return null;
                                               }
-                                              
-                                              console.log('새 창: 청크', chunkIndex + 1, '/', chunks.length, '미리 로드 중, 길이:', chunk.length, '자');
 
                                               const response = await fetch('/api/tts', {
                                                 method: 'POST',
@@ -4454,7 +4304,6 @@ function FormContent() {
 
                                               // 응답 받은 후에도 shouldStop 재확인
                                               if (shouldStop) {
-                                                console.log('새 창: 미리 로드 중지 (응답 후 shouldStop)');
                                                 return null;
                                               }
 
@@ -4467,7 +4316,6 @@ function FormContent() {
                                               
                                               // Blob 생성 후에도 shouldStop 재확인
                                               if (shouldStop) {
-                                                console.log('새 창: 미리 로드 중지 (Blob 생성 후 shouldStop)');
                                                 return null;
                                               }
                                               
@@ -4507,12 +4355,10 @@ function FormContent() {
 
                                               // 로드 완료 후에도 shouldStop 재확인
                                               if (shouldStop) {
-                                                console.log('새 창: 미리 로드 중지 (로드 완료 후 shouldStop)');
                                                 URL.revokeObjectURL(url);
                                                 return null;
                                               }
 
-                                              console.log('새 창: 청크', chunkIndex + 1, '미리 로드 완료');
                                               return { url, audio };
                                             } catch (error) {
                                               console.error('새 창: 청크', chunkIndex + 1, '미리 로드 실패:', error);
@@ -4526,7 +4372,6 @@ function FormContent() {
                                           for (let i = 0; i < chunks.length; i++) {
                                             // 중지 플래그 확인
                                             if (shouldStop) {
-                                              console.log('재생 중지됨');
                                               if (preloadedChunk) {
                                                 URL.revokeObjectURL(preloadedChunk.url);
                                               }
@@ -4534,7 +4379,6 @@ function FormContent() {
                                             }
 
                                             const chunk = chunks[i];
-                                            console.log('새 창: 청크', i + 1, '/', chunks.length, '재생 시작, 길이:', chunk.length, '자');
 
                                             // 다음 청크를 미리 로드 (현재 청크 재생 중에)
                                             const nextChunkPromise = i < chunks.length - 1 ? preloadNextChunk(i + 1) : Promise.resolve(null);
@@ -4548,7 +4392,6 @@ function FormContent() {
                                               currentAudioElement = preloadedChunk.audio;
                                               currentUrl = preloadedChunk.url;
                                               preloadedChunk = null;
-                                              console.log('새 창: 청크', i + 1, '미리 로드된 오디오 사용');
                                             } else {
                                               // 첫 번째 청크이거나 미리 로드 실패한 경우 즉시 요청
                                               const response = await fetch('/api/tts', {
@@ -4592,7 +4435,6 @@ function FormContent() {
                                               // shouldStop 체크를 위한 인터벌 (재생 중 주기적으로 체크)
                                               const stopCheckInterval = setInterval(() => {
                                                 if (shouldStop) {
-                                                  console.log('새 창: shouldStop 감지, 오디오 즉시 중지');
                                                   clearInterval(stopCheckInterval);
                                                   clearTimeout(timeout);
                                                   try {
@@ -4619,7 +4461,6 @@ function FormContent() {
                                               };
                                               
                                               currentAudioElement.onended = () => {
-                                                console.log('새 창: 청크 ' + (i + 1) + ' 재생 완료');
                                                 cleanup();
                                                 resolve();
                                               };
@@ -4628,7 +4469,6 @@ function FormContent() {
                                                 console.error('새 창: 청크 ' + (i + 1) + ' 재생 중 오류:', e, currentAudioElement.error);
                                                 cleanup();
                                                 // 에러가 발생해도 다음 청크로 계속 진행
-                                                console.warn('새 창: 청크 ' + (i + 1) + ' 재생 실패, 다음 청크로 진행');
                                                 resolve();
                                               };
                                               
@@ -4647,7 +4487,6 @@ function FormContent() {
                                                 console.error('새 창: 청크 ' + (i + 1) + ' play() 실패:', err);
                                                 cleanup();
                                                 // play 실패해도 다음 청크로 계속 진행
-                                                console.warn('새 창: 청크 ' + (i + 1) + ' play 실패, 다음 청크로 진행');
                                                 resolve();
                                               });
                                             });
@@ -4657,9 +4496,7 @@ function FormContent() {
                                               try {
                                                 preloadedChunk = await nextChunkPromise;
                                                 if (preloadedChunk) {
-                                                  console.log('새 창: 청크 ' + (i + 2) + ' 미리 로드 완료');
                                                 } else {
-                                                  console.warn('새 창: 청크 ' + (i + 2) + ' 미리 로드 실패 (null 반환)');
                                                 }
                                               } catch (err) {
                                                 console.error('새 창: 청크 ' + (i + 2) + ' 미리 로드 중 에러:', err);
@@ -4669,7 +4506,6 @@ function FormContent() {
 
                                             // 중지 플래그 재확인
                                             if (shouldStop) {
-                                              console.log('재생 중지됨 (재생 후)');
                                               if (preloadedChunk) {
                                                 URL.revokeObjectURL(preloadedChunk.url);
                                               }
@@ -4678,9 +4514,7 @@ function FormContent() {
                                           }
 
                                           if (!shouldStop) {
-                                            console.log('새 창: 모든 청크 재생 완료');
                                           } else {
-                                            console.log('새 창: 재생이 중지되었습니다');
                                           }
                                           isPlaying = false;
                                           shouldStop = false;
@@ -4714,13 +4548,11 @@ function FormContent() {
                                       window.handleTextToSpeech = handleTextToSpeech;
                                       window.stopTextToSpeech = stopTextToSpeech;
                                       window.stopAndResetAudio = stopAndResetAudio;
-                                      console.log('handleTextToSpeech, stopTextToSpeech, stopAndResetAudio 함수를 전역 스코프에 할당 완료');
                                       
                                       // 버튼에 이벤트 리스너 연결
                                       function connectTTSButton() {
                                         const ttsButton = document.getElementById('ttsButton');
                                         if (ttsButton) {
-                                          console.log('TTS 버튼 발견, 이벤트 리스너 추가');
                                           
                                           // 기존 onclick 핸들러 제거 (있다면)
                                           ttsButton.onclick = null;
@@ -4729,11 +4561,9 @@ function FormContent() {
                                           ttsButton.onclick = function(e) {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            console.log('TTS 버튼 클릭 이벤트 발생, isPlaying:', isPlaying);
                                             
                                             // 재생 중이면 중지
                                             if (isPlaying) {
-                                              console.log('재생 중지 요청');
                                               if (typeof stopTextToSpeech === 'function') {
                                                 stopTextToSpeech();
                                               } else if (typeof window.stopTextToSpeech === 'function') {
@@ -4757,10 +4587,8 @@ function FormContent() {
                                             }
                                           };
                                           
-                                          console.log('TTS 버튼 이벤트 리스너 연결 완료');
                                           return true;
                                         } else {
-                                          console.warn('TTS 버튼을 찾을 수 없습니다.');
                                           return false;
                                         }
                                       }
@@ -4772,10 +4600,8 @@ function FormContent() {
                                         
                                         const tryConnect = () => {
                                           if (connectTTSButton()) {
-                                            console.log('TTS 버튼 연결 성공');
                                           } else if (retryCount < maxRetries) {
                                             retryCount++;
-                                            console.log('TTS 버튼 연결 재시도:', retryCount);
                                             setTimeout(tryConnect, 200 * retryCount);
                                           } else {
                                             console.error('TTS 버튼 연결 실패: 최대 재시도 횟수 초과');
@@ -4795,7 +4621,6 @@ function FormContent() {
                                         setTimeout(function() {
                                           const ttsButton = document.getElementById('ttsButton');
                                           if (ttsButton) {
-                                            console.log('추가 안전장치: 버튼 확인 및 재연결');
                                             connectTTSButton();
                                           }
                                         }, 1000);
@@ -4826,7 +4651,6 @@ function FormContent() {
                                       function addQuestionButtons() {
                                         const contentHtml = document.getElementById('contentHtml');
                                         if (!contentHtml) {
-                                          console.log('contentHtml을 찾을 수 없습니다.');
                                           return false;
                                         }
                                         
@@ -4834,24 +4658,18 @@ function FormContent() {
                                         const menuSections = contentHtml.querySelectorAll('.menu-section');
                                         
                                         if (menuSections.length === 0) {
-                                          console.log('menu-section을 찾을 수 없습니다.');
                                           return false;
                                         }
-                                        
-                                        console.log('발견된 menu-section 개수:', menuSections.length);
                                         
                                         let buttonsAdded = 0;
                                         menuSections.forEach((menuSection, index) => {
                                           // 이미 버튼이 있으면 건너뛰기
                                           if (menuSection.querySelector('.question-button-container')) {
-                                            console.log('메뉴', index + 1, ': 버튼이 이미 존재합니다.');
                                             return;
                                           }
                                           
                                           const menuTitleEl = menuSection.querySelector('.menu-title');
                                           const menuTitle = menuTitleEl?.textContent?.trim() || '';
-                                          
-                                          console.log('메뉴', index + 1, ':', menuTitle, '에 버튼 추가 중...');
                                           
                                           // 소제목 정보 추출
                                           const subtitlesContent = [];
@@ -4886,7 +4704,6 @@ function FormContent() {
                                           menuSection.appendChild(buttonContainer);
                                           buttonsAdded++;
                                           
-                                          console.log('메뉴', index + 1, ': 버튼 추가 완료');
                                         });
                                         
                                         return buttonsAdded > 0;
@@ -5114,12 +4931,6 @@ function FormContent() {
                                         }
                                         
                                         try {
-                                          console.log('질문 제출 API 호출 시작:', {
-                                            question,
-                                            menuTitle: currentQuestionData.menuTitle,
-                                            subtitles: currentQuestionData.subtitles,
-                                            subtitlesContent: currentQuestionData.subtitlesContent,
-                                          });
                                           
                                           const response = await fetch('/api/question', {
                                             method: 'POST',
@@ -5134,8 +4945,6 @@ function FormContent() {
                                               userName: ${userNameForScript},
                                             }),
                                           });
-                                          
-                                          console.log('API 응답 상태:', response.status, response.statusText);
                                           
                                           if (!response.ok) {
                                             const error = await response.json();
@@ -5154,7 +4963,6 @@ function FormContent() {
                                           }
                                           
                                           const data = await response.json();
-                                          console.log('API 응답 데이터:', data);
                                           
                                           if (!data.answer) {
                                             console.error('답변이 없습니다:', data);
@@ -5224,14 +5032,12 @@ function FormContent() {
                                       
                                       // 페이지 로드 후 버튼 추가
                                       function initQuestionButtons() {
-                                        console.log('버튼 추가 초기화 시작');
                                         
                                         // 여러 번 재시도하는 함수
                                         let retryCount = 0;
                                         const maxRetries = 10;
                                         
                                         const tryAddButtons = () => {
-                                          console.log('버튼 추가 시도:', retryCount + 1);
                                           const success = addQuestionButtons();
                                           
                                           if (!success && retryCount < maxRetries) {
@@ -5239,9 +5045,7 @@ function FormContent() {
                                             // 점진적으로 지연 시간 증가 (200ms, 400ms, 600ms, ...)
                                             setTimeout(tryAddButtons, 200 * retryCount);
                                           } else if (success) {
-                                            console.log('버튼 추가 성공');
                                           } else {
-                                            console.log('버튼 추가 실패: 최대 재시도 횟수 초과');
                                           }
                                         };
                                         
@@ -5257,26 +5061,22 @@ function FormContent() {
                                       // 1. DOMContentLoaded
                                       if (document.readyState === 'loading') {
                                         document.addEventListener('DOMContentLoaded', function() {
-                                          console.log('DOMContentLoaded 이벤트 발생');
                                           setTimeout(initQuestionButtons, 100);
                                         });
                                       }
                                       
                                       // 2. window.onload
                                       window.addEventListener('load', function() {
-                                        console.log('window.onload 이벤트 발생');
                                         setTimeout(initQuestionButtons, 100);
                                       });
                                       
                                       // 3. 즉시 실행 시도 (이미 로드된 경우)
                                       if (document.readyState !== 'loading') {
-                                        console.log('문서가 이미 로드됨, 즉시 실행');
                                         setTimeout(initQuestionButtons, 300);
                                       }
                                       
                                       // 4. 추가 안전장치: 일정 시간 후에도 재시도
                                       setTimeout(function() {
-                                        console.log('추가 안전장치: 버튼 확인');
                                         const resultsContainer = document.getElementById('contentHtml');
                                         if (resultsContainer) {
                                           const menuSections = resultsContainer.querySelectorAll('.menu-section');
@@ -5287,7 +5087,6 @@ function FormContent() {
                                             }
                                           });
                                           if (!hasButtons) {
-                                            console.log('추가 안전장치: 버튼이 없어서 다시 추가');
                                             initQuestionButtons();
                                           }
                                         }
@@ -5297,15 +5096,12 @@ function FormContent() {
                                       window.closeQuestionPopup = closeQuestionPopup;
                                       window.handleQuestionSubmit = handleQuestionSubmit;
                                       window.initQuestionButtons = initQuestionButtons;
-                                      console.log('전역 함수 할당 완료');
                                       
                                       // document.write() 후 DOM이 완전히 로드되도록 보장
                                       if (document.readyState === 'complete') {
-                                        console.log('문서가 이미 완료됨, 즉시 버튼 추가 시도');
                                         setTimeout(initQuestionButtons, 100);
                                       } else {
                                         window.addEventListener('load', function() {
-                                          console.log('새 창 로드 완료, 버튼 추가 시도');
                                           setTimeout(initQuestionButtons, 100);
                                         });
                                       }
@@ -5325,7 +5121,6 @@ function FormContent() {
                                         initQuestionButtons?: () => void
                                       }
                                       if (windowWithCustomProps.initQuestionButtons) {
-                                        console.log('외부에서 버튼 추가 함수 호출');
                                         windowWithCustomProps.initQuestionButtons();
                                       }
                                       // TTS 버튼은 내부에서 이미 초기화되므로 외부 호출 불필요
@@ -5381,4 +5176,3 @@ export default function FormPage() {
     </Suspense>
   )
 }
-
