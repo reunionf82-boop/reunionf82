@@ -1519,31 +1519,95 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         
         const detailMenuSectionHtml = detailMenuSections.length > 0 ? detailMenuSections.map(s => s.outerHTML).join('') : undefined
         
-        // subtitle-content 추출 (DOM 또는 원본 HTML에서)
-        let contentHtml = sub.querySelector('.subtitle-content')?.innerHTML || ''
+        // subtitle-content 추출 (DOM과 원본 HTML 둘 다 시도, 더 긴 것을 사용)
+        const contentHtmlFromDom = sub.querySelector('.subtitle-content')?.innerHTML || ''
+        let contentHtmlFromSource = ''
         
-        // DOM에 없지만 원본 HTML에 있으면 원본 HTML에서 추출 (스트리밍 중 중요)
+        // 원본 HTML에서도 항상 추출 시도 (DOM 파싱이 불완전할 수 있음)
         // DOMParser는 완전한 HTML만 파싱하므로, 스트리밍 중에는 subtitle-content가 DOM에 없을 수 있음
-        if (!contentHtml && sourceHtml) {
-          // 원본 HTML에서 모든 subtitle-content를 순서대로 찾기
+        if (sourceHtml) {
+          // 원본 HTML에서 모든 subtitle-content를 순서대로 찾기 (닫힌 태그 기준)
           const allSubtitleContents: string[] = []
           const contentRegex = /<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
           let contentMatch
           while ((contentMatch = contentRegex.exec(sourceHtml)) !== null) {
-            let extractedContent = contentMatch[1]
+            let extractedContent = contentMatch[1] || ''
             // detail-menu-section 제거 (subtitle-content에 포함될 수 있음)
             extractedContent = extractedContent.replace(/<div[^>]*class="[^"]*detail-menu-section[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '').trim()
             allSubtitleContents.push(extractedContent)
           }
           
-          // 현재 subtitle-section의 전역 인덱스 계산 (cursor 변수 활용)
-          // cursor는 현재 메뉴의 시작 인덱스를 나타냄
+          // 현재 subtitle-section의 전역 인덱스 계산
           const globalSubtitleIndex = cursor + subIdx
           
           if (globalSubtitleIndex < allSubtitleContents.length) {
-            contentHtml = allSubtitleContents[globalSubtitleIndex]
+            contentHtmlFromSource = allSubtitleContents[globalSubtitleIndex]
+          } else {
+            // 닫힌 태그를 못 찾은 경우 (스트리밍 중), 시작 태그 위치로 추출
+            const subtitleContentStarts: number[] = []
+            const startRegex = /<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>/gi
+            let startMatch
+            while ((startMatch = startRegex.exec(sourceHtml)) !== null) {
+              subtitleContentStarts.push(startMatch.index + startMatch[0].length)
+            }
+            
+            if (globalSubtitleIndex < subtitleContentStarts.length) {
+              const startIndex = subtitleContentStarts[globalSubtitleIndex]
+              let endIndex = sourceHtml.length
+              
+              // 다음 subtitle-content 시작 위치 찾기
+              if (globalSubtitleIndex + 1 < subtitleContentStarts.length) {
+                const nextStartIndex = subtitleContentStarts[globalSubtitleIndex + 1]
+                // 다음 subtitle-content 시작 직전까지에서 </div> 찾기
+                const beforeNext = sourceHtml.substring(startIndex, nextStartIndex)
+                const closeTagIndex = beforeNext.lastIndexOf('</div>')
+                if (closeTagIndex > 0) {
+                  endIndex = startIndex + closeTagIndex
+                } else {
+                  // 닫힘 태그가 없으면 다음 subtitle-content 시작 태그 직전까지
+                  const nextTagStart = sourceHtml.lastIndexOf('<div', nextStartIndex)
+                  if (nextTagStart > startIndex) {
+                    endIndex = nextTagStart
+                  } else {
+                    endIndex = nextStartIndex - 10 // 안전한 여유
+                  }
+                }
+              } else {
+                // 마지막 subtitle-content인 경우
+                // 다음 subtitle-section, detail-menu-section, 또는 </div> 찾기
+                const candidates = [
+                  sourceHtml.indexOf('<div class="subtitle-section"', startIndex),
+                  sourceHtml.indexOf('<div class="detail-menu-section"', startIndex),
+                  sourceHtml.indexOf('</div>', startIndex)
+                ].filter(idx => idx > startIndex)
+                
+                if (candidates.length > 0) {
+                  const candidateEnd = Math.min(...candidates)
+                  const beforeCandidate = sourceHtml.substring(startIndex, candidateEnd)
+                  const closeTagIndex = beforeCandidate.lastIndexOf('</div>')
+                  if (closeTagIndex > 0) {
+                    endIndex = startIndex + closeTagIndex
+                  } else {
+                    endIndex = candidateEnd
+                  }
+                }
+              }
+              
+              if (endIndex > startIndex) {
+                let extractedContent = sourceHtml.substring(startIndex, endIndex)
+                extractedContent = extractedContent.replace(/<div[^>]*class="[^"]*detail-menu-section[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '').trim()
+                if (extractedContent) {
+                  contentHtmlFromSource = extractedContent
+                }
+              }
+            }
           }
         }
+        
+        // DOM에서 추출한 것과 원본 HTML에서 추출한 것 중 더 긴 것을 사용 (더 완전한 내용)
+        const contentHtml = (contentHtmlFromSource.length > contentHtmlFromDom.length) 
+          ? contentHtmlFromSource 
+          : contentHtmlFromDom
         
         return {
           title: sub.querySelector('.subtitle-title')?.textContent?.trim() || '',
