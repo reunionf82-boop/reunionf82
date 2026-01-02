@@ -1519,9 +1519,35 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         
         const detailMenuSectionHtml = detailMenuSections.length > 0 ? detailMenuSections.map(s => s.outerHTML).join('') : undefined
         
+        // subtitle-content 추출 (DOM 또는 원본 HTML에서)
+        let contentHtml = sub.querySelector('.subtitle-content')?.innerHTML || ''
+        
+        // DOM에 없지만 원본 HTML에 있으면 원본 HTML에서 추출 (스트리밍 중 중요)
+        // DOMParser는 완전한 HTML만 파싱하므로, 스트리밍 중에는 subtitle-content가 DOM에 없을 수 있음
+        if (!contentHtml && sourceHtml) {
+          // 원본 HTML에서 모든 subtitle-content를 순서대로 찾기
+          const allSubtitleContents: string[] = []
+          const contentRegex = /<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
+          let contentMatch
+          while ((contentMatch = contentRegex.exec(sourceHtml)) !== null) {
+            let extractedContent = contentMatch[1]
+            // detail-menu-section 제거 (subtitle-content에 포함될 수 있음)
+            extractedContent = extractedContent.replace(/<div[^>]*class="[^"]*detail-menu-section[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '').trim()
+            allSubtitleContents.push(extractedContent)
+          }
+          
+          // 현재 subtitle-section의 전역 인덱스 계산 (cursor 변수 활용)
+          // cursor는 현재 메뉴의 시작 인덱스를 나타냄
+          const globalSubtitleIndex = cursor + subIdx
+          
+          if (globalSubtitleIndex < allSubtitleContents.length) {
+            contentHtml = allSubtitleContents[globalSubtitleIndex]
+          }
+        }
+        
         return {
           title: sub.querySelector('.subtitle-title')?.textContent?.trim() || '',
-          contentHtml: sub.querySelector('.subtitle-content')?.innerHTML || '',
+          contentHtml: contentHtml,
           thumbnail: subtitleThumbnail,
           detailMenus: detailMenusWithContent,
           detailMenuSectionHtml: detailMenuSectionHtml
