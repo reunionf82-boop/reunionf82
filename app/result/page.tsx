@@ -1683,6 +1683,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         
         // 스트리밍 중에는 완성된 섹션만 업데이트하여 부분 표시 방지
         // 원본 HTML에서 해당 subtitle-section이 완전히 닫혔는지 확인
+        // 상세메뉴도 subtitles 배열에 포함되므로 소메뉴와 동일하게 처리
         const updatedSubtitles = newMenu.subtitles.map((newSub, subIndex) => {
           const prevSub = prevMenu.subtitles[subIndex]
           
@@ -1691,86 +1692,26 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             return newSub
           }
           
-          // 스트리밍 중: 소제목 contentHtml이 있으면 완성으로 간주 (길이 제한 완화)
-          const subtitleContentHtml = newSub.contentHtml || ''
-          const hasSubtitleContent = subtitleContentHtml.trim().length > 0 // 내용이 있으면 완성으로 간주
-          
-          // 디버깅: 상세메뉴 업데이트 확인 (1번째 대메뉴의 첫 소메뉴)
-          if (menuIndex === 0 && subIndex === 0 && newSub.detailMenus && newSub.detailMenus.length > 0) {
-            console.log(`[상세메뉴 업데이트] 대메뉴 ${menuIndex + 1}, 소메뉴 ${subIndex + 1}`)
-            console.log(`  - newSub.detailMenus[0].contentHtml 길이: ${newSub.detailMenus[0].contentHtml?.length || 0}자`)
-            console.log(`  - hasSubtitleContent: ${hasSubtitleContent}`)
-            console.log(`  - isStreamingActive: ${isStreamingActive}, streamingFinished: ${streamingFinished}`)
-          }
+          // 스트리밍 중: contentHtml이 있으면 완성으로 간주 (소메뉴와 상세메뉴 모두 동일)
+          const contentHtml = newSub.contentHtml || ''
+          const hasContent = contentHtml.trim().length > 0 // 내용이 있으면 완성으로 간주
           
           if (!prevSub) {
-            // 새로운 소제목: contentHtml이 있으면 표시
-            if (hasSubtitleContent) {
-              // 상세메뉴도 개별적으로 완성 여부 확인하여 업데이트
-              const updatedDetailMenus = newSub.detailMenus?.map((dm, dmIdx) => {
-                const dmContentHtml = dm.contentHtml || ''
-                const hasDetailContent = dmContentHtml.trim().length > 0 // 내용이 있으면 완성으로 간주
-                
-                // 디버깅: 상세메뉴 업데이트 확인
-                if (menuIndex === 0 && subIndex === 0 && dmIdx === 0) {
-                  console.log(`[상세메뉴 업데이트] 대메뉴 ${menuIndex + 1}, 소메뉴 ${subIndex + 1}, 상세메뉴 ${dmIdx + 1}`)
-                  console.log(`  - dm.contentHtml 길이: ${dmContentHtml.length}자`)
-                  console.log(`  - hasDetailContent: ${hasDetailContent}`)
-                }
-                
-                // 스트리밍 중일 때도 내용이 있으면 무조건 표시 (실시간 타이핑 효과)
-                // 내용이 없어도 첫 상세메뉴는 표시 (점사 중 표시)
-                if (isStreamingActive && !streamingFinished) {
-                  // 스트리밍 중: 내용이 있으면 업데이트, 없어도 첫 상세메뉴는 표시
-                  return hasDetailContent ? dm : (dmIdx === 0 ? dm : { ...dm, contentHtml: '' })
-                }
-                return dm
-              }) || []
-              
-              return { ...newSub, detailMenus: updatedDetailMenus }
+            // 새로운 항목: contentHtml이 있으면 표시, 없어도 첫 항목은 표시 (점사 중)
+            if (hasContent || subIndex === 0) {
+              return newSub
             } else {
               // 미완성: 빈 상태로 유지
               return {
                 ...newSub,
-                contentHtml: '',
-                detailMenus: newSub.detailMenus?.map(dm => ({ ...dm, contentHtml: '' })) || []
+                contentHtml: ''
               }
             }
           }
           
-          // 기존 소제목: contentHtml이 있으면 업데이트
-          if (hasSubtitleContent) {
-            // 상세메뉴도 개별적으로 완성 여부 확인하여 업데이트
-            const updatedDetailMenus = newSub.detailMenus?.map((dm, dmIdx) => {
-              const prevDm = prevSub.detailMenus?.[dmIdx]
-              const dmContentHtml = dm.contentHtml || ''
-              const hasDetailContent = dmContentHtml.trim().length > 0 // 내용이 있으면 완성으로 간주
-              
-              // 디버깅: 상세메뉴 업데이트 확인
-              if (menuIndex === 0 && subIndex === 0 && dmIdx === 0) {
-                console.log(`[상세메뉴 업데이트 (기존)] 대메뉴 ${menuIndex + 1}, 소메뉴 ${subIndex + 1}, 상세메뉴 ${dmIdx + 1}`)
-                console.log(`  - dm.contentHtml 길이: ${dmContentHtml.length}자`)
-                console.log(`  - prevDm?.contentHtml 길이: ${prevDm?.contentHtml?.length || 0}자`)
-                console.log(`  - hasDetailContent: ${hasDetailContent}`)
-                console.log(`  - isStreamingActive: ${isStreamingActive}, streamingFinished: ${streamingFinished}`)
-              }
-              
-              // 스트리밍 중일 때도 내용이 있으면 무조건 표시 (실시간 타이핑 효과)
-              if (isStreamingActive && !streamingFinished) {
-                // 스트리밍 중: 내용이 있으면 새 데이터 사용, 없어도 첫 상세메뉴는 이전 데이터 유지
-                if (hasDetailContent) {
-                  return dm
-                } else {
-                  // 내용이 없어도 첫 상세메뉴는 이전 데이터 유지 (점사 중 표시)
-                  return dmIdx === 0 ? (prevDm || dm) : (prevDm || { ...dm, contentHtml: '' })
-                }
-              }
-              
-              // 스트리밍 완료 또는 contentHtml이 있으면 새 데이터 사용
-              return hasDetailContent ? dm : (prevDm || { ...dm, contentHtml: '' })
-            }) || []
-            
-            return { ...newSub, detailMenus: updatedDetailMenus }
+          // 기존 항목: contentHtml이 있으면 업데이트
+          if (hasContent) {
+            return newSub
           } else {
             // 미완성: 이전 상태 유지 (하지만 이전에 완성된 내용이 있으면 유지)
             if (prevSub && prevSub.contentHtml && prevSub.contentHtml.trim().length > 0) {
@@ -1779,8 +1720,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             // 이전 상태도 없으면 새 상태 (빈 상태) 반환
             return {
               ...newSub,
-              contentHtml: '',
-              detailMenus: newSub.detailMenus?.map(dm => ({ ...dm, contentHtml: '' })) || []
+              contentHtml: ''
             }
           }
         })
