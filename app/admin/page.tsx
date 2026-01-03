@@ -203,6 +203,11 @@ export default function AdminPage() {
     router.push(`/admin/form?id=${content.id}`)
   }
 
+  const handleDuplicate = async (e: React.MouseEvent, content: any) => {
+    e.stopPropagation() // 클릭 이벤트 전파 방지 (부모 div의 handleContentClick 실행 방지)
+    router.push(`/admin/form?duplicate=${content.id}`)
+  }
+
   if (authenticated === null) {
     return (
       <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
@@ -382,7 +387,16 @@ export default function AdminPage() {
               >
                 <div className="flex items-center justify-between">
                   <span className="text-white">{content.content_name || '이름 없음'}</span>
-                  <span className="text-gray-400 text-sm">#{index + 1}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => handleDuplicate(e, content)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
+                      title="복제"
+                    >
+                      복제
+                    </button>
+                    <span className="text-gray-400 text-sm">#{index + 1}</span>
+                  </div>
                 </div>
               </div>
             ))

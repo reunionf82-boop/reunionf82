@@ -13,6 +13,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const contentId = searchParams.get('id')
+  const duplicateId = searchParams.get('duplicate') // 복제할 컨텐츠 ID
   const speakerParam = searchParams.get('speaker') // URL에서 화자 파라미터 가져오기
   
   const [formData, setFormData] = useState({
@@ -86,12 +87,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     tools: ''
   })
 
-  // 초기 데이터 로드 (수정 모드)
+  // 초기 데이터 로드 (수정 모드 또는 복제 모드)
   useEffect(() => {
     if (contentId) {
       loadContent(parseInt(contentId))
+    } else if (duplicateId) {
+      loadContentForDuplicate(parseInt(duplicateId))
     }
-  }, [contentId])
+  }, [contentId, duplicateId])
 
   // 변경 감지
   useEffect(() => {
@@ -415,6 +418,167 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       }
     } catch (error) {
       console.error('컨텐츠 로드 실패:', error)
+    }
+  }
+
+  // 복제를 위한 컨텐츠 로드 (ID 제거하고 content_name에 "복사본" 추가)
+  const loadContentForDuplicate = async (id: number) => {
+    try {
+      const data = await getContentById(id)
+      console.log('=== loadContentForDuplicate: 복제용 데이터 로드 ===')
+      setInitialData(null) // 복제 모드이므로 initialData를 null로 설정 (새 컨텐츠로 인식)
+      
+      // content_name에 "복사본" 추가
+      const duplicatedContentName = data.content_name ? `${data.content_name} (복사본)` : '새 컨텐츠 (복사본)'
+      
+      setFormData({
+        title: data.role_prompt || '',
+        description: data.restrictions || '',
+        price: data.price || '',
+        isNew: data.content_type === 'saju',
+        isFree: data.content_type === 'gonghap',
+        showNew: data.is_new || false,
+        contentName: duplicatedContentName,
+        thumbnailUrl: data.thumbnail_url || '',
+        summary: data.summary || '',
+        introduction: data.introduction || '',
+        recommendation: data.recommendation || '',
+        subtitleCharCount: String(data.subtitle_char_count || '500'),
+        detailMenuCharCount: String(data.detail_menu_char_count || '500'),
+        menuFontSize: String(data.menu_font_size || '16'),
+        menuFontBold: data.menu_font_bold || false,
+        subtitleFontSize: String(data.subtitle_font_size || '14'),
+        subtitleFontBold: data.subtitle_font_bold || false,
+        detailMenuFontSize: String(data.detail_menu_font_size || '12'),
+        detailMenuFontBold: data.detail_menu_font_bold || false,
+        bodyFontSize: String(data.body_font_size || '11'),
+        bodyFontBold: data.body_font_bold || false,
+        fontFace: data.font_face || '',
+        ttsSpeaker: data.tts_speaker || 'nara',
+        previewThumbnails: (() => {
+          let thumbnails = data.preview_thumbnails
+          if (typeof thumbnails === 'string') {
+            try {
+              thumbnails = JSON.parse(thumbnails)
+            } catch (e) {
+              console.error('loadContentForDuplicate: preview_thumbnails 파싱 에러:', e)
+              thumbnails = []
+            }
+          }
+          if (!Array.isArray(thumbnails) || thumbnails.length !== 3) {
+            if (Array.isArray(thumbnails)) {
+              while (thumbnails.length < 3) {
+                thumbnails.push('')
+              }
+              thumbnails = thumbnails.slice(0, 3)
+            } else {
+              thumbnails = ['', '', '']
+            }
+          }
+          return thumbnails
+        })(),
+        bookCoverThumbnail: data.book_cover_thumbnail || '',
+        endingBookCoverThumbnail: data.ending_book_cover_thumbnail || '',
+      })
+      
+      // 기존 데이터를 새 구조로 변환 (loadContent와 동일한 로직)
+      if (data.menu_items && data.menu_items.length > 0) {
+        const hasSubtitlesInMenuItems = data.menu_items.some((item: any) => item.subtitles && Array.isArray(item.subtitles))
+        
+        if (hasSubtitlesInMenuItems) {
+          // 새 구조
+          const firstItem = data.menu_items[0]
+          const firstMenuSubtitles = firstItem.subtitles && firstItem.subtitles.length > 0 
+            ? firstItem.subtitles.map((s: any, idx: number) => ({
+                id: Date.now() + idx,
+                subtitle: s.subtitle || '',
+                interpretation_tool: s.interpretation_tool || '',
+                thumbnail: s.thumbnail || '',
+                detailMenus: (s.detailMenus || []).map((dm: any) => ({
+                  id: Date.now() + Math.random(),
+                  detailMenu: dm.detailMenu || '',
+                  interpretation_tool: dm.interpretation_tool || '',
+                  thumbnail: dm.thumbnail || undefined
+                }))
+              }))
+            : [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
+          
+          const firstMenuValue = firstItem.value || ''
+          setFirstMenuField({
+            value: firstMenuValue,
+            thumbnail: firstItem.thumbnail || '',
+            subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
+              ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
+              : firstMenuSubtitles
+          })
+          
+          setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
+            const menuSubtitles = item.subtitles && item.subtitles.length > 0
+              ? item.subtitles.map((s: any, subIdx: number) => ({
+                  id: Date.now() + idx * 1000 + subIdx,
+                  subtitle: s.subtitle || '',
+                  interpretation_tool: s.interpretation_tool || '',
+                  thumbnail: s.thumbnail || '',
+                  detailMenus: (s.detailMenus || []).map((dm: any) => ({
+                    id: Date.now() + Math.random(),
+                    detailMenu: dm.detailMenu || '',
+                    interpretation_tool: dm.interpretation_tool || '',
+                    thumbnail: dm.thumbnail || undefined
+                  }))
+                }))
+              : [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '', detailMenus: [] }]
+            
+            const menuValue = item.value || ''
+            return {
+              id: Date.now() + idx + 1000,
+              value: menuValue,
+              thumbnail: item.thumbnail || '',
+              subtitles: menuValue.trim().length > 0 && menuSubtitles.length === 0
+                ? [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '', detailMenus: [] }]
+                : menuSubtitles
+            }
+          }))
+        } else {
+          // 기존 구조
+          const menuSubtitles = data.menu_subtitle ? data.menu_subtitle.split('\n').filter((s: string) => s.trim()) : []
+          const interpretationTools = data.interpretation_tool ? data.interpretation_tool.split('\n').filter((s: string) => s.trim()) : []
+          
+          const firstMenuSubtitles = menuSubtitles.map((subtitle: string, index: number) => ({
+            id: Date.now() + index,
+            subtitle: subtitle.trim(),
+            interpretation_tool: interpretationTools[index] || interpretationTools[0] || '',
+            thumbnail: '',
+            detailMenus: []
+          }))
+          
+          const firstMenuValue = data.menu_items[0].value || ''
+          setFirstMenuField({
+            value: firstMenuValue,
+            thumbnail: data.menu_items[0].thumbnail || '',
+            subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
+              ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
+              : (firstMenuSubtitles.length > 0 ? firstMenuSubtitles : [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }])
+          })
+          
+          setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
+            const menuValue = item.value || ''
+            return {
+              id: Date.now() + idx + 1000,
+              value: menuValue,
+              thumbnail: item.thumbnail || '',
+              subtitles: menuValue.trim().length > 0
+                ? [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '', detailMenus: [] }]
+                : []
+            }
+          }))
+        }
+      } else {
+        setFirstMenuField({ value: '', thumbnail: '', subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }] })
+        setMenuFields([])
+      }
+    } catch (error) {
+      console.error('컨텐츠 복제용 로드 실패:', error)
+      alert('컨텐츠 복제 로드에 실패했습니다.')
     }
   }
 

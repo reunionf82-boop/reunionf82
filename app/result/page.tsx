@@ -1351,7 +1351,12 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         const detailMenus = menuSubtitles[subIdx]?.detailMenus || []
         
         // [수정] 상세메뉴 파싱 및 매핑 로직 개선 (원본 HTML 전체 구조 분석)
-        let detailMenusWithContent = detailMenus
+        // detailMenus가 있으면 항상 detailMenusWithContent를 초기화 (스트리밍 중에도 상세메뉴 구조 유지)
+        let detailMenusWithContent = detailMenus.length > 0 ? detailMenus.map((dm: any) => ({
+          ...dm,
+          contentHtml: dm.contentHtml || '', // 기존 contentHtml 유지 또는 빈 문자열
+          thumbnail: dm.thumbnail || undefined
+        })) : detailMenus
         let detailMenuSectionHtml: string | undefined = undefined
 
         if (sourceHtml) {
