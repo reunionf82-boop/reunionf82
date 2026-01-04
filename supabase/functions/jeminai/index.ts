@@ -538,8 +538,10 @@ ${isSecondRequest ? `
 
 ${menuItemsInfo.map((menuItem: any, menuIdx: number) => {
   const menuNumber = menuIdx + 1
+  // 메뉴 번호로 시작하는 모든 항목 필터링 (소메뉴와 상세메뉴 모두 포함)
+  // 예: 메뉴 1이면 "1-", "1-1", "1-1-1" 등 모두 포함
   const subtitlesForMenu = menu_subtitles.filter((sub: any, idx: number) => {
-    const match = sub.subtitle.match(/^(\d+)-(\d+)/)
+    const match = sub.subtitle.match(/^(\d+)/)
     return match ? parseInt(match[1]) === menuNumber : false
   })
   
@@ -598,14 +600,14 @@ ${isSecondRequest ? `
   ${menuItemsInfo.some((m: any) => m.thumbnail) ? '<img src="[썸네일 URL]" alt="[메뉴 제목]" class="menu-thumbnail" />' : ''}
   
   <div class="subtitle-section">
-    <h3 class="subtitle-title">[소제목]</h3>
-    ${menu_subtitles.some((s: any) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[소제목 썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
+    <h3 class="subtitle-title">[소제목 또는 상세메뉴 제목]</h3>
+    ${menu_subtitles.some((s: any) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[썸네일 URL]" alt="썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
     <div class="subtitle-content">[해석 내용 (HTML 형식, 글자수 제한 준수)]</div>
   </div>
   
   <div class="subtitle-section">
-    <h3 class="subtitle-title">[다음 소제목]</h3>
-    ${menu_subtitles.some((s: any) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[소제목 썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
+    <h3 class="subtitle-title">[다음 소제목 또는 상세메뉴 제목]</h3>
+    ${menu_subtitles.some((s: any) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[썸네일 URL]" alt="썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
     <div class="subtitle-content">[해석 내용 (HTML 형식, 글자수 제한 준수)]</div>
   </div>
   

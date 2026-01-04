@@ -4,6 +4,9 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/ge
 // Vercel Serverless Function의 타임아웃을 5분(300초)으로 설정
 export const maxDuration = 300
 
+// HTML 길이 제한 상수 (개발 테스트용 2만자, 나중에 10만자로 변경 가능)
+const MAX_HTML_LENGTH = 20000 // 개발 테스트용, 나중에 100000으로 변경
+
 export async function POST(req: NextRequest) {
   try {
     console.log('=== 재미나이 API 라우트 시작 ===')
@@ -251,8 +254,10 @@ ${isSecondRequest ? `
 
 ${menuItemsInfo.map((menuItem: any, menuIdx: number) => {
   const menuNumber = menuIdx + 1
+  // 메뉴 번호로 시작하는 모든 항목 필터링 (소메뉴와 상세메뉴 모두 포함)
+  // 예: 메뉴 1이면 "1-", "1-1", "1-1-1" 등 모두 포함
   const subtitlesForMenu = menu_subtitles.filter((sub: any, idx: number) => {
-    const match = sub.subtitle.match(/^(\d+)-(\d+)/)
+    const match = sub.subtitle.match(/^(\d+)/)
     return match ? parseInt(match[1]) === menuNumber : false
   })
   
@@ -271,66 +276,12 @@ ${isSecondRequest ? `**⚠️ 이 메뉴의 아래 소제목들만 해석하세�
 ${subtitlesForMenu.map((sub: any, subIdx: number) => {
     const globalSubIdx = menu_subtitles.findIndex((s: any) => s.subtitle === sub.subtitle)
     const tool = menu_subtitles[globalSubIdx]?.interpretation_tool || ''
-    const detailMenus = menu_subtitles[globalSubIdx]?.detailMenus || []
-    // 관리자 form에서 설정한 char_count 값을 사용 (상세메뉴가 있어도 설정값 사용)
     const charCount = menu_subtitles[globalSubIdx]?.char_count
     if (!charCount || charCount <= 0) {
       console.error(`❌ 소제목 "${sub.subtitle}"의 char_count가 설정되지 않았거나 0 이하입니다. char_count: ${charCount}`)
-      // 기본값을 사용하지 않고 명시적으로 에러 표시
     }
     const thumbnail = menu_subtitles[globalSubIdx]?.thumbnail || ''
-    const detailMenuCharCount = menu_subtitles[globalSubIdx]?.detail_menu_char_count || 500
     
-    // 상세메뉴가 있는 경우 특별한 강조
-    if (detailMenus.length > 0) {
-      console.log(`[프롬프트 생성] 소제목 "${sub.subtitle}"에 상세메뉴 ${detailMenus.length}개 포함됨`)
-      
-      // HTML 예시 생성 (일반적인 구조만, 해석도구 지시사항은 별도로 강조)
-      let htmlExample = '<div class="subtitle-section">\n    <h3 class="subtitle-title">' + sub.subtitle + '</h3>\n    <div class="subtitle-content">[소제목 해석]</div>\n    <div class="detail-menu-section">\n'
-      detailMenus.forEach((dm: any) => {
-        htmlExample += '      <div class="detail-menu-title">' + (dm.detailMenu || '') + '</div>\n'
-        htmlExample += '      <div class="detail-menu-content">[해석 내용 (해석도구 지시사항 준수)]</div>\n'
-      })
-      htmlExample += '    </div>\n  </div>'
-      
-      // 상세메뉴 목록 텍스트 생성
-      let detailMenuListText = ''
-      detailMenus.forEach((dm: any, dmIdx: number) => {
-        const dmCharCount = dm.char_count || detailMenuCharCount
-        const dmTool = dm.interpretation_tool || ''
-        detailMenuListText += '  ' + (dmIdx + 1) + '. 제목: "' + (dm.detailMenu || '') + '"\n'
-        if (role_prompt) {
-          detailMenuListText += '     **역할:** 당신은 ' + role_prompt + '입니다. 이 상세메뉴를 해석할 때 이 역할을 유지하세요.\n'
-        }
-        if (restrictions) {
-          detailMenuListText += '     **주의사항:** ' + restrictions + '\n'
-        }
-        if (dmTool) {
-          detailMenuListText += '     **해석도구:** ' + dmTool + '\n'
-        }
-        detailMenuListText += '     - 글자수: ' + dmCharCount + '자 이내\n'
-      })
-      
-      const thumbnailText = thumbnail ? '- 썸네일 URL: ' + thumbnail + '\n' : ''
-      
-      return `
-  ════════════════════════════════════════════════════════════
-  🔥🔥🔥 상세메뉴 필수 포함 소제목 🔥🔥🔥
-  ════════════════════════════════════════════════════════════
-  
-  소제목: ${sub.subtitle}
-  
-  소제목 해석:
-  ${role_prompt ? `**역할:** 당신은 ${role_prompt}입니다. 이 소제목을 해석할 때 이 역할을 유지하세요.\n  ` : ''}
-  ${restrictions ? `**주의사항:** ${restrictions}\n  ` : ''}
-  ${tool ? `**해석도구:** ${tool}\n  ` : ''}
-  - 글자수: ${charCount ? `${charCount}자 이내` : '글자수 제한 없음'}
-  ${thumbnailText}
-  
-  상세메뉴 해석 목록:
-${detailMenuListText}
-  ════════════════════════════════════════════════════════════`
-    } else {
     return `
   ${sub.subtitle}
   ${role_prompt ? `**역할:** 당신은 ${role_prompt}입니다. 이 소제목을 해석할 때 이 역할을 유지하세요.\n  ` : ''}
@@ -338,7 +289,6 @@ ${detailMenuListText}
   ${tool ? `**해석도구:** ${tool}\n  ` : ''}
   - 글자수: ${charCount ? `${charCount}자 이내` : '글자수 제한 없음'}
   ${thumbnail ? `- 썸네일 URL: ${thumbnail}` : ''}`
-    }
   }).join('\n')}
 `
 }).filter((menuText: string) => menuText.trim().length > 0).join('\n\n')}
@@ -350,19 +300,15 @@ ${detailMenuListText}
   ${menuItemsInfo.some((m: any) => m.thumbnail) ? '<img src="[썸네일 URL]" alt="[메뉴 제목]" class="menu-thumbnail" />' : ''}
   
   <div class="subtitle-section">
-    <h3 class="subtitle-title">[소제목]</h3>
-    ${menu_subtitles.some((s: any) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[소제목 썸네일 URL]" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
+    <h3 class="subtitle-title">[소제목 또는 상세메뉴 제목]</h3>
+    ${menu_subtitles.some((s: any) => s.thumbnail) ? '<div class="subtitle-thumbnail-container"><img src="[썸네일 URL]" alt="썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" /></div>' : ''}
     <div class="subtitle-content">[해석 내용]</div>
   </div>
   
   <div class="subtitle-section">
-    <h3 class="subtitle-title">[다음 소제목]</h3>
+    <h3 class="subtitle-title">[다음 소제목 또는 상세메뉴 제목]</h3>
     <div class="subtitle-content">[해석 내용]</div>
-    <div class="detail-menu-section">
-      <div class="detail-menu-title">[상세메뉴 제목]</div>
-      <div class="detail-menu-content">[상세메뉴 해석 내용]</div>
   </div>
-</div>
 
   ...
 </div>
@@ -378,16 +324,8 @@ ${detailMenuListText}
     console.log('Gemini API 호출 시작 (스트리밍 모드)')
     console.log('프롬프트 길이:', prompt.length)
     
-    // 상세메뉴 관련 프롬프트 부분 확인
-    const detailMenuPromptIndex = prompt.indexOf('═══ 상세메뉴 필수 포함 소제목 ═══')
-    if (detailMenuPromptIndex !== -1) {
-      const promptSnippet = prompt.substring(detailMenuPromptIndex, detailMenuPromptIndex + 2000)
-      console.log('=== 상세메뉴 프롬프트 부분 (처음 2000자) ===')
-      console.log(promptSnippet)
-      console.log('=== 상세메뉴 프롬프트 부분 끝 ===')
-    } else {
-      console.error('⚠️⚠️⚠️ 프롬프트에 "═══ 상세메뉴 필수 포함 소제목 ═══" 텍스트가 없습니다! 프롬프트 생성에 문제가 있을 수 있습니다.')
-    }
+    // 프롬프트 생성 완료 로그
+    console.log('프롬프트 생성 완료, 총 소제목 수:', menu_subtitles.length)
     
     // 스트리밍 응답 생성
     const encoder = new TextEncoder()
@@ -651,6 +589,168 @@ ${detailMenuListText}
                 } else {
                   lastCompletionCheckChunk = chunkIndex
                   // 완료되지 않았으면 계속 진행
+                }
+              }
+              
+              // 1만자 제한 체크 (2차 요청이 아니고, 아직 partial_done을 보내지 않았을 때만)
+              if (fullText.length >= MAX_HTML_LENGTH && !hasSentPartialDone && !isSecondRequest) {
+                console.log(`[1만자 제한] HTML 길이가 ${fullText.length}자에 도달하여 중단합니다.`)
+                
+                // HTML 코드 블록 제거 (있는 경우) - 파싱 전에 정리
+                let htmlForParsing = fullText.trim()
+                const htmlBlockMatch = htmlForParsing.match(/```html\s*([\s\S]*?)\s*```/)
+                if (htmlBlockMatch) {
+                  htmlForParsing = htmlBlockMatch[1].trim()
+                } else {
+                  const codeBlockMatch = htmlForParsing.match(/```\s*([\s\S]*?)\s*```/)
+                  if (codeBlockMatch) {
+                    htmlForParsing = codeBlockMatch[1].trim()
+                  }
+                }
+                
+                // 완료된 메뉴/소제목 파싱
+                const { completedSubtitles, completedMenus } = parseCompletedSubtitles(htmlForParsing, menu_subtitles)
+                const remainingSubtitles = menu_subtitles
+                  .map((sub: any, index: number) => ({ ...sub, originalIndex: index }))
+                  .filter((_: any, index: number) => !completedSubtitles.includes(index))
+                
+                if (remainingSubtitles.length > 0) {
+                  // 안전하게 HTML 끊기: 완료된 소제목/상세메뉴까지만 포함
+                  let safeHtml = htmlForParsing
+                  
+                  // 마지막으로 완전히 닫힌 subtitle-section 또는 detail-menu-section 찾기
+                  // 정규식으로 모든 완료된 섹션 추출
+                  const completedSectionPattern = /<div[^>]*class="[^"]*(subtitle-section|detail-menu-section)[^"]*"[^>]*>[\s\S]*?<\/div>\s*<\/div>/gi
+                  const sections: RegExpMatchArray[] = []
+                  let sectionMatch: RegExpMatchArray | null
+                  while ((sectionMatch = completedSectionPattern.exec(safeHtml)) !== null) {
+                    sections.push(sectionMatch)
+                  }
+                  
+                  let safeCutIndex = -1
+                  
+                  if (sections.length > 0) {
+                    // 마지막 완료된 섹션의 끝 위치 찾기
+                    const lastSection = sections[sections.length - 1]
+                    safeCutIndex = lastSection.index! + lastSection[0].length
+                  } else {
+                    // 섹션을 못 찾았으면 마지막 </div>로 자르기
+                    safeCutIndex = safeHtml.lastIndexOf('</div>')
+                    if (safeCutIndex > 0) {
+                      safeCutIndex += 6 // </div> 길이
+                    }
+                  }
+                  
+                  // 안전한 지점까지 자르기
+                  if (safeCutIndex > 0 && safeCutIndex < safeHtml.length) {
+                    // 테이블 안에 있는지 확인: safeCutIndex 이전에 열린 테이블이 닫혔는지 체크
+                    const beforeCut = safeHtml.substring(0, safeCutIndex)
+                    let openTables = (beforeCut.match(/<table[^>]*>/gi) || []).length
+                    let closeTables = (beforeCut.match(/<\/table>/gi) || []).length
+                    
+                    // 테이블이 열려있으면 테이블을 닫는 위치로 이동
+                    if (openTables > closeTables) {
+                      // 마지막 열린 테이블의 위치 찾기
+                      const lastOpenTableIndex = beforeCut.lastIndexOf('<table')
+                      if (lastOpenTableIndex > 0) {
+                        // 마지막 열린 테이블부터 safeCutIndex까지의 내용 확인
+                        const tableContent = safeHtml.substring(lastOpenTableIndex, safeCutIndex)
+                        // 테이블이 닫히는 위치 찾기
+                        const tableCloseIndex = safeHtml.indexOf('</table>', lastOpenTableIndex)
+                        if (tableCloseIndex > 0 && tableCloseIndex < safeHtml.length) {
+                          // 테이블이 닫히는 위치 이후로 끊기
+                          safeCutIndex = tableCloseIndex + 8 // </table> 길이
+                        } else {
+                          // 테이블이 닫히지 않았으면 마지막 열린 테이블 이전으로 끊기
+                          safeCutIndex = lastOpenTableIndex
+                        }
+                      }
+                    }
+                    
+                    safeHtml = safeHtml.substring(0, safeCutIndex)
+                    
+                    // 태그 밸런스 맞추기 (열린 태그가 있으면 닫기)
+                    let openDivs = (safeHtml.match(/<div/g) || []).length
+                    let closeDivs = (safeHtml.match(/<\/div>/g) || []).length
+                    openTables = (safeHtml.match(/<table[^>]*>/gi) || []).length
+                    closeTables = (safeHtml.match(/<\/table>/gi) || []).length
+                    
+                    // 테이블이 열려있으면 닫기 (테이블 안에 테이블이 들어가지 않도록)
+                    while (openTables > closeTables) {
+                      safeHtml += '</table>'
+                      closeTables++
+                    }
+                    
+                    // div가 열려있으면 닫기
+                    while (openDivs > closeDivs) {
+                      safeHtml += '</div>'
+                      closeDivs++
+                    }
+                    
+                    // 마지막으로 열린 섹션이 닫혔는지 확인하고 안 닫혔으면 제거
+                    const lastSectionStart = Math.max(
+                      safeHtml.lastIndexOf('<div class="subtitle-section"'),
+                      safeHtml.lastIndexOf('<div class="detail-menu-section"')
+                    )
+                    
+                    if (lastSectionStart > 0) {
+                      const afterStart = safeHtml.substring(lastSectionStart)
+                      const openCount = (afterStart.match(/<div/g) || []).length
+                      const closeCount = (afterStart.match(/<\/div>/g) || []).length
+                      
+                      if (openCount > closeCount) {
+                        // 닫히지 않았으면 제거 (이전까지만 사용)
+                        safeHtml = safeHtml.substring(0, lastSectionStart)
+                        
+                        // 다시 태그 밸런싱
+                        openDivs = (safeHtml.match(/<div/g) || []).length
+                        closeDivs = (safeHtml.match(/<\/div>/g) || []).length
+                        openTables = (safeHtml.match(/<table/g) || []).length
+                        closeTables = (safeHtml.match(/<\/table>/g) || []).length
+                        
+                        while (openTables > closeTables) {
+                          safeHtml += '</table>'
+                          closeTables++
+                        }
+                        
+                        while (openDivs > closeDivs) {
+                          safeHtml += '</div>'
+                          closeDivs++
+                        }
+                      }
+                    }
+                    
+                    // HTML 정리
+                    safeHtml = safeHtml.replace(/(<\/h3>)\s+(<div class="subtitle-content">)/g, '$1$2')
+                    safeHtml = safeHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content"[^>]*>)/g, '$1$2')
+                    safeHtml = safeHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
+                    safeHtml = safeHtml.replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                    safeHtml = safeHtml.replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                    safeHtml = safeHtml.replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                    safeHtml = safeHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                    safeHtml = safeHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                    safeHtml = safeHtml.replace(/\*\*/g, '')
+                    
+                    // 부분 완료 신호 전송 (2차 요청 필요)
+                    hasSentPartialDone = true
+                    
+                    console.log(`=== 1만자 제한으로 부분 완료 신호 전송 ===`)
+                    console.log(`전송할 HTML 길이: ${safeHtml.length}자 (원본: ${htmlForParsing.length}자)`)
+                    console.log(`완료된 소제목: ${completedSubtitles.length}개 (인덱스: ${completedSubtitles.join(', ')})`)
+                    console.log(`남은 소제목: ${remainingSubtitles.length}개 (인덱스: ${remainingSubtitles.map((s: any) => s.originalIndex).join(', ')})`)
+                    console.log(`=== 1만자 제한으로 부분 완료 신호 전송 ===`)
+                    
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                      type: 'partial_done',
+                      html: safeHtml,
+                      remainingSubtitles: remainingSubtitles.map((sub: any) => sub.originalIndex),
+                      completedSubtitles: completedSubtitles,
+                    })}\n\n`))
+                    
+                    controller.close()
+                    console.log('1만자 제한으로 1차 요청 종료, 2차 요청으로 이어가기')
+                    return // 1차 요청 종료, 2차 요청으로 이어가기
+                  }
                 }
               }
               

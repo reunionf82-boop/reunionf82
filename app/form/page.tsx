@@ -1442,43 +1442,42 @@ function FormContent() {
         return
       }
 
-      // menu_items에서 상세메뉴 정보 추출
+      // menu_items에서 소메뉴와 상세메뉴를 모두 평탄화하여 배열 생성
       const menuItems = content.menu_items || []
-      const subtitleMap = new Map<string, { detailMenus?: Array<{ detailMenu: string; interpretation_tool: string }> }>()
+      const menuSubtitlePairs: Array<{ subtitle: string; interpretation_tool: string; char_count: number }> = []
       
-      menuItems.forEach((item: any) => {
-        if (item.subtitles && Array.isArray(item.subtitles)) {
-          item.subtitles.forEach((sub: any) => {
-            if (sub.subtitle && sub.detailMenus) {
-              subtitleMap.set(sub.subtitle.trim(), {
-                detailMenus: sub.detailMenus.map((dm: any) => ({
-                  detailMenu: dm.detailMenu || '',
-                  interpretation_tool: dm.interpretation_tool || '',
-                  char_count: dm.char_count || detailMenuCharCount
-                }))
-              })
-            }
-          })
-        }
-      })
-
-      // 상품 메뉴 소제목과 해석도구 1:1 페어링
-      const menuSubtitlePairs = menuSubtitles.map((subtitle: string, index: number) => {
-        // 해석도구가 소제목보다 적으면 첫 번째 해석도구를 반복 사용
+      // menuSubtitles 순서대로 처리하면서 상세메뉴도 함께 추가
+      menuSubtitles.forEach((subtitle: string, index: number) => {
         const tool = interpretationTools[index] || interpretationTools[0] || ''
         const trimmedSubtitle = subtitle.trim()
-        const subtitleInfo = subtitleMap.get(trimmedSubtitle) || {}
         
-        return {
+        // 소메뉴 추가
+        menuSubtitlePairs.push({
           subtitle: trimmedSubtitle,
           interpretation_tool: tool,
-          char_count: subtitleCharCount,
-          detailMenus: subtitleInfo.detailMenus || [],
-          detail_menu_char_count: detailMenuCharCount
+          char_count: subtitleCharCount
+        })
+        
+        // 해당 소메뉴의 상세메뉴 찾기
+        for (const item of menuItems) {
+          if (item.subtitles && Array.isArray(item.subtitles)) {
+            const sub = item.subtitles.find((s: any) => s.subtitle?.trim() === trimmedSubtitle)
+            if (sub && sub.detailMenus && Array.isArray(sub.detailMenus)) {
+              // 상세메뉴들을 배열에 직접 추가 (소메뉴 다음에 순서대로)
+              sub.detailMenus.forEach((dm: any) => {
+                if (dm.detailMenu && dm.detailMenu.trim()) {
+                  menuSubtitlePairs.push({
+                    subtitle: dm.detailMenu.trim(),
+                    interpretation_tool: dm.interpretation_tool || '',
+                    char_count: dm.char_count || detailMenuCharCount
+                  })
+                }
+              })
+              break // 해당 소메뉴를 찾았으므로 다음 소메뉴로
+            }
+          }
         }
       })
-
-      const hasDetailMenusCount = menuSubtitlePairs.filter((pair: { subtitle: string; interpretation_tool: string; char_count: number; detailMenus: any[]; detail_menu_char_count: number }) => pair.detailMenus && pair.detailMenus.length > 0).length
 
       // 현재 사용할 모델 확인 (최신 상태 - URL 파라미터 우선, 없으면 Supabase, 그것도 없으면 기본값)
       const urlModelParam = searchParams.get('model')
