@@ -431,11 +431,11 @@ export async function callJeminaiAPIStream(
                     
                     // 남은 소제목 계산 (완료된 인덱스 제외)
                     const remainingIndices = request.menu_subtitles
-                      .map((_, index) => index)
-                      .filter(index => !data.completedSubtitleIndices.includes(index))
+                      .map((_, index: number) => index)
+                      .filter((index: number) => !data.completedSubtitleIndices.includes(index))
                     
-                    const remainingSubtitles = remainingIndices.map(index => request.menu_subtitles[index])
-                    const completedSubtitles = data.completedSubtitleIndices.map(index => request.menu_subtitles[index])
+                    const remainingSubtitles = remainingIndices.map((index: number) => request.menu_subtitles[index])
+                    const completedSubtitles = data.completedSubtitleIndices.map((index: number) => request.menu_subtitles[index])
                     
                     console.log('⚠️ [lib/jeminai.ts] done 이벤트에서 재요청 시작:', {
                       completedCount: data.completedSubtitleIndices.length,
