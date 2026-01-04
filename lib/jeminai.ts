@@ -388,6 +388,25 @@ export async function callJeminaiAPIStream(
               } else if (data.type === 'done') {
                 lastChunkTime = Date.now() // done 수신 시 시간 갱신
                 
+                // partial_done을 이미 받았다면 done에서 재요청하지 않음 (중복 방지)
+                if (hasReceivedPartialDone) {
+                  console.log('✅ partial_done을 이미 받았으므로 done 이벤트에서 재요청을 건너뜁니다.')
+                  finalResponse = {
+                    html: data.html,
+                    isTruncated: data.isTruncated,
+                    finishReason: data.finishReason,
+                    usage: data.usage
+                  }
+                  onChunk({
+                    type: 'done',
+                    html: data.html,
+                    isTruncated: data.isTruncated,
+                    finishReason: data.finishReason,
+                    usage: data.usage
+                  })
+                  break // 스트림 읽기 중단
+                }
+                
                 // MAX_TOKENS로 종료된 경우 처리
                 if (data.finishReason === 'MAX_TOKENS') {
                   if (!data.isTruncated) {
@@ -404,17 +423,33 @@ export async function callJeminaiAPIStream(
                 }
                 
                 if (data.html) {
-                  // MAX_TOKENS로 인한 잘림이고 미완료 소제목이 있으면 재요청
-                  if (data.finishReason === 'MAX_TOKENS' && data.isTruncated && data.completedSubtitleIndices && data.completedSubtitleIndices.length > 0) {
+                  // MAX_TOKENS로 인한 잘림이고 미완료 소제목이 있으면 재요청 (partial_done을 받지 않은 경우만)
+                  if (!hasReceivedPartialDone && data.finishReason === 'MAX_TOKENS' && data.isTruncated && data.completedSubtitleIndices && data.completedSubtitleIndices.length > 0) {
                     
                     // 완료된 HTML 저장
                     const completedHtml = data.html
                     
+                    // 남은 소제목 계산 (완료된 인덱스 제외)
+                    const remainingIndices = request.menu_subtitles
+                      .map((_, index) => index)
+                      .filter(index => !data.completedSubtitleIndices.includes(index))
+                    
+                    const remainingSubtitles = remainingIndices.map(index => request.menu_subtitles[index])
+                    const completedSubtitles = data.completedSubtitleIndices.map(index => request.menu_subtitles[index])
+                    
+                    console.log('⚠️ [lib/jeminai.ts] done 이벤트에서 재요청 시작:', {
+                      completedCount: data.completedSubtitleIndices.length,
+                      remainingCount: remainingIndices.length,
+                      totalCount: request.menu_subtitles.length
+                    })
+                    
                     // 재요청 준비
                     const retryRequest: JeminaiRequest = {
                       ...request,
+                      menu_subtitles: remainingSubtitles, // 남은 소제목만 포함
                       isSecondRequest: true,
-                      completedSubtitleIndices: data.completedSubtitleIndices
+                      completedSubtitleIndices: data.completedSubtitleIndices,
+                      completedSubtitles: completedSubtitles // 프롬프트에 포함하기 위해
                     }
                     
                     // 재요청 실행

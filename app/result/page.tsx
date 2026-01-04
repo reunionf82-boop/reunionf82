@@ -407,9 +407,18 @@ function ResultContent() {
 
         let accumulatedHtml = ''
         const manseRyeokTable: string | undefined = payload?.requestData?.manse_ryeok_table
+        
+        // 2차 요청 중복 방지 플래그
+        let isSecondRequestInProgress = false
 
         // 2차 요청을 위한 헬퍼 함수
         const startSecondRequest = async (firstHtml: string, remainingSubtitleIndices: number[], completedSubtitleIndices: number[] = []) => {
+          // 중복 요청 방지
+          if (isSecondRequestInProgress) {
+            console.log('⚠️ 2차 요청이 이미 진행 중입니다. 중복 요청을 건너뜁니다.')
+            return
+          }
+          isSecondRequestInProgress = true
           // 남은 소제목만 추출
           const remainingSubtitles = remainingSubtitleIndices.map((index: number) => requestData.menu_subtitles[index])
 
@@ -433,11 +442,12 @@ function ResultContent() {
             if (cancelled) return
             
             if (data.type === 'start') {
-              // 2차 요청 시작 시 1차 HTML 유지 및 로딩 상태 활성화
+              // 2차 요청 시작 시 1차 HTML 유지 (화면 깜박임 방지)
               secondRequestHtml = '' // 2차 요청 HTML 초기화
-              setIsStreamingActive(true)
-              setStreamingFinished(false)
-              // 1차 HTML 유지
+              // 상태 변경 최소화 (이미 스트리밍 중이므로)
+              // setIsStreamingActive(true) - 이미 true일 가능성이 높음
+              // setStreamingFinished(false) - 이미 false일 가능성이 높음
+              // 1차 HTML 유지 (중요: 화면이 깜박이지 않도록)
               setStreamingHtml(firstHtml)
             } else if (data.type === 'chunk') {
               // 2차 HTML을 누적
@@ -514,12 +524,23 @@ function ResultContent() {
               setStreamingProgress(100)
               setLoading(false)
               setShowRealtimePopup(false)
+              isSecondRequestInProgress = false // 플래그 리셋
             } else if (data.type === 'error') {
               console.error('결과 페이지: 2차 스트리밍 에러:', data.error)
               setError(data.error || '2차 점사 진행 중 문제가 발생했습니다.')
               setIsStreamingActive(false)
               setStreamingFinished(true)
+              isSecondRequestInProgress = false // 플래그 리셋
             }
+          })
+          // 함수 실행 완료 후 플래그 리셋 (에러 발생 시)
+          .finally(() => {
+            // finally에서도 리셋하지 않음 (성공/실패 시 이미 리셋됨)
+          })
+          .catch((err) => {
+            console.error('2차 요청 실행 중 에러:', err)
+            isSecondRequestInProgress = false // 에러 시 플래그 리셋
+            throw err
           })
         }
         
@@ -541,12 +562,11 @@ function ResultContent() {
             const completedIndices = data.completedSubtitles || []
             
             if (remainingIndices.length > 0) {
-              // 1차 HTML 저장
+              // 1차 HTML 즉시 저장 및 유지 (화면 깜박임 방지)
               setStreamingHtml(firstHtml)
               
-              // 2차 요청 시작 전 로딩 상태 활성화
-              setIsStreamingActive(true)
-              setStreamingFinished(false)
+              // 2차 요청 시작 전 상태 업데이트 (깜박임 최소화)
+              // setIsStreamingActive와 setStreamingFinished는 이미 true/false 상태이므로 변경하지 않음
               
               // 2차 요청 시작 (비동기로 실행, await하지 않음)
               startSecondRequest(firstHtml, remainingIndices, completedIndices).catch((err) => {
@@ -554,6 +574,7 @@ function ResultContent() {
                 setError('2차 점사 진행 중 문제가 발생했습니다.')
                 setIsStreamingActive(false)
                 setStreamingFinished(true)
+                isSecondRequestInProgress = false // 플래그 리셋
               })
             } else {
               // 남은 소제목이 없으면 완료 처리
