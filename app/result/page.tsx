@@ -46,8 +46,8 @@ const ThumbnailDisplay = memo(({ html, menuIndex }: { html: string; menuIndex: n
 })
 ThumbnailDisplay.displayName = 'ThumbnailDisplay'
 
-// HTML 길이 제한 상수 (개발 테스트용 2만자, 나중에 10만자로 변경 가능)
-const MAX_HTML_LENGTH = 20000 // 개발 테스트용, 나중에 100000으로 변경
+// HTML 길이 제한 상수 (10만자)
+const MAX_HTML_LENGTH = 100000
 
 function ResultContent() {
   const searchParams = useSearchParams()
@@ -419,26 +419,38 @@ function ResultContent() {
           // 2차 요청 데이터 생성
           const secondRequestData = {
             ...requestData,
-            menu_subtitles: remainingSubtitles,
+            menu_subtitles: remainingSubtitles, // 필터링된 남은 소제목만
             isSecondRequest: true, // 2차 요청 플래그
             completedSubtitles: completedSubtitles, // 완료된 소제목 정보 (프롬프트에 포함)
-            completedSubtitleIndices: completedSubtitleIndices, // 완료된 소제목 인덱스
+            completedSubtitleIndices: completedSubtitleIndices, // 완료된 소제목 인덱스 (원본 기준)
+            remainingSubtitleIndices: remainingSubtitleIndices, // 남은 소제목 인덱스 (원본 기준) - 백엔드에서 인덱스 변환용
           }
           
           // 2차 요청 시작
+          let secondRequestAccumulatedHtml = '' // 2차 요청의 HTML을 누적하기 위한 별도 변수
           await callJeminaiAPIStream(secondRequestData, (data) => {
             if (cancelled) return
             
             if (data.type === 'start') {
               // 2차 요청 시작 시 1차 HTML 유지 및 로딩 상태 활성화
+              secondRequestAccumulatedHtml = '' // 2차 요청 HTML 초기화
               setIsStreamingActive(true)
               setStreamingFinished(false)
             } else if (data.type === 'chunk') {
-              // 2차 HTML을 누적
-              accumulatedHtml = firstHtml + (data.text || '')
+              // 2차 HTML을 누적 (data.html이 있으면 사용, 없으면 data.text 누적)
+              if (data.html) {
+                // lib/jeminai.ts에서 누적된 전체 HTML을 전달한 경우
+                secondRequestAccumulatedHtml = data.html
+              } else if (data.text) {
+                // 개별 chunk만 전달된 경우 누적
+                secondRequestAccumulatedHtml += data.text
+              }
+              
+              // 1차 HTML + 2차 HTML 병합
+              const mergedHtml = firstHtml + secondRequestAccumulatedHtml
               
               // HTML 정리
-              accumulatedHtml = accumulatedHtml
+              const cleanedHtml = mergedHtml
                 .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
                 .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
                 .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
@@ -446,7 +458,7 @@ function ResultContent() {
                 .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
                 .replace(/\*\*/g, '')
               
-              setStreamingHtml(accumulatedHtml)
+              setStreamingHtml(cleanedHtml)
             } else if (data.type === 'done') {
               // 2차 요청 완료: 1차 HTML + 2차 HTML 병합
               const secondHtml = data.html || ''

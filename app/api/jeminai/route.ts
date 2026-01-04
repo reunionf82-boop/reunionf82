@@ -4,8 +4,8 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/ge
 // Vercel Serverless Function의 타임아웃을 5분(300초)으로 설정
 export const maxDuration = 300
 
-// HTML 길이 제한 상수 (개발 테스트용 2만자, 나중에 10만자로 변경 가능)
-const MAX_HTML_LENGTH = 20000 // 개발 테스트용, 나중에 100000으로 변경
+// HTML 길이 제한 상수 (10만자)
+const MAX_HTML_LENGTH = 100000
 
 export async function POST(req: NextRequest) {
   try {
@@ -356,22 +356,23 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
           console.log('전체 소제목 개수:', allMenuSubtitles.length)
           
           // HTML에서 모든 소제목 섹션 추출 (더 견고한 방법)
-          // subtitle-section div를 찾되, 내부 구조를 정확히 파악
+          // subtitle-section과 detail-menu-section div를 찾되, 내부 구조를 정확히 파악
           // 패턴: <div class="subtitle-section">...<h3 class="subtitle-title">...</h3>...<div class="subtitle-content">...</div>...</div>
+          // 패턴: <div class="detail-menu-section">...<h3 class="detail-menu-title">...</h3>...<div class="detail-menu-content">...</div>...</div>
           
-          // 방법 1: 간단한 패턴으로 subtitle-section 시작 태그 찾기
-          const subtitleSectionStartRegex = /<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>/gi
-          const subtitleSectionMatches: RegExpExecArray[] = []
+          // subtitle-section과 detail-menu-section 모두 찾기
+          const sectionStartRegex = /<div[^>]*class="[^"]*(subtitle-section|detail-menu-section)[^"]*"[^>]*>/gi
+          const sectionMatches: RegExpExecArray[] = []
           let match: RegExpExecArray | null
-          while ((match = subtitleSectionStartRegex.exec(html)) !== null) {
-            subtitleSectionMatches.push(match)
+          while ((match = sectionStartRegex.exec(html)) !== null) {
+            sectionMatches.push(match)
           }
           
           const subtitleSections: string[] = []
           
-          // 각 subtitle-section의 시작 위치에서 닫는 태그까지 찾기
-          for (let i = 0; i < subtitleSectionMatches.length; i++) {
-            const match = subtitleSectionMatches[i]
+          // 각 section의 시작 위치에서 닫는 태그까지 찾기
+          for (let i = 0; i < sectionMatches.length; i++) {
+            const match = sectionMatches[i]
             const startIndex = match.index!
             const startTag = match[0]
             
@@ -405,7 +406,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
             }
           }
           
-          console.log('추출된 subtitle-section 개수:', subtitleSections.length)
+          console.log('추출된 section 개수 (subtitle-section + detail-menu-section):', subtitleSections.length)
           const firstSection = subtitleSections[0]
           if (firstSection) {
             console.log('첫 번째 subtitle-section 샘플 (처음 500자):', firstSection.substring(0, 500))
@@ -445,42 +446,67 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
               'i'
             )
             
-            // 소제목 내용 패턴 (더 유연하게)
-            const subtitleContentPattern = /<div[^>]*class="subtitle-content"[^>]*>[\s\S]*?<\/div>/i
+            // 소제목 내용 패턴 (더 유연하게) - subtitle-content 또는 detail-menu-content
+            const subtitleContentPattern = /<div[^>]*class="[^"]*(subtitle-content|detail-menu-content)[^"]*"[^>]*>[\s\S]*?<\/div>/i
+            
+            // detail-menu-section의 경우 detail-menu-title 패턴도 확인
+            const detailMenuTitlePattern = /<h3[^>]*class="[^"]*detail-menu-title[^"]*"[^>]*>([\s\S]*?)<\/h3>/i
             
             // 완료된 소제목 확인: 제목과 내용이 모두 있어야 함
             let found = false
             for (const section of subtitleSections) {
-              // 여러 패턴으로 제목 매칭 시도
-              let titleMatches = subtitleTitlePattern1.test(section) || 
-                                 subtitleTitlePattern2.test(section) || 
-                                 numberPattern.test(section)
+              // subtitle-section인지 detail-menu-section인지 확인
+              const isDetailMenuSection = section.includes('detail-menu-section')
               
-              // 패턴 4: h3 태그 내부 텍스트 직접 비교
-              if (!titleMatches) {
-                const h3Match = section.match(h3TextPattern)
-                if (h3Match) {
-                  const h3Text = h3Match[1].replace(/<[^>]+>/g, '').trim() // HTML 태그 제거 후 텍스트만 추출
-                  // 소제목 제목이 포함되어 있는지 확인 (부분 매칭)
-                  if (h3Text.includes(subtitle.subtitle) || 
-                      h3Text.includes(subtitleTitleWithoutDot) ||
-                      h3Text.includes(`${menuNumber}-${subtitleNumber}`)) {
+              let titleMatches = false
+              
+              if (isDetailMenuSection) {
+                // detail-menu-section의 경우: detail-menu-title에서 소제목 제목 찾기
+                const detailMenuTitleMatch = section.match(detailMenuTitlePattern)
+                if (detailMenuTitleMatch) {
+                  const detailMenuTitleText = detailMenuTitleMatch[1].replace(/<[^>]+>/g, '').trim()
+                  // 상세메뉴 제목이 소제목과 일치하는지 확인
+                  // 상세메뉴는 평평한 배열이므로 subtitle과 직접 비교
+                  if (detailMenuTitleText.includes(subtitle.subtitle) || 
+                      detailMenuTitleText.includes(subtitleTitleWithoutDot) ||
+                      detailMenuTitleText.includes(`${menuNumber}-${subtitleNumber}`)) {
                     titleMatches = true
+                  }
+                }
+              } else {
+                // subtitle-section의 경우: 기존 로직 사용
+                // 여러 패턴으로 제목 매칭 시도
+                titleMatches = subtitleTitlePattern1.test(section) || 
+                               subtitleTitlePattern2.test(section) || 
+                               numberPattern.test(section)
+                
+                // 패턴 4: h3 태그 내부 텍스트 직접 비교
+                if (!titleMatches) {
+                  const h3Match = section.match(h3TextPattern)
+                  if (h3Match) {
+                    const h3Text = h3Match[1].replace(/<[^>]+>/g, '').trim() // HTML 태그 제거 후 텍스트만 추출
+                    // 소제목 제목이 포함되어 있는지 확인 (부분 매칭)
+                    if (h3Text.includes(subtitle.subtitle) || 
+                        h3Text.includes(subtitleTitleWithoutDot) ||
+                        h3Text.includes(`${menuNumber}-${subtitleNumber}`)) {
+                      titleMatches = true
+                    }
                   }
                 }
               }
               
               if (titleMatches && subtitleContentPattern.test(section)) {
                 // 내용이 비어있지 않은지 확인 (최소 10자 이상)
-                const contentMatch = section.match(/<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
-                if (contentMatch && contentMatch[1].trim().length > 10) {
+                // subtitle-content 또는 detail-menu-content 모두 확인
+                const contentMatch = section.match(/<div[^>]*class="[^"]*(subtitle-content|detail-menu-content)[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+                if (contentMatch && contentMatch[2].trim().length > 10) {
                   if (!completedSubtitles.includes(index)) {
                     completedSubtitles.push(index)
                     if (!completedMenus.includes(menuNumber - 1)) {
                       completedMenus.push(menuNumber - 1)
                     }
                     found = true
-                    console.log(`소제목 ${index} (${subtitle.subtitle}) 완료 감지`)
+                    console.log(`소제목 ${index} (${subtitle.subtitle}) 완료 감지 ${isDetailMenuSection ? '(detail-menu-section)' : '(subtitle-section)'}`)
                     break
                   }
                 }
