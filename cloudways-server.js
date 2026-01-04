@@ -1183,6 +1183,29 @@ ${isSecondRequest ? `
             console.log('✅ 조기 완료 처리: isTruncated=false, finishReason=STOP');
         }
 
+        // partial_done 이벤트 전송 (MAX_TOKENS이고 미완료 소제목이 있고, 1차 요청인 경우)
+        if ((finishReason === 'MAX_TOKENS' || earlyBreakDueToLength) && isTruncated && parsedCompletedIndices && parsedCompletedIndices.length > 0 && !isSecondRequest) {
+            // 남은 소제목 인덱스 계산
+            const remainingIndices = menu_subtitles
+                .map((_, index) => index)
+                .filter(index => !parsedCompletedIndices.includes(index));
+            
+            console.log('⚠️ [partial_done 전송] 1차 요청 부분 완료 - 2차 요청 필요');
+            console.log(`완료된 소제목: ${parsedCompletedIndices.length}개 (인덱스: [${parsedCompletedIndices.join(', ')}])`);
+            console.log(`남은 소제목: ${remainingIndices.length}개 (인덱스: [${remainingIndices.join(', ')}])`);
+            
+            // partial_done 이벤트 전송
+            res.write(`data: ${JSON.stringify({
+                type: 'partial_done',
+                html: cleanHtml,
+                completedSubtitleIndices: parsedCompletedIndices,
+                completedSubtitles: parsedCompletedIndices,
+                remainingSubtitles: remainingIndices
+            })}\n\n`);
+            
+            console.log('✅ partial_done 이벤트 전송 완료');
+        }
+
         // done 이벤트 전송 (스트림 에러가 발생했어도 수집된 데이터는 전송)
         const donePayload = {
             type: 'done',
@@ -1193,7 +1216,7 @@ ${isSecondRequest ? `
         if (streamErrorOccurred) {
             donePayload.streamError = streamErrorMessage;
         }
-        // MAX_TOKENS이고 미완료 소제목이 있으면 완료된 소제목 인덱스 포함
+        // MAX_TOKENS이고 미완료 소제목이 있으면 완료된 소제목 인덱스 포함 (2차 요청용)
         if (finishReason === 'MAX_TOKENS' && isTruncated && parsedCompletedIndices && parsedCompletedIndices.length > 0) {
             donePayload.completedSubtitleIndices = parsedCompletedIndices;
             console.log('✅ 완료된 소제목 인덱스를 done 이벤트에 포함:', parsedCompletedIndices);

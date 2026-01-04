@@ -138,6 +138,8 @@ export async function callJeminaiAPIStream(
       console.log('=== Gemini API 호출 ===')
       console.log('전달되는 모델:', requestBody.model)
       console.log('요청 URL:', edgeFunctionUrl)
+      console.log('Cloudways URL 환경변수:', process.env.NEXT_PUBLIC_CLOUDWAYS_URL || '설정되지 않음')
+      console.log('useCloudways:', useCloudways)
       console.log('=====================')
       
       response = await fetch(edgeFunctionUrl, {
@@ -149,20 +151,30 @@ export async function callJeminaiAPIStream(
       clearTimeout(timeoutId)
     } catch (fetchError: any) {
       clearTimeout(timeoutId)
+      
+      // 네트워크 에러 상세 로깅
+      console.error('❌ Fetch 에러 발생:', fetchError.name)
+      console.error('에러 메시지:', fetchError.message)
+      console.error('요청 URL:', edgeFunctionUrl)
+      
       if (fetchError.name === 'AbortError') {
         const errorMsg = '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
         console.error(errorMsg)
         onChunk({ type: 'error', error: errorMsg })
         throw new Error(errorMsg)
       }
+      
+      // 네트워크 연결 실패 시 더 자세한 에러 메시지
+      if (fetchError.message?.includes('Failed to fetch') || fetchError.message?.includes('NetworkError')) {
+        const detailedError = `서버 연결 실패: ${edgeFunctionUrl}에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.`
+        console.error(detailedError)
+        throw new Error(detailedError)
+      }
+      
       throw fetchError
     }
 
-    // API 응답 확인 (에러 시에만 로그)
-    if (!response.ok) {
-      console.error('API 응답 상태:', response.status, response.statusText)
-    }
-
+    // API 응답 확인
     if (!response.ok) {
       const errorText = await response.text()
       let errorMessage = '재미나이 API 호출 실패'
@@ -376,6 +388,25 @@ export async function callJeminaiAPIStream(
               } else if (data.type === 'done') {
                 lastChunkTime = Date.now() // done 수신 시 시간 갱신
                 
+                // partial_done을 이미 받았다면 done에서 재요청하지 않음 (중복 방지)
+                if (hasReceivedPartialDone) {
+                  console.log('✅ partial_done을 이미 받았으므로 done 이벤트에서 재요청을 건너뜁니다.')
+                  finalResponse = {
+                    html: data.html,
+                    isTruncated: data.isTruncated,
+                    finishReason: data.finishReason,
+                    usage: data.usage
+                  }
+                  onChunk({
+                    type: 'done',
+                    html: data.html,
+                    isTruncated: data.isTruncated,
+                    finishReason: data.finishReason,
+                    usage: data.usage
+                  })
+                  break // 스트림 읽기 중단
+                }
+                
                 // MAX_TOKENS로 종료된 경우 처리
                 if (data.finishReason === 'MAX_TOKENS') {
                   if (!data.isTruncated) {
@@ -392,17 +423,33 @@ export async function callJeminaiAPIStream(
                 }
                 
                 if (data.html) {
-                  // MAX_TOKENS로 인한 잘림이고 미완료 소제목이 있으면 재요청
-                  if (data.finishReason === 'MAX_TOKENS' && data.isTruncated && data.completedSubtitleIndices && data.completedSubtitleIndices.length > 0) {
+                  // MAX_TOKENS로 인한 잘림이고 미완료 소제목이 있으면 재요청 (partial_done을 받지 않은 경우만)
+                  if (!hasReceivedPartialDone && data.finishReason === 'MAX_TOKENS' && data.isTruncated && data.completedSubtitleIndices && data.completedSubtitleIndices.length > 0) {
                     
                     // 완료된 HTML 저장
                     const completedHtml = data.html
                     
+                    // 남은 소제목 계산 (완료된 인덱스 제외)
+                    const remainingIndices = request.menu_subtitles
+                      .map((_, index: number) => index)
+                      .filter((index: number) => !data.completedSubtitleIndices.includes(index))
+                    
+                    const remainingSubtitles = remainingIndices.map((index: number) => request.menu_subtitles[index])
+                    const completedSubtitles = data.completedSubtitleIndices.map((index: number) => request.menu_subtitles[index])
+                    
+                    console.log('⚠️ [lib/jeminai.ts] done 이벤트에서 재요청 시작:', {
+                      completedCount: data.completedSubtitleIndices.length,
+                      remainingCount: remainingIndices.length,
+                      totalCount: request.menu_subtitles.length
+                    })
+                    
                     // 재요청 준비
                     const retryRequest: JeminaiRequest = {
                       ...request,
+                      menu_subtitles: remainingSubtitles, // 남은 소제목만 포함
                       isSecondRequest: true,
-                      completedSubtitleIndices: data.completedSubtitleIndices
+                      completedSubtitleIndices: data.completedSubtitleIndices,
+                      completedSubtitles: completedSubtitles // 프롬프트에 포함하기 위해
                     }
                     
                     // 재요청 실행
