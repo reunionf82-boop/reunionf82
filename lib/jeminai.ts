@@ -138,6 +138,8 @@ export async function callJeminaiAPIStream(
       console.log('=== Gemini API 호출 ===')
       console.log('전달되는 모델:', requestBody.model)
       console.log('요청 URL:', edgeFunctionUrl)
+      console.log('Cloudways URL 환경변수:', process.env.NEXT_PUBLIC_CLOUDWAYS_URL || '설정되지 않음')
+      console.log('useCloudways:', useCloudways)
       console.log('=====================')
       
       response = await fetch(edgeFunctionUrl, {
@@ -149,20 +151,30 @@ export async function callJeminaiAPIStream(
       clearTimeout(timeoutId)
     } catch (fetchError: any) {
       clearTimeout(timeoutId)
+      
+      // 네트워크 에러 상세 로깅
+      console.error('❌ Fetch 에러 발생:', fetchError.name)
+      console.error('에러 메시지:', fetchError.message)
+      console.error('요청 URL:', edgeFunctionUrl)
+      
       if (fetchError.name === 'AbortError') {
         const errorMsg = '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
         console.error(errorMsg)
         onChunk({ type: 'error', error: errorMsg })
         throw new Error(errorMsg)
       }
+      
+      // 네트워크 연결 실패 시 더 자세한 에러 메시지
+      if (fetchError.message?.includes('Failed to fetch') || fetchError.message?.includes('NetworkError')) {
+        const detailedError = `서버 연결 실패: ${edgeFunctionUrl}에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.`
+        console.error(detailedError)
+        throw new Error(detailedError)
+      }
+      
       throw fetchError
     }
 
-    // API 응답 확인 (에러 시에만 로그)
-    if (!response.ok) {
-      console.error('API 응답 상태:', response.status, response.statusText)
-    }
-
+    // API 응답 확인
     if (!response.ok) {
       const errorText = await response.text()
       let errorMessage = '재미나이 API 호출 실패'

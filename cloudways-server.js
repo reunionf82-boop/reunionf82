@@ -1042,110 +1042,6 @@ ${isSecondRequest ? `
             return completedIndices;
         };
         
-        // 중간에 잘린 소제목 제거 함수: 안전하게 자른 HTML에서 마지막 subtitle-section이 완전히 닫혔는지 확인
-        const removeIncompleteSubtitle = (html, completedIndices) => {
-            if (!html || !completedIndices || completedIndices.length === 0) {
-                return completedIndices;
-            }
-            
-            // HTML에서 모든 subtitle-section 찾기
-            const subtitleSectionRegex = /<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>/gi;
-            const sectionMatches = [];
-            let match;
-            while ((match = subtitleSectionRegex.exec(html)) !== null) {
-                sectionMatches.push({ index: match.index, tag: match[0] });
-            }
-            
-            if (sectionMatches.length === 0) {
-                return completedIndices;
-            }
-            
-            // 마지막 subtitle-section 추출 및 완전히 닫혔는지 확인
-            const lastSection = sectionMatches[sectionMatches.length - 1];
-            const lastSectionStart = lastSection.index;
-            
-            // 마지막 subtitle-section의 닫는 </div> 찾기 (depth 체크로 완전히 닫혔는지 확인)
-            let depth = 0;
-            let foundOpening = false;
-            let lastCloseDivIndex = -1;
-            let searchIndex = lastSectionStart;
-            
-            // 마지막 subtitle-section부터 검색 시작
-            while (searchIndex < html.length) {
-                const nextOpenDiv = html.indexOf('<div', searchIndex);
-                const nextCloseDiv = html.indexOf('</div>', searchIndex);
-                
-                if (nextOpenDiv === -1 && nextCloseDiv === -1) break;
-                
-                // 더 가까운 태그 선택
-                let nextTagIndex = -1;
-                let isOpenTag = false;
-                
-                if (nextOpenDiv === -1) {
-                    nextTagIndex = nextCloseDiv;
-                    isOpenTag = false;
-                } else if (nextCloseDiv === -1) {
-                    nextTagIndex = nextOpenDiv;
-                    isOpenTag = true;
-                } else {
-                    if (nextOpenDiv < nextCloseDiv) {
-                        nextTagIndex = nextOpenDiv;
-                        isOpenTag = true;
-                    } else {
-                        nextTagIndex = nextCloseDiv;
-                        isOpenTag = false;
-                    }
-                }
-                
-                if (isOpenTag) {
-                    depth++;
-                    foundOpening = true;
-                    searchIndex = html.indexOf('>', nextTagIndex) + 1;
-                } else {
-                    depth--;
-                    searchIndex = nextCloseDiv + '</div>'.length;
-                    
-                    // subtitle-section 내부의 div depth가 0이 되면 닫힘 (subtitle-section 자체 포함)
-                    if (foundOpening && depth <= 0) {
-                        lastCloseDivIndex = searchIndex;
-                        break;
-                    }
-                }
-            }
-            
-            // 마지막 subtitle-section이 완전히 닫히지 않았다면 (중간에 잘림)
-            if (lastCloseDivIndex === -1 || lastCloseDivIndex >= html.length || depth > 0) {
-                console.log('⚠️ 마지막 subtitle-section이 중간에 잘렸습니다. 완료된 목록에서 제외합니다.');
-                
-                // 마지막 subtitle-section이 어느 소제목에 해당하는지 확인
-                const lastSectionContent = html.substring(lastSectionStart, Math.min(lastSectionStart + 1000, html.length));
-                let lastSubtitleIndex = -1;
-                
-                menu_subtitles.forEach((subtitle, idx) => {
-                    const subtitleEscaped = subtitle.subtitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const pattern = new RegExp(`<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>[\\s\\S]*?${subtitleEscaped}`, 'i');
-                    if (pattern.test(lastSectionContent)) {
-                        lastSubtitleIndex = idx;
-                    }
-                });
-                
-                if (lastSubtitleIndex >= 0 && completedIndices.includes(lastSubtitleIndex)) {
-                    console.log(`⚠️ 소제목 ${lastSubtitleIndex} (${menu_subtitles[lastSubtitleIndex]?.subtitle})가 중간에 잘렸습니다. 완료 목록에서 제거합니다.`);
-                    return completedIndices.filter(idx => idx !== lastSubtitleIndex);
-                } else if (lastSubtitleIndex === -1) {
-                    // 마지막 subtitle-section을 찾지 못했지만, 완료 목록의 마지막 항목은 제거 (안전장치)
-                    const sortedIndices = [...completedIndices].sort((a, b) => a - b);
-                    if (sortedIndices.length > 0) {
-                        const lastCompletedIndex = sortedIndices[sortedIndices.length - 1];
-                        console.log(`⚠️ 마지막 subtitle-section을 식별하지 못했지만, 마지막 완료 항목(${lastCompletedIndex})을 제거합니다.`);
-                        return completedIndices.filter(idx => idx !== lastCompletedIndex);
-                    }
-                }
-            }
-            
-            return completedIndices;
-        };
-        
         // 100000자 도달로 인한 조기 종료 처리
         if (earlyBreakDueToLength) {
             if (!allSubtitlesCompleted) {
@@ -1215,6 +1111,29 @@ ${isSecondRequest ? `
             console.log('✅ 조기 완료 처리: isTruncated=false, finishReason=STOP');
         }
 
+        // partial_done 이벤트 전송 (MAX_TOKENS이고 미완료 소제목이 있고, 1차 요청인 경우)
+        if ((finishReason === 'MAX_TOKENS' || earlyBreakDueToLength) && isTruncated && parsedCompletedIndices && parsedCompletedIndices.length > 0 && !isSecondRequest) {
+            // 남은 소제목 인덱스 계산
+            const remainingIndices = menu_subtitles
+                .map((_, index) => index)
+                .filter(index => !parsedCompletedIndices.includes(index));
+            
+            console.log('⚠️ [partial_done 전송] 1차 요청 부분 완료 - 2차 요청 필요');
+            console.log(`완료된 소제목: ${parsedCompletedIndices.length}개 (인덱스: [${parsedCompletedIndices.join(', ')}])`);
+            console.log(`남은 소제목: ${remainingIndices.length}개 (인덱스: [${remainingIndices.join(', ')}])`);
+            
+            // partial_done 이벤트 전송
+            res.write(`data: ${JSON.stringify({
+                type: 'partial_done',
+                html: cleanHtml,
+                completedSubtitleIndices: parsedCompletedIndices,
+                completedSubtitles: parsedCompletedIndices,
+                remainingSubtitles: remainingIndices
+            })}\n\n`);
+            
+            console.log('✅ partial_done 이벤트 전송 완료');
+        }
+
         // done 이벤트 전송 (스트림 에러가 발생했어도 수집된 데이터는 전송)
         const donePayload = {
             type: 'done',
@@ -1225,7 +1144,7 @@ ${isSecondRequest ? `
         if (streamErrorOccurred) {
             donePayload.streamError = streamErrorMessage;
         }
-        // MAX_TOKENS이고 미완료 소제목이 있으면 완료된 소제목 인덱스 포함
+        // MAX_TOKENS이고 미완료 소제목이 있으면 완료된 소제목 인덱스 포함 (2차 요청용)
         if (finishReason === 'MAX_TOKENS' && isTruncated && parsedCompletedIndices && parsedCompletedIndices.length > 0) {
             donePayload.completedSubtitleIndices = parsedCompletedIndices;
             console.log('✅ 완료된 소제목 인덱스를 done 이벤트에 포함:', parsedCompletedIndices);

@@ -412,10 +412,10 @@ function ResultContent() {
         const startSecondRequest = async (firstHtml: string, remainingSubtitleIndices: number[], completedSubtitleIndices: number[] = []) => {
           // 남은 소제목만 추출
           const remainingSubtitles = remainingSubtitleIndices.map((index: number) => requestData.menu_subtitles[index])
-          
+
           // 완료된 소제목 정보 추출 (프롬프트에 포함하기 위해)
           const completedSubtitles = completedSubtitleIndices.map((index: number) => requestData.menu_subtitles[index])
-          
+
           // 2차 요청 데이터 생성
           const secondRequestData = {
             ...requestData,
@@ -424,21 +424,30 @@ function ResultContent() {
             completedSubtitles: completedSubtitles, // 완료된 소제목 정보 (프롬프트에 포함)
             completedSubtitleIndices: completedSubtitleIndices, // 완료된 소제목 인덱스
           }
-          
+
+          // 2차 요청 전용 HTML 누적 변수
+          let secondRequestHtml = ''
+
           // 2차 요청 시작
           await callJeminaiAPIStream(secondRequestData, (data) => {
             if (cancelled) return
             
             if (data.type === 'start') {
               // 2차 요청 시작 시 1차 HTML 유지 및 로딩 상태 활성화
+              secondRequestHtml = '' // 2차 요청 HTML 초기화
               setIsStreamingActive(true)
               setStreamingFinished(false)
+              // 1차 HTML 유지
+              setStreamingHtml(firstHtml)
             } else if (data.type === 'chunk') {
               // 2차 HTML을 누적
-              accumulatedHtml = firstHtml + (data.text || '')
+              secondRequestHtml += (data.text || '')
+              
+              // 1차 HTML + 2차 HTML 병합
+              let mergedHtml = firstHtml + secondRequestHtml
               
               // HTML 정리
-              accumulatedHtml = accumulatedHtml
+              mergedHtml = mergedHtml
                 .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
                 .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
                 .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
@@ -446,10 +455,10 @@ function ResultContent() {
                 .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
                 .replace(/\*\*/g, '')
               
-              setStreamingHtml(accumulatedHtml)
+              setStreamingHtml(mergedHtml)
             } else if (data.type === 'done') {
               // 2차 요청 완료: 1차 HTML + 2차 HTML 병합
-              const secondHtml = data.html || ''
+              const secondHtml = data.html || secondRequestHtml
               let mergedHtml = firstHtml + secondHtml
               
               // HTML 정리
