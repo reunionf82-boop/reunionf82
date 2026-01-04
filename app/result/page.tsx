@@ -1345,229 +1345,174 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
         }
       }
 
-      // [변경] 상세메뉴를 소메뉴와 동급으로 취급: subtitle-section과 detail-menu-section을 모두 파싱
-      const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'))
-      const detailMenuSections = Array.from(section.querySelectorAll('.detail-menu-section'))
-      
-      // content.menu_items에서 해당 메뉴의 subtitles 정보 가져오기
-      const currentMenuItem = menuItems[index]
-      const menuSubtitles = currentMenuItem?.subtitles || []
-      
-      // 모든 subtitle-section과 detail-menu-section을 동일하게 처리 (순서대로)
-      type SectionElement = { element: Element; isDetailMenu: boolean }
-      const allSectionElements: SectionElement[] = []
-      
-      // subtitle-section 추가
-      subtitleSections.forEach((sub) => {
-        allSectionElements.push({ element: sub, isDetailMenu: false })
-      })
-      
-      // detail-menu-section도 subtitle-section처럼 처리 (기존 HTML 호환성)
-      detailMenuSections.forEach((dm) => {
-        allSectionElements.push({ element: dm, isDetailMenu: true })
-      })
-      
-      // DOM 위치 순서로 정렬 (getBoundingClientRect 사용)
-      allSectionElements.sort((a, b) => {
-        const aRect = a.element.getBoundingClientRect()
-        const bRect = b.element.getBoundingClientRect()
-        return aRect.top - bRect.top
-      })
+      // subtitle-section과 detail-menu-section을 "문서 순서" 그대로 가져오기
+      // (DOMParser로 만든 문서는 getBoundingClientRect()가 의미 없어서 정렬하면 순서가 깨질 수 있음)
+      const sectionNodes = Array.from(section.querySelectorAll('.subtitle-section, .detail-menu-section'))
       
       // menu_subtitles 배열에서 순서대로 썸네일 정보 가져오기 (평탄화된 배열)
-      const allMenuSubtitles: Array<{ subtitle: string; thumbnail?: string }> = []
-      menuItems.forEach((item: any) => {
-        if (item.subtitles && Array.isArray(item.subtitles)) {
-          item.subtitles.forEach((sub: any) => {
-            if (sub.subtitle) {
-              allMenuSubtitles.push({ subtitle: sub.subtitle, thumbnail: sub.thumbnail })
-            }
-            // 상세메뉴도 배열에 포함 (평탄화된 구조)
-            if (sub.detailMenus && Array.isArray(sub.detailMenus)) {
-              sub.detailMenus.forEach((dm: any) => {
-                if (dm.detailMenu) {
-                  allMenuSubtitles.push({ subtitle: dm.detailMenu, thumbnail: dm.thumbnail })
-                }
-              })
-            }
+      // form/page.tsx와 동일한 순서로 생성: menu_subtitle 문자열 순서 기준
+      // 현재 메뉴(menuIndex)에 속하는 소메뉴만 포함
+      const allMenuSubtitles: Array<{
+        subtitle: string
+        thumbnail?: string
+        interpretation_tool?: string
+        isDetailMenu?: boolean
+      }> = []
+      const seenExpected = new Set<string>()
+      
+      // content.menu_subtitle을 줄바꿈으로 분리 (form/page.tsx와 동일한 순서)
+      const menuSubtitlesList = content?.menu_subtitle ? content.menu_subtitle.split('\n').filter((s: string) => s.trim()) : []
+      
+      // interpretation_tools 배열 가져오기 (form/page.tsx와 동일)
+      const interpretationTools = content?.interpretation_tools ? (Array.isArray(content.interpretation_tools) ? content.interpretation_tools : content.interpretation_tools.split('\n').filter((s: string) => s.trim())) : []
+      
+      // 현재 메뉴 번호 (1부터 시작)
+      const menuNumber = index + 1
+      
+      // menuSubtitlesList에서 현재 메뉴에 속하는 소메뉴만 필터링 (예: 메뉴 1이면 "1-"로 시작하는 항목)
+      const currentMenuSubtitles = menuSubtitlesList.filter((subtitle: string) => {
+        const match = subtitle.trim().match(/^(\d+)/)
+        return match ? parseInt(match[1]) === menuNumber : false
+      })
+      
+      // 현재 메뉴의 소메뉴들을 순서대로 처리 (form/page.tsx의 menuSubtitlePairs 생성 로직과 동일)
+      currentMenuSubtitles.forEach((subtitle: string, subtitleIndex: number) => {
+        const trimmedSubtitle = subtitle.trim()
+        
+        // interpretation_tool 가져오기 (form/page.tsx와 동일한 로직)
+        const tool = interpretationTools[subtitleIndex] || interpretationTools[0] || ''
+        
+        // 해당 소메뉴의 정보 찾기
+        const currentMenuItem = menuItems[index]
+        let foundSub = null
+        if (currentMenuItem?.subtitles && Array.isArray(currentMenuItem.subtitles)) {
+          // 정확한 매칭 시도
+          foundSub = currentMenuItem.subtitles.find((s: any) => s.subtitle?.trim() === trimmedSubtitle)
+          // 매칭 실패 시 부분 매칭 시도 (숫자 접두사 제거 후 비교)
+          if (!foundSub) {
+            const subtitleWithoutPrefix = trimmedSubtitle.replace(/^\d+[-.]\s*/, '').trim()
+            foundSub = currentMenuItem.subtitles.find((s: any) => {
+              const sSubtitle = s.subtitle?.trim() || ''
+              return sSubtitle === subtitleWithoutPrefix || sSubtitle.includes(subtitleWithoutPrefix) || subtitleWithoutPrefix.includes(sSubtitle)
+            })
+          }
+        }
+        
+        // 소메뉴 추가 (매칭 실패해도 trimmedSubtitle을 그대로 사용)
+        {
+          const key = `S:${removeNumberPrefix(trimmedSubtitle).replace(/\s+/g, ' ').trim()}`
+          if (!seenExpected.has(key) && key !== 'S:') {
+            seenExpected.add(key)
+            allMenuSubtitles.push({
+              subtitle: trimmedSubtitle,
+              thumbnail: foundSub?.thumbnail,
+              interpretation_tool: foundSub?.interpretation_tool || tool,
+              isDetailMenu: false,
+            })
+          }
+        }
+        
+        // 상세메뉴가 있으면 소메뉴 다음에 순서대로 추가 (평탄화된 구조)
+        if (foundSub?.detailMenus && Array.isArray(foundSub.detailMenus)) {
+          foundSub.detailMenus.forEach((dm: any) => {
+            const dmTitle = (dm?.detailMenu || '').toString().trim()
+            if (!dmTitle) return
+            const key = `D:${removeNumberPrefix(dmTitle).replace(/\s+/g, ' ').trim()}`
+            if (seenExpected.has(key) || key === 'D:') return
+            seenExpected.add(key)
+            allMenuSubtitles.push({
+              subtitle: dmTitle,
+              thumbnail: dm.thumbnail,
+              interpretation_tool: dm.interpretation_tool || '',
+              isDetailMenu: true,
+            })
           })
         }
       })
       
-      const subtitles: ParsedSubtitle[] = allSectionElements.map((sectionItem, globalIdx) => {
-        const { element, isDetailMenu } = sectionItem
-        
-        // subtitle-section인 경우
-        if (!isDetailMenu) {
-          const sub = element as Element
-          
-          // 평탄화된 배열에서 순서대로 썸네일 찾기
-          const subtitleThumbnail = allMenuSubtitles[globalIdx]?.thumbnail || ''
-        
-        // subtitle-content 추출 (DOM과 원본 HTML 둘 다 시도, 더 긴 것을 사용)
-        const contentHtmlFromDom = sub.querySelector('.subtitle-content')?.innerHTML || ''
-        let contentHtmlFromSource = ''
-        
-        // 원본 HTML에서도 항상 추출 시도 (DOM 파싱이 불완전할 수 있음)
-        // DOMParser는 완전한 HTML만 파싱하므로, 스트리밍 중에는 subtitle-content가 DOM에 없을 수 있음
-        if (sourceHtml) {
-          // 원본 HTML에서 모든 subtitle-content와 detail-menu-content를 순서대로 찾기 (평탄화된 구조)
-          const allContents: string[] = []
-          // subtitle-content 찾기
-          const subtitleContentRegex = /<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
-          let contentMatch
-          while ((contentMatch = subtitleContentRegex.exec(sourceHtml)) !== null) {
-            let extractedContent = contentMatch[1] || ''
-            allContents.push(extractedContent.trim())
-          }
-          // detail-menu-content 찾기 (기존 HTML 호환성)
-          const detailMenuContentRegex = /<div[^>]*class="[^"]*detail-menu-content[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
-          while ((contentMatch = detailMenuContentRegex.exec(sourceHtml)) !== null) {
-            let extractedContent = contentMatch[1] || ''
-            allContents.push(extractedContent.trim())
-          }
-          
-          // 현재 항목의 전역 인덱스 계산 (평탄화된 배열 기준)
-          const globalContentIndex = cursor + globalIdx
-          
-          if (globalContentIndex < allContents.length) {
-            contentHtmlFromSource = allContents[globalContentIndex]
-          } else {
-            // 닫힌 태그를 못 찾은 경우 (스트리밍 중), 시작 태그 위치로 추출
-            const contentStarts: number[] = []
-            // subtitle-content와 detail-menu-content 모두 찾기
-            const startRegex = /<div[^>]*class="[^"]*(subtitle-content|detail-menu-content)[^"]*"[^>]*>/gi
-            let startMatch
-            while ((startMatch = startRegex.exec(sourceHtml)) !== null) {
-              contentStarts.push(startMatch.index + startMatch[0].length)
-            }
-            
-            if (globalContentIndex < contentStarts.length) {
-              const startIndex = contentStarts[globalContentIndex]
-              let endIndex = sourceHtml.length
-              
-              // 다음 content 시작 위치 찾기
-              if (globalContentIndex + 1 < contentStarts.length) {
-                const nextStartIndex = contentStarts[globalContentIndex + 1]
-                const beforeNext = sourceHtml.substring(startIndex, nextStartIndex)
-                const closeTagIndex = beforeNext.lastIndexOf('</div>')
-                if (closeTagIndex > 0) {
-                  endIndex = startIndex + closeTagIndex
-                } else {
-                  const nextTagStart = sourceHtml.lastIndexOf('<div', nextStartIndex)
-                  if (nextTagStart > startIndex) {
-                    endIndex = nextTagStart
-                  } else {
-                    endIndex = nextStartIndex - 10
-                  }
-                }
-              } else {
-                // 마지막 content인 경우
-                const candidates = [
-                  sourceHtml.indexOf('<div class="subtitle-section"', startIndex),
-                  sourceHtml.indexOf('<div class="detail-menu-section"', startIndex),
-                  sourceHtml.indexOf('</div>', startIndex)
-                ].filter(idx => idx > startIndex)
-                
-                if (candidates.length > 0) {
-                  const candidateEnd = Math.min(...candidates)
-                  const beforeCandidate = sourceHtml.substring(startIndex, candidateEnd)
-                  const closeTagIndex = beforeCandidate.lastIndexOf('</div>')
-                  if (closeTagIndex > 0) {
-                    endIndex = startIndex + closeTagIndex
-                  } else {
-                    endIndex = candidateEnd
-                  }
-                }
-              }
-              
-              if (endIndex > startIndex) {
-                contentHtmlFromSource = sourceHtml.substring(startIndex, endIndex).trim()
-              }
-            }
+      const normalizeTitle = (t: string) => removeNumberPrefix((t || '').toString()).replace(/\s+/g, ' ').trim()
+      const titlesMatch = (a: string, b: string) => {
+        const na = normalizeTitle(a)
+        const nb = normalizeTitle(b)
+        if (!na || !nb) return false
+        return na === nb || na.includes(nb) || nb.includes(na)
+      }
+      const extractNodeTitle = (node: Element) => {
+        const isDetail = node.classList.contains('detail-menu-section')
+        const raw = isDetail
+          ? (node.querySelector('.detail-menu-title')?.textContent || node.querySelector('.subtitle-title')?.textContent || '')
+          : (node.querySelector('.subtitle-title')?.textContent || '')
+        return (raw || '').toString().trim()
+      }
+
+      // 예상 항목(소메뉴+상세메뉴)을 먼저 만들고, DOM 섹션을 제목으로 순차 매칭해 내용만 채움
+      let nodeCursor = 0
+      const subtitles: ParsedSubtitle[] = allMenuSubtitles.map((expected, expectedIdx) => {
+        const expectedTitle = (expected?.subtitle || '').toString().trim()
+        const expectedIsDetail = !!expected?.isDetailMenu
+
+        let matchedNode: Element | null = null
+        for (let i = nodeCursor; i < sectionNodes.length; i++) {
+          const node = sectionNodes[i]
+          const nodeTitle = extractNodeTitle(node)
+          if (titlesMatch(nodeTitle, expectedTitle)) {
+            matchedNode = node
+            nodeCursor = i + 1
+            break
           }
         }
-        
-        // DOM에서 추출한 것과 원본 HTML에서 추출한 것 중 더 긴 것을 사용 (더 완전한 내용)
-        const contentHtml = (contentHtmlFromSource.length > contentHtmlFromDom.length) 
-          ? contentHtmlFromSource 
-          : contentHtmlFromDom
-        
-          return {
-            title: sub.querySelector('.subtitle-title')?.textContent?.trim() || '',
-            contentHtml: contentHtml,
-            thumbnail: subtitleThumbnail,
-            detailMenus: undefined, // 상세메뉴는 모두 subtitles 배열에 포함되므로 detailMenus 사용 안 함
-            detailMenuSectionHtml: undefined,
-            isDetailMenu: false
+
+        // DOM 제목 매칭 실패 시: 순서 기반으로 하나만 소비 (스트리밍/부분 HTML에서도 인덱스 밀림 방지)
+        if (!matchedNode && nodeCursor < sectionNodes.length) {
+          matchedNode = sectionNodes[nodeCursor]
+          nodeCursor += 1
+        }
+
+        const thumbnail = expected?.thumbnail || ''
+        const interpretationTool = expected?.interpretation_tool || ''
+
+        let contentHtml = ''
+        if (matchedNode) {
+          if (expectedIsDetail) {
+            contentHtml =
+              matchedNode.querySelector('.detail-menu-content')?.innerHTML ||
+              matchedNode.querySelector('.subtitle-content')?.innerHTML ||
+              ''
+          } else {
+            contentHtml =
+              matchedNode.querySelector('.subtitle-content')?.innerHTML ||
+              matchedNode.querySelector('.detail-menu-content')?.innerHTML ||
+              ''
           }
-        } else {
-          // detail-menu-section인 경우: subtitle-section처럼 처리 (기존 HTML 호환성)
-          const dm = element as Element
-          
-          // detail-menu-title에서 제목 추출 (없으면 subtitle-title 시도)
-          let title = dm.querySelector('.detail-menu-title')?.textContent?.trim() || ''
-          if (!title) {
-            title = dm.querySelector('.subtitle-title')?.textContent?.trim() || ''
-          }
-          
-          // detail-menu-content에서 내용 추출 (DOM에서)
-          let contentHtml = dm.querySelector('.detail-menu-content')?.innerHTML || ''
-          if (!contentHtml) {
-            contentHtml = dm.querySelector('.subtitle-content')?.innerHTML || ''
-          }
-          
-          // sourceHtml에서도 추출 시도 (더 완전한 내용)
-          let contentHtmlFromSource = ''
-          if (sourceHtml) {
-            // subtitle-content와 detail-menu-content를 모두 찾는 로직 재사용
-            const allContents: string[] = []
-            const subtitleContentRegex = /<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
-            let contentMatch
-            while ((contentMatch = subtitleContentRegex.exec(sourceHtml)) !== null) {
-              allContents.push(contentMatch[1]?.trim() || '')
-            }
-            const detailMenuContentRegex = /<div[^>]*class="[^"]*detail-menu-content[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
-            while ((contentMatch = detailMenuContentRegex.exec(sourceHtml)) !== null) {
-              allContents.push(contentMatch[1]?.trim() || '')
-            }
-            
-            const globalContentIndex = cursor + globalIdx
-            if (globalContentIndex < allContents.length) {
-              contentHtmlFromSource = allContents[globalContentIndex]
-            }
-          }
-          
-          // DOM에서 추출한 것과 원본 HTML에서 추출한 것 중 더 긴 것을 사용
-          const finalContentHtml = (contentHtmlFromSource.length > contentHtml.length) 
-            ? contentHtmlFromSource 
-            : contentHtml
-          
-          // 평탄화된 배열에서 순서대로 썸네일 찾기
-          const thumbnail = allMenuSubtitles[globalIdx]?.thumbnail || ''
-          
-          // 해석도구 제거 (일반적인 패턴)
-          let cleanedContentHtml = finalContentHtml
-          if (cleanedContentHtml) {
+        }
+
+        // 해석도구 제거 (소메뉴/상세메뉴 공통)
+        let cleanedContentHtml = contentHtml || ''
+        if (cleanedContentHtml) {
+          if (interpretationTool) {
+            const escapedTool = interpretationTool.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
             cleanedContentHtml = cleanedContentHtml
-              .replace(/상세메뉴\s*해석도구[^<]*/gi, '')
-              .replace(/해석도구\s*[:：]\s*/gi, '')
-              .replace(/\*\*해석도구\*\*\s*[:：]\s*/gi, '')
-              .replace(/interpretation[_\s]*tool\s*[:：]\s*/gi, '')
-              .replace(/<[^>]*>해석도구[^<]*<\/[^>]*>/gi, '')
-              .replace(/해석도구[^<]*/gi, '')
-              .replace(/\s*해석도구\s*/gi, '')
-              .trim()
+              .replace(new RegExp(escapedTool + '\\s*[:：]\\s*', 'gi'), '')
+              .replace(new RegExp(escapedTool + '[^<]*', 'gi'), '')
           }
-          
-          return {
-            title: title,
-            contentHtml: cleanedContentHtml || '',
-            thumbnail: thumbnail,
-            detailMenus: undefined,
-            detailMenuSectionHtml: undefined,
-            isDetailMenu: true
-          }
+          cleanedContentHtml = cleanedContentHtml
+            .replace(/상세메뉴\s*해석도구[^<]*/gi, '')
+            .replace(/해석도구\s*[:：]\s*/gi, '')
+            .replace(/\*\*해석도구\*\*\s*[:：]\s*/gi, '')
+            .replace(/interpretation[_\s]*tool\s*[:：]\s*/gi, '')
+            .replace(/<[^>]*>해석도구[^<]*<\/[^>]*>/gi, '')
+            .replace(/해석도구[^<]*/gi, '')
+            .replace(/\s*해석도구\s*/gi, '')
+            .trim()
+        }
+
+        return {
+          title: expectedTitle || `항목 ${expectedIdx + 1}`,
+          contentHtml: cleanedContentHtml || '',
+          thumbnail: thumbnail,
+          detailMenus: undefined,
+          detailMenuSectionHtml: undefined,
+          isDetailMenu: expectedIsDetail,
         }
       })
       const startIndex = cursor
@@ -1711,6 +1656,27 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       }
     }
   }, [fortuneViewMode, resultData?.html, streamingHtml, isStreamingActive, streamingFinished, isStreaming])
+
+  // realtime에서 "점사중..."은 실제 진행 중인 1개 항목에만 표시
+  const MIN_COMPLETE_CHARS_SUBTITLE = 30
+  const MIN_COMPLETE_CHARS_DETAIL = 50
+  const isItemComplete = (sub: ParsedSubtitle) => {
+    const len = (sub.contentHtml || '').trim().length
+    const min = sub.isDetailMenu ? MIN_COMPLETE_CHARS_DETAIL : MIN_COMPLETE_CHARS_SUBTITLE
+    return len >= min
+  }
+  const activePos = useMemo(() => {
+    for (let mi = 0; mi < parsedMenus.length; mi++) {
+      const menu = parsedMenus[mi]
+      for (let si = 0; si < menu.subtitles.length; si++) {
+        const sub = menu.subtitles[si]
+        if (!isItemComplete(sub)) {
+          return { menuIndex: mi, subIndex: si }
+        }
+      }
+    }
+    return null
+  }, [parsedMenus])
 
   if (loading) {
     return (
@@ -3319,39 +3285,8 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           parsedMenus.length > 0 ? (
             <div className="jeminai-results space-y-6">
               {parsedMenus.map((menu, menuIndex) => {
-                // 이전 대메뉴가 완성되었는지 체크 (첫 번째 대메뉴는 항상 표시)
-                // 마지막 소제목의 마지막 상세메뉴를 제외한 모든 것이 완성되었으면 다음 대메뉴 표시
-                const prevMenu = menuIndex > 0 ? parsedMenus[menuIndex - 1] : null
-                // 상세메뉴도 subtitles 배열에 포함되므로 모든 subtitle이 완성되었는지만 체크
-                const prevMenuComplete = !prevMenu || (
-                  prevMenu.subtitles.length > 0 &&
-                  prevMenu.subtitles.every((sub) => {
-                    return sub.contentHtml && sub.contentHtml.trim().length > 0
-                  })
-                )
-                
-                // 이전 대메뉴의 첫 번째 소제목이 완성되었는지 체크 (두 번째 대메뉴부터 표시하기 위한 조건)
-                // 첫 번째 소제목이 완성되면 다음 대메뉴를 표시할 수 있도록 함
-                const prevMenuFirstSubtitleReady = !prevMenu || (
-                  prevMenu.subtitles.length > 0 && 
-                  prevMenu.subtitles[0].contentHtml && 
-                  prevMenu.subtitles[0].contentHtml.trim().length > 0
-                )
-                
-                // 현재 대메뉴가 표시 가능한지 체크 
-                // 첫 번째 대메뉴이거나, 이전 대메뉴의 첫 번째 소제목이 준비되었으면 표시
-                // (이전 대메뉴의 모든 것이 완성될 때까지 기다리지 않고, 첫 번째 소제목만 준비되면 다음 대메뉴 표시)
-                const canShowMenu = menuIndex === 0 || prevMenuFirstSubtitleReady
-                
-                if (!canShowMenu) return null
-                
-                // 이전 대메뉴의 마지막 항목이 점사 중인지 체크 (상세메뉴도 subtitles에 포함되므로 마지막 subtitle 체크)
-                const isPrevMenuLastItemStreaming = prevMenu && prevMenu.subtitles.length > 0 && (() => {
-                  const lastSubtitle = prevMenu.subtitles[prevMenu.subtitles.length - 1]
-                  // 마지막 항목이 점사 중 (내용이 없거나 50자 미만이면 미완성으로 간주)
-                  return !lastSubtitle.contentHtml || lastSubtitle.contentHtml.trim().length < 50
-                })()
-                
+                // 활성 항목의 메뉴까지만 표시 (이후 메뉴는 숨김)
+                if (activePos && menuIndex > activePos.menuIndex) return null
                 return (
                 <div key={`menu-${menuIndex}`} className="menu-section space-y-3">
                   {/* 북커버 썸네일 (첫 번째 대제목 라운드 박스 안, 제목 위) */}
@@ -3370,18 +3305,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                   )}
                   
                   <div className="menu-title font-bold text-lg text-gray-900">{menu.title}</div>
-                  
-                  {/* 이전 대메뉴의 마지막 항목이 점사 중일 때 "점사중..." 표시 */}
-                  {isPrevMenuLastItemStreaming && (
-                    <div className="text-gray-400 flex items-center gap-2 mt-2">
-                      점사중입니다
-                      <span className="loading-dots">
-                        <span className="dot" />
-                        <span className="dot" />
-                        <span className="dot" />
-                      </span>
-                    </div>
-                  )}
 
                   {/* 대제목별 썸네일 */}
                   {menu.thumbnailHtml && (
@@ -3398,121 +3321,46 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
                   <div className="space-y-4">
                     {menu.subtitles.map((sub, subIndex) => {
-                      const globalIndex = menu.startIndex + subIndex
-                      const isRevealed = globalIndex < revealedCount
-                      const isLastSubtitle = subIndex === menu.subtitles.length - 1
-                      
-                      // 상세메뉴인 경우: 소메뉴와 동급으로 취급하여 동일한 점사 표시 로직 사용
-                      if (sub.isDetailMenu) {
-                        // 상세메뉴 완성 여부 체크
-                        const isDetailMenuComplete = sub.contentHtml && sub.contentHtml.trim().length > 0
-                        
-                        // 이전 항목(소메뉴 또는 상세메뉴)이 완성되었는지 체크
-                        // 첫 번째 항목(subIndex === 0)은 항상 표시
-                        const prevItem = subIndex > 0 ? menu.subtitles[subIndex - 1] : null
-                        // 첫 번째 항목이거나, 이전 항목이 없거나, 이전 항목이 완성되었으면 표시
-                        const prevItemComplete = subIndex === 0 || !prevItem || (prevItem.contentHtml && prevItem.contentHtml.trim().length > 0)
-                        
-                        // 현재 상세메뉴가 표시 가능한지 체크
-                        // 첫 번째 항목은 항상 표시, 그 외에는 이전 항목이 완성되었을 때만 표시
-                        const canShowDetailMenu = prevItemComplete
-                        
-                        if (!canShowDetailMenu) return null
-                        
-                        const detailMenuTitle = removeNumberPrefix(sub.title || '')
-                        if (!detailMenuTitle || detailMenuTitle.includes('상세메뉴 해석 목록') || detailMenuTitle.trim().length === 0) {
-                          return null
-                        }
-                        
-                        return (
-                          <div key={`detail-menu-${subIndex}`} className="subtitle-section space-y-2">
-                            <div className="subtitle-title font-semibold text-gray-900">
-                              {detailMenuTitle}
-                            </div>
-                            {sub.thumbnail && (
-                              <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto' }}>
-                                <img 
-                                  src={sub.thumbnail} 
-                                  alt="상세메뉴 썸네일"
-                                  className="w-full h-auto rounded-lg"
-                                  style={{ display: 'block', objectFit: 'contain' }}
-                                />
-                              </div>
-                            )}
-                            {isDetailMenuComplete ? (
-                              <div
-                                className="subtitle-content text-gray-800"
-                                dangerouslySetInnerHTML={{ __html: sub.contentHtml || '' }}
-                              />
-                            ) : (
-                              <div className="subtitle-content text-gray-400 flex items-center gap-2 py-2">
-                                <span>점사중입니다</span>
-                                <span className="loading-dots">
-                                  <span className="dot" />
-                                  <span className="dot" />
-                                  <span className="dot" />
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      }
-                      
-                      // 소메뉴인 경우 기존 로직 사용
-                      // 소제목이 완성되었는지 체크 (contentHtml이 있고 비어있지 않으면 완성)
-                      const isSubtitleComplete = sub.contentHtml && sub.contentHtml.trim().length > 0
-                      
-                      // 이전 항목(소메뉴 또는 상세메뉴)이 완성되었는지 체크
-                      // 첫 번째 항목(subIndex === 0)은 항상 표시
-                      const prevSubtitle = subIndex > 0 ? menu.subtitles[subIndex - 1] : null
-                      // 첫 번째 항목이거나, 이전 항목이 없거나, 이전 항목이 완성되었으면 표시
-                      const prevItemComplete = subIndex === 0 || !prevSubtitle || (prevSubtitle.contentHtml && prevSubtitle.contentHtml.trim().length > 0)
-                      
-                      // 현재 소제목이 표시 가능한지 체크
-                      // 첫 번째 항목은 항상 표시, 그 외에는 이전 항목이 완성되었을 때만 표시
-                      const canShowSubtitle = prevItemComplete
-                      
-                      // 디버깅: 첫 번째 소제목 렌더링 조건 확인 (계산 후)
-                      if (menuIndex === 0 && subIndex === 0) {
-                      }
-                      
+                      // 활성 항목까지만 표시 (이후 항목은 숨김)
+                      if (activePos && menuIndex === activePos.menuIndex && subIndex > activePos.subIndex) return null
+
+                      const complete = isItemComplete(sub)
+                      const isActive =
+                        !!activePos &&
+                        menuIndex === activePos.menuIndex &&
+                        subIndex === activePos.subIndex &&
+                        !complete
+
+                      // 활성 항목이 아닌데 미완성이면 숨김 (점사중 표시 중복 방지)
+                      if (!complete && !isActive) return null
+
+                      const title = removeNumberPrefix(sub.title || '').trim()
+                      if (!title || title.includes('상세메뉴 해석 목록')) return null
+
                       return (
-                        <div 
-                          key={`subtitle-${menuIndex}-${subIndex}`} 
-                          className="subtitle-section space-y-2"
-                        >
-                          {sub.title && canShowSubtitle && (
-                            <div className="subtitle-title font-semibold text-gray-900">
-                              {removeNumberPrefix(sub.title)}
-                            </div>
-                          )}
-                          {sub.thumbnail && canShowSubtitle && (
+                        <div key={`item-${menuIndex}-${subIndex}`} className="subtitle-section space-y-2">
+                          <div className="subtitle-title font-semibold text-gray-900">{title}</div>
+                          {sub.thumbnail && (
                             <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto' }}>
-                              <img 
-                                src={sub.thumbnail} 
-                                alt="소제목 썸네일"
+                              <img
+                                src={sub.thumbnail}
+                                alt={sub.isDetailMenu ? '상세메뉴 썸네일' : '소제목 썸네일'}
                                 className="w-full h-auto rounded-lg"
                                 style={{ display: 'block', objectFit: 'contain' }}
                               />
                             </div>
                           )}
-                          {/* 항목 내용 표시 (소메뉴와 상세메뉴 모두 동일하게 처리) */}
-                          {canShowSubtitle && (
-                            isSubtitleComplete ? (
-                              <div
-                                className="subtitle-content text-gray-800"
-                                dangerouslySetInnerHTML={{ __html: sub.contentHtml }}
-                              />
-                            ) : (
-                              <div className="subtitle-content text-gray-400 flex items-center gap-2">
-                                점사중입니다
-                                <span className="loading-dots">
-                                  <span className="dot" />
-                                  <span className="dot" />
-                                  <span className="dot" />
-                                </span>
-                              </div>
-                            )
+                          {complete ? (
+                            <div className="subtitle-content text-gray-800" dangerouslySetInnerHTML={{ __html: sub.contentHtml || '' }} />
+                          ) : (
+                            <div className="subtitle-content text-gray-400 flex items-center gap-2 py-2">
+                              <span>점사중입니다</span>
+                              <span className="loading-dots">
+                                <span className="dot" />
+                                <span className="dot" />
+                                <span className="dot" />
+                              </span>
+                            </div>
                           )}
                         </div>
                       )
