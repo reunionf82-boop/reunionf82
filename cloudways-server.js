@@ -8,6 +8,22 @@ const express = require('express');
 const cors = require('cors');
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
 
+// SSOT(공통 상수) + HTML 안전 처리 유틸
+const {
+    STREAM_MAX_CHARS,
+    COMPLETION_CHECK_INTERVAL_CHUNKS,
+    MIN_TEXT_LEN_SUBTITLE,
+    MIN_TEXT_LEN_DETAIL,
+} = require('./cloudways-streaming-config');
+const {
+    ITEM_START,
+    ITEM_END,
+    stripCodeFences,
+    normalizeHtmlBasics,
+    safeTrimToCompletedBoundary,
+    mergeSecondRequestHtml,
+} = require('./cloudways-html-safety');
+
 const app = express();
 
 // 1. 보안 설정 (Vercel에서 오는 요청만 허용)
@@ -427,6 +443,23 @@ ${isSecondRequest ? `
 - 해석도구에서 "문단간 한줄띄기" 지시가 있으면, 반드시 <br> 또는 <p> 태그로 표현하세요.
 - **⚠️ 테이블은 절대 중첩하지 마세요. 테이블 안에 테이블을 넣지 마세요. 테이블은 독립적으로 사용하세요.**
 
+**🚨 매우 중요한 마커 삽입 요구사항 (제안 2):**
+각 소제목(subtitle-section)과 상세메뉴(detail-menu-section)의 시작과 끝에 반드시 주석 마커를 삽입해야 합니다:
+- 각 <div class="subtitle-section"> 시작 직전에: <!-- ITEM_START: [소제목번호] -->
+- 각 </div> (subtitle-section 닫기) 직후에: <!-- ITEM_END: [소제목번호] -->
+- 각 <div class="detail-menu-section"> 시작 직전에: <!-- ITEM_START: [소제목번호]-[상세메뉴번호] -->
+- 각 </div> (detail-menu-section 닫기) 직후에: <!-- ITEM_END: [소제목번호]-[상세메뉴번호] -->
+
+예시:
+<!-- ITEM_START: 1-1 -->
+<div class="subtitle-section">
+  <h3 class="subtitle-title">1-1. 소제목 제목</h3>
+  <div class="subtitle-content">해석 내용...</div>
+</div>
+<!-- ITEM_END: 1-1 -->
+
+이 마커는 긴 점사 결과를 안전하게 나누기 위해 필수입니다. 반드시 포함하세요!
+
 `;
 
         console.log('프롬프트 생성 완료, 길이:', prompt.length);
@@ -678,12 +711,13 @@ ${isSecondRequest ? `
         let accumulatedText = '';
         let chunkCount = 0;
         let lastCompletionCheckChunk = 0;
-        const COMPLETION_CHECK_INTERVAL = 50;
-        const MAX_TEXT_LENGTH_BEFORE_RETRY = 100000; // 100000자 도달 시 미리 끊기
+        const COMPLETION_CHECK_INTERVAL = COMPLETION_CHECK_INTERVAL_CHUNKS;
+        const MAX_TEXT_LENGTH_BEFORE_RETRY = STREAM_MAX_CHARS; // 개발 2만(기본), 운영은 env로 10만
+        console.log(`🔧 [요청 처리] 길이 제한 설정: ${MAX_TEXT_LENGTH_BEFORE_RETRY.toLocaleString()}자`);
         let allSubtitlesCompletedEarly = false;
         let streamErrorOccurred = false;
         let streamErrorMessage = '';
-        let earlyBreakDueToLength = false; // 100000자 도달로 인한 조기 종료 플래그
+        let earlyBreakDueToLength = false; // 길이 도달로 인한 조기 종료 플래그
 
         // 스트림 읽기
         try {
@@ -718,12 +752,14 @@ ${isSecondRequest ? `
                 console.log(`전송된 청크: ${chunkCount}개, 누적 텍스트 길이: ${accumulatedText.length}자`);
             }
 
-                    // 100000자 도달 시 즉시 체크 (현재 소제목/상세메뉴 완료 후 끊기)
+                    // 길이 도달 시 즉시 체크 (현재 항목 완료 후 끊기)
                     if (accumulatedText.length >= MAX_TEXT_LENGTH_BEFORE_RETRY && !isSecondRequest && !earlyBreakDueToLength) {
-                        console.log(`⚠️ 누적 텍스트 길이 ${accumulatedText.length}자가 ${MAX_TEXT_LENGTH_BEFORE_RETRY}자를 초과했습니다. 현재 소제목/상세메뉴 완료 후 재요청을 수행합니다.`);
+                        console.log(`⚠️ [길이 제한 도달] 누적 텍스트: ${accumulatedText.length.toLocaleString()}자 / 제한: ${MAX_TEXT_LENGTH_BEFORE_RETRY.toLocaleString()}자`);
+                        console.log(`⚠️ 현재 항목 완료 후 재요청을 수행합니다.`);
                         earlyBreakDueToLength = true; // 플래그 설정
-                        // 즉시 완료 체크 수행 (다음 완료 체크까지 기다리지 않음)
-                        lastCompletionCheckChunk = chunkCount - COMPLETION_CHECK_INTERVAL; // 강제로 체크하도록 설정
+                        // 즉시 완료 체크 수행을 위해 lastCompletionCheckChunk를 현재보다 작게 설정
+                        lastCompletionCheckChunk = chunkCount - COMPLETION_CHECK_INTERVAL - 1; // 강제로 즉시 체크하도록 설정
+                        console.log(`⚠️ [길이 제한 도달] 즉시 완료 체크를 수행합니다. (청크 ${chunkCount})`);
                     }
                 } catch (chunkError) {
                     console.error(`청크 ${chunkCount} 처리 중 에러:`, chunkError);
@@ -734,7 +770,7 @@ ${isSecondRequest ? `
             // 모든 소제목 완료 여부 체크
             // earlyBreakDueToLength가 true이면 매 청크마다 체크, 아니면 50청크마다 체크
             const shouldCheckCompletion = earlyBreakDueToLength 
-                ? (accumulatedText.trim().length > 100) // 10만자 도달 후에는 매 청크마다 체크
+                ? true // 10만자 도달 후에는 매 청크마다 즉시 체크
                 : (chunkCount - lastCompletionCheckChunk >= COMPLETION_CHECK_INTERVAL && accumulatedText.trim().length > 100);
             
             if (shouldCheckCompletion) {
@@ -762,79 +798,46 @@ ${isSecondRequest ? `
                     allSubtitlesCompletedEarly = true;
                     break; // for await 루프를 즉시 종료하여 스트림 읽기 중단
                 } else if (earlyBreakDueToLength) {
-                    // 100000자 도달 후 현재 소제목/상세메뉴 완료 확인
-                    // 마지막 완료된 소제목 이후에 새로운 완료된 소제목이 있는지 확인
+                    // 제안 3: 10만자 도달 후 안전하게 끊기 (HTML 깨짐 방지)
+                    // 완료된 소제목이 있으면 마지막 완료된 항목이 닫혔는지 확인 후 끊기
                     if (completedSubtitles.length > 0) {
                         const lastCompletedIndex = Math.max(...completedSubtitles);
                         const lastSubtitle = menu_subtitles[lastCompletedIndex];
-                        const lastSubtitlePattern = lastSubtitle?.subtitle;
-                        const hasDetailMenus = lastSubtitle?.detailMenus && lastSubtitle.detailMenus.length > 0;
                         
-                        if (lastSubtitlePattern) {
-                            const subtitleEscaped = lastSubtitlePattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                            const lastSubtitleSectionRegex = new RegExp(
-                                `<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>([\\s\\S]*?)<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>([\\s\\S]*?)${subtitleEscaped}([\\s\\S]*?)</h3>([\\s\\S]*?)</div>`,
+                        // 마지막 완료된 소제목이 안전하게 닫혔는지 확인
+                        let isLastSectionClosed = false;
+                        if (lastSubtitle?.subtitle) {
+                            const lastSubtitleEscaped = lastSubtitle.subtitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            // 마지막 완료된 subtitle-section의 닫는 </div>가 있는지 확인
+                            const lastSectionPattern = new RegExp(
+                                `<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>[\\s\\S]*?<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>[\\s\\S]*?${lastSubtitleEscaped}[\\s\\S]*?<\\/h3>[\\s\\S]*?<div[^>]*class="[^"]*subtitle-content[^"]*"[^>]*>[\\s\\S]*?<\\/div>[\\s\\S]*?<\\/div>`,
                                 'i'
                             );
-                            const match = htmlForParsing.match(lastSubtitleSectionRegex);
-                            if (match) {
-                                // 마지막 완료된 소제목의 subtitle-section이 완전히 닫혔는지 확인
-                                const sectionContent = match[0];
-                                const openDivs = (sectionContent.match(/<div/g) || []).length;
-                                const closeDivs = (sectionContent.match(/<\/div>/g) || []).length;
-                                
-                                // subtitle-section이 완전히 닫혔는지 확인
-                                if (openDivs === closeDivs) {
-                                    // 상세메뉴가 있는 경우, 모든 상세메뉴가 완료되었는지 확인
-                                    if (hasDetailMenus) {
-                                        const detailMenuCount = lastSubtitle.detailMenus.length;
-                                        const detailMenuSectionMatches = sectionContent.match(/<div[^>]*class="[^"]*detail-menu-section[^"]*"[^>]*>/gi);
-                                        const detailMenuSections = detailMenuSectionMatches ? detailMenuSectionMatches.length : 0;
-                                        
-                                        // 각 상세메뉴가 완료되었는지 확인 (detail-menu-content가 있는지 확인)
-                                        let completedDetailMenus = 0;
-                                        if (detailMenuSectionMatches) {
-                                            detailMenuSectionMatches.forEach(() => {
-                                                const detailMenuContentPattern = /<div[^>]*class="[^"]*detail-menu-content[^"]*"[^>]*>([\s\S]*?)<\/div>/gi;
-                                                const detailMenuContentMatch = sectionContent.match(detailMenuContentPattern);
-                                                if (detailMenuContentMatch) {
-                                                    detailMenuContentMatch.forEach(content => {
-                                                        const textOnly = content.replace(/<[^>]+>/g, '').trim();
-                                                        if (textOnly.length > 10) {
-                                                            completedDetailMenus++;
-                                                        }
-                                                    });
-                                                }
-                                            });
-                                        }
-                                        
-                                        // 모든 상세메뉴가 완료되었는지 확인
-                                        if (completedDetailMenus >= detailMenuCount) {
-                                            console.log(`✅ [청크 ${chunkCount}] 100000자 도달 후 현재 소제목과 모든 상세메뉴가 완료되었습니다. 재요청을 위해 스트림을 중단합니다.`);
-                                            console.log(`완료된 소제목: ${completedSubtitles.length}/${menu_subtitles.length}개`);
-                                            console.log(`완료된 상세메뉴: ${completedDetailMenus}/${detailMenuCount}개`);
-                                            console.log(`accumulatedText 길이: ${accumulatedText.length}자`);
-                                            break; // for await 루프를 즉시 종료
-                                        } else {
-                                            // 상세메뉴가 아직 완료되지 않았으므로 계속 대기
-                                            if (chunkCount % 10 === 0) {
-                                                console.log(`⏳ [청크 ${chunkCount}] 상세메뉴 완료 대기 중... (${completedDetailMenus}/${detailMenuCount}개 완료)`);
-                                            }
-                                        }
-                                    } else {
-                                        // 상세메뉴가 없으면 subtitle-section이 닫혔으면 완료
-                                        console.log(`✅ [청크 ${chunkCount}] 100000자 도달 후 현재 소제목이 완료되었습니다. 재요청을 위해 스트림을 중단합니다.`);
-                                        console.log(`완료된 소제목: ${completedSubtitles.length}/${menu_subtitles.length}개`);
-                                        console.log(`accumulatedText 길이: ${accumulatedText.length}자`);
-                                        break; // for await 루프를 즉시 종료
-                                    }
-                                }
-                            }
+                            isLastSectionClosed = lastSectionPattern.test(htmlForParsing);
+                        }
+                        
+                        // 마지막 섹션이 닫혔거나, 20청크 이상 대기했거나, 102% 초과 시 끊기
+                        const waitChunks = chunkCount - lastCompletionCheckChunk;
+                        if (isLastSectionClosed || waitChunks >= 20 || accumulatedText.length > MAX_TEXT_LENGTH_BEFORE_RETRY * 1.02) {
+                            console.log(`✅ [청크 ${chunkCount}] ${MAX_TEXT_LENGTH_BEFORE_RETRY.toLocaleString()}자 도달 후 완료된 소제목(${completedSubtitles.length}개) 기준으로 안전하게 종료합니다.`);
+                            console.log(`완료된 소제목: ${completedSubtitles.length}/${menu_subtitles.length}개`);
+                            console.log(`완료된 소제목 인덱스: [${completedSubtitles.slice(Math.max(0, completedSubtitles.length - 10)).join(', ')}]`);
+                            console.log(`마지막 완료된 섹션 닫힘: ${isLastSectionClosed ? '✅ 예' : '⚠️ 확인 불가 (안전하게 자르기 함수가 처리)'}`);
+                            console.log(`accumulatedText 길이: ${accumulatedText.length.toLocaleString()}자 (대기: ${waitChunks}청크)`);
+                            console.log(`⚠️ 안전하게 자르기 함수(safeTrimToCompletedBoundary)가 완료된 항목까지만 자를 것입니다.`);
+                            break; // for await 루프를 즉시 종료
+                        } else if (chunkCount % 10 === 0) {
+                            console.log(`⏳ [청크 ${chunkCount}] ${MAX_TEXT_LENGTH_BEFORE_RETRY.toLocaleString()}자 도달 - 마지막 완료된 섹션이 닫힐 때까지 대기 중... (대기: ${waitChunks}청크, 현재: ${accumulatedText.length.toLocaleString()}자)`);
                         }
                     } else {
-                        // 완료된 소제목이 없으면 현재 진행 중인 소제목이 완료될 때까지 대기
-                        if (chunkCount % 10 === 0) {
-                            console.log(`⏳ [청크 ${chunkCount}] 첫 번째 소제목 완료 대기 중...`);
+                        // 완료된 소제목이 없으면 최대 30개 청크만 대기 후 강제 종료
+                        const waitChunks = chunkCount - lastCompletionCheckChunk;
+                        if (waitChunks >= 30 || accumulatedText.length > MAX_TEXT_LENGTH_BEFORE_RETRY * 1.03) {
+                            console.log(`⚠️ [청크 ${chunkCount}] ${MAX_TEXT_LENGTH_BEFORE_RETRY.toLocaleString()}자 도달 후 완료된 소제목 없지만 강제 종료합니다. (대기: ${waitChunks}청크, 현재: ${accumulatedText.length.toLocaleString()}자)`);
+                            console.log(`⚠️ 빈 결과를 방지하기 위해 현재까지의 내용을 안전하게 자릅니다.`);
+                            break; // for await 루프를 즉시 종료
+                        } else if (chunkCount % 10 === 0) {
+                            console.log(`⏳ [청크 ${chunkCount}] ${MAX_TEXT_LENGTH_BEFORE_RETRY.toLocaleString()}자 도달 - 첫 번째 소제목 완료 대기 중... (대기: ${waitChunks}청크, 현재: ${accumulatedText.length.toLocaleString()}자)`);
                         }
                     }
                 } else {
@@ -871,27 +874,8 @@ ${isSecondRequest ? `
             }
         }
 
-        // HTML 정리
-        let cleanHtml = accumulatedText.trim();
-        const htmlBlockMatch = cleanHtml.match(/```html\s*([\s\S]*?)\s*```/);
-        if (htmlBlockMatch) {
-            cleanHtml = htmlBlockMatch[1].trim();
-        } else {
-            const codeBlockMatch = cleanHtml.match(/```\s*([\s\S]*?)\s*```/);
-            if (codeBlockMatch) {
-                cleanHtml = codeBlockMatch[1].trim();
-            }
-        }
-        
-        cleanHtml = cleanHtml.replace(/(<\/h3>)\s+(<div class="subtitle-content">)/g, '$1$2');
-        cleanHtml = cleanHtml.replace(/(<\/h3[^>]*>)\s+(<div[^>]*class="subtitle-content"[^>]*>)/g, '$1$2');
-        cleanHtml = cleanHtml.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>');
-        cleanHtml = cleanHtml.replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3');
-        cleanHtml = cleanHtml.replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2');
-        cleanHtml = cleanHtml.replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2');
-        cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3');
-        cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3');
-        cleanHtml = cleanHtml.replace(/\*\*/g, '');
+        // 제안 1-4: HTML 정리 및 코드 블록 제거 (cloudways-html-safety.js 함수 사용)
+        let cleanHtml = normalizeHtmlBasics(stripCodeFences(accumulatedText));
 
         // finishReason 확인 (response에서 가져오기)
         let finishReason = 'STOP';
@@ -954,21 +938,227 @@ ${isSecondRequest ? `
             // 에러가 발생해도 계속 처리
         }
         
+        // 중간에 잘린 소제목 제거 함수: 안전하게 자른 HTML에서 마지막 subtitle-section이 완전히 닫혔는지 확인
+        const removeIncompleteSubtitle = (html, completedIndices) => {
+            if (!html || !completedIndices || completedIndices.length === 0) {
+                return completedIndices;
+            }
+            
+            // HTML에서 모든 subtitle-section 찾기
+            const subtitleSectionRegex = /<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>/gi;
+            const sectionMatches = [];
+            let match;
+            while ((match = subtitleSectionRegex.exec(html)) !== null) {
+                sectionMatches.push({ index: match.index, tag: match[0] });
+            }
+            
+            if (sectionMatches.length === 0) {
+                return completedIndices;
+            }
+            
+            // 마지막 subtitle-section 추출 및 완전히 닫혔는지 확인
+            const lastSection = sectionMatches[sectionMatches.length - 1];
+            const lastSectionStart = lastSection.index;
+            
+            // 마지막 subtitle-section의 닫는 </div> 찾기 (depth 체크로 완전히 닫혔는지 확인)
+            let depth = 0;
+            let foundOpening = false;
+            let lastCloseDivIndex = -1;
+            let searchIndex = lastSectionStart;
+            
+            // 마지막 subtitle-section부터 검색 시작
+            while (searchIndex < html.length) {
+                const nextOpenDiv = html.indexOf('<div', searchIndex);
+                const nextCloseDiv = html.indexOf('</div>', searchIndex);
+                
+                if (nextOpenDiv === -1 && nextCloseDiv === -1) break;
+                
+                // 더 가까운 태그 선택
+                let nextTagIndex = -1;
+                let isOpenTag = false;
+                
+                if (nextOpenDiv === -1) {
+                    nextTagIndex = nextCloseDiv;
+                    isOpenTag = false;
+                } else if (nextCloseDiv === -1) {
+                    nextTagIndex = nextOpenDiv;
+                    isOpenTag = true;
+                } else {
+                    if (nextOpenDiv < nextCloseDiv) {
+                        nextTagIndex = nextOpenDiv;
+                        isOpenTag = true;
+                    } else {
+                        nextTagIndex = nextCloseDiv;
+                        isOpenTag = false;
+                    }
+                }
+                
+                if (isOpenTag) {
+                    depth++;
+                    foundOpening = true;
+                    searchIndex = html.indexOf('>', nextTagIndex) + 1;
+                } else {
+                    depth--;
+                    searchIndex = nextCloseDiv + '</div>'.length;
+                    
+                    // subtitle-section 내부의 div depth가 0이 되면 닫힘 (subtitle-section 자체 포함)
+                    if (foundOpening && depth <= 0) {
+                        lastCloseDivIndex = searchIndex;
+                        break;
+                    }
+                }
+            }
+            
+            // 마지막 subtitle-section이 완전히 닫히지 않았다면 (중간에 잘림)
+            if (lastCloseDivIndex === -1 || lastCloseDivIndex >= html.length || depth > 0) {
+                console.log('⚠️ 마지막 subtitle-section이 중간에 잘렸습니다. 완료된 목록에서 제외합니다.');
+                
+                // 마지막 subtitle-section이 어느 소제목에 해당하는지 확인
+                const lastSectionContent = html.substring(lastSectionStart, Math.min(lastSectionStart + 1000, html.length));
+                let lastSubtitleIndex = -1;
+                
+                menu_subtitles.forEach((subtitle, idx) => {
+                    const subtitleEscaped = subtitle.subtitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const pattern = new RegExp(`<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>[\\s\\S]*?${subtitleEscaped}`, 'i');
+                    if (pattern.test(lastSectionContent)) {
+                        lastSubtitleIndex = idx;
+                    }
+                });
+                
+                if (lastSubtitleIndex >= 0 && completedIndices.includes(lastSubtitleIndex)) {
+                    console.log(`⚠️ 소제목 ${lastSubtitleIndex} (${menu_subtitles[lastSubtitleIndex]?.subtitle})가 중간에 잘렸습니다. 완료 목록에서 제거합니다.`);
+                    return completedIndices.filter(idx => idx !== lastSubtitleIndex);
+                } else if (lastSubtitleIndex === -1) {
+                    // 마지막 subtitle-section을 찾지 못했지만, 완료 목록의 마지막 항목은 제거 (안전장치)
+                    const sortedIndices = [...completedIndices].sort((a, b) => a - b);
+                    if (sortedIndices.length > 0) {
+                        const lastCompletedIndex = sortedIndices[sortedIndices.length - 1];
+                        console.log(`⚠️ 마지막 subtitle-section을 식별하지 못했지만, 마지막 완료 항목(${lastCompletedIndex})을 제거합니다.`);
+                        return completedIndices.filter(idx => idx !== lastCompletedIndex);
+                    }
+                }
+            }
+            
+            return completedIndices;
+        };
+        
+        // 중간에 잘린 소제목 제거 함수: 안전하게 자른 HTML에서 마지막 subtitle-section이 완전히 닫혔는지 확인
+        const removeIncompleteSubtitle = (html, completedIndices) => {
+            if (!html || !completedIndices || completedIndices.length === 0) {
+                return completedIndices;
+            }
+            
+            // HTML에서 모든 subtitle-section 찾기
+            const subtitleSectionRegex = /<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>/gi;
+            const sectionMatches = [];
+            let match;
+            while ((match = subtitleSectionRegex.exec(html)) !== null) {
+                sectionMatches.push({ index: match.index, tag: match[0] });
+            }
+            
+            if (sectionMatches.length === 0) {
+                return completedIndices;
+            }
+            
+            // 마지막 subtitle-section 추출 및 완전히 닫혔는지 확인
+            const lastSection = sectionMatches[sectionMatches.length - 1];
+            const lastSectionStart = lastSection.index;
+            
+            // 마지막 subtitle-section의 닫는 </div> 찾기 (depth 체크로 완전히 닫혔는지 확인)
+            let depth = 0;
+            let foundOpening = false;
+            let lastCloseDivIndex = -1;
+            let searchIndex = lastSectionStart;
+            
+            // 마지막 subtitle-section부터 검색 시작
+            while (searchIndex < html.length) {
+                const nextOpenDiv = html.indexOf('<div', searchIndex);
+                const nextCloseDiv = html.indexOf('</div>', searchIndex);
+                
+                if (nextOpenDiv === -1 && nextCloseDiv === -1) break;
+                
+                // 더 가까운 태그 선택
+                let nextTagIndex = -1;
+                let isOpenTag = false;
+                
+                if (nextOpenDiv === -1) {
+                    nextTagIndex = nextCloseDiv;
+                    isOpenTag = false;
+                } else if (nextCloseDiv === -1) {
+                    nextTagIndex = nextOpenDiv;
+                    isOpenTag = true;
+                } else {
+                    if (nextOpenDiv < nextCloseDiv) {
+                        nextTagIndex = nextOpenDiv;
+                        isOpenTag = true;
+                    } else {
+                        nextTagIndex = nextCloseDiv;
+                        isOpenTag = false;
+                    }
+                }
+                
+                if (isOpenTag) {
+                    depth++;
+                    foundOpening = true;
+                    searchIndex = html.indexOf('>', nextTagIndex) + 1;
+                } else {
+                    depth--;
+                    searchIndex = nextCloseDiv + '</div>'.length;
+                    
+                    // subtitle-section 내부의 div depth가 0이 되면 닫힘 (subtitle-section 자체 포함)
+                    if (foundOpening && depth <= 0) {
+                        lastCloseDivIndex = searchIndex;
+                        break;
+                    }
+                }
+            }
+            
+            // 마지막 subtitle-section이 완전히 닫히지 않았다면 (중간에 잘림)
+            if (lastCloseDivIndex === -1 || lastCloseDivIndex >= html.length || depth > 0) {
+                console.log('⚠️ 마지막 subtitle-section이 중간에 잘렸습니다. 완료된 목록에서 제외합니다.');
+                
+                // 마지막 subtitle-section이 어느 소제목에 해당하는지 확인
+                const lastSectionContent = html.substring(lastSectionStart, Math.min(lastSectionStart + 1000, html.length));
+                let lastSubtitleIndex = -1;
+                
+                menu_subtitles.forEach((subtitle, idx) => {
+                    const subtitleEscaped = subtitle.subtitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const pattern = new RegExp(`<h3[^>]*class="[^"]*subtitle-title[^"]*"[^>]*>[\\s\\S]*?${subtitleEscaped}`, 'i');
+                    if (pattern.test(lastSectionContent)) {
+                        lastSubtitleIndex = idx;
+                    }
+                });
+                
+                if (lastSubtitleIndex >= 0 && completedIndices.includes(lastSubtitleIndex)) {
+                    console.log(`⚠️ 소제목 ${lastSubtitleIndex} (${menu_subtitles[lastSubtitleIndex]?.subtitle})가 중간에 잘렸습니다. 완료 목록에서 제거합니다.`);
+                    return completedIndices.filter(idx => idx !== lastSubtitleIndex);
+                } else if (lastSubtitleIndex === -1) {
+                    // 마지막 subtitle-section을 찾지 못했지만, 완료 목록의 마지막 항목은 제거 (안전장치)
+                    const sortedIndices = [...completedIndices].sort((a, b) => a - b);
+                    if (sortedIndices.length > 0) {
+                        const lastCompletedIndex = sortedIndices[sortedIndices.length - 1];
+                        console.log(`⚠️ 마지막 subtitle-section을 식별하지 못했지만, 마지막 완료 항목(${lastCompletedIndex})을 제거합니다.`);
+                        return completedIndices.filter(idx => idx !== lastCompletedIndex);
+                    }
+                }
+            }
+            
+            return completedIndices;
+        };
+        
         // 100000자 도달로 인한 조기 종료 처리
         if (earlyBreakDueToLength) {
             if (!allSubtitlesCompleted) {
                 console.log('❌ 100000자 도달로 인해 일부 소제목이 미완료 상태입니다. 재요청이 필요합니다.');
                 isTruncated = true;
                 finishReason = 'MAX_TOKENS'; // 재요청을 위해 MAX_TOKENS로 설정
-                // 완료된 HTML에서 깨진 부분 제거
-                const extractedHtml = extractValidHtml(cleanHtml, parsedCompletedIndices, menu_subtitles);
-                if (extractedHtml && extractedHtml.length > 0) {
-                    cleanHtml = extractedHtml;
-                    console.log(`완료된 HTML 추출 후 길이: ${cleanHtml.length}자`);
-                } else {
-                    console.log('⚠️ extractValidHtml이 빈 문자열을 반환했습니다. 원본 HTML 유지.');
-                    // extractValidHtml이 실패하면 원본 HTML 유지 (최소한의 데이터라도 전송)
-                }
+                // 제안 1-4: 안전한 자르기 함수 사용 (테이블 내부 자르기 방지 포함)
+                cleanHtml = safeTrimToCompletedBoundary(cleanHtml);
+                console.log(`안전하게 자른 HTML 길이: ${cleanHtml.length}자`);
+                
+                // 중간에 잘린 소제목 제거 (중요: 잘린 항목은 재요청 시 다시 생성해야 함)
+                parsedCompletedIndices = removeIncompleteSubtitle(cleanHtml, parsedCompletedIndices);
+                console.log(`중간에 잘린 항목 제거 후 완료된 소제목 인덱스: [${parsedCompletedIndices.join(', ')}]`);
             } else {
                 console.log('✅ 100000자 도달했지만 모든 소제목이 완료되었습니다.');
                 isTruncated = false;
@@ -981,15 +1171,13 @@ ${isSecondRequest ? `
             if (!allSubtitlesCompleted) {
                 console.log('❌ MAX_TOKENS로 인해 일부 소제목이 미완료 상태입니다. 재요청이 필요합니다.');
                 isTruncated = true;
-                // 완료된 HTML에서 깨진 부분 제거 (MAX_TOKENS로 잘린 경우에만)
-                const extractedHtml = extractValidHtml(cleanHtml, parsedCompletedIndices, menu_subtitles);
-                if (extractedHtml && extractedHtml.length > 0) {
-                    cleanHtml = extractedHtml;
-                    console.log(`완료된 HTML 추출 후 길이: ${cleanHtml.length}자`);
-                } else {
-                    console.log('⚠️ extractValidHtml이 빈 문자열을 반환했습니다. 원본 HTML 유지.');
-                    // extractValidHtml이 실패하면 원본 HTML 유지 (최소한의 데이터라도 전송)
-                }
+                // 제안 1-4: 안전한 자르기 함수 사용 (테이블 내부 자르기 방지 포함)
+                cleanHtml = safeTrimToCompletedBoundary(cleanHtml);
+                console.log(`안전하게 자른 HTML 길이: ${cleanHtml.length}자`);
+                
+                // 중간에 잘린 소제목 제거 (중요: 잘린 항목은 재요청 시 다시 생성해야 함)
+                parsedCompletedIndices = removeIncompleteSubtitle(cleanHtml, parsedCompletedIndices);
+                console.log(`중간에 잘린 항목 제거 후 완료된 소제목 인덱스: [${parsedCompletedIndices.join(', ')}]`);
             } else {
                 console.log('✅ MAX_TOKENS에 도달했지만 모든 소제목이 완료되었습니다.');
                 isTruncated = false;
@@ -1003,14 +1191,13 @@ ${isSecondRequest ? `
                 // 미완료 소제목이 있으면 재요청 필요
                 isTruncated = true;
                 finishReason = 'MAX_TOKENS'; // 재요청을 위해 MAX_TOKENS로 설정
-                // 완료된 HTML에서 깨진 부분 제거
-                const extractedHtml = extractValidHtml(cleanHtml, parsedCompletedIndices, menu_subtitles);
-                if (extractedHtml && extractedHtml.length > 0) {
-                    cleanHtml = extractedHtml;
-                    console.log(`완료된 HTML 추출 후 길이: ${cleanHtml.length}자`);
-                } else {
-                    console.log('⚠️ extractValidHtml이 빈 문자열을 반환했습니다. 원본 HTML 유지.');
-                }
+                // 제안 1-4: 안전한 자르기 함수 사용 (테이블 내부 자르기 방지 포함)
+                cleanHtml = safeTrimToCompletedBoundary(cleanHtml);
+                console.log(`안전하게 자른 HTML 길이: ${cleanHtml.length}자`);
+                
+                // 중간에 잘린 소제목 제거 (중요: 잘린 항목은 재요청 시 다시 생성해야 함)
+                parsedCompletedIndices = removeIncompleteSubtitle(cleanHtml, parsedCompletedIndices);
+                console.log(`중간에 잘린 항목 제거 후 완료된 소제목 인덱스: [${parsedCompletedIndices.join(', ')}]`);
             } else {
                 console.log('✅ 모든 소제목이 완료되었습니다.');
                 isTruncated = false;

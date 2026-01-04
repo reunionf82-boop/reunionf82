@@ -360,9 +360,16 @@ export async function callJeminaiAPIStream(
                 }
               } else if (data.type === 'partial_done') {
                 hasReceivedPartialDone = true
+                const partialHtml = data.html || accumulatedHtml
+                console.log('⚠️ 1차 요청 부분 완료 (길이 제한 도달):', {
+                  htmlLength: partialHtml.length,
+                  completedSubtitles: data.completedSubtitles?.length || 0,
+                  remainingSubtitles: data.remainingSubtitles?.length || 0,
+                  message: '현재 항목 완료 후 2차 요청으로 이어갑니다.'
+                })
                 onChunk({
                   type: 'partial_done',
-                  html: data.html || accumulatedHtml,
+                  html: partialHtml,
                   remainingSubtitles: data.remainingSubtitles || [],
                   completedSubtitles: data.completedSubtitles || []
                 })
@@ -587,8 +594,9 @@ export async function callJeminaiAPIStream(
         // ** 문자 제거 (마크다운 강조 표시 제거)
         cleanHtml = cleanHtml.replace(/\*\*/g, '')
         
-        // 100000자 이상이고 재요청이 아닌 경우, 완료된 소제목 확인 후 재요청 시도
-        const MAX_TEXT_LENGTH_BEFORE_RETRY = 100000
+        // 클라이언트 fallback: 서버가 응답하지 못한 경우를 위한 재요청 로직
+        // 실제로는 서버가 이미 처리하므로 이 로직은 거의 실행되지 않음
+        const MAX_TEXT_LENGTH_BEFORE_RETRY = 100000 // 서버 설정과 동일하게 유지 (서버가 주로 처리)
         if (cleanHtml.length >= MAX_TEXT_LENGTH_BEFORE_RETRY && !request.isSecondRequest && request.menu_subtitles && request.menu_subtitles.length > 0) {
           
           // 클라이언트에서 완료된 소제목 파싱 (서버와 동일한 로직)

@@ -521,6 +521,11 @@ function ResultContent() {
             accumulatedHtml = ''
           } else if (data.type === 'partial_done') {
             // 1차 요청 부분 완료: 2차 요청 자동 시작
+            console.log('⚠️ [점사] 1차 요청 부분 완료 - 길이 제한 도달')
+            console.log(`📊 1차 HTML 길이: ${(data.html || accumulatedHtml).length.toLocaleString()}자`)
+            console.log(`✅ 완료된 소제목: ${data.completedSubtitles?.length || 0}개`)
+            console.log(`⏳ 남은 소제목: ${data.remainingSubtitles?.length || 0}개`)
+            console.log('🔄 2차 요청을 시작합니다...')
             
             const firstHtml = data.html || accumulatedHtml
             const remainingIndices = data.remainingSubtitles || []
