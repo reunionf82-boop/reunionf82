@@ -128,6 +128,9 @@ function FormContent() {
   const [submitting, setSubmitting] = useState(false)
   const [savedResults, setSavedResults] = useState<any[]>([])
   const [pdfExistsMap, setPdfExistsMap] = useState<Record<string, boolean>>({})
+  const [pdfGeneratedMap, setPdfGeneratedMap] = useState<Record<string, boolean>>({}) // PDF 생성 여부 추적
+  const [showPdfConfirmPopup, setShowPdfConfirmPopup] = useState(false) // PDF 생성 확인 팝업
+  const [selectedPdfResult, setSelectedPdfResult] = useState<any>(null) // PDF 생성할 결과
   
   // 스트리밍 로딩 팝업 상태
   const [showLoadingPopup, setShowLoadingPopup] = useState(false)
@@ -336,8 +339,15 @@ function FormContent() {
       if (result.success) {
         const data = result.data || []
         setSavedResults(data)
+        // PDF 생성 여부 확인
+        const generatedMap: Record<string, boolean> = {}
+        data.forEach((item: any) => {
+          generatedMap[item.id] = item.pdf_generated === true
+        })
+        setPdfGeneratedMap(generatedMap)
       } else {
         setSavedResults([])
+        setPdfGeneratedMap({})
       }
     } catch (e) {
       console.error('저장된 결과 불러오기 실패:', e)
@@ -636,9 +646,32 @@ function FormContent() {
     }
   }, [])
 
+  // PDF 생성 확인 팝업 열기
+  const handlePdfButtonClick = (saved: any) => {
+    // 이미 생성된 경우 팝업 표시하지 않음
+    if (pdfGeneratedMap[saved.id]) {
+      return
+    }
+    setSelectedPdfResult(saved)
+    setShowPdfConfirmPopup(true)
+  }
+
+  // PDF 생성 확인 후 실제 생성
+  const handleConfirmPdfGeneration = async () => {
+    if (!selectedPdfResult) return
+    setShowPdfConfirmPopup(false)
+    await handleClientSidePdf(selectedPdfResult)
+  }
+
   // 클라이언트 사이드 PDF 생성 함수 ("보기" 버튼과 동일한 HTML 처리)
   const handleClientSidePdf = async (saved: any) => {
     if (typeof window === 'undefined') return
+    
+    // 이미 생성된 경우 중복 생성 방지
+    if (pdfGeneratedMap[saved.id]) {
+      alert('이미 PDF가 생성되었습니다. 소장용으로 1회만 생성이 가능합니다.')
+      return
+    }
     
     // 로딩 상태 표시
     const btnText = document.getElementById(`pdf-btn-text-${saved.id}`)
@@ -1281,6 +1314,26 @@ function FormContent() {
       updateProgress(95);
       pdf.save(`${saved.title || '재회 결과'}.pdf`);
       updateProgress(100);
+      
+      // PDF 생성 완료 후 Supabase에 저장
+      try {
+        const response = await fetch('/api/saved-results/mark-pdf-generated', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ id: saved.id }),
+        })
+        
+        if (response.ok) {
+          // 로컬 상태 업데이트
+          setPdfGeneratedMap(prev => ({ ...prev, [saved.id]: true }))
+        } else {
+          console.error('PDF 생성 여부 저장 실패:', await response.text())
+        }
+      } catch (error) {
+        console.error('PDF 생성 여부 저장 중 오류:', error)
+      }
       
       // 정리
       if (container && container.parentNode) {
@@ -1989,7 +2042,10 @@ function FormContent() {
   }
 
   // 년도, 월, 일 옵션 생성
-  const years = Array.from({ length: 76 }, (_, i) => 2025 - i)
+  // 현재 년도 기준 19세 미만 년도 제외 (현재 년도 - 19년 이하만 표시)
+  const currentYear = new Date().getFullYear()
+  const minAgeYear = currentYear - 19 // 19세 이상만 가능
+  const years = Array.from({ length: 76 }, (_, i) => 2025 - i).filter(y => y <= minAgeYear)
   const months = Array.from({ length: 12 }, (_, i) => i + 1)
   
   // 유효한 일자 계산 함수 (양력/음력/음력윤달 모두 지원)
@@ -2100,6 +2156,53 @@ function FormContent() {
           </div>
         </div>
       )}
+
+      {/* PDF 생성 확인 팝업 */}
+      {showPdfConfirmPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-2xl p-6">
+            {/* 헤더 */}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">PDF 생성</h2>
+              <button
+                onClick={() => {
+                  setShowPdfConfirmPopup(false)
+                  setSelectedPdfResult(null)
+                }}
+                className="text-gray-400 hover:text-gray-600 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* 내용 */}
+            <div className="mb-6">
+              <p className="text-gray-700 text-center">
+                소장용으로 1회만 생성이 가능합니다. 생성하시겠어요?
+              </p>
+            </div>
+            
+            {/* 푸터 */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowPdfConfirmPopup(false)
+                  setSelectedPdfResult(null)
+                }}
+                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 px-6 rounded-lg transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleConfirmPdfGeneration}
+                className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              >
+                생성하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* 스트리밍 로딩 팝업 */}
       {showLoadingPopup && (
@@ -2146,7 +2249,7 @@ function FormContent() {
       
       <main className="container mx-auto px-4 sm:px-6 py-8 max-w-4xl w-full">
         {/* 상단 썸네일 영역 */}
-        {(cachedThumbnailUrl || content?.thumbnail_url) && !thumbnailError ? (
+        {(cachedThumbnailUrl || content?.thumbnail_url) && !thumbnailError && (
           <div className="relative mb-8 overflow-hidden shadow-sm">
             <div className="relative h-96">
               <img 
@@ -2166,17 +2269,14 @@ function FormContent() {
                   }
                 }}
               />
-              {/* NEW 태그 */}
-              {content?.is_new && (
-                <div className="absolute top-4 left-4 bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow-lg">
-                  NEW
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="relative mb-8 overflow-hidden shadow-sm">
-            <div className="relative h-96 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
+              {/* 19금 로고 */}
+              <div className="absolute top-2 right-2 z-10">
+                <img 
+                  src="/19logo.svg" 
+                  alt="19금"
+                  className="w-12 h-12"
+                />
+              </div>
               {/* NEW 태그 */}
               {content?.is_new && (
                 <div className="absolute top-4 left-4 bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow-lg">
@@ -3154,17 +3254,19 @@ function FormContent() {
                         </button>
                         )}
                         {/* 클라이언트 사이드 PDF 생성 버튼 */}
-                        <button
-                          data-id={saved.id}
-                          onClick={() => handleClientSidePdf(saved)}
-                          className="bg-blue-400 hover:bg-blue-500 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors duration-200 flex items-center gap-1 min-w-[100px] justify-center relative overflow-hidden"
-                          title="PDF 생성 및 다운로드"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" id={`pdf-btn-icon-${saved.id}`}>
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                          </svg>
-                          <span id={`pdf-btn-text-${saved.id}`}>PDF 생성</span>
-                        </button>
+                        {!pdfGeneratedMap[saved.id] && (
+                          <button
+                            data-id={saved.id}
+                            onClick={() => handlePdfButtonClick(saved)}
+                            className="bg-blue-400 hover:bg-blue-500 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors duration-200 flex items-center gap-1 min-w-[100px] justify-center relative overflow-hidden"
+                            title="PDF 생성 및 다운로드"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" id={`pdf-btn-icon-${saved.id}`}>
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            <span id={`pdf-btn-text-${saved.id}`}>PDF 생성</span>
+                          </button>
+                        )}
                         {/* 보기 버튼 */}
                         <button
                           onClick={() => {

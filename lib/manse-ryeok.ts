@@ -789,6 +789,29 @@ export function generateManseRyeokTable(
     caption = userName
   }
 
+  // 천간 한자 변환 함수
+  const getGanHanja = (gan: string) => {
+    const index = SIBGAN_HANGUL.indexOf(gan)
+    return index >= 0 ? SIBGAN[index] : gan
+  }
+  
+  // 지지 한자 변환 함수
+  const getJiHanja = (ji: string) => {
+    const index = SIBIJI_HANGUL.indexOf(ji)
+    return index >= 0 ? SIBIJI[index] : ji
+  }
+
+  // 지장간 계산 함수
+  const getJijanggan = (ji: string): string => {
+    const jijangganList = JIJANGGAN[ji] || []
+    if (jijangganList.length === 0) return ''
+    
+    // 한글과 한자를 함께 표시 (예: "계신기(癸辛己)")
+    const hangul = jijangganList.join('')
+    const hanja = jijangganList.map(gan => getGanHanja(gan)).join('')
+    return `${hangul}(${hanja})`
+  }
+
   // 행 데이터 준비 (색상 정보 포함)
   const rows = [
     { 
@@ -834,6 +857,13 @@ export function generateManseRyeokTable(
       hour: { text: formatWithHanja(data.hour.jiSibsung, SIBSUNG_HANJA), color: '' }
     },
     { 
+      label: '지장간', 
+      year: { text: getJijanggan(data.year.ji), color: '' },
+      month: { text: getJijanggan(data.month.ji), color: '' },
+      day: { text: getJijanggan(data.day.ji), color: '' },
+      hour: { text: getJijanggan(data.hour.ji), color: '' }
+    },
+    { 
       label: '십이운성', 
       year: { text: formatWithHanja(data.year.sibiunsung, SIBIUNSUNG_HANJA), color: '' },
       month: { text: formatWithHanja(data.month.sibiunsung, SIBIUNSUNG_HANJA), color: '' },
@@ -851,7 +881,7 @@ export function generateManseRyeokTable(
   
   let html = ''
   
-  html += '<table class="manse-ryeok-table" style="width: 100%; border-collapse: collapse; margin: 0 0 20px 0; font-size: 14px;">'
+  html += '<table class="manse-ryeok-table" style="width: 100%; border-collapse: collapse; margin: 0 0 20px 0; font-size: 14px; border-radius: 12px; overflow: hidden; border: none;">'
   
   // 캡션 추가 (테이블 상단 중앙정렬)
   if (caption) {
@@ -859,24 +889,36 @@ export function generateManseRyeokTable(
   }
   
   html += '<thead><tr>'
-  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">구분</th>'
-  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">시주</th>'
-  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">일주</th>'
-  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">월주</th>'
-  html += '<th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">연주</th>'
+  html += '<th style="border-top: none; border-left: none; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold; border-radius: 12px 0 0 0;">구분</th>'
+  html += '<th style="border-top: none; border-left: none; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">시주</th>'
+  html += '<th style="border-top: none; border-left: none; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">일주</th>'
+  html += '<th style="border-top: none; border-left: none; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold;">월주</th>'
+  html += '<th style="border-top: none; border-left: none; border-right: none; border-bottom: 1px solid #ddd; padding: 8px; background-color: #f5f5f5; font-size: 14px; font-weight: bold; border-radius: 0 12px 0 0;">연주</th>'
   html += '</tr></thead>'
   html += '<tbody>'
   
-  rows.forEach(row => {
+  rows.forEach((row, rowIndex) => {
     html += '<tr>'
-    html += `<td style="border: 1px solid #ddd; padding: 8px; font-weight: bold; font-size: 14px;">${row.label}</td>`
+    // 마지막 행의 첫 번째 셀에 하단 왼쪽 모서리 둥글게
+    const isLastRow = rowIndex === rows.length - 1
+    const firstCellStyle = isLastRow 
+      ? 'border-top: 1px solid #ddd; border-left: none; border-right: 1px solid #ddd; border-bottom: none; padding: 8px; font-weight: bold; font-size: 14px; border-radius: 0 0 0 12px; background-color: #f5f5f5;'
+      : 'border-top: 1px solid #ddd; border-left: none; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; padding: 8px; font-weight: bold; font-size: 14px; background-color: #f5f5f5;'
+    html += `<td style="${firstCellStyle}">${row.label}</td>`
     // 천간, 지지 행은 폰트 크기 2배 (28px), 나머지는 기본 크기
     const isGanjiRow = row.label === '천간' || row.label === '지지'
     const cellFontSize = isGanjiRow ? '28px' : '14px'
-    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: ${cellFontSize}; ${row.hour.color}">${row.hour.text}</td>`
-    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: ${cellFontSize}; ${row.day.color}">${row.day.text}</td>`
-    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: ${cellFontSize}; ${row.month.color}">${row.month.text}</td>`
-    html += `<td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: ${cellFontSize}; ${row.year.color}">${row.year.text}</td>`
+    // 마지막 행의 마지막 셀에 하단 오른쪽 모서리 둥글게
+    const lastCellStyle = isLastRow 
+      ? `border-top: 1px solid #ddd; border-left: none; border-right: none; border-bottom: none; padding: 8px; text-align: center; font-size: ${cellFontSize}; ${row.year.color}; border-radius: 0 0 12px 0; background-color: #f0f4ff;`
+      : `border-top: 1px solid #ddd; border-left: none; border-right: none; border-bottom: 1px solid #ddd; padding: 8px; text-align: center; font-size: ${cellFontSize}; ${row.year.color}; background-color: #f0f4ff;`
+    const middleCellStyle = isLastRow
+      ? `border-top: 1px solid #ddd; border-left: none; border-right: 1px solid #ddd; border-bottom: none; padding: 8px; text-align: center; font-size: ${cellFontSize}; background-color: #f0f4ff;`
+      : `border-top: 1px solid #ddd; border-left: none; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; padding: 8px; text-align: center; font-size: ${cellFontSize}; background-color: #f0f4ff;`
+    html += `<td style="${middleCellStyle}${row.hour.color}">${row.hour.text}</td>`
+    html += `<td style="${middleCellStyle}${row.day.color}">${row.day.text}</td>`
+    html += `<td style="${middleCellStyle}${row.month.color}">${row.month.text}</td>`
+    html += `<td style="${lastCellStyle}">${row.year.text}</td>`
     html += '</tr>'
   })
   

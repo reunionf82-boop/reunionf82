@@ -120,7 +120,8 @@ export async function GET(request: NextRequest) {
         content: item.content,
         model: item.model,
         processingTime: item.processing_time,
-        userName: item.user_name
+        userName: item.user_name,
+        pdf_generated: item.pdf_generated || false // PDF 생성 여부
       }
       console.log(`저장된 결과 ${result.id}: saved_at=${item.saved_at}, savedAtISO=${result.savedAtISO}, savedAtKST=${savedAtKST}`)
       return result

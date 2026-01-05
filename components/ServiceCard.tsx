@@ -70,6 +70,14 @@ export default function ServiceCard({ service }: ServiceCardProps) {
     <div className="bg-white rounded-lg shadow-sm hover:shadow-sm transition-shadow duration-300 overflow-hidden border border-gray-200 flex flex-col">
       {/* 일러스트레이션 영역 */}
       <div className="relative h-48 bg-gradient-to-br from-yellow-50 via-pink-50 to-orange-50 flex items-center justify-center overflow-hidden">
+        {/* 19금 로고 */}
+        <div className="absolute top-2 right-2 z-10">
+          <img 
+            src="/19logo.svg" 
+            alt="19금"
+            className="w-12 h-12"
+          />
+        </div>
         {service.thumbnailUrl ? (
           <img 
             src={service.thumbnailUrl} 

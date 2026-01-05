@@ -86,6 +86,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     detailMenus: '',
     tools: ''
   })
+  const [showIntegrityCheckResult, setShowIntegrityCheckResult] = useState(false) // 무결성 체크 결과 팝업
+  const [integrityCheckResult, setIntegrityCheckResult] = useState<{
+    isValid: boolean
+    errors: string[]
+    message: string
+  } | null>(null) // 무결성 체크 결과
 
   // 초기 데이터 로드 (수정 모드 또는 복제 모드)
   useEffect(() => {
@@ -713,6 +719,120 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const handleThumbnailClick = (field: 'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | 'bookCover' | 'endingBookCover' | number) => {
     setCurrentThumbnailField(field)
     setShowThumbnailModal(true)
+  }
+
+  // 숫자 접두사 형식 체크 함수
+  const checkNumberPrefix = (text: string, expectedPattern: 'menu' | 'subtitle' | 'detailMenu'): boolean => {
+    if (!text || !text.trim()) return false
+    
+    const trimmed = text.trim()
+    
+    if (expectedPattern === 'menu') {
+      // 대메뉴: "1. " 형식
+      return /^\d+\.\s/.test(trimmed)
+    } else if (expectedPattern === 'subtitle') {
+      // 소메뉴: "1-1. " 형식
+      return /^\d+-\d+\.\s/.test(trimmed)
+    } else if (expectedPattern === 'detailMenu') {
+      // 상세메뉴: "1-1-1. " 형식
+      return /^\d+-\d+-\d+\.\s/.test(trimmed)
+    }
+    
+    return false
+  }
+
+  // 무결성 체크 함수
+  const handleIntegrityCheck = () => {
+    console.log('무결성 체크 시작')
+    const errors: string[] = []
+    const allMenuItems = [
+      ...(firstMenuField.value || firstMenuField.thumbnail ? [firstMenuField] : []),
+      ...menuFields
+    ]
+    console.log('체크할 메뉴 항목 수:', allMenuItems.length)
+
+    // 대메뉴 체크
+    allMenuItems.forEach((menuItem, menuIndex) => {
+      const menuValue = menuItem.value?.trim() || ''
+      if (menuValue && !checkNumberPrefix(menuValue, 'menu')) {
+        errors.push(`대메뉴 ${menuIndex + 1}: "${menuValue}" - 숫자 접두사 형식이 올바르지 않습니다. (예: "1. ")`)
+      }
+
+      // 소메뉴 체크
+      if (menuItem.subtitles && Array.isArray(menuItem.subtitles)) {
+        menuItem.subtitles.forEach((subtitle, subIndex) => {
+          const subtitleText = subtitle.subtitle?.trim() || ''
+          if (subtitleText && !checkNumberPrefix(subtitleText, 'subtitle')) {
+            errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1}: "${subtitleText}" - 숫자 접두사 형식이 올바르지 않습니다. (예: "1-1. ")`)
+          }
+
+          // 해석도구 체크 (소메뉴와 일치해야 함)
+          const interpretationTool = subtitle.interpretation_tool?.trim() || ''
+          if (subtitleText && interpretationTool) {
+            // 소메뉴의 숫자 접두사 추출 (점이 있든 없든 추출 시도)
+            // "1-1. " 또는 "1-1 " 또는 "1-1" 형식 모두 지원
+            const subtitlePrefixMatch = subtitleText.match(/^(\d+-\d+)(?:\.\s|\.|\s|$)/)
+            const subtitlePrefix = subtitlePrefixMatch?.[1]
+            
+            // 해석도구의 숫자 접두사 추출 (점이 있든 없든 추출 시도)
+            const toolPrefixMatch = interpretationTool.match(/^(\d+-\d+)(?:\.\s|\.|\s|$)/)
+            const toolPrefix = toolPrefixMatch?.[1]
+            
+            // 둘 다 접두사가 있고 다를 때만 불일치 오류 표시
+            if (subtitlePrefix && toolPrefix && subtitlePrefix !== toolPrefix) {
+              errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1}: 소메뉴("${subtitleText}")와 해석도구("${interpretationTool}")의 숫자 접두사가 일치하지 않습니다.`)
+            } else if (subtitlePrefix && !toolPrefix) {
+              // 소메뉴에 접두사가 있고 해석도구에 없을 때만 표시 (형식 오류와 중복되지 않도록)
+              errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1}: 해석도구("${interpretationTool}")에 숫자 접두사가 없습니다. (예: "1-1. ")`)
+            }
+            // 소메뉴에 접두사가 없으면 형식 오류만 표시 (해석도구 체크 생략)
+          }
+
+          // 상세메뉴 체크
+          if (subtitle.detailMenus && Array.isArray(subtitle.detailMenus)) {
+            subtitle.detailMenus.forEach((detailMenu, detailIndex) => {
+              const detailMenuText = detailMenu.detailMenu?.trim() || ''
+              if (detailMenuText && !checkNumberPrefix(detailMenuText, 'detailMenu')) {
+                errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1} 상세메뉴 ${detailIndex + 1}: "${detailMenuText}" - 숫자 접두사 형식이 올바르지 않습니다. (예: "1-1-1. ")`)
+              }
+
+              // 상세메뉴 해석도구 체크
+              const detailInterpretationTool = detailMenu.interpretation_tool?.trim() || ''
+              if (detailMenuText && detailInterpretationTool) {
+                // 상세메뉴의 숫자 접두사 추출 (점이 있든 없든 추출 시도)
+                // "1-1-1. " 또는 "1-1-1 " 또는 "1-1-1" 형식 모두 지원
+                const detailPrefixMatch = detailMenuText.match(/^(\d+-\d+-\d+)(?:\.\s|\.|\s|$)/)
+                const detailPrefix = detailPrefixMatch?.[1]
+                
+                // 해석도구의 숫자 접두사 추출 (점이 있든 없든 추출 시도)
+                const detailToolPrefixMatch = detailInterpretationTool.match(/^(\d+-\d+-\d+)(?:\.\s|\.|\s|$)/)
+                const detailToolPrefix = detailToolPrefixMatch?.[1]
+                
+                // 둘 다 접두사가 있고 다를 때만 불일치 오류 표시
+                if (detailPrefix && detailToolPrefix && detailPrefix !== detailToolPrefix) {
+                  errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1} 상세메뉴 ${detailIndex + 1}: 상세메뉴("${detailMenuText}")와 해석도구("${detailInterpretationTool}")의 숫자 접두사가 일치하지 않습니다.`)
+                } else if (detailPrefix && !detailToolPrefix) {
+                  // 상세메뉴에 접두사가 있고 해석도구에 없을 때만 표시 (형식 오류와 중복되지 않도록)
+                  errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1} 상세메뉴 ${detailIndex + 1}: 해석도구("${detailInterpretationTool}")에 숫자 접두사가 없습니다. (예: "1-1-1. ")`)
+                }
+                // 상세메뉴에 접두사가 없으면 형식 오류만 표시 (해석도구 체크 생략)
+              }
+            })
+          }
+        })
+      }
+    })
+
+    // 결과 설정
+    const isValid = errors.length === 0
+    console.log('무결성 체크 완료:', { isValid, errorsCount: errors.length })
+    setIntegrityCheckResult({
+      isValid,
+      errors,
+      message: isValid ? '모든 필드가 정상입니다.' : `${errors.length}개의 오류가 발견되었습니다.`
+    })
+    setShowIntegrityCheckResult(true)
+    console.log('팝업 표시 상태 업데이트:', true)
   }
 
   // 쉬운 업로드 파싱 및 적용 함수
@@ -2012,6 +2132,16 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               )}
             </button>
             </div>
+            {/* 무결성 체크 버튼 */}
+            <div className="flex justify-end mt-3">
+              <button
+                type="button"
+                onClick={handleIntegrityCheck}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 text-sm"
+              >
+                무결성 체크
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2609,6 +2739,61 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
               >
                 취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 무결성 체크 결과 팝업 */}
+      {showIntegrityCheckResult && integrityCheckResult && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-2xl w-full shadow-2xl p-6 max-h-[80vh] overflow-y-auto">
+            {/* 헤더 */}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className={`text-xl font-bold ${integrityCheckResult.isValid ? 'text-green-600' : 'text-red-600'}`}>
+                무결성 체크 결과
+              </h2>
+              <button
+                onClick={() => {
+                  setShowIntegrityCheckResult(false)
+                  setIntegrityCheckResult(null)
+                }}
+                className="text-gray-400 hover:text-gray-600 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* 메시지 */}
+            <div className={`mb-4 p-4 rounded-lg ${integrityCheckResult.isValid ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+              <p className="font-semibold">{integrityCheckResult.message}</p>
+            </div>
+            
+            {/* 오류 목록 */}
+            {!integrityCheckResult.isValid && integrityCheckResult.errors.length > 0 && (
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">오류 목록:</h3>
+                <ul className="space-y-2">
+                  {integrityCheckResult.errors.map((error, index) => (
+                    <li key={index} className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                      {error}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {/* 푸터 */}
+            <div>
+              <button
+                onClick={() => {
+                  setShowIntegrityCheckResult(false)
+                  setIntegrityCheckResult(null)
+                }}
+                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              >
+                확인
               </button>
             </div>
           </div>

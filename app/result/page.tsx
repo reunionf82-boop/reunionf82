@@ -12,7 +12,6 @@ interface ResultData {
   startTime?: number
   model?: string // 사용된 모델 정보
   userName?: string // 사용자 이름
-  isSecondRequest?: boolean // 2차 요청 완료 여부
 }
 
 interface ParsedSubtitle {
@@ -408,195 +407,34 @@ function ResultContent() {
         let accumulatedHtml = ''
         const manseRyeokTable: string | undefined = payload?.requestData?.manse_ryeok_table
         
-        // 2차 요청 중복 방지 플래그
-        let isSecondRequestInProgress = false
-
-        // 2차 요청을 위한 헬퍼 함수
-        const startSecondRequest = async (firstHtml: string, remainingSubtitleIndices: number[], completedSubtitleIndices: number[] = []) => {
-          // 중복 요청 방지
-          if (isSecondRequestInProgress) {
-            console.log('⚠️ 2차 요청이 이미 진행 중입니다. 중복 요청을 건너뜁니다.')
-            return
-          }
-          isSecondRequestInProgress = true
-          // 남은 소제목만 추출
-          const remainingSubtitles = remainingSubtitleIndices.map((index: number) => requestData.menu_subtitles[index])
-
-          // 완료된 소제목 정보 추출 (프롬프트에 포함하기 위해)
-          const completedSubtitles = completedSubtitleIndices.map((index: number) => requestData.menu_subtitles[index])
-
-          // 2차 요청 데이터 생성
-          const secondRequestData = {
-            ...requestData,
-            menu_subtitles: remainingSubtitles, // 필터링된 남은 소제목만
-            isSecondRequest: true, // 2차 요청 플래그
-            completedSubtitles: completedSubtitles, // 완료된 소제목 정보 (프롬프트에 포함)
-            completedSubtitleIndices: completedSubtitleIndices, // 완료된 소제목 인덱스 (원본 기준)
-            remainingSubtitleIndices: remainingSubtitleIndices, // 남은 소제목 인덱스 (원본 기준) - 백엔드에서 인덱스 변환용
-          }
-
-          // 2차 요청 시작
-          let secondRequestAccumulatedHtml = '' // 2차 요청의 HTML을 누적하기 위한 별도 변수
-          await callJeminaiAPIStream(secondRequestData, (data) => {
-            if (cancelled) return
-            
-            if (data.type === 'start') {
-              // 2차 요청 시작 시 1차 HTML 유지 및 로딩 상태 활성화
-              secondRequestAccumulatedHtml = '' // 2차 요청 HTML 초기화
-              setIsStreamingActive(true)
-              setStreamingFinished(false)
-              // 1차 HTML 유지 (중요: 화면이 깜박이지 않도록)
-              setStreamingHtml(firstHtml)
-            } else if (data.type === 'chunk') {
-              // 2차 HTML을 누적 (data.html이 있으면 사용, 없으면 data.text 누적)
-              if (data.html) {
-                // lib/jeminai.ts에서 누적된 전체 HTML을 전달한 경우
-                secondRequestAccumulatedHtml = data.html
-              } else if (data.text) {
-                // 개별 chunk만 전달된 경우 누적
-                secondRequestAccumulatedHtml += data.text
-              }
-              
-              // 1차 HTML + 2차 HTML 병합
-              let mergedHtml = firstHtml + secondRequestAccumulatedHtml
-              
-              // HTML 정리
-              mergedHtml = mergedHtml
-                .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
-                .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
-                .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
-                .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
-                .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
-                .replace(/\*\*/g, '')
-              
-              setStreamingHtml(mergedHtml)
-            } else if (data.type === 'done') {
-              // 2차 요청 완료: 1차 HTML + 2차 HTML 병합
-              const secondHtml = data.html || secondRequestAccumulatedHtml
-              let mergedHtml = firstHtml + secondHtml
-              
-              // HTML 정리
-              mergedHtml = mergedHtml
-                .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
-                .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
-                .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
-                .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
-                .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
-                .replace(/\*\*/g, '')
-              
-              // 만세력 테이블 삽입 (아직 없으면)
-              if (manseRyeokTable && !mergedHtml.includes('manse-ryeok-table')) {
-                const firstMenuSectionMatch = mergedHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
-                if (firstMenuSectionMatch) {
-                  const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
-                  if (thumbnailMatch) {
-                    mergedHtml = mergedHtml.replace(
-                      /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
-                      `$1\n${manseRyeokTable}`
-                    )
-                  } else {
-                    const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
-                    if (menuTitleMatch) {
-                      mergedHtml = mergedHtml.replace(
-                        /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
-                        `$1\n${manseRyeokTable}`
-                      )
-                    } else {
-                      mergedHtml = mergedHtml.replace(
-                        /(<div class="menu-section">)\s*/,
-                        `$1\n${manseRyeokTable}`
-                      )
-                    }
-                  }
-                }
-              }
-              
-              setStreamingHtml(mergedHtml)
-              
-              const finalResult: ResultData = {
-                content,
-                html: mergedHtml,
-                startTime,
-                model,
-                userName,
-                isSecondRequest: true, // 2차 요청 완료 플래그
-              }
-              setResultData(finalResult)
-              
-              setIsStreamingActive(false)
-              setStreamingFinished(true)
-              setStreamingProgress(100)
-              setLoading(false)
-              setShowRealtimePopup(false)
-              isSecondRequestInProgress = false // 플래그 리셋
-            } else if (data.type === 'error') {
-              console.error('결과 페이지: 2차 스트리밍 에러:', data.error)
-              setError(data.error || '2차 점사 진행 중 문제가 발생했습니다.')
-              setIsStreamingActive(false)
-              setStreamingFinished(true)
-              isSecondRequestInProgress = false // 플래그 리셋
-            }
-          })
-          // 함수 실행 완료 후 플래그 리셋 (에러 발생 시)
-          .finally(() => {
-            // finally에서도 리셋하지 않음 (성공/실패 시 이미 리셋됨)
-          })
-          .catch((err) => {
-            console.error('2차 요청 실행 중 에러:', err)
-            isSecondRequestInProgress = false // 에러 시 플래그 리셋
-            throw err
-          })
-        }
-        
         await callJeminaiAPIStream(requestData, (data) => {
           if (cancelled) return
 
           if (data.type === 'start') {
             accumulatedHtml = ''
           } else if (data.type === 'partial_done') {
-            // 1차 요청 부분 완료: 2차 요청 자동 시작
-            console.log('⚠️ [점사] 1차 요청 부분 완료 - 길이 제한 도달')
-            console.log(`📊 1차 HTML 길이: ${(data.html || accumulatedHtml).length.toLocaleString()}자`)
+            // 길이 제한 도달: 완료 처리 (2차 요청 없이)
+            console.warn('⚠️ [점사] 길이 제한 도달 - 현재까지 생성된 내용으로 완료 처리')
+            console.log(`📊 HTML 길이: ${(data.html || accumulatedHtml).length.toLocaleString()}자`)
             console.log(`✅ 완료된 소제목: ${data.completedSubtitles?.length || 0}개`)
-            console.log(`⏳ 남은 소제목: ${data.remainingSubtitles?.length || 0}개`)
-            console.log('🔄 2차 요청을 시작합니다...')
+            console.log(`⏳ 남은 소제목: ${data.remainingSubtitles?.length || 0}개 (생략됨)`)
             
-            const firstHtml = data.html || accumulatedHtml
-            const remainingIndices = data.remainingSubtitles || []
-            const completedIndices = data.completedSubtitles || []
+            const finalHtml = data.html || accumulatedHtml
+            setStreamingHtml(finalHtml)
             
-            if (remainingIndices.length > 0) {
-              // 1차 HTML 즉시 저장 및 유지 (화면 깜박임 방지)
-              setStreamingHtml(firstHtml)
-              
-              // 2차 요청 시작 전 상태 업데이트 (깜박임 최소화)
-              // setIsStreamingActive와 setStreamingFinished는 이미 true/false 상태이므로 변경하지 않음
-              
-              // 2차 요청 시작 (비동기로 실행, await하지 않음)
-              startSecondRequest(firstHtml, remainingIndices, completedIndices).catch((err) => {
-                console.error('2차 요청 실패:', err)
-                setError('2차 점사 진행 중 문제가 발생했습니다.')
-                setIsStreamingActive(false)
-                setStreamingFinished(true)
-                isSecondRequestInProgress = false // 플래그 리셋
-              })
-            } else {
-              // 남은 소제목이 없으면 완료 처리
-              setStreamingHtml(firstHtml)
-              const finalResult: ResultData = {
-                content,
-                html: firstHtml,
-                startTime,
-                model,
-                userName,
-              }
-              setResultData(finalResult)
-              setIsStreamingActive(false)
-              setStreamingFinished(true)
-              setStreamingProgress(100)
-              setLoading(false)
-              setShowRealtimePopup(false)
+            const finalResult: ResultData = {
+              content,
+              html: finalHtml,
+              startTime,
+              model,
+              userName,
             }
+            setResultData(finalResult)
+            setIsStreamingActive(false)
+            setStreamingFinished(true)
+            setStreamingProgress(100)
+            setLoading(false)
+            setShowRealtimePopup(false)
           } else if (data.type === 'chunk') {
             const chunkText = data.text || ''
             accumulatedHtml += chunkText
@@ -955,9 +793,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          title: resultData.isSecondRequest 
-            ? `${content?.content_name || '재회 결과'}+2차` 
-            : (content?.content_name || '재회 결과'),
+          title: content?.content_name || '재회 결과',
           html: htmlWithFont, // 웹폰트가 포함된 HTML 저장
           content: content, // content 객체 전체 저장 (tts_speaker 포함)
           model: model || 'gemini-3-flash-preview', // 모델 정보 저장
@@ -1558,7 +1394,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       cursor += subtitles.length
 
         return {
-          title: removeNumberPrefix(titleText),
+          title: titleText, // 숫자 접두사 유지
           subtitles,
           startIndex,
           thumbnailHtml,
@@ -3235,8 +3071,31 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
     }
   }
 
+  // 목차로 이동 함수
+  const scrollToTableOfContents = () => {
+    const tocElement = document.getElementById('table-of-contents')
+    if (tocElement) {
+      tocElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* 플로팅 배너 - 목차로 이동 */}
+      {parsedMenus.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-40">
+          <button
+            onClick={scrollToTableOfContents}
+            className="bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold px-6 py-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2 opacity-80"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            <span>목차로 이동</span>
+          </button>
+        </div>
+      )}
+      
       {/* realtime 전용 로딩 팝업 (batch 폼 팝업과 동일한 UI) */}
       {fortuneViewMode === 'realtime' && isRealtime && showRealtimePopup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -3327,7 +3186,7 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 // 활성 항목의 메뉴까지만 표시 (이후 메뉴는 숨김)
                 if (activePos && menuIndex > activePos.menuIndex) return null
                 return (
-                <div key={`menu-${menuIndex}`} className="menu-section space-y-3">
+                <div key={`menu-${menuIndex}`} id={`menu-${menuIndex}`} className="menu-section space-y-3">
                   {/* 북커버 썸네일 (첫 번째 대제목 라운드 박스 안, 제목 위) */}
                   {menuIndex === 0 && content?.book_cover_thumbnail && (
                     <div className="book-cover-thumbnail-container w-full mb-10">
@@ -3340,6 +3199,51 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                           display: 'block' 
                         }}
                       />
+                      {/* 목차 (북커버 썸네일 아래) */}
+                      {parsedMenus.length > 0 && (
+                        <div id="table-of-contents" className="mt-6 mb-6 border-t border-gray-200 pt-6">
+                          <h3 className="text-lg font-bold text-gray-900 mb-4">목차</h3>
+                          <div className="space-y-2">
+                            {parsedMenus.map((m, mIndex) => (
+                              <div key={`toc-menu-${mIndex}`} className="space-y-1">
+                                <button
+                                  onClick={() => {
+                                    const element = document.getElementById(`menu-${mIndex}`)
+                                    if (element) {
+                                      element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                    }
+                                  }}
+                                  className="text-left text-base font-semibold text-gray-800 hover:text-pink-600 transition-colors w-full py-1"
+                                >
+                                  {m.title}
+                                </button>
+                                {m.subtitles && m.subtitles.length > 0 && (
+                                  <div className="ml-4 space-y-1">
+                                    {m.subtitles.map((sub, sIndex) => {
+                                      const subTitle = (sub.title || '').trim()
+                                      if (!subTitle || subTitle.includes('상세메뉴 해석 목록')) return null
+                                      return (
+                                        <button
+                                          key={`toc-sub-${mIndex}-${sIndex}`}
+                                          onClick={() => {
+                                            const element = document.getElementById(`subtitle-${mIndex}-${sIndex}`)
+                                            if (element) {
+                                              element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                            }
+                                          }}
+                                          className="text-left text-sm text-gray-600 hover:text-pink-600 transition-colors w-full py-0.5"
+                                        >
+                                          {subTitle}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                   
@@ -3373,11 +3277,11 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       // 활성 항목이 아닌데 미완성이면 숨김 (점사중 표시 중복 방지)
                       if (!complete && !isActive) return null
 
-                      const title = removeNumberPrefix(sub.title || '').trim()
+                      const title = (sub.title || '').trim() // 숫자 접두사 유지
                       if (!title || title.includes('상세메뉴 해석 목록')) return null
 
                       return (
-                        <div key={`item-${menuIndex}-${subIndex}`} className="subtitle-section space-y-2">
+                        <div key={`item-${menuIndex}-${subIndex}`} id={`subtitle-${menuIndex}-${subIndex}`} className="subtitle-section space-y-2">
                           <div className="subtitle-title font-semibold text-gray-900">{title}</div>
                           {sub.thumbnail && (
                             <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto' }}>
@@ -3487,6 +3391,15 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       const doc = parser.parseFromString(processedHtml, 'text/html')
                       const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
                       
+                      // HTML에 이미 포함된 북커버 썸네일 플레이스홀더 제거 (썸네일이 없는 경우)
+                      if (!bookCoverThumbnail && menuSections.length > 0) {
+                        const firstSection = menuSections[0]
+                        const existingBookCover = firstSection.querySelector('.book-cover-thumbnail-container')
+                        if (existingBookCover) {
+                          existingBookCover.remove()
+                        }
+                      }
+                      
                       // 북커버 썸네일 추가 (첫 번째 menu-section 안, 제목 위)
                       if (bookCoverThumbnail && menuSections.length > 0) {
                         const firstSection = menuSections[0]
@@ -3506,10 +3419,10 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       menuSections.forEach((section, menuIndex) => {
                         const menuItem = menuItems[menuIndex]
                         
-                        // 대메뉴 제목에서 숫자 접두사 제거 및 볼드 속성 적용
+                        // 대메뉴 제목에서 볼드 속성 적용 (숫자 접두사 유지)
                         const menuTitle = section.querySelector('.menu-title')
                         if (menuTitle) {
-                          menuTitle.textContent = removeNumberPrefix(menuTitle.textContent || '')
+                          // 숫자 접두사 제거하지 않음
                           const menuBold = content?.menu_font_bold || false
                           ;(menuTitle as HTMLElement).style.fontWeight = menuBold ? 'bold' : 'normal'
                         }
@@ -3519,10 +3432,10 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                           subtitleSections.forEach((subSection, subIndex) => {
                             const subtitle = menuItem.subtitles[subIndex]
                             
-                            // 소메뉴 제목에서 숫자 접두사 제거 및 볼드 속성 적용
+                            // 소메뉴 제목에서 볼드 속성 적용 (숫자 접두사 유지)
                             const subtitleTitle = subSection.querySelector('.subtitle-title')
                             if (subtitleTitle) {
-                              subtitleTitle.textContent = removeNumberPrefix(subtitleTitle.textContent || '')
+                              // 숫자 접두사 제거하지 않음
                               const subtitleBold = content?.subtitle_font_bold || false
                               ;(subtitleTitle as HTMLElement).style.fontWeight = subtitleBold ? 'bold' : 'normal'
                             }
@@ -3544,12 +3457,10 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                             
                             if (existingDetailMenuSection) {
                               // HTML에 이미 상세메뉴가 있으면 그대로 사용 (제미나이가 생성한 것)
-                              // 숫자 접두사만 제거하고 스타일 적용
+                              // 스타일 적용 (숫자 접두사 유지)
                               const detailMenuTitles = existingDetailMenuSection.querySelectorAll('.detail-menu-title')
                               detailMenuTitles.forEach((titleEl) => {
-                                if (titleEl.textContent) {
-                                  titleEl.textContent = removeNumberPrefix(titleEl.textContent)
-                                }
+                                // 숫자 접두사 제거하지 않음
                                 const detailMenuBold = content?.detail_menu_font_bold || false
                                 ;(titleEl as HTMLElement).style.fontSize = `${detailMenuFontSize}px`
                                 ;(titleEl as HTMLElement).style.fontWeight = detailMenuBold ? 'bold' : 'normal'
