@@ -3143,17 +3143,6 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
             {content?.content_name || '결과 생성 중...'}
           </h1>
           
-          {/* 썸네일 */}
-          {content?.thumbnail_url && (
-            <div className="mb-4 w-full">
-              <img 
-                src={content.thumbnail_url} 
-                alt={content?.content_name || '썸네일'}
-                className="w-full h-auto object-cover"
-              />
-            </div>
-          )}
-          
           {html && (
             <div className="mb-4 flex justify-center">
               <button
@@ -3178,81 +3167,77 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
           )}
         </div>
 
+        {/* 북커버 썸네일 (점사 전에 바로 표시) */}
+        {content?.book_cover_thumbnail && (
+          <div className="book-cover-thumbnail-container w-full mb-10">
+            <img 
+              src={content.book_cover_thumbnail} 
+              alt="북커버 썸네일"
+              className="w-full h-auto"
+              style={{ 
+                objectFit: 'contain', 
+                display: 'block' 
+              }}
+            />
+          </div>
+        )}
+
         {/* 결과 출력 */}
         {fortuneViewMode === 'realtime' ? (
           parsedMenus.length > 0 ? (
             <div className="jeminai-results space-y-6">
+              {/* 목차 (북커버 썸네일 아래, 테이블 밖) */}
+              {parsedMenus.length > 0 && (
+                <div id="table-of-contents" className="mb-6 border-t border-b border-gray-200 pt-6 pb-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4">목차</h3>
+                  <div className="space-y-2">
+                    {parsedMenus.map((m, mIndex) => (
+                      <div key={`toc-menu-${mIndex}`} className="space-y-1">
+                        <button
+                          onClick={() => {
+                            const element = document.getElementById(`menu-${mIndex}`)
+                            if (element) {
+                              element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                            }
+                          }}
+                          className="text-left text-base font-semibold text-gray-800 hover:text-pink-600 transition-colors w-full py-1"
+                        >
+                          {m.title}
+                        </button>
+                        {m.subtitles && m.subtitles.length > 0 && (
+                          <div className="ml-4 space-y-1">
+                            {m.subtitles.map((sub, sIndex) => {
+                              const subTitle = (sub.title || '').trim()
+                              if (!subTitle || subTitle.includes('상세메뉴 해석 목록')) return null
+                              return (
+                                <button
+                                  key={`toc-sub-${mIndex}-${sIndex}`}
+                                  onClick={() => {
+                                    const element = document.getElementById(`subtitle-${mIndex}-${sIndex}`)
+                                    if (element) {
+                                      element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                    }
+                                  }}
+                                  className="text-left text-sm text-gray-600 hover:text-pink-600 transition-colors w-full py-0.5"
+                                >
+                                  {subTitle}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
               {parsedMenus.map((menu, menuIndex) => {
                 // 활성 항목의 메뉴까지만 표시 (이후 메뉴는 숨김)
                 if (activePos && menuIndex > activePos.menuIndex) return null
                 return (
                 <div key={`menu-${menuIndex}`} id={`menu-${menuIndex}`} className="menu-section space-y-3">
-                  {/* 북커버 썸네일 (첫 번째 대제목 라운드 박스 안, 제목 위) */}
-                  {menuIndex === 0 && content?.book_cover_thumbnail && (
-                    <div className="book-cover-thumbnail-container w-full mb-10">
-                      <img 
-                        src={content.book_cover_thumbnail} 
-                        alt="북커버 썸네일"
-                        className="w-full h-auto"
-                        style={{ 
-                          objectFit: 'contain', 
-                          display: 'block' 
-                        }}
-                      />
-                      {/* 목차 (북커버 썸네일 아래) */}
-                      {parsedMenus.length > 0 && (
-                        <div id="table-of-contents" className="mt-6 mb-6 border-t border-gray-200 pt-6">
-                          <h3 className="text-lg font-bold text-gray-900 mb-4">목차</h3>
-                          <div className="space-y-2">
-                            {parsedMenus.map((m, mIndex) => (
-                              <div key={`toc-menu-${mIndex}`} className="space-y-1">
-                                <button
-                                  onClick={() => {
-                                    const element = document.getElementById(`menu-${mIndex}`)
-                                    if (element) {
-                                      element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                                    }
-                                  }}
-                                  className="text-left text-base font-semibold text-gray-800 hover:text-pink-600 transition-colors w-full py-1"
-                                >
-                                  {m.title}
-                                </button>
-                                {m.subtitles && m.subtitles.length > 0 && (
-                                  <div className="ml-4 space-y-1">
-                                    {m.subtitles.map((sub, sIndex) => {
-                                      const subTitle = (sub.title || '').trim()
-                                      if (!subTitle || subTitle.includes('상세메뉴 해석 목록')) return null
-                                      return (
-                                        <button
-                                          key={`toc-sub-${mIndex}-${sIndex}`}
-                                          onClick={() => {
-                                            const element = document.getElementById(`subtitle-${mIndex}-${sIndex}`)
-                                            if (element) {
-                                              element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                                            }
-                                          }}
-                                          className="text-left text-sm text-gray-600 hover:text-pink-600 transition-colors w-full py-0.5"
-                                        >
-                                          {subTitle}
-                                        </button>
-                                      )
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
                   <div className="menu-title font-bold text-lg text-gray-900">{menu.title}</div>
-
-                  {/* 대제목별 썸네일 */}
-                  {menu.thumbnailHtml && (
-                    <ThumbnailDisplay html={menu.thumbnailHtml} menuIndex={menuIndex} />
-                  )}
 
                   {/* 첫 번째 대제목 아래 만세력 테이블 (1-1 소제목 준비 이후에만 표시) */}
                   {menuIndex === 0 && menu.manseHtml && firstSubtitleReady && (
