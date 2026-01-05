@@ -774,18 +774,25 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             const subtitlePrefixMatch = subtitleText.match(/^(\d+-\d+)(?:\.\s|\.|\s|$)/)
             const subtitlePrefix = subtitlePrefixMatch?.[1]
             
+            // 해석도구 형식 체크 (올바른 형식인지 확인)
+            const isValidToolFormat = checkNumberPrefix(interpretationTool, 'subtitle')
+            if (!isValidToolFormat) {
+              errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1}: 해석도구의 숫자 접두사 형식이 올바르지 않습니다. (예: "1-1. ")`)
+            }
+            
             // 해석도구의 숫자 접두사 추출 (점이 있든 없든 추출 시도)
             const toolPrefixMatch = interpretationTool.match(/^(\d+-\d+)(?:\.\s|\.|\s|$)/)
             const toolPrefix = toolPrefixMatch?.[1]
             
-            // 둘 다 접두사가 있고 다를 때만 불일치 오류 표시
-            if (subtitlePrefix && toolPrefix && subtitlePrefix !== toolPrefix) {
-              errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1}: 소메뉴("${subtitleText}")와 해석도구("${interpretationTool}")의 숫자 접두사가 일치하지 않습니다.`)
-            } else if (subtitlePrefix && !toolPrefix) {
-              // 소메뉴에 접두사가 있고 해석도구에 없을 때만 표시 (형식 오류와 중복되지 않도록)
-              errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1}: 해석도구("${interpretationTool}")에 숫자 접두사가 없습니다. (예: "1-1. ")`)
+            // 소메뉴와 해석도구의 접두사 일치 여부 체크
+            if (subtitlePrefix && toolPrefix) {
+              if (subtitlePrefix !== toolPrefix) {
+                errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1}: 소메뉴("${subtitleText}")와 해석도구의 숫자 접두사가 일치하지 않습니다.`)
+              }
+            } else if (subtitlePrefix && !toolPrefix && isValidToolFormat) {
+              // 소메뉴에 접두사가 있고 해석도구 형식은 맞지만 접두사 추출 실패
+              errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1}: 해석도구의 숫자 접두사를 추출할 수 없습니다. (예: "1-1. ")`)
             }
-            // 소메뉴에 접두사가 없으면 형식 오류만 표시 (해석도구 체크 생략)
           }
 
           // 상세메뉴 체크
@@ -804,18 +811,25 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 const detailPrefixMatch = detailMenuText.match(/^(\d+-\d+-\d+)(?:\.\s|\.|\s|$)/)
                 const detailPrefix = detailPrefixMatch?.[1]
                 
+                // 해석도구 형식 체크 (올바른 형식인지 확인)
+                const isValidDetailToolFormat = checkNumberPrefix(detailInterpretationTool, 'detailMenu')
+                if (!isValidDetailToolFormat) {
+                  errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1} 상세메뉴 ${detailIndex + 1}: 해석도구의 숫자 접두사 형식이 올바르지 않습니다. (예: "1-1-1. ")`)
+                }
+                
                 // 해석도구의 숫자 접두사 추출 (점이 있든 없든 추출 시도)
                 const detailToolPrefixMatch = detailInterpretationTool.match(/^(\d+-\d+-\d+)(?:\.\s|\.|\s|$)/)
                 const detailToolPrefix = detailToolPrefixMatch?.[1]
                 
-                // 둘 다 접두사가 있고 다를 때만 불일치 오류 표시
-                if (detailPrefix && detailToolPrefix && detailPrefix !== detailToolPrefix) {
-                  errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1} 상세메뉴 ${detailIndex + 1}: 상세메뉴("${detailMenuText}")와 해석도구("${detailInterpretationTool}")의 숫자 접두사가 일치하지 않습니다.`)
-                } else if (detailPrefix && !detailToolPrefix) {
-                  // 상세메뉴에 접두사가 있고 해석도구에 없을 때만 표시 (형식 오류와 중복되지 않도록)
-                  errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1} 상세메뉴 ${detailIndex + 1}: 해석도구("${detailInterpretationTool}")에 숫자 접두사가 없습니다. (예: "1-1-1. ")`)
+                // 상세메뉴와 해석도구의 접두사 일치 여부 체크
+                if (detailPrefix && detailToolPrefix) {
+                  if (detailPrefix !== detailToolPrefix) {
+                    errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1} 상세메뉴 ${detailIndex + 1}: 상세메뉴("${detailMenuText}")와 해석도구의 숫자 접두사가 일치하지 않습니다.`)
+                  }
+                } else if (detailPrefix && !detailToolPrefix && isValidDetailToolFormat) {
+                  // 상세메뉴에 접두사가 있고 해석도구 형식은 맞지만 접두사 추출 실패
+                  errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1} 상세메뉴 ${detailIndex + 1}: 해석도구의 숫자 접두사를 추출할 수 없습니다. (예: "1-1-1. ")`)
                 }
-                // 상세메뉴에 접두사가 없으면 형식 오류만 표시 (해석도구 체크 생략)
               }
             })
           }
