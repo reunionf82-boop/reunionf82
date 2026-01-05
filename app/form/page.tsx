@@ -1053,14 +1053,13 @@ function FormContent() {
       updateProgress(50);
       await new Promise(resolve => setTimeout(resolve, 300));
       
-      // PDF 생성
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = 210; // A4 가로 210mm
-      const pageHeight = 297; // A4 세로 297mm
+      // PDF 생성 - 보기 화면의 스크롤 길이만큼 하나의 긴 페이지로 생성
       const margin = 5; // 최소 여백 5mm (상하좌우 동일)
-      const contentWidth = pageWidth - (margin * 2); // 200mm (최대 너비 활용)
-      const contentHeight = pageHeight - (margin * 2); // 287mm
-      const maxCanvasHeight = 16000; // 최대 캔버스 높이 제한 (약 8페이지 분량)
+      const pdfPageWidth = 210; // PDF 페이지 너비 210mm (A4 가로)
+      const contentWidth = pdfPageWidth - (margin * 2); // 200mm (최대 너비 활용)
+      
+      // PDF는 나중에 캡처된 이미지 높이에 맞춰 동적으로 생성
+      let pdf: jsPDF | null = null;
       
       // 제목 제거
       const titleEl = container.querySelector('h1');
@@ -1078,239 +1077,628 @@ function FormContent() {
       
       updateProgress(60);
       
-      // 섹션별로 나눠서 캡처 (긴 페이지 메모리 문제 해결)
-      const mainContainerDiv = container.querySelector('.container');
-      if (!mainContainerDiv) {
-        throw new Error('컨테이너를 찾을 수 없습니다.');
+      // "보기" 화면과 동일한 구조로 캡처
+      // contentHtml을 직접 사용하거나, container 내부의 실제 컨텐츠 사용
+      const contentHtml = container.querySelector('#contentHtml') || container.querySelector('.container');
+      if (!contentHtml) {
+        throw new Error('컨텐츠를 찾을 수 없습니다.');
       }
       
-      // 각 menu-section을 개별적으로 캡처
-      const menuSections = Array.from(mainContainerDiv.querySelectorAll('.menu-section')) as HTMLElement[];
+      // 전체 내용을 하나의 캔버스로 캡처
+      const scale = 2; // 고품질 유지
+      const jpegQuality = 0.92; // 고품질 유지
       
-      if (menuSections.length === 0) {
-        throw new Error('캡처할 내용이 없습니다.');
+      // 보기 화면과 동일한 너비로 설정 (896px는 보기 화면의 실제 너비)
+      const viewWidth = 896;
+      
+      // 임시 컨테이너 생성 (보기 화면과 동일한 구조)
+      // html2canvas가 제대로 캡처하려면 요소가 화면에 보여야 하지만, 사용자에게는 보이지 않게 처리
+      const tempContainer = document.createElement('div');
+      const tempContainerId = `temp-pdf-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      tempContainer.id = tempContainerId;
+      tempContainer.style.position = 'fixed';
+      tempContainer.style.left = '0';
+      tempContainer.style.top = '0';
+      tempContainer.style.width = `${viewWidth}px`;
+      tempContainer.style.maxWidth = `${viewWidth}px`;
+      tempContainer.style.minWidth = `${viewWidth}px`;
+      tempContainer.style.boxSizing = 'border-box';
+      tempContainer.style.zIndex = '-99999';
+      tempContainer.style.backgroundColor = '#ffffff';
+      tempContainer.style.padding = '0';
+      tempContainer.style.margin = '0';
+      tempContainer.style.border = 'none';
+      tempContainer.style.overflow = 'visible';
+      tempContainer.style.opacity = '0';
+      tempContainer.style.visibility = 'hidden';
+      tempContainer.style.pointerEvents = 'none';
+      tempContainer.style.transform = 'translateX(-9999px)'; // 화면 밖으로 이동
+      
+      // 폰트 스타일 적용
+      if (fontFamilyName) {
+        tempContainer.style.fontFamily = `'${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`;
+        const scopedStyle = document.createElement('style');
+        scopedStyle.innerHTML = `
+          #${tempContainerId} * {
+            font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+            text-rendering: optimizeLegibility;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+          }
+          #${tempContainerId} {
+            background: #ffffff;
+          }
+          #${tempContainerId} .container {
+            background: transparent;
+            padding: 32px 16px;
+          }
+          #${tempContainerId} .menu-section {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: none;
+          }
+          #${tempContainerId} .menu-title {
+            font-size: ${savedMenuFontSize}px !important;
+            font-weight: bold;
+            margin-bottom: 16px;
+            color: #111;
+          }
+          #${tempContainerId} .subtitle-section {
+            padding-top: 24px;
+            padding-bottom: 24px;
+            position: relative;
+            background-color: #ffffff;
+          }
+          #${tempContainerId} .subtitle-section:not(:last-child) {
+            padding-bottom: 24px;
+            margin-bottom: 24px;
+          }
+          #${tempContainerId} .subtitle-section:not(:last-child)::after {
+            content: '';
+            display: block;
+            width: 300px;
+            height: 2px;
+            background: linear-gradient(to right, transparent, #ffffff, transparent);
+            margin: 24px auto 0;
+          }
+          #${tempContainerId} .subtitle-title {
+            font-size: ${savedSubtitleFontSize}px !important;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #333;
+          }
+          #${tempContainerId} .subtitle-content {
+            font-size: ${savedBodyFontSize}px !important;
+            color: #555;
+            line-height: 1.8;
+            white-space: pre-line;
+          }
+          #${tempContainerId} .menu-thumbnail,
+          #${tempContainerId} img.menu-thumbnail {
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            object-fit: contain !important;
+            display: block !important;
+            margin-bottom: 16px !important;
+          }
+          #${tempContainerId} .subtitle-thumbnail-container {
+            width: 100% !important;
+            max-width: 100% !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+            margin-top: 0.5rem !important;
+            margin-bottom: 0.5rem !important;
+          }
+          #${tempContainerId} .subtitle-thumbnail-container img {
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            display: block !important;
+            object-fit: contain !important;
+          }
+        `;
+        tempContainer.appendChild(scopedStyle);
       }
       
-      // 긴 페이지를 위해 scale 조정 (메모리 및 문자열 길이 문제 방지)
-      const totalSections = menuSections.length;
-      let scale = 2;
-      if (totalSections > 50) scale = 1.2; // 매우 많은 섹션
-      else if (totalSections > 30) scale = 1.5; // 섹션이 많으면 scale 낮춤
-      else if (totalSections > 15) scale = 1.8;
+      // 보기 화면과 동일한 구조로 복사
+      // contentHtml의 부모 컨테이너(.container)를 포함하여 복사
+      const containerWrapper = contentHtml.closest('.container') || contentHtml.parentElement;
+      if (!containerWrapper) {
+        throw new Error('컨테이너 래퍼를 찾을 수 없습니다.');
+      }
       
-      let currentY = margin;
-      let processedSections = 0;
+      const tempContainerDiv = containerWrapper.cloneNode(true) as HTMLElement;
+      tempContainer.appendChild(tempContainerDiv);
+      document.body.appendChild(tempContainer);
       
-      // JPEG 품질 조정 (긴 페이지를 위해)
-      const jpegQuality = totalSections > 50 ? 0.85 : totalSections > 30 ? 0.88 : 0.92;
+      // tempContainer의 실제 내용 확인
+      console.log('tempContainer 내용 확인:', {
+        innerHTML: tempContainer.innerHTML.substring(0, 500),
+        textContent: tempContainer.textContent?.substring(0, 200),
+        childrenCount: tempContainer.children.length,
+        computedStyle: window.getComputedStyle(tempContainer).backgroundColor
+      });
       
-      // 각 섹션을 캡처
-      const captureSection = async (section: HTMLElement): Promise<void> => {
-        // 임시 컨테이너 생성 (섹션만 포함)
-        const tempContainer = document.createElement('div');
-        const tempContainerId = `temp-section-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        tempContainer.id = tempContainerId;
-        tempContainer.style.position = 'absolute';
-        tempContainer.style.left = '-10000px';
-        tempContainer.style.top = '0';
-        // tempContainer의 너비를 정확히 896px로 설정
-        tempContainer.style.width = '896px';
-        tempContainer.style.maxWidth = '896px';
-        tempContainer.style.minWidth = '896px'; // 최소 너비도 설정하여 정확한 너비 보장
-        tempContainer.style.boxSizing = 'border-box';
-        tempContainer.style.zIndex = '-7000';
-        tempContainer.style.backgroundColor = '#ffffff';
-        tempContainer.style.padding = '0';
-        tempContainer.style.margin = '0';
-        tempContainer.style.border = 'none';
+      // 이미지 로드 대기 및 렌더링 대기
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 렌더링 대기
+      
+      // 이미지가 모두 로드될 때까지 대기
+      const tempImages = tempContainer.querySelectorAll('img');
+      if (tempImages.length > 0) {
+        await Promise.all(
+          Array.from(tempImages).map((img) => {
+            if ((img as HTMLImageElement).complete) {
+              return Promise.resolve();
+            }
+            return new Promise((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                console.warn('이미지 로드 타임아웃:', (img as HTMLImageElement).src);
+                resolve(null); // 타임아웃되어도 계속 진행
+              }, 5000);
+              (img as HTMLImageElement).onload = () => {
+                clearTimeout(timeout);
+                resolve(null);
+              };
+              (img as HTMLImageElement).onerror = () => {
+                clearTimeout(timeout);
+                resolve(null); // 에러가 나도 계속 진행
+              };
+            });
+          })
+        );
+      }
+      
+      // 추가 렌더링 대기
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      try {
+        // 전체를 하나의 긴 캔버스로 캡처 (보기 화면의 전체 스크롤 높이만큼)
+        const actualHeight = tempContainer.scrollHeight || tempContainer.offsetHeight;
+        const estimatedPages = Math.ceil(actualHeight / (1123 * scale)); // A4 한 페이지 높이 기준
+        console.log(`PDF 캡처 시작: 예상 높이 ${actualHeight}px (약 ${estimatedPages}페이지)`);
         
-        // 폰트 스타일 적용
-        if (fontFamilyName) {
-          tempContainer.style.fontFamily = `'${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`;
-          const scopedStyle = document.createElement('style');
-          scopedStyle.innerHTML = `
-            #${tempContainerId} * {
-              font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-              text-rendering: optimizeLegibility;
-              -webkit-font-smoothing: antialiased;
-              -moz-osx-font-smoothing: grayscale;
+        // html2canvas로 전체 컨텐츠 캡처
+        // height를 지정하지 않으면 전체 scrollHeight를 자동으로 캡처
+        console.log(`캡처 대상 높이: ${actualHeight}px, tempContainer 내용 확인:`, {
+          scrollHeight: tempContainer.scrollHeight,
+          offsetHeight: tempContainer.offsetHeight,
+          clientHeight: tempContainer.clientHeight,
+          hasContent: tempContainer.innerHTML.length > 0,
+          viewWidth: viewWidth
+        });
+        
+        // html2canvas로 전체 컨텐츠 캡처
+        // height를 지정하지 않으면 전체 scrollHeight를 자동으로 캡처
+        console.log('html2canvas 캡처 시작...', {
+          containerWidth: tempContainer.offsetWidth,
+          containerHeight: tempContainer.scrollHeight,
+          hasContent: tempContainer.innerHTML.length > 0
+        });
+        
+        // html2canvas는 onclone에서 복제된 문서를 사용하므로 원본은 계속 숨김 상태 유지
+        // onclone 콜백에서만 복제된 요소를 보이게 처리
+        const canvas = await html2canvas(tempContainer, {
+          scale: scale,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          width: viewWidth,
+          // height를 지정하지 않으면 전체 scrollHeight를 자동으로 캡처
+          removeContainer: false,
+          onclone: (clonedDoc) => {
+            // 복제된 문서에서만 스타일을 보이게 처리 (원본은 계속 숨김)
+            const clonedContainer = clonedDoc.getElementById(tempContainerId);
+            if (clonedContainer) {
+              (clonedContainer as HTMLElement).style.opacity = '1';
+              (clonedContainer as HTMLElement).style.visibility = 'visible';
+              (clonedContainer as HTMLElement).style.position = 'fixed';
+              (clonedContainer as HTMLElement).style.left = '0';
+              (clonedContainer as HTMLElement).style.top = '0';
+              (clonedContainer as HTMLElement).style.zIndex = '999999';
+              (clonedContainer as HTMLElement).style.backgroundColor = '#ffffff';
+              (clonedContainer as HTMLElement).style.transform = 'none'; // transform 제거
             }
-            #${tempContainerId} {
-              background: #ffffff;
-            }
-            #${tempContainerId} .container {
-              background: transparent;
-              padding: 32px 16px; /* tempContainer에서 제거한 padding을 내부로 이동 */
-            }
-            #${tempContainerId} .menu-section {
-              background: white;
-              border-radius: 12px;
-              padding: 24px;
-              margin-bottom: 24px;
-              box-shadow: none;
-            }
-            #${tempContainerId} .menu-title {
-              font-size: ${savedMenuFontSize}px !important;
-              font-weight: bold;
-              margin-bottom: 16px;
-              color: #111;
-            }
-            #${tempContainerId} .subtitle-section {
-              padding-top: 24px;
-              padding-bottom: 24px;
-              position: relative;
-              background-color: #ffffff;
-            }
-            #${tempContainerId} .subtitle-section:not(:last-child) {
-              padding-bottom: 24px;
-              margin-bottom: 24px;
-            }
-            #${tempContainerId} .subtitle-section:not(:last-child)::after {
-              content: '';
-              display: block;
-              width: 300px;
-              height: 2px;
-              background: linear-gradient(to right, transparent, #ffffff, transparent);
-              margin: 24px auto 0;
-            }
-            #${tempContainerId} .subtitle-title {
-              font-size: ${savedSubtitleFontSize}px !important;
-              font-weight: 600;
-              margin-bottom: 12px;
-              color: #333;
-            }
-            #${tempContainerId} .subtitle-content {
-              font-size: ${savedBodyFontSize}px !important;
-              color: #555;
-              line-height: 1.8;
-              white-space: pre-line;
-            }
-          `;
-          tempContainer.appendChild(scopedStyle);
+          }
+        });
+        
+        const imgWidth = canvas.width;
+        const imgHeight = canvas.height;
+        
+        if (imgHeight === 0) {
+          document.body.removeChild(tempContainer);
+          throw new Error('캡처할 내용이 없습니다.');
         }
         
-        const tempContainerDiv = document.createElement('div');
-        tempContainerDiv.className = 'container';
-        tempContainerDiv.appendChild(section.cloneNode(true) as HTMLElement);
-        tempContainer.appendChild(tempContainerDiv);
-        document.body.appendChild(tempContainer);
+        console.log(`PDF 캡처 완료: 너비 ${imgWidth}px, 높이 ${imgHeight}px`);
         
-        await new Promise(resolve => setTimeout(resolve, 200)); // 렌더링 대기 시간 증가
+        // 캡처된 이미지가 비어있는지 확인
+        if (imgWidth === 0 || imgHeight === 0) {
+          document.body.removeChild(tempContainer);
+          throw new Error('캡처된 이미지가 비어있습니다. 콘텐츠를 확인해주세요.');
+        }
         
-        try {
-          // html2canvas가 정확히 896px 너비로 캡처하도록 명시적으로 지정
-          const canvas = await html2canvas(tempContainer, {
-            scale: scale,
-            useCORS: true,
-            allowTaint: true,
-            backgroundColor: '#ffffff',
-            logging: false,
-            width: 896, // 명시적으로 896px 지정
-            height: tempContainer.scrollHeight, // 실제 높이 사용
-            removeContainer: false
-          });
+        // Canvas에 실제 내용이 있는지 확인 (여러 위치에서 샘플링)
+        const canvasCtx = canvas.getContext('2d');
+        if (canvasCtx) {
+          const sampleSize = Math.min(200, imgWidth, imgHeight);
+          const samplePositions = [
+            [0, 0], // 상단 왼쪽
+            [imgWidth - sampleSize, 0], // 상단 오른쪽
+            [0, Math.max(0, imgHeight - sampleSize)], // 하단 왼쪽
+            [imgWidth - sampleSize, Math.max(0, imgHeight - sampleSize)], // 하단 오른쪽
+            [Math.floor(imgWidth / 2) - Math.floor(sampleSize / 2), Math.floor(imgHeight / 2) - Math.floor(sampleSize / 2)] // 중앙
+          ];
           
-          const imgWidth = canvas.width; // 실제 캡처된 픽셀 너비
-          const imgHeight = canvas.height;
-          
-          if (imgHeight === 0) {
-            document.body.removeChild(tempContainer);
-            return;
-          }
-          
-          // A4 용지 너비(210mm)에서 좌우 여백(각 5mm)을 뺀 contentWidth(200mm)를 사용
-          // 실제 캡처된 이미지 픽셀 너비를 기준으로 정확한 PDF mm 너비 계산
-          // 이미지 비율 유지하면서 contentWidth(200mm)에 정확히 맞춤
-          const pdfImgWidth = contentWidth; // 200mm (정확히 contentWidth로 설정)
-          const pdfImgHeight = imgHeight * pdfImgWidth / imgWidth;
-          
-          // 디버깅: 실제 이미지 크기 확인
-          const spaceLeft = pageHeight - margin - currentY;
-          
-          // 새 페이지 필요 여부 확인
-          if (currentY > margin && pdfImgHeight > spaceLeft) {
-            pdf.addPage();
-            currentY = margin;
-          }
-          
-          // 이미지가 한 페이지보다 큰 경우 분할
-          if (pdfImgHeight <= contentHeight) {
-            try {
-              // JPEG 사용으로 파일 크기 감소 (Invalid string length 오류 방지)
-              const imgData = canvas.toDataURL('image/jpeg', jpegQuality);
-              // 이미지 너비를 정확히 contentWidth로 설정하여 좌우 여백 동일하게
-              pdf.addImage(imgData, 'JPEG', margin, currentY, pdfImgWidth, pdfImgHeight);
-              currentY += pdfImgHeight;
-            } catch (e) {
-              console.error('Canvas toDataURL failed:', e);
+          let hasContent = false;
+          for (const [x, y] of samplePositions) {
+            if (x < 0 || y < 0 || x + sampleSize > imgWidth || y + sampleSize > imgHeight) {
+              continue;
             }
-          } else {
-            // 여러 페이지로 분할
-            let remainingHeight = imgHeight;
-            let currentSourceY = 0;
-            
-            while (remainingHeight > 0) {
-              const spaceLeft = pageHeight - margin - currentY;
-              const onePageCanvasHeight = (spaceLeft * imgWidth) / pdfImgWidth;
-              const sliceHeight = Math.min(remainingHeight, onePageCanvasHeight);
-              
-              // 새 페이지 필요
-              if (currentY > margin && sliceHeight * pdfImgWidth / imgWidth > spaceLeft) {
-                pdf.addPage();
-                currentY = margin;
-              }
-              
-              const sliceCanvas = document.createElement('canvas');
-              sliceCanvas.width = imgWidth;
-              sliceCanvas.height = sliceHeight;
-              const ctx = sliceCanvas.getContext('2d');
-              if (ctx) {
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-                ctx.drawImage(canvas, 0, currentSourceY, imgWidth, sliceHeight, 0, 0, imgWidth, sliceHeight);
-              }
-              
-              try {
-                // JPEG 사용으로 파일 크기 감소 (Invalid string length 오류 방지)
-                const sliceImgData = sliceCanvas.toDataURL('image/jpeg', jpegQuality);
-                const slicePdfHeight = sliceHeight * pdfImgWidth / imgWidth;
-                
-                // 이미지 너비를 정확히 contentWidth로 설정하여 좌우 여백 동일하게
-                pdf.addImage(sliceImgData, 'JPEG', margin, currentY, pdfImgWidth, slicePdfHeight);
-                
-                remainingHeight -= sliceHeight;
-                currentSourceY += sliceHeight;
-                currentY += slicePdfHeight;
-                
-                if (remainingHeight > 0 && currentY >= pageHeight - margin) {
-                  pdf.addPage();
-                  currentY = margin;
-                }
-              } catch (e) {
-                console.error('Slice canvas toDataURL failed:', e);
+            const sampleData = canvasCtx.getImageData(x, y, sampleSize, sampleSize);
+            for (let i = 0; i < sampleData.data.length; i += 4) {
+              const r = sampleData.data[i];
+              const g = sampleData.data[i + 1];
+              const b = sampleData.data[i + 2];
+              if (r !== 255 || g !== 255 || b !== 255) {
+                hasContent = true;
+                console.log(`원본 Canvas에 내용 발견: 위치 (${x}, ${y}), 색상 (${r}, ${g}, ${b})`);
                 break;
               }
             }
+            if (hasContent) break;
           }
-        } finally {
+          
+          if (!hasContent) {
+            console.error('⚠️ 원본 Canvas가 모두 흰색입니다! html2canvas 캡처에 실패했을 수 있습니다.');
+            console.log('tempContainer 내용 확인:', {
+              innerHTML: tempContainer.innerHTML.substring(0, 500),
+              scrollHeight: tempContainer.scrollHeight,
+              offsetHeight: tempContainer.offsetHeight
+            });
+          } else {
+            console.log('✅ 원본 Canvas에 내용이 확인되었습니다.');
+          }
+        }
+        
+        // 이미지를 PDF에 추가 (하나의 긴 페이지로)
+        const pdfImgWidth = contentWidth; // 200mm
+        const pdfImgHeight = imgHeight * pdfImgWidth / imgWidth;
+        
+        // jsPDF 최대 페이지 크기: 14400 userUnit (약 14400mm)
+        // 매우 긴 페이지의 경우 여러 페이지로 나누어야 함
+        // 브라우저 캔버스 크기 제한을 고려 (일반적으로 약 32767px)
+        // 슬라이스 높이를 30000px로 제한하여 toDataURL 실패 방지
+        const maxPageHeight = 12000; // 여유를 두고 12000mm로 제한
+        const maxSliceHeight = 30000; // 슬라이스 캔버스 높이 제한 (px) - 브라우저 제한 고려
+        const needsMultiplePages = pdfImgHeight > maxPageHeight || imgHeight > maxSliceHeight;
+        
+        console.log(`PDF 이미지 크기: 너비 ${pdfImgWidth.toFixed(2)}mm, 높이 ${pdfImgHeight.toFixed(2)}mm, 여러 페이지 필요: ${needsMultiplePages}`);
+        
+        // PDF 초기화는 나중에 첫 번째 슬라이스 크기에 맞춰 생성
+        pdf = null;
+        
+        if (needsMultiplePages) {
+          // 여러 페이지로 나누어 처리 (jsPDF 제한 때문)
+          let currentSourceY = 0;
+          let remainingHeight = imgHeight;
+          let pageIndex = 0;
+          
+          while (remainingHeight > 0) {
+            // 슬라이스 높이를 브라우저 제한 내로 유지
+            // maxPageHeight에 맞춘 높이와 maxSliceHeight 중 작은 값 사용
+            const spaceLeft = maxPageHeight;
+            const onePageCanvasHeight = (spaceLeft * imgWidth) / pdfImgWidth;
+            const sliceHeight = Math.min(remainingHeight, onePageCanvasHeight, maxSliceHeight);
+            const slicePdfHeight = sliceHeight * pdfImgWidth / imgWidth;
+            
+            console.log(`페이지 ${pageIndex + 1} 슬라이스 생성: sourceY=${currentSourceY}, sliceHeight=${sliceHeight}px, slicePdfHeight=${slicePdfHeight.toFixed(2)}mm`);
+            
+            // 슬라이스 캔버스 생성
+            const sliceCanvas = document.createElement('canvas');
+            sliceCanvas.width = imgWidth;
+            sliceCanvas.height = sliceHeight;
+            
+            const ctx = sliceCanvas.getContext('2d');
+            if (!ctx) {
+              throw new Error('Canvas 2D 컨텍스트를 가져올 수 없습니다.');
+            }
+            
+            // 흰색 배경 채우기
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+            
+            // 원본 캔버스에서 이미지 복사
+            try {
+              if (currentSourceY < 0 || currentSourceY + sliceHeight > canvas.height) {
+                throw new Error(`원본 캔버스 범위를 벗어났습니다. sourceY=${currentSourceY}, sliceHeight=${sliceHeight}, canvasHeight=${canvas.height}`);
+              }
+              
+              // 원본 캔버스의 해당 영역에 내용이 있는지 여러 위치에서 확인
+              const sourceCtx = canvas.getContext('2d');
+              if (sourceCtx) {
+                const checkSize = Math.min(200, imgWidth, sliceHeight);
+                const checkPositions = [
+                  [0, 0], // 상단 왼쪽
+                  [imgWidth - checkSize, 0], // 상단 오른쪽
+                  [0, Math.max(0, sliceHeight - checkSize)], // 하단 왼쪽
+                  [imgWidth - checkSize, Math.max(0, sliceHeight - checkSize)], // 하단 오른쪽
+                  [Math.floor(imgWidth / 2) - Math.floor(checkSize / 2), Math.floor(sliceHeight / 2) - Math.floor(checkSize / 2)] // 중앙
+                ];
+                
+                let sourceHasContent = false;
+                for (const [x, y] of checkPositions) {
+                  if (x < 0 || y < 0 || x + checkSize > imgWidth || y + checkSize > sliceHeight) {
+                    continue;
+                  }
+                  const sourceSample = sourceCtx.getImageData(x, currentSourceY + y, checkSize, checkSize);
+                  for (let i = 0; i < sourceSample.data.length; i += 4) {
+                    const r = sourceSample.data[i];
+                    const g = sourceSample.data[i + 1];
+                    const b = sourceSample.data[i + 2];
+                    if (r !== 255 || g !== 255 || b !== 255) {
+                      sourceHasContent = true;
+                      console.log(`페이지 ${pageIndex + 1}: 원본 캔버스에 내용 발견 - 위치 (${x}, ${currentSourceY + y}), 색상 (${r}, ${g}, ${b})`);
+                      break;
+                    }
+                  }
+                  if (sourceHasContent) break;
+                }
+                
+                if (!sourceHasContent) {
+                  console.error(`⚠️ 페이지 ${pageIndex + 1}: 원본 캔버스의 해당 영역(${currentSourceY}~${currentSourceY + sliceHeight})이 모두 흰색입니다!`);
+                }
+              }
+              
+              // 원본 캔버스에서 픽셀 데이터를 직접 가져와서 복사
+              // drawImage가 실패할 수 있으므로 putImageData 사용
+              try {
+                const sourceCtx = canvas.getContext('2d');
+                if (!sourceCtx) {
+                  throw new Error('원본 캔버스의 2D 컨텍스트를 가져올 수 없습니다.');
+                }
+                
+                // 원본 캔버스의 해당 영역 픽셀 데이터 가져오기
+                const sourceImageData = sourceCtx.getImageData(0, currentSourceY, imgWidth, sliceHeight);
+                
+                // 슬라이스 캔버스에 직접 픽셀 데이터 복사
+                ctx.putImageData(sourceImageData, 0, 0);
+                
+                console.log(`✅ 페이지 ${pageIndex + 1}: putImageData로 이미지 복사 완료`);
+              } catch (putImageError) {
+                // putImageData가 실패하면 drawImage 시도
+                console.warn(`페이지 ${pageIndex + 1}: putImageData 실패, drawImage 시도:`, putImageError);
+                ctx.drawImage(canvas, 0, currentSourceY, imgWidth, sliceHeight, 0, 0, imgWidth, sliceHeight);
+              }
+              
+              // 복사 후 슬라이스 캔버스 확인
+              const afterDrawSample = ctx.getImageData(0, 0, Math.min(200, sliceCanvas.width), Math.min(200, sliceCanvas.height));
+              let afterDrawHasContent = false;
+              for (let i = 0; i < afterDrawSample.data.length; i += 4) {
+                const r = afterDrawSample.data[i];
+                const g = afterDrawSample.data[i + 1];
+                const b = afterDrawSample.data[i + 2];
+                if (r !== 255 || g !== 255 || b !== 255) {
+                  afterDrawHasContent = true;
+                  console.log(`✅ 페이지 ${pageIndex + 1}: 슬라이스 캔버스에 내용 확인 - 색상 (${r}, ${g}, ${b})`);
+                  break;
+                }
+              }
+              
+              if (!afterDrawHasContent) {
+                console.error(`❌ 페이지 ${pageIndex + 1}: 슬라이스 캔버스가 모두 흰색입니다! 원본 캔버스 확인 필요.`);
+              }
+              
+              console.log(`페이지 ${pageIndex + 1} 이미지 복사 완료: sourceY=${currentSourceY}, sliceHeight=${sliceHeight}`);
+            } catch (drawError) {
+              console.error(`페이지 ${pageIndex + 1} drawImage 실패:`, drawError);
+              throw new Error(`페이지 ${pageIndex + 1}: 이미지 복사에 실패했습니다. ${drawError instanceof Error ? drawError.message : String(drawError)}`);
+            }
+            
+            // Canvas에 실제 내용이 있는지 확인 (여러 위치에서 샘플링)
+            // 매우 긴 캔버스의 경우 상단만 흰색일 수 있으므로 여러 위치 확인
+            const sampleSize = Math.min(100, sliceCanvas.width, sliceCanvas.height);
+            const samplePositions = [
+              [0, 0], // 상단 왼쪽
+              [sliceCanvas.width - sampleSize, 0], // 상단 오른쪽
+              [0, Math.max(0, sliceCanvas.height - sampleSize)], // 하단 왼쪽
+              [sliceCanvas.width - sampleSize, Math.max(0, sliceCanvas.height - sampleSize)] // 하단 오른쪽
+            ];
+            
+            let hasContent = false;
+            for (const [x, y] of samplePositions) {
+              if (x < 0 || y < 0 || x + sampleSize > sliceCanvas.width || y + sampleSize > sliceCanvas.height) {
+                continue;
+              }
+              const sampleData = ctx.getImageData(x, y, sampleSize, sampleSize);
+              for (let i = 0; i < sampleData.data.length; i += 4) {
+                const r = sampleData.data[i];
+                const g = sampleData.data[i + 1];
+                const b = sampleData.data[i + 2];
+                if (r !== 255 || g !== 255 || b !== 255) {
+                  hasContent = true;
+                  break;
+                }
+              }
+              if (hasContent) break;
+            }
+            
+            // 이미지 데이터가 생성되었으므로 경고만 표시 (실제로는 문제 없을 수 있음)
+            if (!hasContent) {
+              console.warn(`페이지 ${pageIndex + 1}: Canvas 샘플이 모두 흰색입니다. (이미지 데이터는 생성되었으므로 계속 진행)`);
+            }
+            
+            // 이미지 데이터 생성 (청크 단위로 처리)
+            let sliceImgData: string;
+            try {
+              sliceImgData = sliceCanvas.toDataURL('image/jpeg', jpegQuality);
+              console.log(`페이지 ${pageIndex + 1} JPEG 데이터 생성: ${(sliceImgData.length / 1024).toFixed(2)} KB`);
+            } catch (jpegError) {
+              console.warn(`페이지 ${pageIndex + 1} JPEG 변환 실패, PNG로 시도:`, jpegError);
+              try {
+                sliceImgData = sliceCanvas.toDataURL('image/png');
+                console.log(`페이지 ${pageIndex + 1} PNG 데이터 생성: ${(sliceImgData.length / 1024).toFixed(2)} KB`);
+              } catch (pngError) {
+                console.error(`페이지 ${pageIndex + 1} PNG 변환도 실패:`, pngError);
+                throw new Error(`페이지 ${pageIndex + 1}: 이미지 데이터 생성에 실패했습니다.`);
+              }
+            }
+            
+            if (!sliceImgData || sliceImgData === 'data:,' || sliceImgData.length < 100) {
+              throw new Error(`페이지 ${pageIndex + 1}의 이미지 데이터가 유효하지 않습니다. (${sliceImgData ? sliceImgData.length : 0} bytes, canvas: ${sliceCanvas.width}x${sliceCanvas.height}px)`);
+            }
+            
+            // PDF 초기화 (첫 페이지인 경우)
+            if (pageIndex === 0) {
+              pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: [pdfPageWidth, slicePdfHeight + (margin * 2)]
+              });
+            } else {
+              // 새 페이지 생성
+              if (!pdf) {
+                throw new Error('PDF가 초기화되지 않았습니다.');
+              }
+              pdf.addPage([pdfPageWidth, slicePdfHeight + (margin * 2)]);
+            }
+            
+            // PDF에 이미지 추가
+            if (!pdf) {
+              throw new Error('PDF가 초기화되지 않았습니다.');
+            }
+            pdf.addImage(sliceImgData, 'JPEG', margin, margin, pdfImgWidth, slicePdfHeight);
+            console.log(`PDF 페이지 ${pageIndex + 1} 추가: 높이 ${slicePdfHeight.toFixed(2)}mm`);
+            
+            currentSourceY += sliceHeight;
+            remainingHeight -= sliceHeight;
+            pageIndex++;
+            
+            updateProgress(60 + (currentSourceY / imgHeight) * 30);
+          }
+        } else {
+          // 단일 페이지로 처리 (jsPDF 제한 내이지만 캔버스가 클 수 있음)
+          // 캔버스가 너무 크면 toDataURL이 실패할 수 있으므로 청크로 나누어 처리
+          if (imgHeight > maxSliceHeight) {
+            // 캔버스가 크면 여러 페이지로 나누어 처리
+            console.log('단일 페이지지만 캔버스가 커서 청크로 나누어 처리합니다.');
+            let currentSourceY = 0;
+            let remainingHeight = imgHeight;
+            let pageIndex = 0;
+            
+            while (remainingHeight > 0) {
+              const sliceHeight = Math.min(remainingHeight, maxSliceHeight);
+              const slicePdfHeight = sliceHeight * pdfImgWidth / imgWidth;
+              
+              // 슬라이스 캔버스 생성
+              const sliceCanvas = document.createElement('canvas');
+              sliceCanvas.width = imgWidth;
+              sliceCanvas.height = sliceHeight;
+              
+              const ctx = sliceCanvas.getContext('2d');
+              if (!ctx) {
+                throw new Error('Canvas 2D 컨텍스트를 가져올 수 없습니다.');
+              }
+              
+              // 흰색 배경 채우기
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+              
+              // 원본 캔버스에서 이미지 복사
+              ctx.drawImage(canvas, 0, currentSourceY, imgWidth, sliceHeight, 0, 0, imgWidth, sliceHeight);
+              
+              // 이미지 데이터 생성
+              let sliceImgData: string;
+              try {
+                sliceImgData = sliceCanvas.toDataURL('image/jpeg', jpegQuality);
+              } catch (jpegError) {
+                sliceImgData = sliceCanvas.toDataURL('image/png');
+              }
+              
+              if (!sliceImgData || sliceImgData === 'data:,' || sliceImgData.length < 100) {
+                throw new Error(`페이지 ${pageIndex + 1}의 이미지 데이터 생성에 실패했습니다.`);
+              }
+              
+              // PDF 초기화 (첫 페이지인 경우)
+              if (pageIndex === 0) {
+                pdf = new jsPDF({
+                  orientation: 'portrait',
+                  unit: 'mm',
+                  format: [pdfPageWidth, slicePdfHeight + (margin * 2)]
+                });
+              } else {
+                if (!pdf) {
+                  throw new Error('PDF가 초기화되지 않았습니다.');
+                }
+                pdf.addPage([pdfPageWidth, slicePdfHeight + (margin * 2)]);
+              }
+              
+              // PDF에 이미지 추가
+              if (!pdf) {
+                throw new Error('PDF가 초기화되지 않았습니다.');
+              }
+              pdf.addImage(sliceImgData, 'JPEG', margin, margin, pdfImgWidth, slicePdfHeight);
+              
+              currentSourceY += sliceHeight;
+              remainingHeight -= sliceHeight;
+              pageIndex++;
+            }
+          } else {
+            // 캔버스가 작아서 전체를 한 번에 처리 가능
+            // 전체 캔버스를 이미지 데이터로 변환
+            let imgData: string;
+            try {
+              imgData = canvas.toDataURL('image/jpeg', jpegQuality);
+              console.log(`JPEG 형식으로 이미지 데이터 생성: ${(imgData.length / 1024).toFixed(2)} KB`);
+            } catch (jpegError) {
+              console.warn('JPEG 형식 변환 실패, PNG 형식으로 시도:', jpegError);
+              try {
+                imgData = canvas.toDataURL('image/png');
+                console.log(`PNG 형식으로 이미지 데이터 생성: ${(imgData.length / 1024).toFixed(2)} KB`);
+              } catch (pngError) {
+                console.error('PNG 형식 변환도 실패:', pngError);
+                document.body.removeChild(tempContainer);
+                throw new Error(`이미지 데이터 생성에 실패했습니다. 캔버스가 너무 클 수 있습니다. (${imgWidth}x${imgHeight}px)`);
+              }
+            }
+            
+            if (!imgData || imgData === 'data:,' || imgData.length < 100) {
+              document.body.removeChild(tempContainer);
+              throw new Error(`이미지 데이터가 유효하지 않습니다. (${imgData ? imgData.length : 0} bytes)`);
+            }
+            
+            // PDF 생성
+            pdf = new jsPDF({
+              orientation: 'portrait',
+              unit: 'mm',
+              format: [pdfPageWidth, pdfImgHeight + (margin * 2)]
+            });
+            
+            // 전체 이미지를 하나의 페이지에 추가
+            const imageFormat = imgData.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+            pdf.addImage(imgData, imageFormat, margin, margin, pdfImgWidth, pdfImgHeight);
+            console.log(`PDF 이미지 추가 완료: 형식=${imageFormat}, 높이=${pdfImgHeight.toFixed(2)}mm`);
+          }
+        }
+        
+        updateProgress(90);
+        
+        document.body.removeChild(tempContainer);
+        
+      } catch (error) {
+        if (tempContainer.parentNode) {
           document.body.removeChild(tempContainer);
         }
-      };
-      
-      updateProgress(70);
-      
-      // 각 섹션을 순차적으로 캡처
-      for (const section of menuSections) {
-        await captureSection(section);
-        
-        processedSections++;
-        const progress = 70 + Math.round((processedSections / menuSections.length) * 25);
-        updateProgress(progress);
-        
-        // 메모리 정리를 위해 지연 (긴 페이지 처리 시 중요)
-        await new Promise(resolve => setTimeout(resolve, 100));
+        throw error;
       }
-
+      
+      if (!pdf) {
+        throw new Error('PDF 생성에 실패했습니다.');
+      }
+      
       updateProgress(95);
       pdf.save(`${saved.title || '재회 결과'}.pdf`);
       updateProgress(100);
