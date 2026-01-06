@@ -3673,6 +3673,14 @@ function PreviewModal({
     ${!formData.menuFontFace && !formData.subtitleFontFace && !formData.detailMenuFontFace && !formData.bodyFontFace && formData.fontFace ? formData.fontFace : ''}
   `
 
+  // 목차로 이동 함수
+  const scrollToTableOfContents = () => {
+    const tocElement = document.getElementById('table-of-contents')
+    if (tocElement) {
+      tocElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className={`bg-white rounded-xl ${viewMode === 'pc' ? 'max-w-4xl' : 'max-w-md'} w-full shadow-2xl max-h-[90vh] overflow-hidden flex flex-col`}>
@@ -3713,7 +3721,7 @@ function PreviewModal({
         </div>
         
         {/* 본문 */}
-        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+        <div className="flex-1 overflow-y-auto p-6 bg-gray-50 relative">
           <style dangerouslySetInnerHTML={{ __html: dynamicStyles }} />
           <div className={`${viewMode === 'pc' ? 'max-w-4xl' : 'max-w-md'} mx-auto`}>
             {/* 제목 */}
@@ -3885,6 +3893,20 @@ function PreviewModal({
                 )
               })}
             </div>
+            {/* 플로팅 배너 - 목차로 이동 */}
+            {allMenuItems.length > 0 && (
+              <div className="sticky bottom-6 z-40 flex justify-end mt-6 mr-6">
+                <button
+                  onClick={scrollToTableOfContents}
+                  className="bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold px-6 py-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2 opacity-80"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                  <span>목차로 이동</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
         
