@@ -3840,7 +3840,8 @@ function PreviewModal({
                                             fontWeight: formData.bodyFontBold ? 'bold' : 'normal',
                                             fontFamily: bodyFontFamily ? `'${bodyFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined,
                                             color: formData.bodyColor || undefined,
-                                            lineHeight: '1.8'
+                                            lineHeight: '1.8',
+                                            marginBottom: '1em'
                                           }}
                                           dangerouslySetInnerHTML={{ __html: generateSampleContent(detailMenuTitle) }}
                                         />
