@@ -2343,10 +2343,18 @@ ${fontFace ? fontFace : ''}
             
             menuSections.forEach((section, menuIndex) => {
               const menuItem = menuItems[menuIndex]
+              
+              // menu-section에 id 추가 (목차에서 스크롤하기 위해)
+              ;(section as HTMLElement).id = `menu-${menuIndex}`
+              
               if (menuItem?.subtitles) {
                 const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'))
                 subtitleSections.forEach((subSection, subIndex) => {
                   const subtitle = menuItem.subtitles[subIndex]
+                  
+                  // subtitle-section에 id 추가 (목차에서 스크롤하기 위해)
+                  ;(subSection as HTMLElement).id = `subtitle-${menuIndex}-${subIndex}`
+                  
                   if (subtitle?.thumbnail) {
                     const titleDiv = subSection.querySelector('.subtitle-title')
                     if (titleDiv) {
@@ -2385,6 +2393,94 @@ ${fontFace ? fontFace : ''}
           }
         }
         
+        // 목차 HTML 생성
+        let tocHtml = ''
+        try {
+          if (menuItems.length > 0) {
+            tocHtml = '<div id="table-of-contents" style="margin-bottom: 24px; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; padding-top: 24px; padding-bottom: 24px;">'
+            tocHtml += '<h3 style="font-size: 18px; font-weight: bold; color: #111827; margin-bottom: 16px;">목차</h3>'
+            tocHtml += '<div style="display: flex; flex-direction: column; gap: 8px;">'
+            
+            menuItems.forEach((menuItem: any, mIndex: number) => {
+              const menuTitle = (menuItem?.title || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/`/g, '&#96;').replace(/\$/g, '&#36;')
+              if (!menuTitle) {
+                return
+              }
+              
+              tocHtml += '<div style="display: flex; flex-direction: column; gap: 4px;">'
+              const menuId = 'menu-' + mIndex
+              const buttonHtml = '<button onclick="document.getElementById(\'' + menuId + '\').scrollIntoView({ behavior: \'smooth\', block: \'start\' })" style="text-align: left; font-size: 16px; font-weight: 600; color: #1f2937; background: none; border: none; cursor: pointer; padding: 4px 0; transition: color 0.2s;" onmouseover="this.style.color=\'#ec4899\'" onmouseout="this.style.color=\'#1f2937\'">' + menuTitle + '</button>'
+              tocHtml += buttonHtml
+              
+              if (menuItem?.subtitles && menuItem.subtitles.length > 0) {
+                tocHtml += '<div style="margin-left: 16px; display: flex; flex-direction: column; gap: 2px;">'
+                menuItem.subtitles.forEach((subtitle: any, sIndex: number) => {
+                  const subTitle = ((subtitle?.title || '').trim()).replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/`/g, '&#96;').replace(/\$/g, '&#36;')
+                  if (!subTitle || subTitle.includes('상세메뉴 해석 목록')) return
+                  
+                  const subtitleId = 'subtitle-' + mIndex + '-' + sIndex
+                  tocHtml += '<button onclick="document.getElementById(\'' + subtitleId + '\').scrollIntoView({ behavior: \'smooth\', block: \'start\' })" style="text-align: left; font-size: 14px; color: #4b5563; background: none; border: none; cursor: pointer; padding: 2px 0; transition: color 0.2s;" onmouseover="this.style.color=\'#ec4899\'" onmouseout="this.style.color=\'#4b5563\'">' + subTitle + '</button>'
+                })
+                tocHtml += '</div>'
+              }
+              
+              tocHtml += '</div>'
+            })
+            
+            tocHtml += '</div>'
+            tocHtml += '</div>'
+          }
+        } catch (e) {
+          console.error('목차 생성 실패:', e)
+        }
+        
+        // 플로팅 배너 HTML 생성
+        let bannerHtml = ''
+        try {
+          if (menuItems.length > 0) {
+            bannerHtml = '<div style="position: fixed; bottom: 24px; right: 24px; z-index: 40;">'
+            const bannerButtonHtml = '<button onclick="document.getElementById(\'table-of-contents\').scrollIntoView({ behavior: \'smooth\', block: \'start\' })" style="background: linear-gradient(to right, #ec4899, #db2777); color: white; font-weight: 600; padding: 12px 24px; border-radius: 9999px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); transition: all 0.3s; display: flex; align-items: center; gap: 8px; border: none; cursor: pointer; opacity: 0.8;" onmouseover="this.style.opacity=\'1\'; this.style.boxShadow=\'0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)\';" onmouseout="this.style.opacity=\'0.8\'; this.style.boxShadow=\'0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)\';">'
+            bannerHtml += bannerButtonHtml
+            bannerHtml += '<svg xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 20px;" fill="none" viewBox="0 0 24 24" stroke="currentColor">'
+            bannerHtml += '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />'
+            bannerHtml += '</svg>'
+            bannerHtml += '<span>목차로 이동</span>'
+            bannerHtml += '</button>'
+            bannerHtml += '</div>'
+          }
+        } catch (e) {
+          console.error('플로팅 배너 생성 실패:', e)
+        }
+        
+        // 북커버 추출 (HTML에서 북커버를 찾아서 추출하고 제거)
+        let bookCoverHtml = ''
+        const bookCoverThumbnail = contentObj?.book_cover_thumbnail || ''
+        if (bookCoverThumbnail) {
+          try {
+            const parser = new DOMParser()
+            const doc = parser.parseFromString(htmlContent, 'text/html')
+            const bookCoverEl = doc.querySelector('.book-cover-thumbnail-container')
+            if (bookCoverEl) {
+              bookCoverHtml = bookCoverEl.outerHTML
+              bookCoverEl.remove()
+              const bodyMatch = doc.documentElement.outerHTML.match(/<body[^>]*>([\s\S]*)<\/body>/i)
+              if (bodyMatch) {
+                htmlContent = bodyMatch[1]
+              } else {
+                htmlContent = doc.body.innerHTML
+              }
+            }
+          } catch (e) {
+            console.error('북커버 추출 실패:', e)
+          }
+        }
+        
+        // 템플릿 리터럴 특수 문자 이스케이프
+        const safeHtml = htmlContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${')
+        const safeTocHtml = tocHtml.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${')
+        const safeBannerHtml = bannerHtml.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${')
+        const safeBookCoverHtml = bookCoverHtml.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${')
+        
         // 새 창으로 결과 표시
         // HTML에 이미 웹폰트 스타일이 포함되어 있으므로 그대로 표시
         const newWindow = window.open('', '_blank')
@@ -2417,15 +2513,6 @@ ${fontFace ? fontFace : ''}
                   font-weight: bold;
                   margin: 0 0 16px 0;
                   color: #111;
-                }
-                .thumbnail-container {
-                  width: 100%;
-                  margin-bottom: 16px;
-                }
-                .thumbnail-container img {
-                  width: 100%;
-                  height: auto;
-                  object-fit: cover;
                 }
                 .tts-button-container {
                   text-align: center;
@@ -2561,30 +2648,17 @@ ${fontFace ? fontFace : ''}
                 <div class="title-container">
                   <h1>${saved.title}</h1>
                 </div>
-                ${contentObj?.thumbnail_url ? `
-                <div class="thumbnail-container">
-                  <img src="${contentObj.thumbnail_url}" alt="${saved.title}" />
-                </div>
-                ` : ''}
+                ${safeBookCoverHtml}
                 <div class="tts-button-container">
                   <button id="ttsButton" class="tts-button">
                     <span id="ttsIcon">🔊</span>
                     <span id="ttsText">점사 듣기</span>
                   </button>
                 </div>
-                <div id="contentHtml">${(() => {
-                  // htmlContent를 안전하게 이스케이프하여 템플릿 리터럴에 삽입
-                  try {
-                    let safeHtml = htmlContent || '';
-                    // 템플릿 리터럴 특수 문자 이스케이프
-                    safeHtml = safeHtml.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
-                    return safeHtml;
-                  } catch (e) {
-                    console.error('HTML 이스케이프 실패:', e);
-                    return '';
-                  }
-                })()}</div>
+                ${safeTocHtml}
+                <div id="contentHtml">${safeHtml}</div>
               </div>
+              ${safeBannerHtml}
               
               <script>
                 // 저장된 컨텐츠의 화자 정보를 전역 변수로 설정 (초기값)

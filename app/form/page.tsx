@@ -2665,9 +2665,9 @@ function FormContent() {
               {/* 19금 로고 */}
               <div className="absolute top-2 right-2 z-10">
                 <img 
-                  src="/19logo.svg" 
+                  src="/19logo.png" 
                   alt="19금"
-                  className="w-12 h-12"
+                  className="w-14 h-14"
                 />
               </div>
               {/* NEW 태그 */}
@@ -3732,6 +3732,9 @@ function FormContent() {
                                   menuSections.forEach((section, menuIndex) => {
                                     const menuItem = menuItems[menuIndex];
                                     
+                                    // menu-section에 id 추가 (목차에서 스크롤하기 위해)
+                                    (section as HTMLElement).id = `menu-${menuIndex}`;
+                                    
                                     // 대메뉴 제목에서 숫자 접두사 제거 및 볼드 속성 적용
                                     const menuTitle = section.querySelector('.menu-title');
                                     if (menuTitle) {
@@ -3743,6 +3746,9 @@ function FormContent() {
                                       const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'));
                                       subtitleSections.forEach((subSection, subIndex) => {
                                         const subtitle = menuItem.subtitles[subIndex];
+                                        
+                                        // subtitle-section에 id 추가 (목차에서 스크롤하기 위해)
+                                        (subSection as HTMLElement).id = `subtitle-${menuIndex}-${subIndex}`;
                                         
                                         // 소메뉴 제목에서 숫자 접두사 제거 및 볼드 속성 적용
                                         const subtitleTitle = subSection.querySelector('.subtitle-title');
@@ -3857,8 +3863,95 @@ function FormContent() {
                                 }
                               }
                               
+                              // contentObj를 JSON 문자열로 변환 (템플릿 리터럴에서 사용)
+                              const contentObjJson = JSON.stringify(contentObj || {});
+                              
+                              // 목차 HTML 생성
+                              let tocHtml = '';
+                              try {
+                                if (menuItems.length > 0) {
+                                  tocHtml = '<div id="table-of-contents" style="margin-bottom: 24px; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; padding-top: 24px; padding-bottom: 24px;">';
+                                  tocHtml += '<h3 style="font-size: 18px; font-weight: bold; color: #111827; margin-bottom: 16px;">목차</h3>';
+                                  tocHtml += '<div style="display: flex; flex-direction: column; gap: 8px;">';
+                                  
+                                  menuItems.forEach((menuItem: any, mIndex: number) => {
+                                    const menuTitle = (menuItem?.title || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/`/g, '&#96;').replace(/\$/g, '&#36;');
+                                    if (!menuTitle) {
+                                      return;
+                                    }
+                                    
+                                    tocHtml += '<div style="display: flex; flex-direction: column; gap: 4px;">';
+                                    const menuId = 'menu-' + mIndex;
+                                    const buttonHtml = '<button onclick="document.getElementById(\'' + menuId + '\').scrollIntoView({ behavior: \'smooth\', block: \'start\' })" style="text-align: left; font-size: 16px; font-weight: 600; color: #1f2937; background: none; border: none; cursor: pointer; padding: 4px 0; transition: color 0.2s;" onmouseover="this.style.color=\'#ec4899\'" onmouseout="this.style.color=\'#1f2937\'">' + menuTitle + '</button>';
+                                    tocHtml += buttonHtml;
+                                    
+                                    if (menuItem?.subtitles && menuItem.subtitles.length > 0) {
+                                      tocHtml += '<div style="margin-left: 16px; display: flex; flex-direction: column; gap: 2px;">';
+                                      menuItem.subtitles.forEach((subtitle: any, sIndex: number) => {
+                                        const subTitle = ((subtitle?.title || '').trim()).replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/`/g, '&#96;').replace(/\$/g, '&#36;');
+                                        if (!subTitle || subTitle.includes('상세메뉴 해석 목록')) return;
+                                        
+                                        const subtitleId = 'subtitle-' + mIndex + '-' + sIndex;
+                                        tocHtml += '<button onclick="document.getElementById(\'' + subtitleId + '\').scrollIntoView({ behavior: \'smooth\', block: \'start\' })" style="text-align: left; font-size: 14px; color: #4b5563; background: none; border: none; cursor: pointer; padding: 2px 0; transition: color 0.2s;" onmouseover="this.style.color=\'#ec4899\'" onmouseout="this.style.color=\'#4b5563\'">' + subTitle + '</button>';
+                                      });
+                                      tocHtml += '</div>';
+                                    }
+                                    
+                                    tocHtml += '</div>';
+                                  });
+                                  
+                                  tocHtml += '</div>';
+                                  tocHtml += '</div>';
+                                }
+                              } catch (e) {
+                                console.error('목차 생성 실패:', e);
+                              }
+                              
+                              // 플로팅 배너 HTML 생성
+                              let bannerHtml = '';
+                              try {
+                                if (menuItems.length > 0) {
+                                  bannerHtml = '<div style="position: fixed; bottom: 24px; right: 24px; z-index: 40;">';
+                                  const bannerButtonHtml = '<button onclick="document.getElementById(\'table-of-contents\').scrollIntoView({ behavior: \'smooth\', block: \'start\' })" style="background: linear-gradient(to right, #ec4899, #db2777); color: white; font-weight: 600; padding: 12px 24px; border-radius: 9999px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); transition: all 0.3s; display: flex; align-items: center; gap: 8px; border: none; cursor: pointer; opacity: 0.8;" onmouseover="this.style.opacity=\'1\'; this.style.boxShadow=\'0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)\';" onmouseout="this.style.opacity=\'0.8\'; this.style.boxShadow=\'0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)\';">';
+                                  bannerHtml += bannerButtonHtml;
+                                  bannerHtml += '<svg xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 20px;" fill="none" viewBox="0 0 24 24" stroke="currentColor">';
+                                  bannerHtml += '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />';
+                                  bannerHtml += '</svg>';
+                                  bannerHtml += '<span>목차로 이동</span>';
+                                  bannerHtml += '</button>';
+                                  bannerHtml += '</div>';
+                                }
+                              } catch (e) {
+                                console.error('플로팅 배너 생성 실패:', e);
+                              }
+                              
+                              // 북커버 추출 (HTML에서 북커버를 찾아서 추출하고 제거)
+                              let bookCoverHtml = '';
+                              if (bookCoverThumbnail) {
+                                try {
+                                  const parser = new DOMParser();
+                                  const doc = parser.parseFromString(htmlContent, 'text/html');
+                                  const bookCoverEl = doc.querySelector('.book-cover-thumbnail-container');
+                                  if (bookCoverEl) {
+                                    bookCoverHtml = bookCoverEl.outerHTML;
+                                    bookCoverEl.remove();
+                                    const bodyMatch = doc.documentElement.outerHTML.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+                                    if (bodyMatch) {
+                                      htmlContent = bodyMatch[1];
+                                    } else {
+                                      htmlContent = doc.body.innerHTML;
+                                    }
+                                  }
+                                } catch (e) {
+                                  console.error('북커버 추출 실패:', e);
+                                }
+                              }
+                              
                               // 템플릿 리터럴 특수 문자 이스케이프
                               const safeHtml = htmlContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
+                              const safeTocHtml = tocHtml.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
+                              const safeBannerHtml = bannerHtml.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
+                              const safeBookCoverHtml = bookCoverHtml.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
                               
                               const newWindow = window.open('', '_blank')
                               if (newWindow) {
@@ -3871,19 +3964,63 @@ function FormContent() {
                                 const savedBodyFontSize = saved.content?.body_font_size || 11
                                 const savedBodyFontBold = saved.content?.body_font_bold || false
                                 
-                                // 웹폰트 적용
-                                const fontFace = saved.content?.font_face || ''
+                                // 컬러 값 추출
+                                const savedMenuColor = saved.content?.menu_color || ''
+                                const savedSubtitleColor = saved.content?.subtitle_color || ''
+                                const savedDetailMenuColor = saved.content?.detail_menu_color || ''
+                                const savedBodyColor = saved.content?.body_color || ''
+                                
+                                // 각 섹션별 웹폰트 적용 (result 페이지와 동일)
+                                const menuFontFace = saved.content?.menu_font_face || saved.content?.font_face || '' // 하위 호환성
+                                const subtitleFontFace = saved.content?.subtitle_font_face || saved.content?.font_face || '' // 하위 호환성
+                                const detailMenuFontFace = saved.content?.detail_menu_font_face || saved.content?.font_face || '' // 하위 호환성
+                                const bodyFontFace = saved.content?.body_font_face || saved.content?.font_face || '' // 하위 호환성
+                                
+                                // @font-face에서 font-family 추출
                                 const extractFontFamily = (fontFaceCss: string): string | null => {
                                   if (!fontFaceCss) return null
                                   const match = fontFaceCss.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
                                   return match ? (match[1] || match[2]?.trim()) : null
                                 }
+                                
+                                const menuFontFamily = extractFontFamily(menuFontFace)
+                                const subtitleFontFamily = extractFontFamily(subtitleFontFace)
+                                const detailMenuFontFamily = extractFontFamily(detailMenuFontFace)
+                                const bodyFontFamily = extractFontFamily(bodyFontFace)
+                                
+                                // 하위 호환성을 위한 전체 폰트 (font_face)
+                                const fontFace = saved.content?.font_face || ''
                                 const fontFamilyName = extractFontFamily(fontFace)
 
-                                // result 페이지와 완전히 동일한 동적 스타일
+                                // result 페이지와 완전히 동일한 동적 스타일 (각 섹션별 웹폰트 적용)
                                 const savedDynamicStyles = `
-                                  ${fontFace ? fontFace : ''}
-                                  ${fontFamilyName ? `
+                                  ${menuFontFace ? menuFontFace : ''}
+                                  ${subtitleFontFace ? subtitleFontFace : ''}
+                                  ${detailMenuFontFace ? detailMenuFontFace : ''}
+                                  ${bodyFontFace ? bodyFontFace : ''}
+                                  ${!menuFontFace && !subtitleFontFace && !detailMenuFontFace && !bodyFontFace && fontFace ? fontFace : ''}
+                                  ${menuFontFamily ? `
+                                  .jeminai-results .menu-title {
+                                    font-family: '${menuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+                                  }
+                                  ` : ''}
+                                  ${subtitleFontFamily ? `
+                                  .jeminai-results .subtitle-title {
+                                    font-family: '${subtitleFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+                                  }
+                                  ` : ''}
+                                  ${detailMenuFontFamily ? `
+                                  .jeminai-results .detail-menu-title {
+                                    font-family: '${detailMenuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+                                  }
+                                  ` : ''}
+                                  ${bodyFontFamily ? `
+                                  .jeminai-results .subtitle-content,
+                                  .jeminai-results .detail-menu-content {
+                                    font-family: '${bodyFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+                                  }
+                                  ` : ''}
+                                  ${fontFamilyName && !menuFontFamily && !subtitleFontFamily && !detailMenuFontFamily && !bodyFontFamily ? `
                                   .result-title {
                                     font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
                                   }
@@ -3897,26 +4034,31 @@ function FormContent() {
                                   .jeminai-results .menu-title {
                                     font-size: ${savedMenuFontSize}px !important;
                                     font-weight: ${savedMenuFontBold ? 'bold' : 'normal'} !important;
+                                    ${savedMenuColor ? `color: ${savedMenuColor} !important;` : ''}
                                   }
                                   .jeminai-results .subtitle-title {
                                     font-size: ${savedSubtitleFontSize}px !important;
                                     font-weight: ${savedSubtitleFontBold ? 'bold' : 'normal'} !important;
+                                    ${savedSubtitleColor ? `color: ${savedSubtitleColor} !important;` : ''}
                                   }
                                   .jeminai-results .detail-menu-title {
                                     font-size: ${savedDetailMenuFontSize}px !important;
                                     font-weight: ${savedDetailMenuFontBold ? 'bold' : 'normal'} !important;
+                                    ${savedDetailMenuColor ? `color: ${savedDetailMenuColor} !important;` : ''}
                                   }
                                   .jeminai-results .subtitle-content {
                                     font-size: ${savedBodyFontSize}px !important;
                                     font-weight: ${savedBodyFontBold ? 'bold' : 'normal'} !important;
                                     margin-bottom: 2em !important;
                                     line-height: 1.8 !important;
+                                    ${savedBodyColor ? `color: ${savedBodyColor} !important;` : ''}
                                   }
                                   .jeminai-results .detail-menu-content {
                                     font-size: ${savedBodyFontSize}px !important;
                                     font-weight: ${savedBodyFontBold ? 'bold' : 'normal'} !important;
                                     line-height: 1.8 !important;
                                     margin-bottom: 0 !important;
+                                    ${savedBodyColor ? `color: ${savedBodyColor} !important;` : ''}
                                   }
                                   .jeminai-results .detail-menu-container {
                                     margin-bottom: 2em !important;
@@ -3947,7 +4089,8 @@ function FormContent() {
                                   }
                                 `
                                 
-                                const fontStyles = fontFamilyName ? `
+                                // 하위 호환성을 위한 전체 폰트 스타일 (각 섹션별 폰트가 없을 때만 적용)
+                                const fontStyles = fontFamilyName && !menuFontFamily && !subtitleFontFamily && !detailMenuFontFamily && !bodyFontFamily ? `
                                   * {
                                     font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
                                   }
@@ -3976,14 +4119,14 @@ function FormContent() {
                                       ${savedDynamicStyles}
                                       ${fontStyles}
                                       body {
-                                        font-family: ${fontFamilyName ? `'${fontFamilyName}', ` : ''}-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+                                        font-family: ${(fontFamilyName && !menuFontFamily && !subtitleFontFamily && !detailMenuFontFamily && !bodyFontFamily) ? `'${fontFamilyName}', ` : ''}-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
                                         max-width: 896px;
                                         margin: 0 auto;
                                         padding: 32px 16px;
                                         background: #f9fafb;
                                       }
                                       .jeminai-results {
-                                        font-family: ${fontFamilyName ? `'${fontFamilyName}', ` : ''}-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+                                        font-family: ${(fontFamilyName && !menuFontFamily && !subtitleFontFamily && !detailMenuFontFamily && !bodyFontFamily) ? `'${fontFamilyName}', ` : ''}-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
                                       }
                                       .container {
                                         background: transparent;
@@ -4004,15 +4147,6 @@ function FormContent() {
                                         .result-title {
                                           font-size: 2.25rem;
                                         }
-                                      }
-                                      .thumbnail-container {
-                                        width: 100%;
-                                        margin-bottom: 1rem;
-                                      }
-                                      .thumbnail-container img {
-                                        width: 100%;
-                                        height: auto;
-                                        object-fit: cover;
                                       }
                                       .tts-button-container {
                                         text-align: center;
@@ -4482,19 +4616,17 @@ function FormContent() {
                                       <div class="title-container">
                                         <h1 class="result-title">${saved.title}</h1>
                                       </div>
-                                      ${saved.content?.thumbnail_url ? `
-                                      <div class="thumbnail-container">
-                                        <img src="${saved.content.thumbnail_url}" alt="${saved.title}" />
-                                      </div>
-                                      ` : ''}
+                                      ${safeBookCoverHtml}
                                       <div class="tts-button-container">
                                         <button id="ttsButton" class="tts-button">
                                           <span id="ttsIcon">🔊</span>
                                           <span id="ttsText">점사 듣기</span>
                                         </button>
                                       </div>
+                                      ${safeTocHtml}
                                       <div id="contentHtml" class="jeminai-results">${safeHtml}</div>
                                     </div>
+                                    ${safeBannerHtml}
                                     
                                     <!-- 추가 질문하기 팝업 -->
                                     <div id="questionPopupOverlay" class="question-popup-overlay">

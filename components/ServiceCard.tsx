@@ -73,9 +73,9 @@ export default function ServiceCard({ service }: ServiceCardProps) {
         {/* 19금 로고 */}
         <div className="absolute top-2 right-2 z-10">
           <img 
-            src="/19logo.svg" 
+            src="/19logo.png" 
             alt="19금"
-            className="w-12 h-12"
+            className="w-14 h-14"
           />
         </div>
         {service.thumbnailUrl ? (
