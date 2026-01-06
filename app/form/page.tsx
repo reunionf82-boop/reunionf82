@@ -3685,13 +3685,6 @@ function FormContent() {
                                 // 모든 종류의 태그 뒤의 연속된 줄바꿈과 공백을 제거하고 테이블 바로 붙이기
                                 .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
                               
-                              // 숫자 접두사 제거 함수 (result 페이지와 동일)
-                              const removeNumberPrefix = (text: string): string => {
-                                if (!text) return text;
-                                // "1. ", "1-1. ", "1-1-1. " 등의 패턴 제거
-                                return text.replace(/^\d+(?:-\d+)*(?:-\d+)?\.\s*/, '').trim();
-                              };
-                              
                               const contentObj = saved.content || {};
                               const menuItems = contentObj?.menu_items || [];
                               const bookCoverThumbnail = contentObj?.book_cover_thumbnail || '';
@@ -3728,17 +3721,17 @@ function FormContent() {
                                     }
                                   }
                                   
-                                  // 숫자 접두사 제거 및 상세메뉴 추가 (result 페이지와 동일)
+                                  // 상세메뉴 추가 (숫자 접두사 유지)
                                   menuSections.forEach((section, menuIndex) => {
                                     const menuItem = menuItems[menuIndex];
                                     
                                     // menu-section에 id 추가 (목차에서 스크롤하기 위해)
                                     (section as HTMLElement).id = `menu-${menuIndex}`;
                                     
-                                    // 대메뉴 제목에서 숫자 접두사 제거 및 볼드 속성 적용
+                                    // 대메뉴 제목에서 볼드 속성 적용 (숫자 접두사 유지)
                                     const menuTitle = section.querySelector('.menu-title');
                                     if (menuTitle) {
-                                      menuTitle.textContent = removeNumberPrefix(menuTitle.textContent || '');
+                                      // 숫자 접두사 제거하지 않음
                                       (menuTitle as HTMLElement).style.fontWeight = menuFontBold ? 'bold' : 'normal';
                                     }
                                     
@@ -3750,10 +3743,10 @@ function FormContent() {
                                         // subtitle-section에 id 추가 (목차에서 스크롤하기 위해)
                                         (subSection as HTMLElement).id = `subtitle-${menuIndex}-${subIndex}`;
                                         
-                                        // 소메뉴 제목에서 숫자 접두사 제거 및 볼드 속성 적용
+                                        // 소메뉴 제목에서 볼드 속성 적용 (숫자 접두사 유지)
                                         const subtitleTitle = subSection.querySelector('.subtitle-title');
                                         if (subtitleTitle) {
-                                          subtitleTitle.textContent = removeNumberPrefix(subtitleTitle.textContent || '');
+                                          // 숫자 접두사 제거하지 않음
                                           (subtitleTitle as HTMLElement).style.fontWeight = subtitleFontBold ? 'bold' : 'normal';
                                         }
                                         
@@ -3773,12 +3766,10 @@ function FormContent() {
                                         
                                         if (existingDetailMenuSection) {
                                           // HTML에 이미 상세메뉴가 있으면 그대로 사용 (제미나이가 생성한 것)
-                                          // 숫자 접두사만 제거하고 스타일 적용
+                                          // 스타일 적용 (숫자 접두사 유지)
                                           const detailMenuTitles = existingDetailMenuSection.querySelectorAll('.detail-menu-title');
                                           detailMenuTitles.forEach((titleEl) => {
-                                            if (titleEl.textContent) {
-                                              titleEl.textContent = removeNumberPrefix(titleEl.textContent);
-                                            }
+                                            // 숫자 접두사 제거하지 않음
                                             (titleEl as HTMLElement).style.fontSize = detailMenuFontSize + 'px';
                                             (titleEl as HTMLElement).style.fontWeight = detailMenuFontBold ? 'bold' : 'normal';
                                           });
@@ -3866,42 +3857,59 @@ function FormContent() {
                               // contentObj를 JSON 문자열로 변환 (템플릿 리터럴에서 사용)
                               const contentObjJson = JSON.stringify(contentObj || {});
                               
-                              // 목차 HTML 생성
+                              // 목차 HTML 생성 (HTML에서 실제 제목 추출)
                               let tocHtml = '';
                               try {
-                                if (menuItems.length > 0) {
-                                  tocHtml = '<div id="table-of-contents" style="margin-bottom: 24px; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; padding-top: 24px; padding-bottom: 24px;">';
-                                  tocHtml += '<h3 style="font-size: 18px; font-weight: bold; color: #111827; margin-bottom: 16px;">목차</h3>';
-                                  tocHtml += '<div style="display: flex; flex-direction: column; gap: 8px;">';
+                                if (menuItems.length > 0 && htmlContent) {
+                                  // HTML에서 실제 제목 추출
+                                  const parser = new DOMParser();
+                                  const doc = parser.parseFromString(htmlContent, 'text/html');
+                                  const menuSections = Array.from(doc.querySelectorAll('.menu-section'));
                                   
-                                  menuItems.forEach((menuItem: any, mIndex: number) => {
-                                    const menuTitle = (menuItem?.title || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/`/g, '&#96;').replace(/\$/g, '&#36;');
-                                    if (!menuTitle) {
-                                      return;
-                                    }
+                                  if (menuSections.length > 0) {
+                                    tocHtml = '<div id="table-of-contents" style="margin-bottom: 24px; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; padding-top: 24px; padding-bottom: 24px;">';
+                                    tocHtml += '<h3 style="font-size: 18px; font-weight: bold; color: #111827; margin-bottom: 16px;">목차</h3>';
+                                    tocHtml += '<div style="display: flex; flex-direction: column; gap: 8px;">';
                                     
-                                    tocHtml += '<div style="display: flex; flex-direction: column; gap: 4px;">';
-                                    const menuId = 'menu-' + mIndex;
-                                    const buttonHtml = '<button onclick="document.getElementById(\'' + menuId + '\').scrollIntoView({ behavior: \'smooth\', block: \'start\' })" style="text-align: left; font-size: 16px; font-weight: 600; color: #1f2937; background: none; border: none; cursor: pointer; padding: 4px 0; transition: color 0.2s;" onmouseover="this.style.color=\'#ec4899\'" onmouseout="this.style.color=\'#1f2937\'">' + menuTitle + '</button>';
-                                    tocHtml += buttonHtml;
-                                    
-                                    if (menuItem?.subtitles && menuItem.subtitles.length > 0) {
-                                      tocHtml += '<div style="margin-left: 16px; display: flex; flex-direction: column; gap: 2px;">';
-                                      menuItem.subtitles.forEach((subtitle: any, sIndex: number) => {
-                                        const subTitle = ((subtitle?.title || '').trim()).replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/`/g, '&#96;').replace(/\$/g, '&#36;');
-                                        if (!subTitle || subTitle.includes('상세메뉴 해석 목록')) return;
-                                        
-                                        const subtitleId = 'subtitle-' + mIndex + '-' + sIndex;
-                                        tocHtml += '<button onclick="document.getElementById(\'' + subtitleId + '\').scrollIntoView({ behavior: \'smooth\', block: \'start\' })" style="text-align: left; font-size: 14px; color: #4b5563; background: none; border: none; cursor: pointer; padding: 2px 0; transition: color 0.2s;" onmouseover="this.style.color=\'#ec4899\'" onmouseout="this.style.color=\'#4b5563\'">' + subTitle + '</button>';
-                                      });
+                                    menuSections.forEach((section, mIndex) => {
+                                      const menuTitleEl = section.querySelector('.menu-title');
+                                      const menuTitle = (menuTitleEl?.textContent || '').trim();
+                                      
+                                      if (!menuTitle) {
+                                        return;
+                                      }
+                                      
+                                      const escapedMenuTitle = menuTitle.replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/`/g, '&#96;').replace(/\$/g, '&#36;');
+                                      
+                                      tocHtml += '<div style="display: flex; flex-direction: column; gap: 4px;">';
+                                      const menuId = 'menu-' + mIndex;
+                                      const buttonHtml = '<button onclick="document.getElementById(\'' + menuId + '\').scrollIntoView({ behavior: \'smooth\', block: \'start\' })" style="text-align: left; font-size: 16px; font-weight: 600; color: #1f2937; background: none; border: none; cursor: pointer; padding: 4px 0; transition: color 0.2s;" onmouseover="this.style.color=\'#ec4899\'" onmouseout="this.style.color=\'#1f2937\'">' + escapedMenuTitle + '</button>';
+                                      tocHtml += buttonHtml;
+                                      
+                                      const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'));
+                                      if (subtitleSections.length > 0) {
+                                        tocHtml += '<div style="margin-left: 16px; display: flex; flex-direction: column; gap: 2px;">';
+                                        subtitleSections.forEach((subSection, sIndex) => {
+                                          const subtitleTitleEl = subSection.querySelector('.subtitle-title');
+                                          const subTitle = (subtitleTitleEl?.textContent || '').trim();
+                                          
+                                          if (!subTitle || subTitle.includes('상세메뉴 해석 목록')) {
+                                            return;
+                                          }
+                                          
+                                          const escapedSubTitle = subTitle.replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/`/g, '&#96;').replace(/\$/g, '&#36;');
+                                          const subtitleId = 'subtitle-' + mIndex + '-' + sIndex;
+                                          tocHtml += '<button onclick="document.getElementById(\'' + subtitleId + '\').scrollIntoView({ behavior: \'smooth\', block: \'start\' })" style="text-align: left; font-size: 14px; color: #4b5563; background: none; border: none; cursor: pointer; padding: 2px 0; transition: color 0.2s;" onmouseover="this.style.color=\'#ec4899\'" onmouseout="this.style.color=\'#4b5563\'">' + escapedSubTitle + '</button>';
+                                        });
+                                        tocHtml += '</div>';
+                                      }
+                                      
                                       tocHtml += '</div>';
-                                    }
+                                    });
                                     
                                     tocHtml += '</div>';
-                                  });
-                                  
-                                  tocHtml += '</div>';
-                                  tocHtml += '</div>';
+                                    tocHtml += '</div>';
+                                  }
                                 }
                               } catch (e) {
                                 console.error('목차 생성 실패:', e);

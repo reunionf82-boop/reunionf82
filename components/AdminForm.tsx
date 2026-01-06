@@ -100,6 +100,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     errors: string[]
     message: string
   } | null>(null) // 무결성 체크 결과
+  const [showPreview, setShowPreview] = useState(false) // 미리보기 팝업
   
   // 웹폰트 팝업 상태
   const [showMenuFontPopup, setShowMenuFontPopup] = useState(false)
@@ -2215,13 +2216,20 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             </button>
             </div>
             {/* 무결성 체크 버튼 */}
-            <div className="flex justify-end mt-3">
+            <div className="flex justify-end gap-2 mt-3">
               <button
                 type="button"
                 onClick={handleIntegrityCheck}
                 className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 text-sm"
               >
                 무결성 체크
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPreview(true)}
+                className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 text-sm"
+              >
+                미리 보기
               </button>
             </div>
           </div>
@@ -2254,7 +2262,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         color: formData.menuColor || '#fff'
                       }}
                     >
-                      미리보기
+                      폰트 미리보기
                     </span>
                   </div>
                 )}
@@ -2299,7 +2307,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         color: formData.subtitleColor || '#fff'
                       }}
                     >
-                      미리보기
+                      폰트 미리보기
                     </span>
                   </div>
                 )}
@@ -2344,7 +2352,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         color: formData.detailMenuColor || '#fff'
                       }}
                     >
-                      미리보기
+                      폰트 미리보기
                     </span>
                   </div>
                 )}
@@ -2389,7 +2397,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         color: formData.bodyColor || '#fff'
                       }}
                     >
-                      미리보기
+                      폰트 미리보기
                     </span>
                   </div>
                 )}
@@ -3548,6 +3556,347 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           </div>
         </div>
       )}
+
+      {/* 미리 보기 팝업 */}
+      {showPreview && (
+        <PreviewModal
+          formData={formData}
+          menuFields={menuFields}
+          firstMenuField={firstMenuField}
+          onClose={() => setShowPreview(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// 미리보기 모달 컴포넌트
+function PreviewModal({ 
+  formData, 
+  menuFields, 
+  firstMenuField,
+  onClose 
+}: { 
+  formData: any
+  menuFields: any[]
+  firstMenuField: any
+  onClose: () => void 
+}) {
+  const [viewMode, setViewMode] = useState<'pc' | 'mobile'>('pc')
+  
+  // 샘플 본문 텍스트 생성
+  const generateSampleContent = (title: string) => {
+    return `<p>${title}에 대한 점사 내용이 여기에 표시됩니다. 실제 제미나이 점사 결과는 이 부분에 표시되며, 여러 문단으로 구성될 수 있습니다.</p>
+<p>점사 내용은 사용자의 생년월일, 시간, 성별 등의 정보를 바탕으로 생성되며, 각 항목별로 상세한 해석을 제공합니다.</p>
+<p>이 미리보기는 실제 점사 결과와 유사한 레이아웃과 스타일을 보여주기 위한 샘플입니다.</p>`
+  }
+
+  // 폰트 패밀리 추출 함수
+  const extractFontFamily = (fontFaceCss: string): string | null => {
+    if (!fontFaceCss) return null
+    const match = fontFaceCss.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
+    return match ? (match[1] || match[2]?.trim()) : null
+  }
+
+  const menuFontFamily = extractFontFamily(formData.menuFontFace || formData.fontFace || '')
+  const subtitleFontFamily = extractFontFamily(formData.subtitleFontFace || formData.fontFace || '')
+  const detailMenuFontFamily = extractFontFamily(formData.detailMenuFontFace || formData.fontFace || '')
+  const bodyFontFamily = extractFontFamily(formData.bodyFontFace || formData.fontFace || '')
+
+  // 모든 메뉴 항목 수집
+  const allMenuItems = [
+    ...(firstMenuField.value || firstMenuField.thumbnail ? [firstMenuField] : []),
+    ...menuFields
+  ]
+
+  // 목차 생성
+  const generateTOC = () => {
+    if (allMenuItems.length === 0) return null
+    
+    return (
+      <div id="table-of-contents" className="mb-6 border-t border-b border-gray-200 pt-6 pb-6">
+        <h3 className="text-lg font-bold text-gray-900 mb-4">목차</h3>
+        <div className="space-y-2">
+          {allMenuItems.map((menuItem, mIndex) => {
+            const menuTitle = (menuItem.value || '').trim()
+            if (!menuTitle) return null
+            
+            return (
+              <div key={`toc-menu-${mIndex}`} className="space-y-1">
+                <button
+                  onClick={() => {
+                    const element = document.getElementById(`preview-menu-${mIndex}`)
+                    if (element) {
+                      element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }
+                  }}
+                  className="text-left text-base font-semibold text-gray-800 hover:text-pink-600 transition-colors w-full py-1"
+                >
+                  {menuTitle}
+                </button>
+                {menuItem.subtitles && menuItem.subtitles.length > 0 && (
+                  <div className="ml-4 space-y-1">
+                    {menuItem.subtitles.map((sub: any, sIndex: number) => {
+                      const subTitle = (sub.subtitle || '').trim()
+                      if (!subTitle || subTitle.includes('상세메뉴 해석 목록')) return null
+                      return (
+                        <button
+                          key={`toc-sub-${mIndex}-${sIndex}`}
+                          onClick={() => {
+                            const element = document.getElementById(`preview-subtitle-${mIndex}-${sIndex}`)
+                            if (element) {
+                              element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                            }
+                          }}
+                          className="text-left text-sm text-gray-600 hover:text-pink-600 transition-colors w-full py-0.5"
+                        >
+                          {subTitle}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  // 동적 스타일 생성
+  const dynamicStyles = `
+    ${formData.menuFontFace ? formData.menuFontFace : ''}
+    ${formData.subtitleFontFace ? formData.subtitleFontFace : ''}
+    ${formData.detailMenuFontFace ? formData.detailMenuFontFace : ''}
+    ${formData.bodyFontFace ? formData.bodyFontFace : ''}
+    ${!formData.menuFontFace && !formData.subtitleFontFace && !formData.detailMenuFontFace && !formData.bodyFontFace && formData.fontFace ? formData.fontFace : ''}
+  `
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className={`bg-white rounded-xl ${viewMode === 'pc' ? 'max-w-4xl' : 'max-w-md'} w-full shadow-2xl max-h-[90vh] overflow-hidden flex flex-col`}>
+        {/* 헤더 */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 className="text-2xl font-bold text-gray-900">미리 보기</h2>
+          <div className="flex items-center gap-3">
+            {/* PC/모바일 모드 전환 버튼 */}
+            <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('pc')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'pc'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                PC 모드
+              </button>
+              <button
+                onClick={() => setViewMode('mobile')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'mobile'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                모바일 모드
+              </button>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+        
+        {/* 본문 */}
+        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+          <style dangerouslySetInnerHTML={{ __html: dynamicStyles }} />
+          <div className={`${viewMode === 'pc' ? 'max-w-4xl' : 'max-w-md'} mx-auto`}>
+            {/* 제목 */}
+            <div className="mb-8 text-center">
+              <h1 
+                className="text-3xl md:text-4xl font-bold text-gray-900 mb-4"
+                style={{
+                  fontFamily: menuFontFamily ? `'${menuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined
+                }}
+              >
+                {formData.contentName || '점사 결과'}
+              </h1>
+            </div>
+
+            {/* 북커버 썸네일 */}
+            {formData.bookCoverThumbnail && (
+              <div className="w-full mb-10">
+                <img 
+                  src={formData.bookCoverThumbnail} 
+                  alt="북커버 썸네일"
+                  className="w-full h-auto"
+                  style={{ objectFit: 'contain', display: 'block' }}
+                />
+              </div>
+            )}
+
+            {/* 목차 */}
+            {generateTOC()}
+
+            {/* 메뉴 섹션들 */}
+            <div className="jeminai-results space-y-6">
+              {allMenuItems.map((menuItem, menuIndex) => {
+                const menuTitle = (menuItem.value || '').trim()
+                if (!menuTitle) return null
+
+                return (
+                  <div key={`preview-menu-${menuIndex}`} id={`preview-menu-${menuIndex}`} className="menu-section bg-white rounded-xl p-6 shadow-sm space-y-4">
+                    {/* 대메뉴 제목 */}
+                    <div 
+                      className="menu-title font-bold text-lg text-gray-900"
+                      style={{
+                        fontSize: `${formData.menuFontSize || 16}px`,
+                        fontWeight: formData.menuFontBold ? 'bold' : 'normal',
+                        fontFamily: menuFontFamily ? `'${menuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined,
+                        color: formData.menuColor || undefined
+                      }}
+                    >
+                      {menuTitle}
+                    </div>
+
+                    {/* 소메뉴들 */}
+                    {menuItem.subtitles && menuItem.subtitles.length > 0 && (
+                      <div className="space-y-4">
+                        {menuItem.subtitles.map((sub: any, subIndex: number) => {
+                          const subTitle = (sub.subtitle || '').trim()
+                          if (!subTitle || subTitle.includes('상세메뉴 해석 목록')) return null
+
+                          return (
+                            <div key={`preview-subtitle-${menuIndex}-${subIndex}`} id={`preview-subtitle-${menuIndex}-${subIndex}`} className="subtitle-section space-y-2 pt-6 pb-6 border-b border-gray-100 last:border-b-0">
+                              {/* 소메뉴 제목 */}
+                              <div 
+                                className="subtitle-title font-semibold text-gray-900"
+                                style={{
+                                  fontSize: `${formData.subtitleFontSize || 14}px`,
+                                  fontWeight: formData.subtitleFontBold ? 'bold' : 'normal',
+                                  fontFamily: subtitleFontFamily ? `'${subtitleFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined,
+                                  color: formData.subtitleColor || undefined
+                                }}
+                              >
+                                {subTitle}
+                              </div>
+
+                              {/* 소메뉴 썸네일 */}
+                              {sub.thumbnail && (
+                                <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto' }}>
+                                  <img
+                                    src={sub.thumbnail}
+                                    alt="소제목 썸네일"
+                                    className="w-full h-auto rounded-lg"
+                                    style={{ display: 'block', objectFit: 'contain' }}
+                                  />
+                                </div>
+                              )}
+
+                              {/* 상세메뉴들 */}
+                              {sub.detailMenus && sub.detailMenus.length > 0 && (
+                                <div className="space-y-3 mt-4">
+                                  {sub.detailMenus.map((detailMenu: any, dmIndex: number) => {
+                                    const detailMenuTitle = (detailMenu.detailMenu || '').trim()
+                                    if (!detailMenuTitle) return null
+
+                                    return (
+                                      <div key={`preview-detail-${menuIndex}-${subIndex}-${dmIndex}`} className="detail-menu-section space-y-2">
+                                        {/* 상세메뉴 제목 */}
+                                        <div 
+                                          className="detail-menu-title font-semibold text-gray-800"
+                                          style={{
+                                            fontSize: `${formData.detailMenuFontSize || 12}px`,
+                                            fontWeight: formData.detailMenuFontBold ? 'bold' : 'normal',
+                                            fontFamily: detailMenuFontFamily ? `'${detailMenuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined,
+                                            color: formData.detailMenuColor || undefined
+                                          }}
+                                        >
+                                          {detailMenuTitle}
+                                        </div>
+
+                                        {/* 상세메뉴 썸네일 */}
+                                        {detailMenu.thumbnail && (
+                                          <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto' }}>
+                                            <img
+                                              src={detailMenu.thumbnail}
+                                              alt="상세메뉴 썸네일"
+                                              className="w-full h-auto rounded-lg"
+                                              style={{ display: 'block', objectFit: 'contain' }}
+                                            />
+                                          </div>
+                                        )}
+
+                                        {/* 상세메뉴 본문 */}
+                                        <div 
+                                          className="detail-menu-content text-gray-800"
+                                          style={{
+                                            fontSize: `${formData.bodyFontSize || 11}px`,
+                                            fontWeight: formData.bodyFontBold ? 'bold' : 'normal',
+                                            fontFamily: bodyFontFamily ? `'${bodyFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined,
+                                            color: formData.bodyColor || undefined,
+                                            lineHeight: '1.8'
+                                          }}
+                                          dangerouslySetInnerHTML={{ __html: generateSampleContent(detailMenuTitle) }}
+                                        />
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+
+                              {/* 소메뉴 본문 */}
+                              <div 
+                                className="subtitle-content text-gray-800 mt-4"
+                                style={{
+                                  fontSize: `${formData.bodyFontSize || 11}px`,
+                                  fontWeight: formData.bodyFontBold ? 'bold' : 'normal',
+                                  fontFamily: bodyFontFamily ? `'${bodyFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined,
+                                  color: formData.bodyColor || undefined,
+                                  lineHeight: '1.8',
+                                  marginBottom: '2em'
+                                }}
+                                dangerouslySetInnerHTML={{ __html: generateSampleContent(subTitle) }}
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* 엔딩 북커버 */}
+                    {menuIndex === allMenuItems.length - 1 && formData.endingBookCoverThumbnail && (
+                      <div className="w-full mt-4">
+                        <img 
+                          src={formData.endingBookCoverThumbnail} 
+                          alt="엔딩북커버 썸네일"
+                          className="w-full h-auto"
+                          style={{ objectFit: 'contain', display: 'block' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+        
+        {/* 푸터 */}
+        <div className="p-6 border-t border-gray-200">
+          <button
+            onClick={onClose}
+            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+          >
+            닫기
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
