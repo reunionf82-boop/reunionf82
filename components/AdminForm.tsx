@@ -38,7 +38,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     detailMenuFontBold: false,
     bodyFontSize: '11',
     bodyFontBold: false,
-    fontFace: '',
+    fontFace: '', // 하위 호환성을 위해 유지 (사용 안 함)
+    menuFontFace: '', // 대메뉴 웹폰트
+    subtitleFontFace: '', // 소메뉴 웹폰트
+    detailMenuFontFace: '', // 상세메뉴 웹폰트
+    bodyFontFace: '', // 본문 웹폰트
     ttsSpeaker: speakerParam || 'nara', // URL 파라미터 또는 기본값: nara
     previewThumbnails: ['', '', ''], // 재회상품 미리보기 썸네일 3개
     bookCoverThumbnail: '', // 북커버 썸네일 (첫 번째 대제목 전)
@@ -92,6 +96,18 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     errors: string[]
     message: string
   } | null>(null) // 무결성 체크 결과
+  
+  // 웹폰트 팝업 상태
+  const [showMenuFontPopup, setShowMenuFontPopup] = useState(false)
+  const [showSubtitleFontPopup, setShowSubtitleFontPopup] = useState(false)
+  const [showDetailMenuFontPopup, setShowDetailMenuFontPopup] = useState(false)
+  const [showBodyFontPopup, setShowBodyFontPopup] = useState(false)
+  
+  // 웹폰트 임시 입력값 (팝업에서 편집)
+  const [tempMenuFontFace, setTempMenuFontFace] = useState('')
+  const [tempSubtitleFontFace, setTempSubtitleFontFace] = useState('')
+  const [tempDetailMenuFontFace, setTempDetailMenuFontFace] = useState('')
+  const [tempBodyFontFace, setTempBodyFontFace] = useState('')
 
   // 초기 데이터 로드 (수정 모드 또는 복제 모드)
   useEffect(() => {
@@ -145,7 +161,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         detail_menu_font_bold: formData.detailMenuFontBold || false,
         body_font_size: parseInt(formData.bodyFontSize) || 11,
         body_font_bold: formData.bodyFontBold || false,
-        font_face: formData.fontFace || '',
+        font_face: formData.fontFace || '', // 하위 호환성
+        menu_font_face: formData.menuFontFace || '',
+        subtitle_font_face: formData.subtitleFontFace || '',
+        detail_menu_font_face: formData.detailMenuFontFace || '',
+        body_font_face: formData.bodyFontFace || '',
         menu_items: allMenuItems.map((item, index) => ({
           id: index,
           value: item.value,
@@ -268,7 +288,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         detailMenuFontBold: data.detail_menu_font_bold || false,
         bodyFontSize: String(data.body_font_size || '11'),
         bodyFontBold: data.body_font_bold || false,
-        fontFace: data.font_face || '',
+        fontFace: data.font_face || '', // 하위 호환성
+        menuFontFace: data.menu_font_face || data.font_face || '', // 하위 호환성
+        subtitleFontFace: data.subtitle_font_face || data.font_face || '', // 하위 호환성
+        detailMenuFontFace: data.detail_menu_font_face || data.font_face || '', // 하위 호환성
+        bodyFontFace: data.body_font_face || data.font_face || '', // 하위 호환성
         ttsSpeaker: data.tts_speaker || 'nara',
         previewThumbnails: (() => {
           let thumbnails = data.preview_thumbnails
@@ -459,7 +483,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         detailMenuFontBold: data.detail_menu_font_bold || false,
         bodyFontSize: String(data.body_font_size || '11'),
         bodyFontBold: data.body_font_bold || false,
-        fontFace: data.font_face || '',
+        fontFace: data.font_face || '', // 하위 호환성
+        menuFontFace: data.menu_font_face || data.font_face || '', // 하위 호환성
+        subtitleFontFace: data.subtitle_font_face || data.font_face || '', // 하위 호환성
+        detailMenuFontFace: data.detail_menu_font_face || data.font_face || '', // 하위 호환성
+        bodyFontFace: data.body_font_face || data.font_face || '', // 하위 호환성
         ttsSpeaker: data.tts_speaker || 'nara',
         previewThumbnails: (() => {
           let thumbnails = data.preview_thumbnails
@@ -652,7 +680,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         detail_menu_font_bold: formData.detailMenuFontBold || false,
         body_font_size: parseInt(formData.bodyFontSize) || 11,
         body_font_bold: formData.bodyFontBold || false,
-        font_face: formData.fontFace || '',
+        font_face: formData.fontFace || '', // 하위 호환성
+        menu_font_face: formData.menuFontFace || '',
+        subtitle_font_face: formData.subtitleFontFace || '',
+        detail_menu_font_face: formData.detailMenuFontFace || '',
+        body_font_face: formData.bodyFontFace || '',
         menu_items: allMenuItems.map((item, index) => ({
           id: index,
           value: item.value,
@@ -671,6 +703,16 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       console.log('저장할 contentData.book_cover_thumbnail:', contentData.book_cover_thumbnail);
       console.log('저장할 contentData.ending_book_cover_thumbnail:', contentData.ending_book_cover_thumbnail);
       console.log('저장할 menu_items:', JSON.stringify(contentData.menu_items, null, 2));
+      console.log('저장할 폰트 필드들:');
+      console.log('  menu_font_face:', contentData.menu_font_face ? `${contentData.menu_font_face.substring(0, 50)}...` : '(비어있음)');
+      console.log('  subtitle_font_face:', contentData.subtitle_font_face ? `${contentData.subtitle_font_face.substring(0, 50)}...` : '(비어있음)');
+      console.log('  detail_menu_font_face:', contentData.detail_menu_font_face ? `${contentData.detail_menu_font_face.substring(0, 50)}...` : '(비어있음)');
+      console.log('  body_font_face:', contentData.body_font_face ? `${contentData.body_font_face.substring(0, 50)}...` : '(비어있음)');
+      console.log('formData 폰트 필드들:');
+      console.log('  menuFontFace:', formData.menuFontFace ? `${formData.menuFontFace.substring(0, 50)}...` : '(비어있음)');
+      console.log('  subtitleFontFace:', formData.subtitleFontFace ? `${formData.subtitleFontFace.substring(0, 50)}...` : '(비어있음)');
+      console.log('  detailMenuFontFace:', formData.detailMenuFontFace ? `${formData.detailMenuFontFace.substring(0, 50)}...` : '(비어있음)');
+      console.log('  bodyFontFace:', formData.bodyFontFace ? `${formData.bodyFontFace.substring(0, 50)}...` : '(비어있음)');
       console.log('==============================');
       
       // API 라우트를 통해 저장 (서버 사이드에서 서비스 롤 키 사용)
@@ -2164,43 +2206,300 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         <div className="border-t border-gray-600 pt-4 mt-4">
           <h3 className="text-lg font-semibold text-gray-200 mb-4">폰트 설정</h3>
           
-          {/* 웹폰트 CSS 입력 */}
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
+          {/* 웹폰트 CSS 입력 - 4개로 분리 (2x2 배열, 팝업으로 입력) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            {/* 대메뉴 웹폰트 */}
+            <div className="flex items-center justify-between min-h-[28px]">
               <label className="block text-sm font-medium text-gray-300">
-                웹폰트 설정
+                대메뉴 웹폰트
               </label>
-              {formData.fontFace && (
-                <div className="flex items-center gap-2">
-                  <style dangerouslySetInnerHTML={{ __html: formData.fontFace }} />
-                  <span 
-                    style={{
-                      fontFamily: (() => {
-                        // @font-face에서 font-family 추출 (여러 패턴 지원)
-                        const match = formData.fontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/);
-                        return match ? (match[1] || match[2]?.trim()) : 'inherit';
-                      })(),
-                      fontSize: '14px',
-                      color: '#fff'
-                    }}
-                  >
-                    이 폰트는 이렇게 표시됩니다.
-                  </span>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                {formData.menuFontFace && (
+                  <div className="flex items-center gap-2">
+                    <style dangerouslySetInnerHTML={{ __html: formData.menuFontFace }} />
+                    <span 
+                      style={{
+                        fontFamily: (() => {
+                          const match = formData.menuFontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/);
+                          return match ? (match[1] || match[2]?.trim()) : 'inherit';
+                        })(),
+                        fontSize: `${formData.menuFontSize || '16'}px`,
+                        fontWeight: formData.menuFontBold ? 'bold' : 'normal',
+                        color: '#fff'
+                      }}
+                    >
+                      미리보기
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTempMenuFontFace(formData.menuFontFace)
+                    setShowMenuFontPopup(true)
+                  }}
+                  className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-xl font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
+                >
+                  +
+                </button>
+              </div>
             </div>
-            <textarea
-              name="fontFace"
-              value={formData.fontFace}
-              onChange={handleChange}
-              rows={2}
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y text-sm"
-              placeholder="여기에 웹폰트 코드를 붙여 넣으세요"
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              @font-face CSS를 입력하세요. 여러 폰트를 정의할 수 있습니다.
-            </p>
+
+            {/* 소메뉴 웹폰트 */}
+            <div className="flex items-center justify-between min-h-[28px]">
+              <label className="block text-sm font-medium text-gray-300">
+                소메뉴 웹폰트
+              </label>
+              <div className="flex items-center gap-2">
+                {formData.subtitleFontFace && (
+                  <div className="flex items-center gap-2">
+                    <style dangerouslySetInnerHTML={{ __html: formData.subtitleFontFace }} />
+                    <span 
+                      style={{
+                        fontFamily: (() => {
+                          const match = formData.subtitleFontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/);
+                          return match ? (match[1] || match[2]?.trim()) : 'inherit';
+                        })(),
+                        fontSize: `${formData.subtitleFontSize || '14'}px`,
+                        fontWeight: formData.subtitleFontBold ? 'bold' : 'normal',
+                        color: '#fff'
+                      }}
+                    >
+                      미리보기
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTempSubtitleFontFace(formData.subtitleFontFace)
+                    setShowSubtitleFontPopup(true)
+                  }}
+                  className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-xl font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            {/* 상세메뉴 웹폰트 */}
+            <div className="flex items-center justify-between min-h-[28px]">
+              <label className="block text-sm font-medium text-gray-300">
+                상세메뉴 웹폰트
+              </label>
+              <div className="flex items-center gap-2">
+                {formData.detailMenuFontFace && (
+                  <div className="flex items-center gap-2">
+                    <style dangerouslySetInnerHTML={{ __html: formData.detailMenuFontFace }} />
+                    <span 
+                      style={{
+                        fontFamily: (() => {
+                          const match = formData.detailMenuFontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/);
+                          return match ? (match[1] || match[2]?.trim()) : 'inherit';
+                        })(),
+                        fontSize: `${formData.detailMenuFontSize || '12'}px`,
+                        fontWeight: formData.detailMenuFontBold ? 'bold' : 'normal',
+                        color: '#fff'
+                      }}
+                    >
+                      미리보기
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTempDetailMenuFontFace(formData.detailMenuFontFace)
+                    setShowDetailMenuFontPopup(true)
+                  }}
+                  className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-xl font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            {/* 본문 웹폰트 */}
+            <div className="flex items-center justify-between min-h-[28px]">
+              <label className="block text-sm font-medium text-gray-300">
+                본문 웹폰트
+              </label>
+              <div className="flex items-center gap-2">
+                {formData.bodyFontFace && (
+                  <div className="flex items-center gap-2">
+                    <style dangerouslySetInnerHTML={{ __html: formData.bodyFontFace }} />
+                    <span 
+                      style={{
+                        fontFamily: (() => {
+                          const match = formData.bodyFontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/);
+                          return match ? (match[1] || match[2]?.trim()) : 'inherit';
+                        })(),
+                        fontSize: `${formData.bodyFontSize || '11'}px`,
+                        fontWeight: formData.bodyFontBold ? 'bold' : 'normal',
+                        color: '#fff'
+                      }}
+                    >
+                      미리보기
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTempBodyFontFace(formData.bodyFontFace)
+                    setShowBodyFontPopup(true)
+                  }}
+                  className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-xl font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
+                >
+                  +
+                </button>
+              </div>
+            </div>
           </div>
+          
+          {/* 웹폰트 설정 아래 선 */}
+          <div className="border-t border-gray-600 mt-4 mb-4"></div>
+          
+          {/* 웹폰트 팝업들 */}
+          {/* 대메뉴 웹폰트 팝업 */}
+          {showMenuFontPopup && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+                <h3 className="text-lg font-semibold text-white mb-4">대메뉴 웹폰트 설정</h3>
+                <textarea
+                  value={tempMenuFontFace}
+                  onChange={(e) => setTempMenuFontFace(e.target.value)}
+                  rows={8}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y text-sm mb-4"
+                  placeholder="@font-face CSS를 입력하세요"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowMenuFontPopup(false)}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, menuFontFace: tempMenuFontFace })
+                      setShowMenuFontPopup(false)
+                    }}
+                    className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600"
+                  >
+                    완료
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 소메뉴 웹폰트 팝업 */}
+          {showSubtitleFontPopup && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+                <h3 className="text-lg font-semibold text-white mb-4">소메뉴 웹폰트 설정</h3>
+                <textarea
+                  value={tempSubtitleFontFace}
+                  onChange={(e) => setTempSubtitleFontFace(e.target.value)}
+                  rows={8}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y text-sm mb-4"
+                  placeholder="@font-face CSS를 입력하세요"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSubtitleFontPopup(false)}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, subtitleFontFace: tempSubtitleFontFace })
+                      setShowSubtitleFontPopup(false)
+                    }}
+                    className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600"
+                  >
+                    완료
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 상세메뉴 웹폰트 팝업 */}
+          {showDetailMenuFontPopup && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+                <h3 className="text-lg font-semibold text-white mb-4">상세메뉴 웹폰트 설정</h3>
+                <textarea
+                  value={tempDetailMenuFontFace}
+                  onChange={(e) => setTempDetailMenuFontFace(e.target.value)}
+                  rows={8}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y text-sm mb-4"
+                  placeholder="@font-face CSS를 입력하세요"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowDetailMenuFontPopup(false)}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, detailMenuFontFace: tempDetailMenuFontFace })
+                      setShowDetailMenuFontPopup(false)
+                    }}
+                    className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600"
+                  >
+                    완료
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 본문 웹폰트 팝업 */}
+          {showBodyFontPopup && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+                <h3 className="text-lg font-semibold text-white mb-4">본문 웹폰트 설정</h3>
+                <textarea
+                  value={tempBodyFontFace}
+                  onChange={(e) => setTempBodyFontFace(e.target.value)}
+                  rows={8}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y text-sm mb-4"
+                  placeholder="@font-face CSS를 입력하세요"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowBodyFontPopup(false)}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, bodyFontFace: tempBodyFontFace })
+                      setShowBodyFontPopup(false)
+                    }}
+                    className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600"
+                  >
+                    완료
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           
           <div className="flex flex-wrap gap-4">
             <div className="flex-1 min-w-0">

@@ -683,26 +683,6 @@ function ResultContent() {
       const completeStyle = `
 <style>
 ${fontFace ? fontFace : ''}
-${extractedFontFamily ? `
-* {
-  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-}
-body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
-  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-}
-.jeminai-results, .jeminai-results * {
-  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-}
-.menu-section, .menu-section * {
-  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-}
-.menu-title, .subtitle-title, .subtitle-content {
-  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-}
-.result-title {
-  font-family: '${extractedFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-}
-` : ''}
 .jeminai-results .menu-title {
   font-size: ${menuFontSize}px !important;
   font-weight: ${menuFontBold ? 'bold' : 'normal'} !important;
@@ -1608,8 +1588,11 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
       .replace(/^[\d\-\.\s]+/, '').trim() // 추가: 앞부분의 모든 숫자, 하이픈, 점, 공백 제거
   }
   
-  // 웹폰트 설정 (관리자 페이지에서 설정한 값 사용)
-  const fontFace = content?.font_face || ''
+  // 웹폰트 설정 (관리자 페이지에서 설정한 값 사용 - 각 섹션별 개별 폰트)
+  const menuFontFace = content?.menu_font_face || content?.font_face || '' // 하위 호환성
+  const subtitleFontFace = content?.subtitle_font_face || content?.font_face || '' // 하위 호환성
+  const detailMenuFontFace = content?.detail_menu_font_face || content?.font_face || '' // 하위 호환성
+  const bodyFontFace = content?.body_font_face || content?.font_face || '' // 하위 호환성
   
   // @font-face에서 font-family 추출
   const extractFontFamily = (fontFaceCss: string): string | null => {
@@ -1625,46 +1608,55 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
     return null
   }
   
-  const fontFamilyName = extractFontFamily(fontFace)
+  const menuFontFamilyName = extractFontFamily(menuFontFace)
+  const subtitleFontFamilyName = extractFontFamily(subtitleFontFace)
+  const detailMenuFontFamilyName = extractFontFamily(detailMenuFontFace)
+  const bodyFontFamilyName = extractFontFamily(bodyFontFace)
 
   // 동적 스타일 생성
+  // @font-face 선언 수집 (중복 제거)
+  const fontFaces = new Set<string>()
+  if (menuFontFace) fontFaces.add(menuFontFace)
+  if (subtitleFontFace) fontFaces.add(subtitleFontFace)
+  if (detailMenuFontFace) fontFaces.add(detailMenuFontFace)
+  if (bodyFontFace) fontFaces.add(bodyFontFace)
+  
   const dynamicStyles = `
-    ${fontFace ? fontFace : ''}
-    ${fontFamilyName ? `
+    ${Array.from(fontFaces).join('\n')}
+    ${menuFontFamilyName ? `
     .result-title {
-      font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-    }
-    .jeminai-results {
-      font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-    }
-    .jeminai-results * {
-      font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+      font-family: '${menuFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
     }
     ` : ''}
     .jeminai-results .menu-title {
       font-size: ${menuFontSize}px !important;
       font-weight: ${menuFontBold ? 'bold' : 'normal'} !important;
       line-height: 1.6 !important;
+      ${menuFontFamilyName ? `font-family: '${menuFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;` : ''}
     }
     .jeminai-results .subtitle-title {
       font-size: ${subtitleFontSize}px !important;
       font-weight: ${subtitleFontBold ? 'bold' : 'normal'} !important;
+      ${subtitleFontFamilyName ? `font-family: '${subtitleFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;` : ''}
     }
     .jeminai-results .detail-menu-title {
       font-size: ${detailMenuFontSize}px !important;
       font-weight: ${detailMenuFontBold ? 'bold' : 'normal'} !important;
+      ${detailMenuFontFamilyName ? `font-family: '${detailMenuFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;` : ''}
     }
     .jeminai-results .subtitle-content {
       font-size: ${bodyFontSize}px !important;
       font-weight: ${bodyFontBold ? 'bold' : 'normal'} !important;
       margin-bottom: 2em !important;
       line-height: 1.8 !important;
+      ${bodyFontFamilyName ? `font-family: '${bodyFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;` : ''}
     }
     .jeminai-results .detail-menu-content {
       font-size: ${bodyFontSize}px !important;
       font-weight: ${bodyFontBold ? 'bold' : 'normal'} !important;
       line-height: 1.8 !important;
       margin-bottom: 0 !important;
+      ${bodyFontFamilyName ? `font-family: '${bodyFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;` : ''}
     }
     .jeminai-results .detail-menu-container {
       margin-bottom: 2em !important;
@@ -3237,7 +3229,16 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                 if (activePos && menuIndex > activePos.menuIndex) return null
                 return (
                 <div key={`menu-${menuIndex}`} id={`menu-${menuIndex}`} className="menu-section space-y-3">
-                  <div className="menu-title font-bold text-lg text-gray-900">{menu.title}</div>
+                  <div 
+                    className="menu-title font-bold text-lg text-gray-900"
+                    style={{
+                      fontSize: `${menuFontSize}px`,
+                      fontWeight: menuFontBold ? 'bold' : 'normal',
+                      fontFamily: menuFontFamilyName ? `'${menuFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined
+                    }}
+                  >
+                    {menu.title}
+                  </div>
 
                   {/* 첫 번째 대제목 아래 만세력 테이블 (1-1 소제목 준비 이후에만 표시) */}
                   {menuIndex === 0 && menu.manseHtml && firstSubtitleReady && (
@@ -3267,7 +3268,16 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
 
                       return (
                         <div key={`item-${menuIndex}-${subIndex}`} id={`subtitle-${menuIndex}-${subIndex}`} className="subtitle-section space-y-2">
-                          <div className="subtitle-title font-semibold text-gray-900">{title}</div>
+                          <div 
+                            className="subtitle-title font-semibold text-gray-900"
+                            style={{
+                              fontSize: `${subtitleFontSize}px`,
+                              fontWeight: subtitleFontBold ? 'bold' : 'normal',
+                              fontFamily: subtitleFontFamilyName ? `'${subtitleFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined
+                            }}
+                          >
+                            {title}
+                          </div>
                           {sub.thumbnail && (
                             <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto' }}>
                               <img
@@ -3279,9 +3289,24 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                             </div>
                           )}
                           {complete ? (
-                            <div className="subtitle-content text-gray-800" dangerouslySetInnerHTML={{ __html: sub.contentHtml || '' }} />
+                            <div 
+                              className="subtitle-content text-gray-800" 
+                              style={{
+                                fontSize: `${bodyFontSize}px`,
+                                fontWeight: bodyFontBold ? 'bold' : 'normal',
+                                fontFamily: bodyFontFamilyName ? `'${bodyFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined
+                              }}
+                              dangerouslySetInnerHTML={{ __html: sub.contentHtml || '' }} 
+                            />
                           ) : (
-                            <div className="subtitle-content text-gray-400 flex items-center gap-2 py-2">
+                            <div 
+                              className="subtitle-content text-gray-400 flex items-center gap-2 py-2"
+                              style={{
+                                fontSize: `${bodyFontSize}px`,
+                                fontWeight: bodyFontBold ? 'bold' : 'normal',
+                                fontFamily: bodyFontFamilyName ? `'${bodyFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined
+                              }}
+                            >
                               <span>점사중입니다</span>
                               <span className="loading-dots">
                                 <span className="dot" />
@@ -3404,12 +3429,22 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                       menuSections.forEach((section, menuIndex) => {
                         const menuItem = menuItems[menuIndex]
                         
-                        // 대메뉴 제목에서 볼드 속성 적용 (숫자 접두사 유지)
+                        // 대메뉴 제목에서 폰트 속성 적용 (숫자 접두사 유지)
                         const menuTitle = section.querySelector('.menu-title')
                         if (menuTitle) {
                           // 숫자 접두사 제거하지 않음
                           const menuBold = content?.menu_font_bold || false
+                          const menuSize = content?.menu_font_size || 16
+                          const menuFontFace = content?.menu_font_face || content?.font_face || ''
+                          const menuFontFamily = menuFontFace ? (() => {
+                            const match = menuFontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
+                            return match ? (match[1] || match[2]?.trim()) : null
+                          })() : null
                           ;(menuTitle as HTMLElement).style.fontWeight = menuBold ? 'bold' : 'normal'
+                          ;(menuTitle as HTMLElement).style.fontSize = `${menuSize}px`
+                          if (menuFontFamily) {
+                            ;(menuTitle as HTMLElement).style.fontFamily = `'${menuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`
+                          }
                         }
                         
                         if (menuItem?.subtitles) {
@@ -3417,12 +3452,22 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                           subtitleSections.forEach((subSection, subIndex) => {
                             const subtitle = menuItem.subtitles[subIndex]
                             
-                            // 소메뉴 제목에서 볼드 속성 적용 (숫자 접두사 유지)
+                            // 소메뉴 제목에서 폰트 속성 적용 (숫자 접두사 유지)
                             const subtitleTitle = subSection.querySelector('.subtitle-title')
                             if (subtitleTitle) {
                               // 숫자 접두사 제거하지 않음
                               const subtitleBold = content?.subtitle_font_bold || false
+                              const subtitleSize = content?.subtitle_font_size || 14
+                              const subtitleFontFace = content?.subtitle_font_face || content?.font_face || ''
+                              const subtitleFontFamily = subtitleFontFace ? (() => {
+                                const match = subtitleFontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
+                                return match ? (match[1] || match[2]?.trim()) : null
+                              })() : null
                               ;(subtitleTitle as HTMLElement).style.fontWeight = subtitleBold ? 'bold' : 'normal'
+                              ;(subtitleTitle as HTMLElement).style.fontSize = `${subtitleSize}px`
+                              if (subtitleFontFamily) {
+                                ;(subtitleTitle as HTMLElement).style.fontFamily = `'${subtitleFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`
+                              }
                             }
                             
                             // 소제목 썸네일 추가
@@ -3447,8 +3492,16 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                               detailMenuTitles.forEach((titleEl) => {
                                 // 숫자 접두사 제거하지 않음
                                 const detailMenuBold = content?.detail_menu_font_bold || false
+                                const detailMenuFontFace = content?.detail_menu_font_face || content?.font_face || ''
+                                const detailMenuFontFamily = detailMenuFontFace ? (() => {
+                                  const match = detailMenuFontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
+                                  return match ? (match[1] || match[2]?.trim()) : null
+                                })() : null
                                 ;(titleEl as HTMLElement).style.fontSize = `${detailMenuFontSize}px`
                                 ;(titleEl as HTMLElement).style.fontWeight = detailMenuBold ? 'bold' : 'normal'
+                                if (detailMenuFontFamily) {
+                                  ;(titleEl as HTMLElement).style.fontFamily = `'${detailMenuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`
+                                }
                               })
                               
                               const detailMenuContents = existingDetailMenuSection.querySelectorAll('.detail-menu-content')
@@ -3487,12 +3540,36 @@ body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
                                 }
                                 
                                 const bodyBold = content?.body_font_bold || false
+                                const bodyFontFace = content?.body_font_face || content?.font_face || ''
+                                const bodyFontFamily = bodyFontFace ? (() => {
+                                  const match = bodyFontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
+                                  return match ? (match[1] || match[2]?.trim()) : null
+                                })() : null
                                 ;(contentEl as HTMLElement).style.fontSize = `${bodyFontSize}px`
                                 ;(contentEl as HTMLElement).style.fontWeight = bodyBold ? 'bold' : 'normal'
+                                if (bodyFontFamily) {
+                                  ;(contentEl as HTMLElement).style.fontFamily = `'${bodyFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`
+                                }
                               })
                               
-                              // 상세메뉴가 subtitle-content 앞에 있으면 subtitle-content 다음으로 이동
+                              // subtitle-content에 폰트 속성 적용
                               const subtitleContent = subSection.querySelector('.subtitle-content')
+                              if (subtitleContent) {
+                                const bodyBold = content?.body_font_bold || false
+                                const bodySize = content?.body_font_size || 11
+                                const bodyFontFace = content?.body_font_face || content?.font_face || ''
+                                const bodyFontFamily = bodyFontFace ? (() => {
+                                  const match = bodyFontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
+                                  return match ? (match[1] || match[2]?.trim()) : null
+                                })() : null
+                                ;(subtitleContent as HTMLElement).style.fontSize = `${bodySize}px`
+                                ;(subtitleContent as HTMLElement).style.fontWeight = bodyBold ? 'bold' : 'normal'
+                                if (bodyFontFamily) {
+                                  ;(subtitleContent as HTMLElement).style.fontFamily = `'${bodyFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`
+                                }
+                              }
+                              
+                              // 상세메뉴가 subtitle-content 앞에 있으면 subtitle-content 다음으로 이동
                               if (subtitleContent && existingDetailMenuSection) {
                                 const detailMenuParent = existingDetailMenuSection.parentNode
                                 const subtitleContentParent = subtitleContent.parentNode

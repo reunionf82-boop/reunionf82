@@ -44,7 +44,11 @@ export interface ContentData {
   detail_menu_font_bold?: boolean
   body_font_size?: number
   body_font_bold?: boolean
-  font_face?: string // 웹폰트 CSS (@font-face)
+  font_face?: string // 웹폰트 CSS (@font-face) - 하위 호환성
+  menu_font_face?: string // 대메뉴 웹폰트 CSS
+  subtitle_font_face?: string // 소메뉴 웹폰트 CSS
+  detail_menu_font_face?: string // 상세메뉴 웹폰트 CSS
+  body_font_face?: string // 본문 웹폰트 CSS
   menu_items?: Array<{ id: number; value: string; thumbnail?: string }>
   is_new?: boolean
   tts_speaker?: string // TTS 화자 (nara, jinho, mijin, nhajun, ndain)

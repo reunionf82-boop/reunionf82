@@ -36,6 +36,11 @@ export async function POST(req: NextRequest) {
     console.log('dataToSave:', dataToSave)
     console.log('dataToSave.book_cover_thumbnail:', dataToSave.book_cover_thumbnail)
     console.log('dataToSave.ending_book_cover_thumbnail:', dataToSave.ending_book_cover_thumbnail)
+    console.log('폰트 필드 확인:')
+    console.log('  menu_font_face:', dataToSave.menu_font_face ? `${String(dataToSave.menu_font_face).substring(0, 50)}...` : '(없음)')
+    console.log('  subtitle_font_face:', dataToSave.subtitle_font_face ? `${String(dataToSave.subtitle_font_face).substring(0, 50)}...` : '(없음)')
+    console.log('  detail_menu_font_face:', dataToSave.detail_menu_font_face ? `${String(dataToSave.detail_menu_font_face).substring(0, 50)}...` : '(없음)')
+    console.log('  body_font_face:', dataToSave.body_font_face ? `${String(dataToSave.body_font_face).substring(0, 50)}...` : '(없음)')
 
     if (id) {
       // 업데이트
