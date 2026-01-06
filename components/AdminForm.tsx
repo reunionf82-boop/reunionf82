@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getContentById, type ContentData } from '@/lib/supabase-admin'
 import ThumbnailModal from '@/components/ThumbnailModal'
@@ -43,6 +43,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     subtitleFontFace: '', // 소메뉴 웹폰트
     detailMenuFontFace: '', // 상세메뉴 웹폰트
     bodyFontFace: '', // 본문 웹폰트
+    menuColor: '', // 대메뉴 컬러
+    subtitleColor: '', // 소메뉴 컬러
+    detailMenuColor: '', // 상세메뉴 컬러
+    bodyColor: '', // 본문 컬러
     ttsSpeaker: speakerParam || 'nara', // URL 파라미터 또는 기본값: nara
     previewThumbnails: ['', '', ''], // 재회상품 미리보기 썸네일 3개
     bookCoverThumbnail: '', // 북커버 썸네일 (첫 번째 대제목 전)
@@ -108,6 +112,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const [tempSubtitleFontFace, setTempSubtitleFontFace] = useState('')
   const [tempDetailMenuFontFace, setTempDetailMenuFontFace] = useState('')
   const [tempBodyFontFace, setTempBodyFontFace] = useState('')
+  
+  // 컬러 팝업 상태
+  const [showMenuColorPopup, setShowMenuColorPopup] = useState(false)
+  const [showSubtitleColorPopup, setShowSubtitleColorPopup] = useState(false)
+  const [showDetailMenuColorPopup, setShowDetailMenuColorPopup] = useState(false)
+  const [showBodyColorPopup, setShowBodyColorPopup] = useState(false)
 
   // 초기 데이터 로드 (수정 모드 또는 복제 모드)
   useEffect(() => {
@@ -166,6 +176,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         subtitle_font_face: formData.subtitleFontFace || '',
         detail_menu_font_face: formData.detailMenuFontFace || '',
         body_font_face: formData.bodyFontFace || '',
+        menu_color: formData.menuColor || '',
+        subtitle_color: formData.subtitleColor || '',
+        detail_menu_color: formData.detailMenuColor || '',
+        body_color: formData.bodyColor || '',
         menu_items: allMenuItems.map((item, index) => ({
           id: index,
           value: item.value,
@@ -293,6 +307,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         subtitleFontFace: data.subtitle_font_face || data.font_face || '', // 하위 호환성
         detailMenuFontFace: data.detail_menu_font_face || data.font_face || '', // 하위 호환성
         bodyFontFace: data.body_font_face || data.font_face || '', // 하위 호환성
+        menuColor: data.menu_color || '',
+        subtitleColor: data.subtitle_color || '',
+        detailMenuColor: data.detail_menu_color || '',
+        bodyColor: data.body_color || '',
         ttsSpeaker: data.tts_speaker || 'nara',
         previewThumbnails: (() => {
           let thumbnails = data.preview_thumbnails
@@ -488,6 +506,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         subtitleFontFace: data.subtitle_font_face || data.font_face || '', // 하위 호환성
         detailMenuFontFace: data.detail_menu_font_face || data.font_face || '', // 하위 호환성
         bodyFontFace: data.body_font_face || data.font_face || '', // 하위 호환성
+        menuColor: data.menu_color || '',
+        subtitleColor: data.subtitle_color || '',
+        detailMenuColor: data.detail_menu_color || '',
+        bodyColor: data.body_color || '',
         ttsSpeaker: data.tts_speaker || 'nara',
         previewThumbnails: (() => {
           let thumbnails = data.preview_thumbnails
@@ -685,6 +707,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         subtitle_font_face: formData.subtitleFontFace || '',
         detail_menu_font_face: formData.detailMenuFontFace || '',
         body_font_face: formData.bodyFontFace || '',
+        menu_color: formData.menuColor || '',
+        subtitle_color: formData.subtitleColor || '',
+        detail_menu_color: formData.detailMenuColor || '',
+        body_color: formData.bodyColor || '',
         menu_items: allMenuItems.map((item, index) => ({
           id: index,
           value: item.value,
@@ -2225,7 +2251,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         })(),
                         fontSize: `${formData.menuFontSize || '16'}px`,
                         fontWeight: formData.menuFontBold ? 'bold' : 'normal',
-                        color: '#fff'
+                        color: formData.menuColor || '#fff'
                       }}
                     >
                       미리보기
@@ -2241,6 +2267,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-xl font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
                 >
                   +
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMenuColorPopup(true)}
+                  className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-lg font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
+                  title="컬러 설정"
+                >
+                  🎨
                 </button>
               </div>
             </div>
@@ -2262,7 +2296,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         })(),
                         fontSize: `${formData.subtitleFontSize || '14'}px`,
                         fontWeight: formData.subtitleFontBold ? 'bold' : 'normal',
-                        color: '#fff'
+                        color: formData.subtitleColor || '#fff'
                       }}
                     >
                       미리보기
@@ -2278,6 +2312,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-xl font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
                 >
                   +
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSubtitleColorPopup(true)}
+                  className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-lg font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
+                  title="컬러 설정"
+                >
+                  🎨
                 </button>
               </div>
             </div>
@@ -2299,7 +2341,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         })(),
                         fontSize: `${formData.detailMenuFontSize || '12'}px`,
                         fontWeight: formData.detailMenuFontBold ? 'bold' : 'normal',
-                        color: '#fff'
+                        color: formData.detailMenuColor || '#fff'
                       }}
                     >
                       미리보기
@@ -2315,6 +2357,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-xl font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
                 >
                   +
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDetailMenuColorPopup(true)}
+                  className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-lg font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
+                  title="컬러 설정"
+                >
+                  🎨
                 </button>
               </div>
             </div>
@@ -2336,7 +2386,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         })(),
                         fontSize: `${formData.bodyFontSize || '11'}px`,
                         fontWeight: formData.bodyFontBold ? 'bold' : 'normal',
-                        color: '#fff'
+                        color: formData.bodyColor || '#fff'
                       }}
                     >
                       미리보기
@@ -2352,6 +2402,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-xl font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
                 >
                   +
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowBodyColorPopup(true)}
+                  className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-lg font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
+                  title="컬러 설정"
+                >
+                  🎨
                 </button>
               </div>
             </div>
@@ -2500,6 +2558,384 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               </div>
             </div>
           )}
+
+          {/* 컬러 팝업들 */}
+          {/* 컬러 팔레트 컴포넌트 */}
+          {(() => {
+            // RGB를 HSV로 변환
+            const rgbToHsv = (r: number, g: number, b: number): [number, number, number] => {
+              r /= 255
+              g /= 255
+              b /= 255
+              const max = Math.max(r, g, b)
+              const min = Math.min(r, g, b)
+              const delta = max - min
+              
+              let h = 0
+              if (delta !== 0) {
+                if (max === r) {
+                  h = ((g - b) / delta) % 6
+                } else if (max === g) {
+                  h = (b - r) / delta + 2
+                } else {
+                  h = (r - g) / delta + 4
+                }
+              }
+              h = Math.round(h * 60)
+              if (h < 0) h += 360
+              
+              const s = max === 0 ? 0 : Math.round((delta / max) * 100)
+              const v = Math.round(max * 100)
+              
+              return [h, s, v]
+            }
+            
+            // HSV를 RGB로 변환
+            const hsvToRgb = (h: number, s: number, v: number): [number, number, number] => {
+              s /= 100
+              v /= 100
+              const c = v * s
+              const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+              const m = v - c
+              
+              let r = 0, g = 0, b = 0
+              if (h >= 0 && h < 60) {
+                r = c; g = x; b = 0
+              } else if (h >= 60 && h < 120) {
+                r = x; g = c; b = 0
+              } else if (h >= 120 && h < 180) {
+                r = 0; g = c; b = x
+              } else if (h >= 180 && h < 240) {
+                r = 0; g = x; b = c
+              } else if (h >= 240 && h < 300) {
+                r = x; g = 0; b = c
+              } else if (h >= 300 && h < 360) {
+                r = c; g = 0; b = x
+              }
+              
+              r = Math.round((r + m) * 255)
+              g = Math.round((g + m) * 255)
+              b = Math.round((b + m) * 255)
+              
+              return [r, g, b]
+            }
+            
+            // Hex를 RGB로 변환
+            const hexToRgb = (hex: string): [number, number, number] => {
+              const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+              return result
+                ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)]
+                : [0, 0, 0]
+            }
+            
+            // RGB를 Hex로 변환
+            const rgbToHex = (r: number, g: number, b: number): string => {
+              return '#' + [r, g, b].map(x => {
+                const hex = x.toString(16)
+                return hex.length === 1 ? '0' + hex : hex
+              }).join('')
+            }
+            
+            const ColorPicker = ({ 
+              title, 
+              currentColor, 
+              onSelect, 
+              onClose 
+            }: { 
+              title: string
+              currentColor: string
+              onSelect: (color: string) => void
+              onClose: () => void
+            }) => {
+              const initialColor = currentColor || '#000000'
+              const [r, g, b] = hexToRgb(initialColor)
+              const [h, s, v] = rgbToHsv(r, g, b)
+              
+              const [hue, setHue] = useState(h)
+              const [saturation, setSaturation] = useState(s)
+              const [brightness, setBrightness] = useState(v)
+              const [isDragging, setIsDragging] = useState(false)
+              const [isDraggingHue, setIsDraggingHue] = useState(false)
+              
+              const saturationRef = React.useRef<HTMLDivElement>(null)
+              const hueRef = React.useRef<HTMLDivElement>(null)
+              
+              const updateColor = (newH: number, newS: number, newV: number) => {
+                setHue(newH)
+                setSaturation(newS)
+                setBrightness(newV)
+              }
+              
+              const getCurrentColor = (): string => {
+                const [r, g, b] = hsvToRgb(hue, saturation, brightness)
+                return rgbToHex(r, g, b)
+              }
+              
+              const handleSaturationClick = (e: React.MouseEvent<HTMLDivElement>) => {
+                if (!saturationRef.current) return
+                const rect = saturationRef.current.getBoundingClientRect()
+                const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left))
+                const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top))
+                const s = Math.round((x / rect.width) * 100)
+                const v = Math.round(100 - (y / rect.height) * 100)
+                updateColor(hue, s, v)
+              }
+              
+              const handleHueClick = (e: React.MouseEvent<HTMLDivElement>) => {
+                if (!hueRef.current) return
+                const rect = hueRef.current.getBoundingClientRect()
+                const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top))
+                const h = Math.round((y / rect.height) * 360)
+                updateColor(h, saturation, brightness)
+              }
+              
+              const handleMouseMove = (e: MouseEvent) => {
+                if (isDragging && saturationRef.current) {
+                  const rect = saturationRef.current.getBoundingClientRect()
+                  const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left))
+                  const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top))
+                  const s = Math.round((x / rect.width) * 100)
+                  const v = Math.round(100 - (y / rect.height) * 100)
+                  updateColor(hue, s, v)
+                } else if (isDraggingHue && hueRef.current) {
+                  const rect = hueRef.current.getBoundingClientRect()
+                  const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top))
+                  const h = Math.round((y / rect.height) * 360)
+                  updateColor(h, saturation, brightness)
+                }
+              }
+              
+              const handleMouseUp = () => {
+                setIsDragging(false)
+                setIsDraggingHue(false)
+              }
+              
+              React.useEffect(() => {
+                if (isDragging || isDraggingHue) {
+                  window.addEventListener('mousemove', handleMouseMove)
+                  window.addEventListener('mouseup', handleMouseUp)
+                  return () => {
+                    window.removeEventListener('mousemove', handleMouseMove)
+                    window.removeEventListener('mouseup', handleMouseUp)
+                  }
+                }
+              }, [isDragging, isDraggingHue, hue, saturation, brightness])
+              
+              // Canvas를 사용한 채도/밝기 사각형 그라디언트
+              const saturationCanvasRef = React.useRef<HTMLCanvasElement>(null)
+              const hueCanvasRef = React.useRef<HTMLCanvasElement>(null)
+              
+              // 채도/밝기 사각형 그리기
+              React.useEffect(() => {
+                const canvas = saturationCanvasRef.current
+                if (!canvas) return
+                
+                const ctx = canvas.getContext('2d')
+                if (!ctx) return
+                
+                const width = canvas.width
+                const height = canvas.height
+                
+                // 각 픽셀을 직접 계산
+                const imageData = ctx.createImageData(width, height)
+                const data = imageData.data
+                
+                for (let y = 0; y < height; y++) {
+                  for (let x = 0; x < width; x++) {
+                    const s = (x / width) * 100  // 채도: 0% (왼쪽) ~ 100% (오른쪽)
+                    const v = 100 - (y / height) * 100  // 밝기: 100% (위) ~ 0% (아래)
+                    const [r, g, b] = hsvToRgb(hue, s, v)
+                    
+                    const index = (y * width + x) * 4
+                    data[index] = r      // R
+                    data[index + 1] = g  // G
+                    data[index + 2] = b  // B
+                    data[index + 3] = 255 // A
+                  }
+                }
+                
+                ctx.putImageData(imageData, 0, 0)
+              }, [hue])
+              
+              // 색상 스트립 그리기
+              React.useEffect(() => {
+                const canvas = hueCanvasRef.current
+                if (!canvas) return
+                
+                const ctx = canvas.getContext('2d')
+                if (!ctx) return
+                
+                const height = canvas.height
+                
+                // 세로 방향: 0도(빨강)에서 360도(빨강)로
+                for (let y = 0; y < height; y++) {
+                  const h = (y / height) * 360
+                  const [r, g, b] = hsvToRgb(h, 100, 100)
+                  ctx.fillStyle = `rgb(${r}, ${g}, ${b})`
+                  ctx.fillRect(0, y, canvas.width, 1)
+                }
+              }, [])
+              
+              const currentColorHex = getCurrentColor()
+              
+              return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-gray-800 rounded-lg p-6 w-full max-w-lg">
+                    <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
+                    
+                    <div className="flex gap-4 mb-4">
+                      {/* 채도/밝기 사각형 */}
+                      <div className="flex-1 relative">
+                        <canvas
+                          ref={saturationCanvasRef}
+                          width={256}
+                          height={256}
+                          className="w-full h-64 rounded border-2 border-gray-600 cursor-crosshair"
+                          style={{ imageRendering: 'pixelated' }}
+                        />
+                        <div
+                          ref={saturationRef}
+                          className="absolute inset-0 rounded cursor-crosshair"
+                          onMouseDown={(e) => {
+                            setIsDragging(true)
+                            handleSaturationClick(e)
+                          }}
+                        >
+                          {/* 핸들 */}
+                          <div
+                            className="absolute w-4 h-4 rounded-full border-2 border-white shadow-lg transform -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10"
+                            style={{
+                              left: `${saturation}%`,
+                              top: `${100 - brightness}%`,
+                              backgroundColor: currentColorHex
+                            }}
+                          />
+                        </div>
+                      </div>
+                      
+                      {/* 색상 스트립 */}
+                      <div className="relative">
+                        <canvas
+                          ref={hueCanvasRef}
+                          width={32}
+                          height={256}
+                          className="w-8 h-64 rounded border-2 border-gray-600 cursor-pointer"
+                          style={{ imageRendering: 'pixelated' }}
+                        />
+                        <div
+                          ref={hueRef}
+                          className="absolute inset-0 rounded cursor-pointer"
+                          onMouseDown={(e) => {
+                            setIsDraggingHue(true)
+                            handleHueClick(e)
+                          }}
+                        >
+                          {/* 색상 핸들 */}
+                          <div
+                            className="absolute left-0 right-0 w-full h-1 bg-white border border-gray-400 shadow-lg transform -translate-y-1/2 pointer-events-none z-10"
+                            style={{
+                              top: `${(hue / 360) * 100}%`
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* 현재 선택된 컬러 미리보기 및 Hex 입력 */}
+                    <div className="mb-4">
+                      <div className="flex items-center gap-4">
+                        <div 
+                          className="w-16 h-16 rounded border-2 border-gray-600"
+                          style={{ backgroundColor: currentColorHex }}
+                        />
+                        <div className="flex-1">
+                          <label className="block text-sm font-medium text-gray-300 mb-1">Web Color</label>
+                          <input
+                            type="text"
+                            value={currentColorHex}
+                            onChange={(e) => {
+                              const value = e.target.value
+                              if (/^#[0-9A-Fa-f]{6}$/i.test(value)) {
+                                const [r, g, b] = hexToRgb(value)
+                                const [h, s, v] = rgbToHsv(r, g, b)
+                                updateColor(h, s, v)
+                              }
+                            }}
+                            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm"
+                            placeholder="#000000"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSelect(currentColorHex)
+                          onClose()
+                        }}
+                        className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600"
+                      >
+                        완료
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+            
+            return (
+              <>
+                {/* 대메뉴 컬러 팝업 */}
+                {showMenuColorPopup && (
+                  <ColorPicker
+                    title="대메뉴 컬러 설정"
+                    currentColor={formData.menuColor}
+                    onSelect={(color) => setFormData({ ...formData, menuColor: color })}
+                    onClose={() => setShowMenuColorPopup(false)}
+                  />
+                )}
+
+                {/* 소메뉴 컬러 팝업 */}
+                {showSubtitleColorPopup && (
+                  <ColorPicker
+                    title="소메뉴 컬러 설정"
+                    currentColor={formData.subtitleColor}
+                    onSelect={(color) => setFormData({ ...formData, subtitleColor: color })}
+                    onClose={() => setShowSubtitleColorPopup(false)}
+                  />
+                )}
+
+                {/* 상세메뉴 컬러 팝업 */}
+                {showDetailMenuColorPopup && (
+                  <ColorPicker
+                    title="상세메뉴 컬러 설정"
+                    currentColor={formData.detailMenuColor}
+                    onSelect={(color) => setFormData({ ...formData, detailMenuColor: color })}
+                    onClose={() => setShowDetailMenuColorPopup(false)}
+                  />
+                )}
+
+                {/* 본문 컬러 팝업 */}
+                {showBodyColorPopup && (
+                  <ColorPicker
+                    title="본문 컬러 설정"
+                    currentColor={formData.bodyColor}
+                    onSelect={(color) => setFormData({ ...formData, bodyColor: color })}
+                    onClose={() => setShowBodyColorPopup(false)}
+                  />
+                )}
+              </>
+            )
+          })()}
           
           <div className="flex flex-wrap gap-4">
             <div className="flex-1 min-w-0">

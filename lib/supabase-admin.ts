@@ -49,6 +49,10 @@ export interface ContentData {
   subtitle_font_face?: string // 소메뉴 웹폰트 CSS
   detail_menu_font_face?: string // 상세메뉴 웹폰트 CSS
   body_font_face?: string // 본문 웹폰트 CSS
+  menu_color?: string // 대메뉴 컬러
+  subtitle_color?: string // 소메뉴 컬러
+  detail_menu_color?: string // 상세메뉴 컬러
+  body_color?: string // 본문 컬러
   menu_items?: Array<{ id: number; value: string; thumbnail?: string }>
   is_new?: boolean
   tts_speaker?: string // TTS 화자 (nara, jinho, mijin, nhajun, ndain)

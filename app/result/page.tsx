@@ -679,6 +679,12 @@ function ResultContent() {
       const bodyFontSize = content?.body_font_size || 11
       const bodyFontBold = content?.body_font_bold || false
       
+      // 컬러 값 추출
+      const menuColor = content?.menu_color || ''
+      const subtitleColor = content?.subtitle_color || ''
+      const detailMenuColor = content?.detail_menu_color || ''
+      const bodyColor = content?.body_color || ''
+      
       // result 페이지와 동일한 전체 CSS 스타일 생성
       const completeStyle = `
 <style>
@@ -687,26 +693,31 @@ ${fontFace ? fontFace : ''}
   font-size: ${menuFontSize}px !important;
   font-weight: ${menuFontBold ? 'bold' : 'normal'} !important;
   line-height: 1.6 !important;
+  ${menuColor ? `color: ${menuColor} !important;` : ''}
 }
 .jeminai-results .subtitle-title {
   font-size: ${subtitleFontSize}px !important;
   font-weight: ${subtitleFontBold ? 'bold' : 'normal'} !important;
+  ${subtitleColor ? `color: ${subtitleColor} !important;` : ''}
 }
 .jeminai-results .detail-menu-title {
   font-size: ${detailMenuFontSize}px !important;
   font-weight: ${detailMenuFontBold ? 'bold' : 'normal'} !important;
+  ${detailMenuColor ? `color: ${detailMenuColor} !important;` : ''}
 }
 .jeminai-results .subtitle-content {
   font-size: ${bodyFontSize}px !important;
   font-weight: ${bodyFontBold ? 'bold' : 'normal'} !important;
   margin-bottom: 2em !important;
   line-height: 1.8 !important;
+  ${bodyColor ? `color: ${bodyColor} !important;` : ''}
 }
 .jeminai-results .detail-menu-content {
   font-size: ${bodyFontSize}px !important;
   font-weight: ${bodyFontBold ? 'bold' : 'normal'} !important;
   line-height: 1.8 !important;
   margin-bottom: 0 !important;
+  ${bodyColor ? `color: ${bodyColor} !important;` : ''}
 }
 .jeminai-results .detail-menu-container {
   margin-bottom: 2em !important;
@@ -1613,6 +1624,12 @@ ${fontFace ? fontFace : ''}
   const detailMenuFontFamilyName = extractFontFamily(detailMenuFontFace)
   const bodyFontFamilyName = extractFontFamily(bodyFontFace)
 
+  // 컬러 값 추출 (디버깅 및 안정성을 위해)
+  const menuColor = content?.menu_color || ''
+  const subtitleColor = content?.subtitle_color || ''
+  const detailMenuColor = content?.detail_menu_color || ''
+  const bodyColor = content?.body_color || ''
+  
   // 동적 스타일 생성
   // @font-face 선언 수집 (중복 제거)
   const fontFaces = new Set<string>()
@@ -1633,16 +1650,19 @@ ${fontFace ? fontFace : ''}
       font-weight: ${menuFontBold ? 'bold' : 'normal'} !important;
       line-height: 1.6 !important;
       ${menuFontFamilyName ? `font-family: '${menuFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;` : ''}
+      ${menuColor ? `color: ${menuColor} !important;` : ''}
     }
     .jeminai-results .subtitle-title {
       font-size: ${subtitleFontSize}px !important;
       font-weight: ${subtitleFontBold ? 'bold' : 'normal'} !important;
       ${subtitleFontFamilyName ? `font-family: '${subtitleFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;` : ''}
+      ${subtitleColor ? `color: ${subtitleColor} !important;` : ''}
     }
     .jeminai-results .detail-menu-title {
       font-size: ${detailMenuFontSize}px !important;
       font-weight: ${detailMenuFontBold ? 'bold' : 'normal'} !important;
       ${detailMenuFontFamilyName ? `font-family: '${detailMenuFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;` : ''}
+      ${detailMenuColor ? `color: ${detailMenuColor} !important;` : ''}
     }
     .jeminai-results .subtitle-content {
       font-size: ${bodyFontSize}px !important;
@@ -1650,6 +1670,7 @@ ${fontFace ? fontFace : ''}
       margin-bottom: 2em !important;
       line-height: 1.8 !important;
       ${bodyFontFamilyName ? `font-family: '${bodyFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;` : ''}
+      ${bodyColor ? `color: ${bodyColor} !important;` : ''}
     }
     .jeminai-results .detail-menu-content {
       font-size: ${bodyFontSize}px !important;
@@ -1657,6 +1678,7 @@ ${fontFace ? fontFace : ''}
       line-height: 1.8 !important;
       margin-bottom: 0 !important;
       ${bodyFontFamilyName ? `font-family: '${bodyFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;` : ''}
+      ${bodyColor ? `color: ${bodyColor} !important;` : ''}
     }
     .jeminai-results .detail-menu-container {
       margin-bottom: 2em !important;
@@ -3234,7 +3256,8 @@ ${fontFace ? fontFace : ''}
                     style={{
                       fontSize: `${menuFontSize}px`,
                       fontWeight: menuFontBold ? 'bold' : 'normal',
-                      fontFamily: menuFontFamilyName ? `'${menuFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined
+                      fontFamily: menuFontFamilyName ? `'${menuFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined,
+                      color: menuColor || undefined
                     }}
                   >
                     {menu.title}
@@ -3273,7 +3296,8 @@ ${fontFace ? fontFace : ''}
                             style={{
                               fontSize: `${subtitleFontSize}px`,
                               fontWeight: subtitleFontBold ? 'bold' : 'normal',
-                              fontFamily: subtitleFontFamilyName ? `'${subtitleFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined
+                              fontFamily: subtitleFontFamilyName ? `'${subtitleFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined,
+                              color: subtitleColor || undefined
                             }}
                           >
                             {title}
@@ -3294,7 +3318,8 @@ ${fontFace ? fontFace : ''}
                               style={{
                                 fontSize: `${bodyFontSize}px`,
                                 fontWeight: bodyFontBold ? 'bold' : 'normal',
-                                fontFamily: bodyFontFamilyName ? `'${bodyFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined
+                                fontFamily: bodyFontFamilyName ? `'${bodyFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined,
+                                color: bodyColor || undefined
                               }}
                               dangerouslySetInnerHTML={{ __html: sub.contentHtml || '' }} 
                             />
@@ -3445,6 +3470,9 @@ ${fontFace ? fontFace : ''}
                           if (menuFontFamily) {
                             ;(menuTitle as HTMLElement).style.fontFamily = `'${menuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`
                           }
+                          if (menuColor) {
+                            ;(menuTitle as HTMLElement).style.color = menuColor
+                          }
                         }
                         
                         if (menuItem?.subtitles) {
@@ -3467,6 +3495,9 @@ ${fontFace ? fontFace : ''}
                               ;(subtitleTitle as HTMLElement).style.fontSize = `${subtitleSize}px`
                               if (subtitleFontFamily) {
                                 ;(subtitleTitle as HTMLElement).style.fontFamily = `'${subtitleFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`
+                              }
+                              if (subtitleColor) {
+                                ;(subtitleTitle as HTMLElement).style.color = subtitleColor
                               }
                             }
                             
@@ -3501,6 +3532,9 @@ ${fontFace ? fontFace : ''}
                                 ;(titleEl as HTMLElement).style.fontWeight = detailMenuBold ? 'bold' : 'normal'
                                 if (detailMenuFontFamily) {
                                   ;(titleEl as HTMLElement).style.fontFamily = `'${detailMenuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`
+                                }
+                                if (detailMenuColor) {
+                                  ;(titleEl as HTMLElement).style.color = detailMenuColor
                                 }
                               })
                               
@@ -3550,6 +3584,9 @@ ${fontFace ? fontFace : ''}
                                 if (bodyFontFamily) {
                                   ;(contentEl as HTMLElement).style.fontFamily = `'${bodyFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`
                                 }
+                                if (bodyColor) {
+                                  ;(contentEl as HTMLElement).style.color = bodyColor
+                                }
                               })
                               
                               // subtitle-content에 폰트 속성 적용
@@ -3566,6 +3603,9 @@ ${fontFace ? fontFace : ''}
                                 ;(subtitleContent as HTMLElement).style.fontWeight = bodyBold ? 'bold' : 'normal'
                                 if (bodyFontFamily) {
                                   ;(subtitleContent as HTMLElement).style.fontFamily = `'${bodyFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`
+                                }
+                                if (bodyColor) {
+                                  ;(subtitleContent as HTMLElement).style.color = bodyColor
                                 }
                               }
                               
