@@ -4,6 +4,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     let { text, speaker } = body
+
+
     if (!text) {
       return NextResponse.json(
         { error: '텍스트가 필요합니다.' },
@@ -15,6 +17,8 @@ export async function POST(req: NextRequest) {
     const selectedSpeaker = speaker || 'nara'
     const validSpeakers = ['nara', 'mijin', 'nhajun', 'ndain', 'jinho']
     const finalSpeaker = validSpeakers.includes(selectedSpeaker) ? selectedSpeaker : 'nara'
+    
+
     // 텍스트 정리: HTML 엔티티 디코딩 및 특수 문자 처리
     // HTML 엔티티 디코딩
     text = text
@@ -79,6 +83,104 @@ export async function POST(req: NextRequest) {
       
       text = truncated.trim()
       const originalByteLength = getByteLength(text) // 원본 바이트 길이 (잘리기 전)
+    }
+    
+    // 최종 길이 재확인 (안전장치)
+    if (text.length > MAX_TEXT_LENGTH) {
+      text = text.substring(0, MAX_TEXT_LENGTH).trim()
+    }
+    if (getByteLength(text) > MAX_BYTE_LENGTH) {
+      // 바이트 길이 기준으로 추가 자르기
+      let finalText = text
+      while (getByteLength(finalText) > MAX_BYTE_LENGTH && finalText.length > 0) {
+        finalText = finalText.substring(0, finalText.length - 10)
+      }
+      text = finalText.trim()
+    }
+
+    // 환경 변수에서 네이버 클라우드 플랫폼 인증 정보 가져오기
+    const clientId = process.env.NAVER_CLOVA_CLIENT_ID
+    const clientSecret = process.env.NAVER_CLOVA_CLIENT_SECRET
+
+    if (!clientId || !clientSecret) {
+      return NextResponse.json(
+        { error: 'Clova Voice API 인증 정보가 설정되지 않았습니다.' },
+        { status: 500 }
+      )
+    }
+
+    // API 키 형식 검증 (기본적인 형식 확인)
+    if (clientId.length < 10 || clientSecret.length < 10) {
+      return NextResponse.json(
+        { error: 'Clova Voice API 인증 정보 형식이 올바르지 않습니다.' },
+        { status: 500 }
+      )
+    }
+
+    // Clova Voice API 엔드포인트
+    const url = 'https://naveropenapi.apigw.ntruss.com/tts-premium/v1/tts'
+
+    // 헤더 설정
+    const headers = {
+      'X-NCP-APIGW-API-KEY-ID': clientId,
+      'X-NCP-APIGW-API-KEY': clientSecret,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    }
+
+    // 요청 데이터 (URLSearchParams가 자동으로 인코딩)
+    const params = new URLSearchParams()
+    params.append('speaker', finalSpeaker)
+    params.append('volume', '0')
+    params.append('speed', '0')
+    params.append('pitch', '0')
+    params.append('format', 'mp3')
+    params.append('text', text)
+
+    // API 호출
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: headers,
+      body: params.toString(),
+    })
+
+    if (!response.ok) {
+      let errorText = ''
+      try {
+        errorText = await response.text()
+        // 401 Unauthorized 에러인 경우 특별 처리
+        if (response.status === 401) {
+          return NextResponse.json(
+            { error: '음성 변환 실패: Authentication Failed (API 키가 올바르지 않거나 만료되었습니다. 환경 변수를 확인해주세요.)' },
+            { status: 401 }
+          )
+        }
+        
+        // JSON 형식의 에러 메시지 파싱 시도
+        try {
+          const errorJson = JSON.parse(errorText)
+          const errorMessage = errorJson.error?.message || errorJson.message || errorText
+          return NextResponse.json(
+            { error: `음성 변환 실패: ${errorMessage}` },
+            { status: response.status }
+          )
+        } catch {
+          // JSON 파싱 실패 시 원본 텍스트 사용
+          return NextResponse.json(
+            { error: `음성 변환 실패 (${response.status}): ${errorText || '알 수 없는 오류'}` },
+            { status: response.status }
+          )
+        }
+      } catch (e) {
+        return NextResponse.json(
+          { error: `음성 변환 실패: ${response.status}` },
+          { status: response.status }
+        )
+      }
+    }
+
+    // 오디오 데이터를 ArrayBuffer로 변환
+    const audioBuffer = await response.arrayBuffer()
+
     // MP3 오디오 데이터 반환
     return new NextResponse(audioBuffer, {
       headers: {

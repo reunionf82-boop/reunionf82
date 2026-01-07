@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
       // 결제 완료 처리
       // TODO: 여기서 AI 생성 프로세스를 시작하거나
       // 결제 완료 상태를 저장하여 사용자가 결과를 받을 수 있도록 처리
+      
       return NextResponse.json({
         success: true,
         message: '결제 완료 처리되었습니다.',
@@ -66,4 +67,24 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

@@ -37,7 +37,6 @@ export async function DELETE(request: NextRequest) {
         .eq('id', id)
 
       if (error) {
-
         return NextResponse.json(
           { success: false, error: '저장된 결과 삭제에 실패했습니다.', details: error.message },
           { status: 500 }
@@ -51,7 +50,6 @@ export async function DELETE(request: NextRequest) {
         .eq('id', idNum)
 
       if (error) {
-
         return NextResponse.json(
           { success: false, error: '저장된 결과 삭제에 실패했습니다.', details: error.message },
           { status: 500 }
@@ -73,7 +71,6 @@ export async function DELETE(request: NextRequest) {
       }
     )
   } catch (error: any) {
-
     return NextResponse.json(
       { success: false, error: '서버 오류가 발생했습니다.', details: error.message },
       { status: 500 }

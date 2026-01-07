@@ -13,8 +13,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const contentId = searchParams.get('id')
-  const duplicateId = searchParams.get('duplicate') // 복제??컨텐�?ID
-  const speakerParam = searchParams.get('speaker') // URL?�서 ?�자 ?�라미터 가?�오�?  
+  const duplicateId = searchParams.get('duplicate') // 복제할 컨텐츠 ID
+  const speakerParam = searchParams.get('speaker') // URL에서 화자 파라미터 가져오기
+  
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -37,14 +38,19 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     detailMenuFontBold: false,
     bodyFontSize: '11',
     bodyFontBold: false,
-    fontFace: '', // ?�위 ?�환?�을 ?�해 ?��? (?�용 ????
-    menuFontFace: '', // ?�메뉴 ?�폰??    subtitleFontFace: '', // ?�메???�폰??    detailMenuFontFace: '', // ?�세메뉴 ?�폰??    bodyFontFace: '', // 본문 ?�폰??    menuColor: '', // ?�메뉴 컬러
-    subtitleColor: '', // ?�메??컬러
-    detailMenuColor: '', // ?�세메뉴 컬러
+    fontFace: '', // 하위 호환성을 위해 유지 (사용 안 함)
+    menuFontFace: '', // 대메뉴 웹폰트
+    subtitleFontFace: '', // 소메뉴 웹폰트
+    detailMenuFontFace: '', // 상세메뉴 웹폰트
+    bodyFontFace: '', // 본문 웹폰트
+    menuColor: '', // 대메뉴 컬러
+    subtitleColor: '', // 소메뉴 컬러
+    detailMenuColor: '', // 상세메뉴 컬러
     bodyColor: '', // 본문 컬러
-    ttsSpeaker: speakerParam || 'nara', // URL ?�라미터 ?�는 기본�? nara
-    previewThumbnails: ['', '', ''], // ?�회?�품 미리보기 ?�네??3�?    bookCoverThumbnail: '', // 북커�??�네??(�?번째 ?�?�목 ??
-    endingBookCoverThumbnail: '', // ?�딩북커�??�네??(마�?�??�?�목 �?
+    ttsSpeaker: speakerParam || 'nara', // URL 파라미터 또는 기본값: nara
+    previewThumbnails: ['', '', ''], // 재회상품 미리보기 썸네일 3개
+    bookCoverThumbnail: '', // 북커버 썸네일 (첫 번째 대제목 전)
+    endingBookCoverThumbnail: '', // 엔딩북커버 썸네일 (마지막 대제목 밑)
   })
   const [menuFields, setMenuFields] = useState<Array<{ 
     id: number; 
@@ -88,33 +94,33 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     detailMenus: '',
     tools: ''
   })
-  const [showIntegrityCheckResult, setShowIntegrityCheckResult] = useState(false) // 무결??체크 결과 ?�업
+  const [showIntegrityCheckResult, setShowIntegrityCheckResult] = useState(false) // 무결성 체크 결과 팝업
   const [integrityCheckResult, setIntegrityCheckResult] = useState<{
     isValid: boolean
     errors: string[]
     message: string
-  } | null>(null) // 무결??체크 결과
-  const [showPreview, setShowPreview] = useState(false) // 미리보기 ?�업
+  } | null>(null) // 무결성 체크 결과
+  const [showPreview, setShowPreview] = useState(false) // 미리보기 팝업
   
-  // ?�폰???�업 ?�태
+  // 웹폰트 팝업 상태
   const [showMenuFontPopup, setShowMenuFontPopup] = useState(false)
   const [showSubtitleFontPopup, setShowSubtitleFontPopup] = useState(false)
   const [showDetailMenuFontPopup, setShowDetailMenuFontPopup] = useState(false)
   const [showBodyFontPopup, setShowBodyFontPopup] = useState(false)
   
-  // ?�폰???�시 ?�력�?(?�업?�서 ?�집)
+  // 웹폰트 임시 입력값 (팝업에서 편집)
   const [tempMenuFontFace, setTempMenuFontFace] = useState('')
   const [tempSubtitleFontFace, setTempSubtitleFontFace] = useState('')
   const [tempDetailMenuFontFace, setTempDetailMenuFontFace] = useState('')
   const [tempBodyFontFace, setTempBodyFontFace] = useState('')
   
-  // 컬러 ?�업 ?�태
+  // 컬러 팝업 상태
   const [showMenuColorPopup, setShowMenuColorPopup] = useState(false)
   const [showSubtitleColorPopup, setShowSubtitleColorPopup] = useState(false)
   const [showDetailMenuColorPopup, setShowDetailMenuColorPopup] = useState(false)
   const [showBodyColorPopup, setShowBodyColorPopup] = useState(false)
 
-  // 초기 ?�이??로드 (?�정 모드 ?�는 복제 모드)
+  // 초기 데이터 로드 (수정 모드 또는 복제 모드)
   useEffect(() => {
     if (contentId) {
       loadContent(parseInt(contentId))
@@ -123,10 +129,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     }
   }, [contentId, duplicateId])
 
-  // 변�?감�?
+  // 변경 감지
   useEffect(() => {
     if (initialData) {
-      // ?�재 ?�태�?initialData?� 같�? ?�식?�로 변??      const allMenuItems = [
+      // 현재 상태를 initialData와 같은 형식으로 변환
+      const allMenuItems = [
         ...(firstMenuField.value || firstMenuField.thumbnail ? [firstMenuField] : []),
         ...menuFields
       ]
@@ -165,7 +172,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         detail_menu_font_bold: formData.detailMenuFontBold || false,
         body_font_size: parseInt(formData.bodyFontSize) || 11,
         body_font_bold: formData.bodyFontBold || false,
-        font_face: formData.fontFace || '', // ?�위 ?�환??        menu_font_face: formData.menuFontFace || '',
+        font_face: formData.fontFace || '', // 하위 호환성
+        menu_font_face: formData.menuFontFace || '',
         subtitle_font_face: formData.subtitleFontFace || '',
         detail_menu_font_face: formData.detailMenuFontFace || '',
         body_font_face: formData.bodyFontFace || '',
@@ -186,7 +194,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         ending_book_cover_thumbnail: formData.endingBookCoverThumbnail || '',
       }
       
-      // initialData???�규??(menu_items 배열 처리)
+      // initialData도 정규화 (menu_items 배열 처리)
       const normalizedInitial = {
         role_prompt: initialData.role_prompt || '',
         restrictions: initialData.restrictions || '',
@@ -226,14 +234,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         ending_book_cover_thumbnail: initialData.ending_book_cover_thumbnail || '',
       }
       
-      // menu_items 배열 ?�규??(id ?�거?�고 value, thumbnail, subtitles 비교)
+      // menu_items 배열 정규화 (id 제거하고 value, thumbnail, subtitles 비교)
       const normalizeMenuItems = (items: any[]) => {
         return items.map((item: any) => ({
           value: item.value || '',
           thumbnail: item.thumbnail || '',
           subtitles: item.subtitles || []
         })).sort((a, b) => {
-          // value?� thumbnail??조합?�서 ?�렬 (?��???비교�??�해)
+          // value와 thumbnail을 조합해서 정렬 (일관된 비교를 위해)
           const aKey = `${a.value}|${a.thumbnail}`
           const bKey = `${b.value}|${b.thumbnail}`
           return aKey.localeCompare(bKey)
@@ -254,7 +262,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       
       setHasChanges(current !== initial)
     } else {
-      // ?�로 ?�성?�는 경우: ?�드??값이 ?�으�?변경사???�음
+      // 새로 생성하는 경우: 필드에 값이 있으면 변경사항 있음
       const hasAnyValue = Boolean(
         formData.title || 
         formData.description || 
@@ -282,7 +290,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const loadContent = async (id: number) => {
     try {
       const data = await getContentById(id)
-
       setInitialData(data)
       setFormData({
         title: data.role_prompt || '',
@@ -306,25 +313,29 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         detailMenuFontBold: data.detail_menu_font_bold || false,
         bodyFontSize: String(data.body_font_size || '11'),
         bodyFontBold: data.body_font_bold || false,
-        fontFace: data.font_face || '', // ?�위 ?�환??        menuFontFace: data.menu_font_face || data.font_face || '', // ?�위 ?�환??        subtitleFontFace: data.subtitle_font_face || data.font_face || '', // ?�위 ?�환??        detailMenuFontFace: data.detail_menu_font_face || data.font_face || '', // ?�위 ?�환??        bodyFontFace: data.body_font_face || data.font_face || '', // ?�위 ?�환??        menuColor: data.menu_color || '',
+        fontFace: data.font_face || '', // 하위 호환성
+        menuFontFace: data.menu_font_face || data.font_face || '', // 하위 호환성
+        subtitleFontFace: data.subtitle_font_face || data.font_face || '', // 하위 호환성
+        detailMenuFontFace: data.detail_menu_font_face || data.font_face || '', // 하위 호환성
+        bodyFontFace: data.body_font_face || data.font_face || '', // 하위 호환성
+        menuColor: data.menu_color || '',
         subtitleColor: data.subtitle_color || '',
         detailMenuColor: data.detail_menu_color || '',
         bodyColor: data.body_color || '',
         ttsSpeaker: data.tts_speaker || 'nara',
         previewThumbnails: (() => {
           let thumbnails = data.preview_thumbnails
-          // 문자?�인 경우 ?�싱
+          // 문자열인 경우 파싱
           if (typeof thumbnails === 'string') {
             try {
               thumbnails = JSON.parse(thumbnails)
             } catch (e) {
-
               thumbnails = []
             }
           }
-          // 배열???�니거나 길이가 3???�니�?기본�??�용
+          // 배열이 아니거나 길이가 3이 아니면 기본값 사용
           if (!Array.isArray(thumbnails) || thumbnails.length !== 3) {
-            // 배열?��?�?길이가 ?�르�?3개로 맞춤
+            // 배열이지만 길이가 다르면 3개로 맞춤
             if (Array.isArray(thumbnails)) {
               while (thumbnails.length < 3) {
                 thumbnails.push('')
@@ -334,19 +345,18 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               thumbnails = ['', '', '']
             }
           }
-
           return thumbnails
         })(),
         bookCoverThumbnail: data.book_cover_thumbnail || '',
         endingBookCoverThumbnail: data.ending_book_cover_thumbnail || '',
       })
-
-      // 기존 ?�이?��? ??구조�?변??      if (data.menu_items && data.menu_items.length > 0) {
-        // menu_items??subtitles가 ?�는지 ?�인 (??구조)
+      // 기존 데이터를 새 구조로 변환
+      if (data.menu_items && data.menu_items.length > 0) {
+        // menu_items에 subtitles가 있는지 확인 (새 구조)
         const hasSubtitlesInMenuItems = data.menu_items.some((item: any) => item.subtitles && Array.isArray(item.subtitles))
         
         if (hasSubtitlesInMenuItems) {
-          // ??구조: menu_items??subtitles가 ?�함?�어 ?�음
+          // 새 구조: menu_items에 subtitles가 포함되어 있음
           const firstItem = data.menu_items[0]
           const firstMenuSubtitles = firstItem.subtitles && firstItem.subtitles.length > 0 
             ? firstItem.subtitles.map((s: any, idx: number) => {
@@ -369,13 +379,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           setFirstMenuField({
             value: firstMenuValue,
             thumbnail: firstItem.thumbnail || '',
-            // ?�메뉴??값이 ?�는???�메?��? ?�으�??�폴???�메??1�?추�?
+            // 대메뉴에 값이 있는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
             subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
               ? [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
               : firstMenuSubtitles
           })
           
-          // ?�머지 메뉴 ??��??          setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
+          // 나머지 메뉴 항목들
+          setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
             const menuSubtitles = item.subtitles && item.subtitles.length > 0
               ? item.subtitles.map((s: any, subIdx: number) => {
                   return {
@@ -397,43 +408,44 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               id: item.id || Date.now() + idx + 1000,
               value: menuValue,
               thumbnail: item.thumbnail || '',
-              // ?�메뉴??값이 ?�는???�메?��? ?�으�??�폴???�메??1�?추�?
+              // 대메뉴에 값이 있는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
               subtitles: menuValue.trim().length > 0 && menuSubtitles.length === 0
                 ? [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '' }]
                 : menuSubtitles
             }
           }))
         } else {
-          // 기존 구조: menu_subtitle�?interpretation_tool???�싱 (?�위 ?�환??
+          // 기존 구조: menu_subtitle과 interpretation_tool을 파싱 (하위 호환성)
           const menuSubtitles = data.menu_subtitle ? data.menu_subtitle.split('\n').filter((s: string) => s.trim()) : []
           const interpretationTools = data.interpretation_tool ? data.interpretation_tool.split('\n').filter((s: string) => s.trim()) : []
           
-          // �?메뉴 ??��???�제�??�당 (기본?�으�?�?번째 메뉴??모든 ?�제�??�당)
+          // 각 메뉴 항목에 소제목 할당 (기본적으로 첫 번째 메뉴에 모든 소제목 할당)
           const firstMenuSubtitles = menuSubtitles.map((subtitle: string, index: number) => ({
             id: Date.now() + index,
             subtitle: subtitle.trim(),
             interpretation_tool: interpretationTools[index] || interpretationTools[0] || '',
-            thumbnail: '', // 기존 ?�이?�에???�제�??�네?�이 ?�음
-            detailMenus: [] // 기존 ?�이?�에???�세메뉴가 ?�음
+            thumbnail: '', // 기존 데이터에는 소제목 썸네일이 없음
+            detailMenus: [] // 기존 데이터에는 상세메뉴가 없음
           }))
           
           const firstMenuValue = data.menu_items[0].value || ''
         setFirstMenuField({
             value: firstMenuValue,
           thumbnail: data.menu_items[0].thumbnail || '',
-            // ?�메뉴??값이 ?�는???�메?��? ?�으�??�폴???�메??1�?추�?
+            // 대메뉴에 값이 있는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
             subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
               ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
               : (firstMenuSubtitles.length > 0 ? firstMenuSubtitles : [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }])
           })
           
-          // ?�머지 메뉴 ??��??          setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
+          // 나머지 메뉴 항목들
+          setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
             const menuValue = item.value || ''
             return {
             id: item.id || Date.now() + idx + 1000,
               value: menuValue,
             thumbnail: item.thumbnail || '',
-              // ?�메뉴??값이 ?�으�??�폴???�메??1�?추�?
+              // 대메뉴에 값이 있으면 디폴트 소메뉴 1개 추가
               subtitles: menuValue.trim().length > 0
                 ? [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '', detailMenus: [] }]
                 : []
@@ -441,22 +453,22 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           }))
         }
       } else {
-        // 메뉴 ??��???�으�?기본�?        setFirstMenuField({ value: '', thumbnail: '', subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }] })
+        // 메뉴 항목이 없으면 기본값
+        setFirstMenuField({ value: '', thumbnail: '', subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }] })
         setMenuFields([])
       }
     } catch (error) {
-
     }
   }
 
-  // 복제�??�한 컨텐�?로드 (ID ?�거?�고 content_name??"복사�? 추�?)
+  // 복제를 위한 컨텐츠 로드 (ID 제거하고 content_name에 "복사본" 추가)
   const loadContentForDuplicate = async (id: number) => {
     try {
       const data = await getContentById(id)
-      setInitialData(null) // 복제 모드?��?�?initialData�?null�??�정 (??컨텐츠로 ?�식)
+      setInitialData(null) // 복제 모드이므로 initialData를 null로 설정 (새 컨텐츠로 인식)
       
-      // content_name??"복사�? 추�?
-      const duplicatedContentName = data.content_name ? `${data.content_name} (복사�?` : '??컨텐�?(복사�?'
+      // content_name에 "복사본" 추가
+      const duplicatedContentName = data.content_name ? `${data.content_name} (복사본)` : '새 컨텐츠 (복사본)'
       
       setFormData({
         title: data.role_prompt || '',
@@ -480,7 +492,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         detailMenuFontBold: data.detail_menu_font_bold || false,
         bodyFontSize: String(data.body_font_size || '11'),
         bodyFontBold: data.body_font_bold || false,
-        fontFace: data.font_face || '', // ?�위 ?�환??        menuFontFace: data.menu_font_face || data.font_face || '', // ?�위 ?�환??        subtitleFontFace: data.subtitle_font_face || data.font_face || '', // ?�위 ?�환??        detailMenuFontFace: data.detail_menu_font_face || data.font_face || '', // ?�위 ?�환??        bodyFontFace: data.body_font_face || data.font_face || '', // ?�위 ?�환??        menuColor: data.menu_color || '',
+        fontFace: data.font_face || '', // 하위 호환성
+        menuFontFace: data.menu_font_face || data.font_face || '', // 하위 호환성
+        subtitleFontFace: data.subtitle_font_face || data.font_face || '', // 하위 호환성
+        detailMenuFontFace: data.detail_menu_font_face || data.font_face || '', // 하위 호환성
+        bodyFontFace: data.body_font_face || data.font_face || '', // 하위 호환성
+        menuColor: data.menu_color || '',
         subtitleColor: data.subtitle_color || '',
         detailMenuColor: data.detail_menu_color || '',
         bodyColor: data.body_color || '',
@@ -491,7 +508,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             try {
               thumbnails = JSON.parse(thumbnails)
             } catch (e) {
-
               thumbnails = []
             }
           }
@@ -511,12 +527,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         endingBookCoverThumbnail: data.ending_book_cover_thumbnail || '',
       })
       
-      // 기존 ?�이?��? ??구조�?변??(loadContent?� ?�일??로직)
+      // 기존 데이터를 새 구조로 변환 (loadContent와 동일한 로직)
       if (data.menu_items && data.menu_items.length > 0) {
         const hasSubtitlesInMenuItems = data.menu_items.some((item: any) => item.subtitles && Array.isArray(item.subtitles))
         
         if (hasSubtitlesInMenuItems) {
-          // ??구조
+          // 새 구조
           const firstItem = data.menu_items[0]
           const firstMenuSubtitles = firstItem.subtitles && firstItem.subtitles.length > 0 
             ? firstItem.subtitles.map((s: any, idx: number) => ({
@@ -607,8 +623,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         setMenuFields([])
       }
     } catch (error) {
-
-      alert('컨텐�?복제 로드???�패?�습?�다.')
+      alert('컨텐츠 복제 로드에 실패했습니다.')
     }
   }
 
@@ -616,13 +631,70 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     e.preventDefault()
     setSaving(true)
     try {
-
-      // 모든 메뉴 ??��?�서 ?�제목과 ?�석?�구 추출
+      // 모든 메뉴 항목에서 소제목과 해석도구 추출
       const allMenuItems = [
         ...(firstMenuField.value || firstMenuField.thumbnail ? [firstMenuField] : []),
         ...menuFields
       ]
-      // API ?�우?��? ?�해 ?�??(?�버 ?�이?�에???�비??�????�용)
+      
+      const allSubtitles: string[] = []
+      const allInterpretationTools: string[] = []
+      
+      allMenuItems.forEach(menuItem => {
+        menuItem.subtitles.forEach(subtitle => {
+          if (subtitle.subtitle.trim()) {
+            allSubtitles.push(subtitle.subtitle.trim())
+            allInterpretationTools.push(subtitle.interpretation_tool.trim() || '')
+          }
+        })
+      })
+      
+      const contentData: ContentData = {
+        ...(contentId ? { id: parseInt(contentId) } : {}),
+        role_prompt: formData.title,
+        restrictions: formData.description,
+        content_type: formData.isNew ? 'saju' : 'gonghap',
+        content_name: formData.contentName,
+        thumbnail_url: formData.thumbnailUrl,
+        price: formData.price,
+        summary: formData.summary,
+        introduction: formData.introduction,
+        recommendation: formData.recommendation,
+        menu_subtitle: allSubtitles.join('\n'),
+        interpretation_tool: allInterpretationTools.join('\n'),
+        subtitle_char_count: parseInt(formData.subtitleCharCount) || 500,
+        detail_menu_char_count: parseInt(formData.detailMenuCharCount) || 500,
+        menu_font_size: parseInt(formData.menuFontSize) || 16,
+        menu_font_bold: formData.menuFontBold || false,
+        subtitle_font_size: parseInt(formData.subtitleFontSize) || 14,
+        subtitle_font_bold: formData.subtitleFontBold || false,
+        detail_menu_font_size: parseInt(formData.detailMenuFontSize) || 12,
+        detail_menu_font_bold: formData.detailMenuFontBold || false,
+        body_font_size: parseInt(formData.bodyFontSize) || 11,
+        body_font_bold: formData.bodyFontBold || false,
+        font_face: formData.fontFace || '', // 하위 호환성
+        menu_font_face: formData.menuFontFace || '',
+        subtitle_font_face: formData.subtitleFontFace || '',
+        detail_menu_font_face: formData.detailMenuFontFace || '',
+        body_font_face: formData.bodyFontFace || '',
+        menu_color: formData.menuColor || '',
+        subtitle_color: formData.subtitleColor || '',
+        detail_menu_color: formData.detailMenuColor || '',
+        body_color: formData.bodyColor || '',
+        menu_items: allMenuItems.map((item, index) => ({
+          id: index,
+          value: item.value,
+          thumbnail: item.thumbnail,
+          subtitles: item.subtitles || []
+        })),
+        is_new: formData.showNew,
+        tts_speaker: formData.ttsSpeaker || 'nara',
+        preview_thumbnails: formData.previewThumbnails || ['', '', ''],
+        book_cover_thumbnail: formData.bookCoverThumbnail || '',
+        ending_book_cover_thumbnail: formData.endingBookCoverThumbnail || '',
+      }
+      
+      // API 라우트를 통해 저장 (서버 사이드에서 서비스 롤 키 사용)
       const response = await fetch('/api/admin/content/save', {
         method: 'POST',
         headers: {
@@ -631,14 +703,195 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         body: JSON.stringify(contentData),
       })
 
-      // Content-Type ?�인
+      // Content-Type 확인
       const contentType = response.headers.get('content-type')
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text()
+        throw new Error('서버 오류가 발생했습니다.')
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: '알 수 없는 오류가 발생했습니다.' }))
+        throw new Error(errorData.error || '저장에 실패했습니다.')
+      }
+
+      const result = await response.json()
+      
+      router.push('/admin')
+    } catch (error: any) {
+      const errorMessage = error?.message || '저장에 실패했습니다.'
+      alert(errorMessage)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCancel = () => {
+    if (hasChanges) {
+      setShowCancelWarning(true)
+    } else {
+      router.push('/admin')
+    }
+  }
+
+  const handleThumbnailClick = (field: 'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | 'bookCover' | 'endingBookCover' | number) => {
+    setCurrentThumbnailField(field)
+    setShowThumbnailModal(true)
+  }
+
+  // 숫자 접두사 형식 체크 함수
+  const checkNumberPrefix = (text: string, expectedPattern: 'menu' | 'subtitle' | 'detailMenu'): boolean => {
+    if (!text || !text.trim()) return false
+    
+    const trimmed = text.trim()
+    
+    if (expectedPattern === 'menu') {
+      // 대메뉴: "1. " 형식
+      return /^\d+\.\s/.test(trimmed)
+    } else if (expectedPattern === 'subtitle') {
+      // 소메뉴: "1-1. " 형식
+      return /^\d+-\d+\.\s/.test(trimmed)
+    } else if (expectedPattern === 'detailMenu') {
+      // 상세메뉴: "1-1-1. " 형식
+      return /^\d+-\d+-\d+\.\s/.test(trimmed)
+    }
+    
+    return false
+  }
+
+  // 무결성 체크 함수
+  const handleIntegrityCheck = () => {
+    const errors: string[] = []
+    const allMenuItems = [
+      ...(firstMenuField.value || firstMenuField.thumbnail ? [firstMenuField] : []),
+      ...menuFields
+    ]
+
+    // 대메뉴 체크
+    allMenuItems.forEach((menuItem, menuIndex) => {
+      const menuValue = menuItem.value?.trim() || ''
+      if (menuValue && !checkNumberPrefix(menuValue, 'menu')) {
+        errors.push(`대메뉴 ${menuIndex + 1}: "${menuValue}" - 숫자 접두사 형식이 올바르지 않습니다. (예: "1. ")`)
+      }
+
+      // 소메뉴 체크
+      if (menuItem.subtitles && Array.isArray(menuItem.subtitles)) {
+        menuItem.subtitles.forEach((subtitle, subIndex) => {
+          const subtitleText = subtitle.subtitle?.trim() || ''
+          if (subtitleText && !checkNumberPrefix(subtitleText, 'subtitle')) {
+            errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1}: "${subtitleText}" - 숫자 접두사 형식이 올바르지 않습니다. (예: "1-1. ")`)
+          }
+
+          // 해석도구 체크 (소메뉴와 일치해야 함)
+          const interpretationTool = subtitle.interpretation_tool?.trim() || ''
+          if (subtitleText && interpretationTool) {
+            // 소메뉴의 숫자 접두사 추출 (점이 있든 없든 추출 시도)
+            // "1-1. " 또는 "1-1 " 또는 "1-1" 형식 모두 지원
+            const subtitlePrefixMatch = subtitleText.match(/^(\d+-\d+)(?:\.\s|\.|\s|$)/)
+            const subtitlePrefix = subtitlePrefixMatch?.[1]
+            
+            // 해석도구 형식 체크 (올바른 형식인지 확인)
+            const isValidToolFormat = checkNumberPrefix(interpretationTool, 'subtitle')
+            if (!isValidToolFormat) {
+              errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1}: 해석도구의 숫자 접두사 형식이 올바르지 않습니다. (예: "1-1. ")`)
+            }
+            
+            // 해석도구의 숫자 접두사 추출 (점이 있든 없든 추출 시도)
+            const toolPrefixMatch = interpretationTool.match(/^(\d+-\d+)(?:\.\s|\.|\s|$)/)
+            const toolPrefix = toolPrefixMatch?.[1]
+            
+            // 소메뉴와 해석도구의 접두사 일치 여부 체크
+            if (subtitlePrefix && toolPrefix) {
+              if (subtitlePrefix !== toolPrefix) {
+                errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1}: 소메뉴("${subtitleText}")와 해석도구의 숫자 접두사가 일치하지 않습니다.`)
+              }
+            } else if (subtitlePrefix && !toolPrefix && isValidToolFormat) {
+              // 소메뉴에 접두사가 있고 해석도구 형식은 맞지만 접두사 추출 실패
+              errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1}: 해석도구의 숫자 접두사를 추출할 수 없습니다. (예: "1-1. ")`)
+            }
+          }
+
+          // 상세메뉴 체크
+          if (subtitle.detailMenus && Array.isArray(subtitle.detailMenus)) {
+            subtitle.detailMenus.forEach((detailMenu, detailIndex) => {
+              const detailMenuText = detailMenu.detailMenu?.trim() || ''
+              if (detailMenuText && !checkNumberPrefix(detailMenuText, 'detailMenu')) {
+                errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1} 상세메뉴 ${detailIndex + 1}: "${detailMenuText}" - 숫자 접두사 형식이 올바르지 않습니다. (예: "1-1-1. ")`)
+              }
+
+              // 상세메뉴 해석도구 체크
+              const detailInterpretationTool = detailMenu.interpretation_tool?.trim() || ''
+              if (detailMenuText && detailInterpretationTool) {
+                // 상세메뉴의 숫자 접두사 추출 (점이 있든 없든 추출 시도)
+                // "1-1-1. " 또는 "1-1-1 " 또는 "1-1-1" 형식 모두 지원
+                const detailPrefixMatch = detailMenuText.match(/^(\d+-\d+-\d+)(?:\.\s|\.|\s|$)/)
+                const detailPrefix = detailPrefixMatch?.[1]
+                
+                // 해석도구 형식 체크 (올바른 형식인지 확인)
+                const isValidDetailToolFormat = checkNumberPrefix(detailInterpretationTool, 'detailMenu')
+                if (!isValidDetailToolFormat) {
+                  errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1} 상세메뉴 ${detailIndex + 1}: 해석도구의 숫자 접두사 형식이 올바르지 않습니다. (예: "1-1-1. ")`)
+                }
+                
+                // 해석도구의 숫자 접두사 추출 (점이 있든 없든 추출 시도)
+                const detailToolPrefixMatch = detailInterpretationTool.match(/^(\d+-\d+-\d+)(?:\.\s|\.|\s|$)/)
+                const detailToolPrefix = detailToolPrefixMatch?.[1]
+                
+                // 상세메뉴와 해석도구의 접두사 일치 여부 체크
+                if (detailPrefix && detailToolPrefix) {
+                  if (detailPrefix !== detailToolPrefix) {
+                    errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1} 상세메뉴 ${detailIndex + 1}: 상세메뉴("${detailMenuText}")와 해석도구의 숫자 접두사가 일치하지 않습니다.`)
+                  }
+                } else if (detailPrefix && !detailToolPrefix && isValidDetailToolFormat) {
+                  // 상세메뉴에 접두사가 있고 해석도구 형식은 맞지만 접두사 추출 실패
+                  errors.push(`대메뉴 ${menuIndex + 1} 소메뉴 ${subIndex + 1} 상세메뉴 ${detailIndex + 1}: 해석도구의 숫자 접두사를 추출할 수 없습니다. (예: "1-1-1. ")`)
+                }
+              }
+            })
+          }
+        })
+      }
+    })
+
+    // 결과 설정
+    const isValid = errors.length === 0
+    setIntegrityCheckResult({
+      isValid,
+      errors,
+      message: isValid ? '모든 필드가 정상입니다.' : `${errors.length}개의 오류가 발견되었습니다.`
+    })
+    setShowIntegrityCheckResult(true)
+  }
+
+  // 쉬운 업로드 파싱 및 적용 함수
+  const parseAndApplyEasyUpload = () => {
+    try {
+      // 각 텍스트를 줄바꿈으로 분리
+      const menuLines = easyUploadData.menus.split('\n').filter(line => line.trim())
+      const subtitleLines = easyUploadData.subtitles.split('\n').filter(line => line.trim())
+      const subtitleToolLines = easyUploadData.subtitleTools.split('\n').filter(line => line.trim())
+      const detailMenuLines = easyUploadData.detailMenus.split('\n').filter(line => line.trim())
+      const toolLines = easyUploadData.tools.split('\n').filter(line => line.trim())
+      
+      // 첫번째 숫자 추출 함수
+      const extractFirstNumber = (text: string): number | null => {
+        const match = text.match(/^(\d+)/)
+        return match ? parseInt(match[1]) : null
+      }
+      
+      // 접두사 추출 함수 (예: "1-1-1" → "1-1", "1-2-1" → "1-2")
+      const extractSubtitlePrefix = (text: string): string | null => {
+        const match = text.match(/^(\d+-\d+)\./)
         return match ? match[1] : null
       }
       
-      // 그룹별로 ?�이???�리
+      // 상세메뉴 접두사 추출 함수 (예: "1-1-1" → "1-1")
+      const extractDetailMenuPrefix = (text: string): string | null => {
+        const match = text.match(/^(\d+-\d+)-\d+\./)
+        return match ? match[1] : null
+      }
+      
+      // 그룹별로 데이터 정리
       interface MenuGroup {
         menuNumber: number
         menuTitle: string
@@ -651,7 +904,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       
       const groups: { [key: number]: MenuGroup } = {}
       
-      // ?�?�목 ?�싱 (?�자 ?�함?�여 그�?�??�용)
+      // 대제목 파싱 (숫자 포함하여 그대로 사용)
       menuLines.forEach(line => {
         const menuNumber = extractFirstNumber(line)
         if (menuNumber) {
@@ -668,7 +921,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         }
       })
       
-      // ?�제�??�싱 (?�자 ?�함?�여 그�?�??�용)
+      // 소제목 파싱 (숫자 포함하여 그대로 사용)
       subtitleLines.forEach(line => {
         const menuNumber = extractFirstNumber(line)
         if (menuNumber) {
@@ -684,24 +937,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         }
       })
       
-      // ?�세메뉴 ?�싱 (?�두??"1-1"??같으�?같�? 그룹)
+      // 상세메뉴 파싱 (접두사 "1-1"이 같으면 같은 그룹)
       detailMenuLines.forEach(line => {
         const detailMenuPrefix = extractDetailMenuPrefix(line)
         if (detailMenuPrefix) {
-          // ?�두?�로 ?�메뉴 번호 추출 (?? "1-1" ??1)
+          // 접두사로 대메뉴 번호 추출 (예: "1-1" → 1)
           const menuNumber = parseInt(detailMenuPrefix.split('-')[0])
           if (groups[menuNumber]) {
-            // ?�당 ?�두?��? 가�??�제�?찾기
+            // 해당 접두사를 가진 소제목 찾기
             const subtitle = groups[menuNumber].subtitles.find(s => {
               const subPrefix = extractSubtitlePrefix(s.subtitle)
               return subPrefix === detailMenuPrefix
             })
             
             if (subtitle) {
-              // ?�당 ?�제목에 ?�세메뉴 추�?
+              // 해당 소제목에 상세메뉴 추가
               subtitle.detailMenus.push({ detailMenu: line.trim(), interpretation_tool: '' })
             } else {
-              // ?�두?��? ?�치?�는 ?�제목이 ?�으�?마�?�??�제목에 추�?
+              // 접두사가 일치하는 소제목이 없으면 마지막 소제목에 추가
               if (groups[menuNumber].subtitles.length > 0) {
                 groups[menuNumber].subtitles[groups[menuNumber].subtitles.length - 1].detailMenus.push({ detailMenu: line.trim(), interpretation_tool: '' })
               }
@@ -710,26 +963,27 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         }
       })
       
-      // ?�메???�석?�구 ?�싱 (?�제목과 ?�서?��?매칭, ?�자 ?�함?�여 그�?�??�용)
+      // 소메뉴 해석도구 파싱 (소제목과 순서대로 매칭, 숫자 포함하여 그대로 사용)
       subtitleToolLines.forEach((line, toolIndex) => {
         const menuNumber = extractFirstNumber(line)
         if (menuNumber && groups[menuNumber]) {
-          // ?�석?�구??그�?�??�용 (?�자 ?�함)
+          // 해석도구는 그대로 사용 (숫자 포함)
           const toolText = line.trim()
           
-          // ?�당 메뉴???�석?�구�??�터�?          const sameMenuToolLines = subtitleToolLines.filter(l => extractFirstNumber(l) === menuNumber)
+          // 해당 메뉴의 해석도구만 필터링
+          const sameMenuToolLines = subtitleToolLines.filter(l => extractFirstNumber(l) === menuNumber)
           const toolIndexInMenu = sameMenuToolLines.indexOf(line)
           
-          // 같�? ?�덱?�의 ?�제목에 ?�석?�구 ?�당
+          // 같은 인덱스의 소제목에 해석도구 할당
           if (groups[menuNumber].subtitles[toolIndexInMenu]) {
             groups[menuNumber].subtitles[toolIndexInMenu].tool = toolText
           }
         }
       })
       
-      // ?�세메뉴 ?�석?�구 ?�싱 (?? "1-1-1. ?�석?�구 ?�용" ???�세메뉴 "1-1-1"???�당)
+      // 상세메뉴 해석도구 파싱 (예: "1-1-1. 해석도구 내용" → 상세메뉴 "1-1-1"에 할당)
       toolLines.forEach(line => {
-        // ?�세메뉴 ?�두??추출 (?? "1-1-1" ??"1-1-1")
+        // 상세메뉴 접두사 추출 (예: "1-1-1" → "1-1-1")
         const detailMenuMatch = line.match(/^(\d+-\d+-\d+)\./)
         if (detailMenuMatch) {
           const detailMenuPrefix = detailMenuMatch[1] // "1-1-1"
@@ -737,7 +991,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           const menuNumber = parseInt(detailMenuNumber)
           
           if (groups[menuNumber]) {
-            // ?�당 ?�두?��? 가�??�제�?찾기 (?? "1-1-1" ??"1-1")
+            // 해당 접두사를 가진 소제목 찾기 (예: "1-1-1" → "1-1")
             const subtitlePrefix = detailMenuPrefix.substring(0, detailMenuPrefix.lastIndexOf('-')) // "1-1"
             const subtitle = groups[menuNumber].subtitles.find(s => {
               const subPrefix = extractSubtitlePrefix(s.subtitle)
@@ -745,17 +999,17 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             })
             
             if (subtitle) {
-              // ?�당 ?�제목의 ?�세메뉴 중에???�두?��? ?�치?�는 ?�세메뉴 찾기
+              // 해당 소제목의 상세메뉴 중에서 접두사가 일치하는 상세메뉴 찾기
               const detailMenu = subtitle.detailMenus.find(dm => {
                 const dmPrefix = extractDetailMenuPrefix(dm.detailMenu)
                 return dmPrefix === subtitlePrefix && dm.detailMenu.startsWith(detailMenuPrefix)
               })
               
               if (detailMenu) {
-                // ?�세메뉴 ?�석?�구 ?�당
+                // 상세메뉴 해석도구 할당
                 detailMenu.interpretation_tool = line.trim()
               } else {
-                // ?�치?�는 ?�세메뉴가 ?�으�?마�?�??�세메뉴???�당
+                // 일치하는 상세메뉴가 없으면 마지막 상세메뉴에 할당
                 if (subtitle.detailMenus.length > 0) {
                   subtitle.detailMenus[subtitle.detailMenus.length - 1].interpretation_tool = line.trim()
                 }
@@ -765,35 +1019,35 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         }
       })
       
-      // 그룹 번호 ?�서?��??�렬
+      // 그룹 번호 순서대로 정렬
       const sortedGroups = Object.values(groups).sort((a, b) => a.menuNumber - b.menuNumber)
       
       if (sortedGroups.length === 0) {
-        alert('?�싱???�이?��? ?�습?�다. ?�식???�인?�주?�요.')
+        alert('파싱할 데이터가 없습니다. 형식을 확인해주세요.')
         return
       }
       
-      // ?�자 ?�두??추출 ?�수 (?? "1. " ??"1.", "1-1. " ??"1-1.")
+      // 숫자 접두사 추출 함수 (예: "1. " → "1.", "1-1. " → "1-1.")
       const extractNumberPrefix = (text: string): string | null => {
         const match = text.match(/^(\d+(?:-\d+)?\.)/)
         return match ? match[1] : null
       }
       
-      // �?번째 그룹?� firstMenuField?? ?�머지??menuFields??추�?
+      // 첫 번째 그룹은 firstMenuField에, 나머지는 menuFields에 추가
       const firstGroup = sortedGroups[0]
       const remainingGroups = sortedGroups.slice(1)
       
-      // firstMenuField ?�데?�트 (?�네?��? 기존 �??��?, ?�제�??�네?�도 기존 �??��?)
+      // firstMenuField 업데이트 (썸네일은 기존 것 유지, 소제목 썸네일도 기존 것 유지)
       const firstMenuPrefix = extractNumberPrefix(firstGroup.menuTitle)
       const existingFirstMenu = firstMenuPrefix 
         ? (extractNumberPrefix(firstMenuField.value) === firstMenuPrefix ? firstMenuField : null)
-        : firstMenuField // ?�두?��? ?�으�?기존 firstMenuField ?��?
+        : firstMenuField // 접두사가 없으면 기존 firstMenuField 유지
       
       setFirstMenuField({
         value: firstGroup.menuTitle,
-        thumbnail: existingFirstMenu?.thumbnail || '', // 기존 ?�네???��?
+        thumbnail: existingFirstMenu?.thumbnail || '', // 기존 썸네일 유지
         subtitles: firstGroup.subtitles.map((sub) => {
-          // ?�자 ?�두?�로 매칭
+          // 숫자 접두사로 매칭
           const subtitlePrefix = extractNumberPrefix(sub.subtitle)
           const existingSubtitle = subtitlePrefix 
             ? existingFirstMenu?.subtitles.find(
@@ -805,7 +1059,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             id: existingSubtitle?.id || Date.now() + Math.random(),
             subtitle: sub.subtitle,
             interpretation_tool: sub.tool,
-            thumbnail: existingSubtitle?.thumbnail || undefined, // 기존 ?�네???��? (?�으�?undefined)
+            thumbnail: existingSubtitle?.thumbnail || undefined, // 기존 썸네일 유지 (없으면 undefined)
               detailMenus: sub.detailMenus.map((dm, idx) => ({
                 id: existingSubtitle?.detailMenus?.[idx]?.id || Date.now() + Math.random() + idx,
                 detailMenu: dm.detailMenu,
@@ -816,9 +1070,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         })
       })
       
-      // menuFields ?�데?�트 (기존 ?�네???��?)
+      // menuFields 업데이트 (기존 썸네일 유지)
       const newMenuFields = remainingGroups.map((group, groupIndex) => {
-        // ?�자 ?�두?�로 매칭
+        // 숫자 접두사로 매칭
         const menuPrefix = extractNumberPrefix(group.menuTitle)
         const existingMenu = menuPrefix
           ? menuFields.find(
@@ -829,9 +1083,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         return {
           id: existingMenu?.id || Date.now() + 1000 + groupIndex,
           value: group.menuTitle,
-          thumbnail: existingMenu?.thumbnail || undefined, // 기존 ?�네???��? (?�으�?undefined)
+          thumbnail: existingMenu?.thumbnail || undefined, // 기존 썸네일 유지 (없으면 undefined)
           subtitles: group.subtitles.map((sub, subIndex) => {
-            // ?�자 ?�두?�로 매칭
+            // 숫자 접두사로 매칭
             const subtitlePrefix = extractNumberPrefix(sub.subtitle)
             const existingSubtitle = subtitlePrefix && existingMenu
               ? existingMenu.subtitles.find(
@@ -843,7 +1097,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               id: existingSubtitle?.id || Date.now() + 2000 + groupIndex * 100 + subIndex,
               subtitle: sub.subtitle,
               interpretation_tool: sub.tool,
-              thumbnail: existingSubtitle?.thumbnail || undefined, // 기존 ?�네???��? (?�으�?undefined)
+              thumbnail: existingSubtitle?.thumbnail || undefined, // 기존 썸네일 유지 (없으면 undefined)
               detailMenus: sub.detailMenus.map((dm, idx) => ({
                 id: existingSubtitle?.detailMenus?.[idx]?.id || Date.now() + 3000 + groupIndex * 100 + subIndex * 10 + idx,
                 detailMenu: dm.detailMenu,
@@ -857,12 +1111,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       
       setMenuFields(newMenuFields)
       
-      // 모달 ?�기 (?�력 ?�드 ?�용?� ?��?)
+      // 모달 닫기 (입력 필드 내용은 유지)
       setShowEasyUploadModal(false)
-      // setEasyUploadData({ menus: '', subtitles: '', subtitleTools: '', detailMenus: '', tools: '' }) // 반영 ?�에???�력 ?�드 ?�용 ?��?
+      // setEasyUploadData({ menus: '', subtitles: '', subtitleTools: '', detailMenus: '', tools: '' }) // 반영 후에도 입력 필드 내용 유지
     } catch (error) {
-
-      alert('?�이???�싱 �??�류가 발생?�습?�다. ?�식???�인?�주?�요.')
+      alert('데이터 파싱 중 오류가 발생했습니다. 형식을 확인해주세요.')
     }
   }
 
@@ -883,45 +1136,946 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         return { ...prev, previewThumbnails: newThumbnails }
       })
     } else if (currentThumbnailField === 'bookCover') {
-
-      setFormData(prev => {
-
-        const updated = { ...prev, bookCoverThumbnail: url }
-
-        return updated
-      })
+      setFormData(prev => ({
+        ...prev,
+        bookCoverThumbnail: url
+      }))
     } else if (currentThumbnailField === 'endingBookCover') {
-
-      setFormData(prev => {
-
-        const updated = { ...prev, endingBookCoverThumbnail: url }
-
-        return updated
-      })
+      setFormData(prev => ({
+        ...prev,
+        endingBookCoverThumbnail: url
+      }))
     } else if (typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('subtitle-')) {
       const parts = currentThumbnailField.split('-')
-
       
       if (parts[1] === 'first') {
-        // subtitle-first-{subtitleId} ?�식
-        // ?�수?�이 ?�함??ID�?처리?�기 ?�해 parseFloat ?�용
+        // subtitle-first-{subtitleId} 형식
+        // 소수점이 포함된 ID를 처리하기 위해 parseFloat 사용
         const subtitleIdStr = parts[2]
         const subtitleId = parseFloat(subtitleIdStr)
-
         setFirstMenuField(prev => {
           const updated = {
           ...prev,
             subtitles: prev.subtitles.map(s => {
-              // ID�?문자?�로 변?�하??비교 (?�수???�함 ID ?�??
+              // ID를 문자열로 변환하여 비교 (소수점 포함 ID 대응)
               const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
               const targetId = parseFloat(subtitleIdStr)
               if (sId === targetId || String(s.id) === subtitleIdStr) {
-
                 return { ...s, thumbnail: url }
               }
               return s
             })
           }
+          return updated
+        })
+      } else if (parts[1] === 'menu') {
+        // subtitle-menu-{menuId}-{subtitleId} 형식
+        const menuIdStr = parts[2]
+        const subtitleIdStr = parts[3]
+        const menuId = Number(menuIdStr)
+        const subtitleId = Number(subtitleIdStr)
+        
+        setMenuFields(prevFields => {
+          const updated = prevFields.map(f => {
+            // 타입 안전한 비교 (소수점 포함 ID 대응)
+            const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+            const menuIdNum = parseFloat(menuIdStr)
+            if (fId === menuIdNum || String(f.id) === menuIdStr) {
+              const updatedSubtitles = f.subtitles.map(s => {
+                // 소수점 포함 ID 대응
+                const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+                const targetSubtitleId = parseFloat(subtitleIdStr)
+                if (sId === targetSubtitleId || String(s.id) === subtitleIdStr) {
+                  return { ...s, thumbnail: url }
+                }
+                return s
+              })
+              const updatedField = {
+                ...f,
+                subtitles: updatedSubtitles
+              }
+              return updatedField
+            }
+            return f
+          })
+          return updated
+        })
+      }
+    } else if (typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('detail-menu-')) {
+      // detail-menu-first-{subtitleId}-{detailMenuId} 또는 detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId} 형식
+      const parts = currentThumbnailField.split('-')
+      
+      if (parts[2] === 'first') {
+        // detail-menu-first-{subtitleId}-{detailMenuId} 형식
+        const subtitleIdStr = parts[3]
+        const detailMenuIdStr = parts[4]
+        const subtitleId = parseFloat(subtitleIdStr)
+        const detailMenuId = parseFloat(detailMenuIdStr)
+        
+        setFirstMenuField(prev => {
+          const updated = {
+            ...prev,
+            subtitles: prev.subtitles.map(s => {
+              const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+              const targetSubtitleId = parseFloat(subtitleIdStr)
+              if (sId === targetSubtitleId || String(s.id) === subtitleIdStr) {
+                return {
+                  ...s,
+                  detailMenus: s.detailMenus.map(dm => {
+                    const dmId = typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))
+                    const targetDetailMenuId = parseFloat(detailMenuIdStr)
+                    if (dmId === targetDetailMenuId || String(dm.id) === detailMenuIdStr) {
+                      return { ...dm, thumbnail: url }
+                    }
+                    return dm
+                  })
+                }
+              }
+              return s
+            })
+          }
+          return updated
+        })
+      } else if (parts[2] === 'menu') {
+        // detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId} 형식
+        const menuIdStr = parts[3]
+        const subtitleIdStr = parts[4]
+        const detailMenuIdStr = parts[5]
+        const menuId = parseFloat(menuIdStr)
+        const subtitleId = parseFloat(subtitleIdStr)
+        const detailMenuId = parseFloat(detailMenuIdStr)
+        
+        setMenuFields(prevFields => {
+          const updated = prevFields.map(f => {
+            const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+            const menuIdNum = parseFloat(menuIdStr)
+            if (fId === menuIdNum || String(f.id) === menuIdStr) {
+              const updatedSubtitles = f.subtitles.map(s => {
+                const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+                const targetSubtitleId = parseFloat(subtitleIdStr)
+                if (sId === targetSubtitleId || String(s.id) === subtitleIdStr) {
+                  return {
+                    ...s,
+                    detailMenus: s.detailMenus.map(dm => {
+                      const dmId = typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))
+                      const targetDetailMenuId = parseFloat(detailMenuIdStr)
+                      if (dmId === targetDetailMenuId || String(dm.id) === detailMenuIdStr) {
+                        return { ...dm, thumbnail: url }
+                      }
+                      return dm
+                    })
+                  }
+                }
+                return s
+              })
+              return {
+                ...f,
+                subtitles: updatedSubtitles
+              }
+            }
+            return f
+          })
+          return updated
+        })
+      }
+    }
+  }
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value, type } = e.target
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
+    }))
+  }
+
+  return (
+    <div className="bg-gray-800 rounded-lg p-6 shadow-xl">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* 상단: 2개의 넓은 입력 필드 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            역할 프롬프트
+          </label>
+          <textarea
+            name="title"
+            value={formData.title}
+            onChange={handleChange}
+            rows={3}
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y"
+            placeholder="역할 프롬프트를 입력하세요"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            주의사항 프롬프트
+          </label>
+          <textarea
+            name="description"
+            value={formData.description}
+            onChange={handleChange}
+            rows={3}
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y"
+            placeholder="주의사항 프롬프트를 입력하세요"
+            required
+          />
+        </div>
+
+        {/* 라디오 버튼 섹션 */}
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <input
+              type="radio"
+              id="isNew"
+              name="radioGroup"
+              checked={formData.isNew}
+              onChange={(e) => setFormData(prev => ({ ...prev, isNew: e.target.checked, isFree: false }))}
+              className="w-5 h-5 text-green-500 bg-gray-700 border-2 border-green-500 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-gray-800"
+            />
+            <label htmlFor="isNew" className="text-sm font-medium text-gray-300">
+              사주형
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="radio"
+              id="isFree"
+              name="radioGroup"
+              checked={formData.isFree}
+              onChange={(e) => setFormData(prev => ({ ...prev, isFree: e.target.checked, isNew: false }))}
+              className="w-5 h-5 text-green-500 bg-gray-700 border-2 border-green-500 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-gray-800"
+            />
+            <label htmlFor="isFree" className="text-sm font-medium text-gray-300">
+              궁합형
+            </label>
+          </div>
+          <div className="flex items-center gap-2 border border-red-500 rounded-lg px-4 py-2">
+            <input
+              type="checkbox"
+              id="showNew"
+              name="showNew"
+              checked={formData.showNew}
+              onChange={(e) => setFormData(prev => ({ ...prev, showNew: e.target.checked }))}
+              className="w-5 h-5 text-pink-500 bg-gray-700 border-2 border-pink-500 rounded focus:ring-2 focus:ring-pink-500 focus:ring-offset-2 focus:ring-offset-gray-800"
+            />
+            <label htmlFor="showNew" className="text-sm font-medium text-gray-300">
+              NEW
+            </label>
+          </div>
+        </div>
+
+        {/* 재회상품 미리보기 섹션 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            재회상품 미리보기
+          </label>
+          <div className="flex gap-2">
+            {[0, 1, 2].map((index) => (
+              <button
+                key={index}
+                type="button"
+                onClick={() => {
+                  setCurrentThumbnailField(`preview-${index}` as any)
+                  setShowThumbnailModal(true)
+                }}
+                className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-36 h-64 flex items-center justify-center"
+              >
+                {formData.previewThumbnails[index] ? (
+                  <img 
+                    src={formData.previewThumbnails[index]} 
+                    alt={`미리보기 ${index + 1}`} 
+                    className="absolute inset-0 w-full h-full object-contain"
+                  />
+                ) : (
+                  <span className="text-xs">+</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 컨텐츠명 섹션 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            컨텐츠명
+          </label>
+          <div className="flex gap-3">
+            <input
+              type="text"
+              name="contentName"
+              value={formData.contentName}
+              onChange={handleChange}
+              className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              placeholder="컨텐츠명을 입력하세요"
+            />
+            <button
+              type="button"
+              onClick={() => handleThumbnailClick('main')}
+              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-6 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
+            >
+              {formData.thumbnailUrl ? (
+                <img 
+                  src={formData.thumbnailUrl} 
+                  alt="썸네일" 
+                  className="absolute inset-0 w-full h-full object-contain"
+                />
+              ) : (
+                <span className="text-xs">썸네일</span>
+              )}
+            </button>
+          </div>
+          <div className="mt-3 text-sm text-gray-400 space-y-1">
+            <p>1. 썸네일을 16:9로 생성하세요</p>
+            <p>2. 썸네일을 포토스케이프에서 가로를 680 픽셀로 줄이고 jpg 저장품질을 100으로 저장하세요</p>
+            <p>3. <a href="https://compresspng.com/ko/" target="_blank" rel="noopener noreferrer" className="text-pink-400 hover:text-pink-300 underline">https://compresspng.com/ko/</a> 사이트에서 JPEG 탭을 선택하고 2번에서 저장된 파일을 드래그&드랍해서 파일용량을 최적화하세요</p>
+          </div>
+        </div>
+
+        {/* 가격 섹션 (컨텐츠명 밑으로 이동) */}
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            가격
+          </label>
+          <input
+            type="text"
+            name="price"
+            value={formData.price}
+            onChange={handleChange}
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+            placeholder="예: 22,000원"
+          />
+        </div>
+
+        {/* 요약 섹션 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            요약
+          </label>
+          <textarea
+            name="summary"
+            value={formData.summary}
+            onChange={handleChange}
+            rows={2}
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y"
+            placeholder="요약을 입력하세요"
+          />
+        </div>
+
+        {/* 추가 필드 섹션 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            소개
+          </label>
+          <textarea
+            name="introduction"
+            value={formData.introduction}
+            onChange={handleChange}
+            rows={8}
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y"
+            placeholder="소개를 입력하세요"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            추천
+          </label>
+          <textarea
+            name="recommendation"
+            value={formData.recommendation}
+            onChange={handleChange}
+            rows={5}
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y"
+            placeholder="추천을 입력하세요"
+          />
+        </div>
+
+        {/* 상품 메뉴 구성 섹션 */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-gray-300">
+            상품 메뉴 구성
+          </label>
+            <button
+              type="button"
+              onClick={() => setShowEasyUploadModal(true)}
+              className="bg-pink-600 hover:bg-pink-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 text-sm"
+            >
+              쉬운 업로드
+            </button>
+          </div>
+          
+          {/* 북커버 썸네일 (첫 번째 대제목 전) */}
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-gray-400 mb-2 text-center">
+              북커버 (첫 번째 대제목 전, 9:16 비율)
+            </label>
+            <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => handleThumbnailClick('bookCover')}
+              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center"
+              style={{ aspectRatio: '9/16' }}
+            >
+              {formData.bookCoverThumbnail ? (
+                <img 
+                  src={formData.bookCoverThumbnail} 
+                  alt="북커버 썸네일" 
+                  className="absolute inset-0 w-full h-full object-contain"
+                />
+              ) : (
+                <span className="text-xs text-center">북커버<br/>썸네일</span>
+              )}
+            </button>
+            </div>
+          </div>
+          
+          <div className="flex gap-3">
+            <input
+              type="text"
+              value={firstMenuField.value}
+              onChange={(e) => {
+                const newValue = e.target.value
+                setFirstMenuField(prev => {
+                  // 대메뉴에 값이 입력되었는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
+                  const hasValue = newValue.trim().length > 0
+                  const hasSubtitles = prev.subtitles && prev.subtitles.length > 0
+                  if (hasValue && !hasSubtitles) {
+                    return {
+                      ...prev,
+                      value: newValue,
+                      subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
+                    }
+                  }
+                  return { ...prev, value: newValue }
+                })
+              }}
+              className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              placeholder="상품 메뉴 구성을 입력하세요"
+            />
+            <button
+              type="button"
+              onClick={() => handleThumbnailClick('firstMenu')}
+              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden min-w-[85px] h-[48px] flex items-center justify-center"
+            >
+              {firstMenuField.thumbnail ? (
+                <img 
+                  src={firstMenuField.thumbnail} 
+                  alt="썸네일" 
+                  className="absolute inset-0 w-full h-full object-contain"
+                />
+              ) : (
+                <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMenuFields([...menuFields, { id: Date.now(), value: '', subtitles: [{ id: Date.now() + 1, subtitle: '', interpretation_tool: '', detailMenus: [] }] }])}
+              className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-xl w-12 h-12 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+            >
+              +
+            </button>
+          </div>
+          
+          {/* 첫 번째 메뉴 필드의 소제목들 */}
+          {(firstMenuField.value || (firstMenuField.subtitles && firstMenuField.subtitles.length > 0)) && (
+            <div className="mt-3 ml-4 border-l-2 border-gray-600 pl-4 space-y-3">
+              {(firstMenuField.subtitles && firstMenuField.subtitles.length > 0 ? firstMenuField.subtitles : [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]).map((subtitle, subIndex) => (
+                <div key={subtitle.id} className="space-y-2">
+                  <div className="flex gap-2 items-start">
+                    <textarea
+                    value={subtitle.subtitle}
+                    onChange={(e) => setFirstMenuField(prev => ({
+                      ...prev,
+                      subtitles: prev.subtitles.map(s => 
+                        s.id === subtitle.id ? { ...s, subtitle: e.target.value } : s
+                      )
+                    }))}
+                      className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
+                    placeholder="상품 메뉴 소제목"
+                      rows={1}
+                      style={{ minHeight: '36px' }}
+                  />
+                  <textarea
+                    value={subtitle.interpretation_tool}
+                    onChange={(e) => setFirstMenuField(prev => ({
+                      ...prev,
+                      subtitles: prev.subtitles.map(s => 
+                        s.id === subtitle.id ? { ...s, interpretation_tool: e.target.value } : s
+                      )
+                    }))}
+                    rows={1}
+                      className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
+                    placeholder="해석도구"
+                    style={{ minHeight: '36px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentThumbnailField(`subtitle-first-${subtitle.id}` as any)
+                      setShowThumbnailModal(true)
+                    }}
+                    className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                  >
+                      {subtitle.thumbnail && subtitle.thumbnail.trim() ? (
+                      <img 
+                        src={subtitle.thumbnail} 
+                        alt="썸네일" 
+                        className="absolute inset-0 w-full h-full object-contain"
+                          onError={(e) => {
+                            // 이미지 로드 실패 시 텍스트로 대체
+                            const target = e.target as HTMLImageElement
+                            target.style.display = 'none'
+                            const parent = target.parentElement
+                            if (parent && !parent.querySelector('span')) {
+                              const span = document.createElement('span')
+                              span.className = 'text-[10px] leading-tight whitespace-nowrap'
+                              span.textContent = '썸네일'
+                              parent.appendChild(span)
+                            }
+                          }}
+                      />
+                    ) : (
+                      <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                    )}
+                  </button>
+                  {subIndex === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setFirstMenuField(prev => ({
+                        ...prev,
+                          subtitles: [...prev.subtitles, { id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
+                      }))}
+                      className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                    >
+                      +
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSubtitleToDelete({ menuId: 'first', subtitleId: subtitle.id })
+                        setShowDeleteSubtitleConfirm(true)
+                      }}
+                        className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  {/* 상세메뉴 필드들 */}
+                  <div className="ml-4 border-l-2 border-gray-500 pl-4 space-y-2">
+                    {(subtitle.detailMenus && subtitle.detailMenus.length > 0 ? subtitle.detailMenus : []).map((detailMenu, detailIndex) => (
+                      <div key={detailMenu.id} className="flex gap-2 items-start">
+                        <textarea
+                          value={detailMenu.detailMenu}
+                          onChange={(e) => setFirstMenuField(prev => ({
+                            ...prev,
+                            subtitles: prev.subtitles.map(s => 
+                              s.id === subtitle.id ? {
+                                ...s,
+                                detailMenus: s.detailMenus.map(dm => 
+                                  dm.id === detailMenu.id ? { ...dm, detailMenu: e.target.value } : dm
+                                )
+                              } : s
+                            )
+                          }))}
+                          className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
+                          placeholder="상세메뉴"
+                          rows={1}
+                          style={{ minHeight: '36px' }}
+                        />
+                        <textarea
+                          value={detailMenu.interpretation_tool || ''}
+                          onChange={(e) => setFirstMenuField(prev => ({
+                            ...prev,
+                            subtitles: prev.subtitles.map(s => 
+                              s.id === subtitle.id ? {
+                                ...s,
+                                detailMenus: s.detailMenus.map(dm => 
+                                  dm.id === detailMenu.id ? { ...dm, interpretation_tool: e.target.value } : dm
+                                )
+                              } : s
+                            )
+                          }))}
+                          className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
+                          placeholder="상세메뉴 해석도구"
+                          rows={1}
+                          style={{ minHeight: '36px' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCurrentThumbnailField(`detail-menu-first-${subtitle.id}-${detailMenu.id}` as any)
+                            setShowThumbnailModal(true)
+                          }}
+                          className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                        >
+                          {detailMenu.thumbnail && detailMenu.thumbnail.trim() ? (
+                            <img 
+                              src={detailMenu.thumbnail} 
+                              alt="썸네일" 
+                              className="absolute inset-0 w-full h-full object-contain"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement
+                                target.style.display = 'none'
+                                const parent = target.parentElement
+                                if (parent && !parent.querySelector('span')) {
+                                  const span = document.createElement('span')
+                                  span.className = 'text-[10px] leading-tight whitespace-nowrap'
+                                  span.textContent = '썸네일'
+                                  parent.appendChild(span)
+                                }
+                              }}
+                            />
+                          ) : (
+                            <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                          )}
+                        </button>
+                        {detailIndex === 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setFirstMenuField(prev => ({
+                              ...prev,
+                              subtitles: prev.subtitles.map(s => 
+                                s.id === subtitle.id ? {
+                                  ...s,
+                                  detailMenus: [...s.detailMenus, { id: Date.now(), detailMenu: '', interpretation_tool: '', thumbnail: undefined }]
+                                } : s
+                              )
+                            }))}
+                            className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                          >
+                            +
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setFirstMenuField(prev => ({
+                              ...prev,
+                              subtitles: prev.subtitles.map(s => 
+                                s.id === subtitle.id ? {
+                                  ...s,
+                                  detailMenus: s.detailMenus.filter(dm => dm.id !== detailMenu.id)
+                                } : s
+                              )
+                            }))}
+                      className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                    >
+                      ×
+                    </button>
+                  )}
+                      </div>
+                    ))}
+                    {(!subtitle.detailMenus || subtitle.detailMenus.length === 0) && (
+                      <button
+                        type="button"
+                        onClick={() => setFirstMenuField(prev => ({
+                          ...prev,
+                          subtitles: prev.subtitles.map(s => 
+                            s.id === subtitle.id ? {
+                              ...s,
+                              detailMenus: [{ id: Date.now(), detailMenu: '', interpretation_tool: '', thumbnail: undefined }]
+                            } : s
+                          )
+                        }))}
+                        className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                      >
+                        +
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* 동적으로 생성된 메뉴 필드들 */}
+          {menuFields.map((field) => (
+            <div key={field.id} className="mt-3">
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={field.value}
+                  onChange={(e) => {
+                    const newValue = e.target.value
+                    setMenuFields(menuFields.map(f => {
+                      if (f.id === field.id) {
+                        // 대메뉴에 값이 입력되었는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
+                        const hasValue = newValue.trim().length > 0
+                        const hasSubtitles = f.subtitles && f.subtitles.length > 0
+                        if (hasValue && !hasSubtitles) {
+                          return {
+                            ...f,
+                            value: newValue,
+                            subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
+                          }
+                        }
+                        return { ...f, value: newValue }
+                      }
+                      return f
+                    }))
+                  }}
+                  className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                  placeholder="상품 메뉴 구성을 입력하세요"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleThumbnailClick(field.id)}
+                  className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-6 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
+                >
+                  {field.thumbnail ? (
+                    <img 
+                      src={field.thumbnail} 
+                      alt="썸네일" 
+                      className="absolute inset-0 w-full h-full object-contain"
+                    />
+                  ) : (
+                    <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuFieldToDelete(field.id)
+                    setShowDeleteMenuConfirm(true)
+                  }}
+                  className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-xl w-12 h-12 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                >
+                  ×
+                </button>
+              </div>
+              {/* 각 메뉴 필드의 소제목들 */}
+              {(field.value || (field.subtitles && field.subtitles.length > 0)) && (
+                <div className="mt-3 ml-4 border-l-2 border-gray-600 pl-4 space-y-3">
+                  {(field.subtitles && field.subtitles.length > 0 ? field.subtitles : [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]).map((subtitle, subIndex) => (
+                    <div key={subtitle.id} className="space-y-2">
+                      <div className="flex gap-2 items-start">
+                        <textarea
+                        value={subtitle.subtitle}
+                        onChange={(e) => setMenuFields(menuFields.map(f => 
+                          f.id === field.id ? {
+                            ...f,
+                            subtitles: f.subtitles.map(s => 
+                              s.id === subtitle.id ? { ...s, subtitle: e.target.value } : s
+                            )
+                          } : f
+                        ))}
+                          className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
+                        placeholder="상품 메뉴 소제목"
+                          rows={1}
+                          style={{ minHeight: '36px' }}
+                      />
+            <textarea
+                        value={subtitle.interpretation_tool}
+                        onChange={(e) => setMenuFields(menuFields.map(f => 
+                          f.id === field.id ? {
+                            ...f,
+                            subtitles: f.subtitles.map(s => 
+                              s.id === subtitle.id ? { ...s, interpretation_tool: e.target.value } : s
+                            )
+                          } : f
+                        ))}
+                        rows={1}
+                          className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
+                        placeholder="해석도구"
+                        style={{ minHeight: '36px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const fieldId = field.id
+                          const subtitleId = subtitle.id
+                          const fieldKey = `subtitle-menu-${fieldId}-${subtitleId}`
+                          setCurrentThumbnailField(fieldKey as any)
+                          setShowThumbnailModal(true)
+                        }}
+                        className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                      >
+                        {subtitle.thumbnail ? (
+                          <img 
+                            src={subtitle.thumbnail} 
+                            alt="썸네일" 
+                            className="absolute inset-0 w-full h-full object-contain"
+                          />
+                        ) : (
+                          <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                        )}
+                      </button>
+                      {subIndex === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setMenuFields(menuFields.map(f => 
+                            f.id === field.id ? {
+                              ...f,
+                                subtitles: [...f.subtitles, { id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
+                            } : f
+                          ))}
+                          className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                        >
+                          +
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSubtitleToDelete({ menuId: field.id, subtitleId: subtitle.id })
+                            setShowDeleteSubtitleConfirm(true)
+                          }}
+                          className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                        >
+                          ×
+                        </button>
+                      )}
+          </div>
+                      {/* 상세메뉴 필드들 */}
+                      <div className="ml-4 border-l-2 border-gray-500 pl-4 space-y-2">
+                        {(subtitle.detailMenus && subtitle.detailMenus.length > 0 ? subtitle.detailMenus : []).map((detailMenu, detailIndex) => (
+                          <div key={detailMenu.id} className="flex gap-2 items-start">
+                            <textarea
+                              value={detailMenu.detailMenu}
+                              onChange={(e) => setMenuFields(menuFields.map(f => 
+                                f.id === field.id ? {
+                                  ...f,
+                                  subtitles: f.subtitles.map(s => 
+                                    s.id === subtitle.id ? {
+                                      ...s,
+                                      detailMenus: s.detailMenus.map(dm => 
+                                        dm.id === detailMenu.id ? { ...dm, detailMenu: e.target.value } : dm
+                                      )
+                                    } : s
+                                  )
+                                } : f
+                              ))}
+                              className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
+                              placeholder="상세메뉴"
+                              rows={1}
+                              style={{ minHeight: '36px' }}
+                            />
+                            <textarea
+                              value={detailMenu.interpretation_tool || ''}
+                              onChange={(e) => setMenuFields(menuFields.map(f => 
+                                f.id === field.id ? {
+                                  ...f,
+                                  subtitles: f.subtitles.map(s => 
+                                    s.id === subtitle.id ? {
+                                      ...s,
+                                      detailMenus: s.detailMenus.map(dm => 
+                                        dm.id === detailMenu.id ? { ...dm, interpretation_tool: e.target.value } : dm
+                                      )
+                                    } : s
+                                  )
+                                } : f
+                              ))}
+                              className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm resize overflow-y-scroll"
+                              placeholder="상세메뉴 해석도구"
+                              rows={1}
+                              style={{ minHeight: '36px' }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const fieldId = field.id
+                                const subtitleId = subtitle.id
+                                const detailMenuId = detailMenu.id
+                                const fieldKey = `detail-menu-menu-${fieldId}-${subtitleId}-${detailMenuId}`
+                                setCurrentThumbnailField(fieldKey as any)
+                                setShowThumbnailModal(true)
+                              }}
+                              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                            >
+                              {detailMenu.thumbnail && detailMenu.thumbnail.trim() ? (
+                                <img 
+                                  src={detailMenu.thumbnail} 
+                                  alt="썸네일" 
+                                  className="absolute inset-0 w-full h-full object-contain"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement
+                                    target.style.display = 'none'
+                                    const parent = target.parentElement
+                                    if (parent && !parent.querySelector('span')) {
+                                      const span = document.createElement('span')
+                                      span.className = 'text-[10px] leading-tight whitespace-nowrap'
+                                      span.textContent = '썸네일'
+                                      parent.appendChild(span)
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                              )}
+                            </button>
+                            {detailIndex === 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => setMenuFields(menuFields.map(f => 
+                                  f.id === field.id ? {
+                                    ...f,
+                                    subtitles: f.subtitles.map(s => 
+                                      s.id === subtitle.id ? {
+                                        ...s,
+                                        detailMenus: [...s.detailMenus, { id: Date.now(), detailMenu: '', interpretation_tool: '', thumbnail: undefined }]
+                                      } : s
+                                    )
+                                  } : f
+                                ))}
+                                className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                              >
+                                +
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setMenuFields(menuFields.map(f => 
+                                  f.id === field.id ? {
+                                    ...f,
+                                    subtitles: f.subtitles.map(s => 
+                                      s.id === subtitle.id ? {
+                                        ...s,
+                                        detailMenus: s.detailMenus.filter(dm => dm.id !== detailMenu.id)
+                                      } : s
+                                    )
+                                  } : f
+                                ))}
+                                className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                              >
+                                ×
+                              </button>
+                            )}
+                </div>
+                        ))}
+                        {(!subtitle.detailMenus || subtitle.detailMenus.length === 0) && (
+                          <button
+                            type="button"
+                            onClick={() => setMenuFields(menuFields.map(f => 
+                              f.id === field.id ? {
+                                ...f,
+                                subtitles: f.subtitles.map(s => 
+                                  s.id === subtitle.id ? {
+                                    ...s,
+                                    detailMenus: [{ id: Date.now(), detailMenu: '', interpretation_tool: '' }]
+                                  } : s
+                                )
+                              } : f
+                            ))}
+                            className="bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 border border-gray-600"
+                          >
+                            +
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          
+          {/* 엔딩북커버 썸네일 (마지막 대제목 밑) */}
+          <div className="mt-4">
+            <label className="block text-xs font-medium text-gray-400 mb-2 text-center">
+              엔딩북커버 (마지막 대제목 밑, 9:16 비율)
             </label>
             <div className="flex justify-center">
             <button
@@ -933,22 +2087,22 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               {formData.endingBookCoverThumbnail ? (
                 <img 
                   src={formData.endingBookCoverThumbnail} 
-                  alt="?�딩북커�??�네?? 
+                  alt="엔딩북커버 썸네일" 
                   className="absolute inset-0 w-full h-full object-contain"
                 />
               ) : (
-                <span className="text-xs text-center">?�딩북커�?br/>?�네??/span>
+                <span className="text-xs text-center">엔딩북커버<br/>썸네일</span>
               )}
             </button>
             </div>
-            {/* 무결??체크 버튼 */}
+            {/* 무결성 체크 버튼 */}
             <div className="flex justify-end gap-2 mt-3">
               <button
                 type="button"
                 onClick={handleIntegrityCheck}
                 className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 text-sm"
               >
-                무결??체크
+                무결성 체크
               </button>
               <button
                 type="button"
@@ -962,16 +2116,17 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         </div>
 
 
-        {/* ?�트 ?�정 ?�션 */}
+        {/* 폰트 설정 섹션 */}
         <div className="border-t border-gray-600 pt-4 mt-4">
-          <h3 className="text-lg font-semibold text-gray-200 mb-4">?�트 ?�정</h3>
+          <h3 className="text-lg font-semibold text-gray-200 mb-4">폰트 설정</h3>
           
-          {/* ?�폰??CSS ?�력 - 4개로 분리 (2x2 배열, ?�업?�로 ?�력) */}
+          {/* 웹폰트 CSS 입력 - 4개로 분리 (2x2 배열, 팝업으로 입력) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            {/* ?�메뉴 ?�폰??*/}
+            {/* 대메뉴 웹폰트 */}
             <div className="flex items-center justify-between min-h-[28px]">
               <label className="block text-sm font-medium text-gray-300">
-                ?�메뉴 ?�폰??              </label>
+                대메뉴 웹폰트
+              </label>
               <div className="flex items-center gap-2">
                 {formData.menuFontFace && (
                   <div className="flex items-center gap-2">
@@ -987,7 +2142,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         color: formData.menuColor || '#fff'
                       }}
                     >
-                      ?�트 미리보기
+                      폰트 미리보기
                     </span>
                   </div>
                 )}
@@ -1005,17 +2160,18 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   type="button"
                   onClick={() => setShowMenuColorPopup(true)}
                   className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-lg font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
-                  title="컬러 ?�정"
+                  title="컬러 설정"
                 >
-                  ?��
+                  🎨
                 </button>
               </div>
             </div>
 
-            {/* ?�메???�폰??*/}
+            {/* 소메뉴 웹폰트 */}
             <div className="flex items-center justify-between min-h-[28px]">
               <label className="block text-sm font-medium text-gray-300">
-                ?�메???�폰??              </label>
+                소메뉴 웹폰트
+              </label>
               <div className="flex items-center gap-2">
                 {formData.subtitleFontFace && (
                   <div className="flex items-center gap-2">
@@ -1031,7 +2187,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         color: formData.subtitleColor || '#fff'
                       }}
                     >
-                      ?�트 미리보기
+                      폰트 미리보기
                     </span>
                   </div>
                 )}
@@ -1049,17 +2205,18 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   type="button"
                   onClick={() => setShowSubtitleColorPopup(true)}
                   className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-lg font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
-                  title="컬러 ?�정"
+                  title="컬러 설정"
                 >
-                  ?��
+                  🎨
                 </button>
               </div>
             </div>
 
-            {/* ?�세메뉴 ?�폰??*/}
+            {/* 상세메뉴 웹폰트 */}
             <div className="flex items-center justify-between min-h-[28px]">
               <label className="block text-sm font-medium text-gray-300">
-                ?�세메뉴 ?�폰??              </label>
+                상세메뉴 웹폰트
+              </label>
               <div className="flex items-center gap-2">
                 {formData.detailMenuFontFace && (
                   <div className="flex items-center gap-2">
@@ -1075,7 +2232,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         color: formData.detailMenuColor || '#fff'
                       }}
                     >
-                      ?�트 미리보기
+                      폰트 미리보기
                     </span>
                   </div>
                 )}
@@ -1093,17 +2250,18 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   type="button"
                   onClick={() => setShowDetailMenuColorPopup(true)}
                   className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-lg font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
-                  title="컬러 ?�정"
+                  title="컬러 설정"
                 >
-                  ?��
+                  🎨
                 </button>
               </div>
             </div>
 
-            {/* 본문 ?�폰??*/}
+            {/* 본문 웹폰트 */}
             <div className="flex items-center justify-between min-h-[28px]">
               <label className="block text-sm font-medium text-gray-300">
-                본문 ?�폰??              </label>
+                본문 웹폰트
+              </label>
               <div className="flex items-center gap-2">
                 {formData.bodyFontFace && (
                   <div className="flex items-center gap-2">
@@ -1119,7 +2277,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         color: formData.bodyColor || '#fff'
                       }}
                     >
-                      ?�트 미리보기
+                      폰트 미리보기
                     </span>
                   </div>
                 )}
@@ -1137,29 +2295,29 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   type="button"
                   onClick={() => setShowBodyColorPopup(true)}
                   className="text-pink-500 hover:text-pink-600 hover:bg-pink-500 hover:bg-opacity-10 text-lg font-bold w-8 h-8 flex items-center justify-center rounded border border-pink-500 transition-colors"
-                  title="컬러 ?�정"
+                  title="컬러 설정"
                 >
-                  ?��
+                  🎨
                 </button>
               </div>
             </div>
           </div>
           
-          {/* ?�폰???�정 ?�래 ??*/}
+          {/* 웹폰트 설정 아래 선 */}
           <div className="border-t border-gray-600 mt-4 mb-4"></div>
           
-          {/* ?�폰???�업??*/}
-          {/* ?�메뉴 ?�폰???�업 */}
+          {/* 웹폰트 팝업들 */}
+          {/* 대메뉴 웹폰트 팝업 */}
           {showMenuFontPopup && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
               <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-                <h3 className="text-lg font-semibold text-white mb-4">?�메뉴 ?�폰???�정</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">대메뉴 웹폰트 설정</h3>
                 <textarea
                   value={tempMenuFontFace}
                   onChange={(e) => setTempMenuFontFace(e.target.value)}
                   rows={8}
                   className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y text-sm mb-4"
-                  placeholder="@font-face CSS�??�력?�세??
+                  placeholder="@font-face CSS를 입력하세요"
                 />
                 <div className="flex justify-end gap-2">
                   <button
@@ -1177,24 +2335,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     }}
                     className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600"
                   >
-                    ?�료
+                    완료
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ?�메???�폰???�업 */}
+          {/* 소메뉴 웹폰트 팝업 */}
           {showSubtitleFontPopup && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
               <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-                <h3 className="text-lg font-semibold text-white mb-4">?�메???�폰???�정</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">소메뉴 웹폰트 설정</h3>
                 <textarea
                   value={tempSubtitleFontFace}
                   onChange={(e) => setTempSubtitleFontFace(e.target.value)}
                   rows={8}
                   className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y text-sm mb-4"
-                  placeholder="@font-face CSS�??�력?�세??
+                  placeholder="@font-face CSS를 입력하세요"
                 />
                 <div className="flex justify-end gap-2">
                   <button
@@ -1212,24 +2370,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     }}
                     className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600"
                   >
-                    ?�료
+                    완료
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ?�세메뉴 ?�폰???�업 */}
+          {/* 상세메뉴 웹폰트 팝업 */}
           {showDetailMenuFontPopup && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
               <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-                <h3 className="text-lg font-semibold text-white mb-4">?�세메뉴 ?�폰???�정</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">상세메뉴 웹폰트 설정</h3>
                 <textarea
                   value={tempDetailMenuFontFace}
                   onChange={(e) => setTempDetailMenuFontFace(e.target.value)}
                   rows={8}
                   className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y text-sm mb-4"
-                  placeholder="@font-face CSS�??�력?�세??
+                  placeholder="@font-face CSS를 입력하세요"
                 />
                 <div className="flex justify-end gap-2">
                   <button
@@ -1247,24 +2405,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     }}
                     className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600"
                   >
-                    ?�료
+                    완료
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* 본문 ?�폰???�업 */}
+          {/* 본문 웹폰트 팝업 */}
           {showBodyFontPopup && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
               <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-                <h3 className="text-lg font-semibold text-white mb-4">본문 ?�폰???�정</h3>
+                <h3 className="text-lg font-semibold text-white mb-4">본문 웹폰트 설정</h3>
                 <textarea
                   value={tempBodyFontFace}
                   onChange={(e) => setTempBodyFontFace(e.target.value)}
                   rows={8}
                   className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y text-sm mb-4"
-                  placeholder="@font-face CSS�??�력?�세??
+                  placeholder="@font-face CSS를 입력하세요"
                 />
                 <div className="flex justify-end gap-2">
                   <button
@@ -1282,17 +2440,18 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     }}
                     className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600"
                   >
-                    ?�료
+                    완료
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* 컬러 ?�업??*/}
-          {/* 컬러 ?�레??컴포?�트 */}
+          {/* 컬러 팝업들 */}
+          {/* 컬러 팔레트 컴포넌트 */}
           {(() => {
-            // RGB�?HSV�?변??            const rgbToHsv = (r: number, g: number, b: number): [number, number, number] => {
+            // RGB를 HSV로 변환
+            const rgbToHsv = (r: number, g: number, b: number): [number, number, number] => {
               r /= 255
               g /= 255
               b /= 255
@@ -1319,7 +2478,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               return [h, s, v]
             }
             
-            // HSV�?RGB�?변??            const hsvToRgb = (h: number, s: number, v: number): [number, number, number] => {
+            // HSV를 RGB로 변환
+            const hsvToRgb = (h: number, s: number, v: number): [number, number, number] => {
               s /= 100
               v /= 100
               const c = v * s
@@ -1348,14 +2508,16 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               return [r, g, b]
             }
             
-            // Hex�?RGB�?변??            const hexToRgb = (hex: string): [number, number, number] => {
+            // Hex를 RGB로 변환
+            const hexToRgb = (hex: string): [number, number, number] => {
               const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
               return result
                 ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)]
                 : [0, 0, 0]
             }
             
-            // RGB�?Hex�?변??            const rgbToHex = (r: number, g: number, b: number): string => {
+            // RGB를 Hex로 변환
+            const rgbToHex = (r: number, g: number, b: number): string => {
               return '#' + [r, g, b].map(x => {
                 const hex = x.toString(16)
                 return hex.length === 1 ? '0' + hex : hex
@@ -1447,10 +2609,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 }
               }, [isDragging, isDraggingHue, hue, saturation, brightness])
               
-              // Canvas�??�용??채도/밝기 ?�각??그라?�언??              const saturationCanvasRef = React.useRef<HTMLCanvasElement>(null)
+              // Canvas를 사용한 채도/밝기 사각형 그라디언트
+              const saturationCanvasRef = React.useRef<HTMLCanvasElement>(null)
               const hueCanvasRef = React.useRef<HTMLCanvasElement>(null)
               
-              // 채도/밝기 ?�각??그리�?              React.useEffect(() => {
+              // 채도/밝기 사각형 그리기
+              React.useEffect(() => {
                 const canvas = saturationCanvasRef.current
                 if (!canvas) return
                 
@@ -1460,14 +2624,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 const width = canvas.width
                 const height = canvas.height
                 
-                // �??��???직접 계산
+                // 각 픽셀을 직접 계산
                 const imageData = ctx.createImageData(width, height)
                 const data = imageData.data
                 
                 for (let y = 0; y < height; y++) {
                   for (let x = 0; x < width; x++) {
-                    const s = (x / width) * 100  // 채도: 0% (?�쪽) ~ 100% (?�른�?
-                    const v = 100 - (y / height) * 100  // 밝기: 100% (?? ~ 0% (?�래)
+                    const s = (x / width) * 100  // 채도: 0% (왼쪽) ~ 100% (오른쪽)
+                    const v = 100 - (y / height) * 100  // 밝기: 100% (위) ~ 0% (아래)
                     const [r, g, b] = hsvToRgb(hue, s, v)
                     
                     const index = (y * width + x) * 4
@@ -1481,7 +2645,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 ctx.putImageData(imageData, 0, 0)
               }, [hue])
               
-              // ?�상 ?�트�?그리�?              React.useEffect(() => {
+              // 색상 스트립 그리기
+              React.useEffect(() => {
                 const canvas = hueCanvasRef.current
                 if (!canvas) return
                 
@@ -1490,7 +2655,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 
                 const height = canvas.height
                 
-                // ?�로 방향: 0??빨강)?�서 360??빨강)�?                for (let y = 0; y < height; y++) {
+                // 세로 방향: 0도(빨강)에서 360도(빨강)로
+                for (let y = 0; y < height; y++) {
                   const h = (y / height) * 360
                   const [r, g, b] = hsvToRgb(h, 100, 100)
                   ctx.fillStyle = `rgb(${r}, ${g}, ${b})`
@@ -1506,7 +2672,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
                     
                     <div className="flex gap-4 mb-4">
-                      {/* 채도/밝기 ?�각??*/}
+                      {/* 채도/밝기 사각형 */}
                       <div className="flex-1 relative">
                         <canvas
                           ref={saturationCanvasRef}
@@ -1523,7 +2689,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                             handleSaturationClick(e)
                           }}
                         >
-                          {/* ?�들 */}
+                          {/* 핸들 */}
                           <div
                             className="absolute w-4 h-4 rounded-full border-2 border-white shadow-lg transform -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10"
                             style={{
@@ -1535,7 +2701,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         </div>
                       </div>
                       
-                      {/* ?�상 ?�트�?*/}
+                      {/* 색상 스트립 */}
                       <div className="relative">
                         <canvas
                           ref={hueCanvasRef}
@@ -1552,7 +2718,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                             handleHueClick(e)
                           }}
                         >
-                          {/* ?�상 ?�들 */}
+                          {/* 색상 핸들 */}
                           <div
                             className="absolute left-0 right-0 w-full h-1 bg-white border border-gray-400 shadow-lg transform -translate-y-1/2 pointer-events-none z-10"
                             style={{
@@ -1563,7 +2729,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       </div>
                     </div>
                     
-                    {/* ?�재 ?�택??컬러 미리보기 �?Hex ?�력 */}
+                    {/* 현재 선택된 컬러 미리보기 및 Hex 입력 */}
                     <div className="mb-4">
                       <div className="flex items-center gap-4">
                         <div 
@@ -1606,7 +2772,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         }}
                         className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600"
                       >
-                        ?�료
+                        완료
                       </button>
                     </div>
                   </div>
@@ -1616,40 +2782,40 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             
             return (
               <>
-                {/* ?�메뉴 컬러 ?�업 */}
+                {/* 대메뉴 컬러 팝업 */}
                 {showMenuColorPopup && (
                   <ColorPicker
-                    title="?�메뉴 컬러 ?�정"
+                    title="대메뉴 컬러 설정"
                     currentColor={formData.menuColor}
                     onSelect={(color) => setFormData({ ...formData, menuColor: color })}
                     onClose={() => setShowMenuColorPopup(false)}
                   />
                 )}
 
-                {/* ?�메??컬러 ?�업 */}
+                {/* 소메뉴 컬러 팝업 */}
                 {showSubtitleColorPopup && (
                   <ColorPicker
-                    title="?�메??컬러 ?�정"
+                    title="소메뉴 컬러 설정"
                     currentColor={formData.subtitleColor}
                     onSelect={(color) => setFormData({ ...formData, subtitleColor: color })}
                     onClose={() => setShowSubtitleColorPopup(false)}
                   />
                 )}
 
-                {/* ?�세메뉴 컬러 ?�업 */}
+                {/* 상세메뉴 컬러 팝업 */}
                 {showDetailMenuColorPopup && (
                   <ColorPicker
-                    title="?�세메뉴 컬러 ?�정"
+                    title="상세메뉴 컬러 설정"
                     currentColor={formData.detailMenuColor}
                     onSelect={(color) => setFormData({ ...formData, detailMenuColor: color })}
                     onClose={() => setShowDetailMenuColorPopup(false)}
                   />
                 )}
 
-                {/* 본문 컬러 ?�업 */}
+                {/* 본문 컬러 팝업 */}
                 {showBodyColorPopup && (
                   <ColorPicker
-                    title="본문 컬러 ?�정"
+                    title="본문 컬러 설정"
                     currentColor={formData.bodyColor}
                     onSelect={(color) => setFormData({ ...formData, bodyColor: color })}
                     onClose={() => setShowBodyColorPopup(false)}
@@ -1662,7 +2828,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           <div className="flex flex-wrap gap-4">
             <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
-                ?�메?�당 글?�수
+                소메뉴당 글자수
               </label>
               <input
                 type="text"
@@ -1670,13 +2836,13 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 value={formData.subtitleCharCount}
                 onChange={handleChange}
                 className="w-20 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
-                placeholder="?�력?�세??
+                placeholder="입력하세요"
                 maxLength={4}
               />
             </div>
             <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
-                ?�세메뉴??글?�수
+                상세메뉴당 글자수
               </label>
               <input
                 type="text"
@@ -1684,13 +2850,13 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 value={formData.detailMenuCharCount}
                 onChange={handleChange}
                 className="w-20 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent text-sm"
-                placeholder="?�력?�세??
+                placeholder="입력하세요"
                 maxLength={4}
               />
             </div>
             <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
-                ?�메뉴 ?�트?�기
+                대메뉴 폰트크기
               </label>
               <div className="flex">
               <input
@@ -1717,7 +2883,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             </div>
             <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
-                ?�메???�트?�기
+                소메뉴 폰트크기
               </label>
               <div className="flex">
               <input
@@ -1744,7 +2910,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             </div>
             <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
-                ?�세메뉴 ?�트?�기
+                상세메뉴 폰트크기
               </label>
               <div className="flex">
                 <input
@@ -1771,7 +2937,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             </div>
             <div className="flex-1 min-w-0">
               <label className="block text-xs font-medium text-gray-300 mb-1">
-                본문 ?�트?�기
+                본문 폰트크기
               </label>
               <div className="flex">
               <input
@@ -1799,14 +2965,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           </div>
         </div>
 
-        {/* ?�??취소/??�� 버튼 */}
+        {/* 저장/취소/삭제 버튼 */}
         <div className="flex gap-3 pt-4">
           <button
             type="submit"
             disabled={saving}
             className="flex-1 bg-pink-500 hover:bg-pink-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {saving ? '?�??�?..' : '?�??}
+            {saving ? '저장 중...' : '저장'}
           </button>
           <button
             type="button"
@@ -1821,75 +2987,75 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               onClick={() => setShowDeleteConfirm(true)}
               className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
             >
-              ??��
+              삭제
             </button>
           )}
         </div>
       </form>
 
-      {/* ?�네??모달 */}
-      {/* ?�운 ?�로??모달 */}
+      {/* 썸네일 모달 */}
+      {/* 쉬운 업로드 모달 */}
       {showEasyUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="p-6 space-y-4 flex-1 overflow-y-auto">
-              {/* ?�메뉴 ?�력 ?�역 */}
+              {/* 대메뉴 입력 영역 */}
               <div className="bg-gray-700 border border-gray-600 rounded-lg h-60 p-4 flex flex-col">
-                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">?�메뉴</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">대메뉴</label>
                 <textarea
                   value={easyUploadData.menus}
                   onChange={(e) => setEasyUploadData(prev => ({ ...prev, menus: e.target.value }))}
                   className="flex-1 w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none min-h-0"
-                  placeholder="메모?�에??복사???�?�목??붙여?�으?�요&#10;?? 1. �?번째 ?�?�목&#10;2. ??번째 ?�?�목"
+                  placeholder="메모장에서 복사한 대제목을 붙여넣으세요&#10;예: 1. 첫 번째 대제목&#10;2. 두 번째 대제목"
                 />
               </div>
               
-              {/* ?�메???�력 ?�역 */}
+              {/* 소메뉴 입력 영역 */}
               <div className="bg-gray-700 border border-gray-600 rounded-lg p-4 flex flex-col" style={{ height: '240px' }}>
-                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">?�메??/label>
+                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">소메뉴</label>
                 <textarea
                   value={easyUploadData.subtitles}
                   onChange={(e) => setEasyUploadData(prev => ({ ...prev, subtitles: e.target.value }))}
                   className="flex-1 w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none min-h-0"
-                  placeholder="메모?�에??복사???�제목을 붙여?�으?�요&#10;?? 1-1. �?번째 ?�제�?#10;1-2. ??번째 ?�제�?
+                  placeholder="메모장에서 복사한 소제목을 붙여넣으세요&#10;예: 1-1. 첫 번째 소제목&#10;1-2. 두 번째 소제목"
                 />
               </div>
               
-              {/* ?�메???�석?�구 ?�력 ?�역 */}
+              {/* 소메뉴 해석도구 입력 영역 */}
               <div className="bg-gray-700 border border-gray-600 rounded-lg p-4 flex flex-col" style={{ height: '240px' }}>
-                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">?�메???�석?�구</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">소메뉴 해석도구</label>
                 <textarea
                   value={easyUploadData.subtitleTools}
                   onChange={(e) => setEasyUploadData(prev => ({ ...prev, subtitleTools: e.target.value }))}
                   className="flex-1 w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none min-h-0"
-                  placeholder="메모?�에??복사???�메???�석?�구�?붙여?�으?�요&#10;?? 1-1. ?�메???�석?�구 ?�용&#10;1-2. ?�메???�석?�구 ?�용"
+                  placeholder="메모장에서 복사한 소메뉴 해석도구를 붙여넣으세요&#10;예: 1-1. 소메뉴 해석도구 내용&#10;1-2. 소메뉴 해석도구 내용"
                 />
               </div>
               
-              {/* ?�세메뉴 ?�력 ?�역 */}
+              {/* 상세메뉴 입력 영역 */}
               <div className="bg-gray-700 border border-gray-600 rounded-lg p-4 flex flex-col" style={{ height: '240px' }}>
-                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">?�세메뉴</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">상세메뉴</label>
                 <textarea
                   value={easyUploadData.detailMenus}
                   onChange={(e) => setEasyUploadData(prev => ({ ...prev, detailMenus: e.target.value }))}
                   className="flex-1 w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none min-h-0"
-                  placeholder="메모?�에??복사???�세메뉴�?붙여?�으?�요&#10;?? 1-1-1. �?번째 ?�세메뉴&#10;1-1-2. ??번째 ?�세메뉴"
+                  placeholder="메모장에서 복사한 상세메뉴를 붙여넣으세요&#10;예: 1-1-1. 첫 번째 상세메뉴&#10;1-1-2. 두 번째 상세메뉴"
                 />
               </div>
               
-              {/* ?�석?�구 ?�력 ?�역 */}
+              {/* 해석도구 입력 영역 */}
               <div className="bg-gray-700 border border-gray-600 rounded-lg p-4 flex flex-col" style={{ height: '240px' }}>
-                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">?�세메뉴 ?�석?�구</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">상세메뉴 해석도구</label>
                 <textarea
                   value={easyUploadData.tools}
                   onChange={(e) => setEasyUploadData(prev => ({ ...prev, tools: e.target.value }))}
                   className="flex-1 w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none min-h-0"
-                  placeholder="메모?�에??복사???�석?�구�?붙여?�으?�요&#10;?? 1-1-1. ?�석?�구 ?�용&#10;1-2-1. ?�석?�구 ?�용"
+                  placeholder="메모장에서 복사한 해석도구를 붙여넣으세요&#10;예: 1-1-1. 해석도구 내용&#10;1-2-1. 해석도구 내용"
                 />
               </div>
             </div>
             
-            {/* ?�단 버튼 */}
+            {/* 하단 버튼 */}
             <div className="p-4 border-t border-gray-600 flex gap-3 justify-center">
               <button
                 onClick={() => {
@@ -1902,7 +3068,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               <button
                 onClick={() => {
                   setShowEasyUploadModal(false)
-                  // 취소 버튼?� ?�업�??�고 ?�력 ?�드 ?�용?� ?��?
+                  // 취소 버튼은 팝업만 닫고 입력 필드 내용은 유지
                   // setEasyUploadData({ menus: '', subtitles: '', subtitleTools: '', detailMenus: '', tools: '' })
                 }}
                 className="bg-gray-700 hover:bg-gray-600 text-white font-medium px-8 py-3 rounded-lg transition-colors duration-200"
@@ -1934,6 +3100,150 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('subtitle-')
             ? (() => {
                 const parts = currentThumbnailField.split('-')
+                if (parts[1] === 'first') {
+                  // 소수점이 포함된 ID를 처리하기 위해 parseFloat 사용
+                  const subtitleIdStr = parts[2]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const thumbnail = firstMenuField.subtitles.find(s => {
+                    // ID를 문자열 또는 숫자로 비교 (소수점 포함 ID 대응)
+                    const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+                    return sId === subtitleIdNum || String(s.id) === subtitleIdStr
+                  })?.thumbnail
+                  return thumbnail
+                } else if (parts[1] === 'menu') {
+                  // 소수점이 포함된 ID를 처리하기 위해 parseFloat 사용
+                  const menuIdStr = parts[2]
+                  const menuIdNum = parseFloat(menuIdStr)
+                  const subtitleIdStr = parts[3] // 문자열로 유지
+                  const subtitleIdNum = parseFloat(subtitleIdStr) // 숫자 비교용
+                  const menuField = menuFields.find(f => {
+                    // 숫자 비교 시 타입 변환하여 비교 (소수점 포함 ID 대응)
+                    const fieldIdNum = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+                    const match = fieldIdNum === menuIdNum || String(f.id) === menuIdStr
+                    return match
+                  })
+                  if (menuField) {
+                    const subtitle = menuField.subtitles.find(s => {
+                      // ID를 문자열 또는 숫자로 비교 (소수점 포함 ID 대응)
+                      const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+                      const match = sId === subtitleIdNum || String(s.id) === subtitleIdStr
+                      return match
+                    })
+                    const thumbnail = subtitle?.thumbnail
+                    return thumbnail
+                  }
+                  return undefined
+                }
+                return undefined
+              })()
+            : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('detail-menu-')
+            ? (() => {
+                const parts = currentThumbnailField.split('-')
+                if (parts[2] === 'first') {
+                  // detail-menu-first-{subtitleId}-{detailMenuId} 형식
+                  const subtitleIdStr = parts[3]
+                  const detailMenuIdStr = parts[4]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const detailMenuIdNum = parseFloat(detailMenuIdStr)
+                  const subtitle = firstMenuField.subtitles.find(s => {
+                    const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+                    return sId === subtitleIdNum || String(s.id) === subtitleIdStr
+                  })
+                  if (subtitle) {
+                    const detailMenu = subtitle.detailMenus.find(dm => {
+                      const dmId = typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))
+                      return dmId === detailMenuIdNum || String(dm.id) === detailMenuIdStr
+                    })
+                    return detailMenu?.thumbnail
+                  }
+                  return undefined
+                } else if (parts[2] === 'menu') {
+                  // detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId} 형식
+                  const menuIdStr = parts[3]
+                  const menuIdNum = parseFloat(menuIdStr)
+                  const subtitleIdStr = parts[4]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const detailMenuIdStr = parts[5]
+                  const detailMenuIdNum = parseFloat(detailMenuIdStr)
+                  const menuField = menuFields.find(f => {
+                    const fieldIdNum = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+                    return fieldIdNum === menuIdNum || String(f.id) === menuIdStr
+                  })
+                  if (menuField) {
+                    const subtitle = menuField.subtitles.find(s => {
+                      const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+                      return sId === subtitleIdNum || String(s.id) === subtitleIdStr
+                    })
+                    if (subtitle) {
+                      const detailMenu = subtitle.detailMenus.find(dm => {
+                        const dmId = typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))
+                        return dmId === detailMenuIdNum || String(dm.id) === detailMenuIdStr
+                      })
+                      return detailMenu?.thumbnail
+                    }
+                  }
+                  return undefined
+                }
+                return undefined
+              })()
+            : undefined
+        }
+      />
+
+      {/* 취소 경고 팝업 */}
+      {showCancelWarning && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-white mb-4">변경사항이 있습니다</h3>
+            <p className="text-gray-300 mb-6">
+              저장하지 않은 변경사항이 있습니다. 정말 나가시겠습니까?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowCancelWarning(false)
+                  router.push('/admin')
+                }}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
+              >
+                나가기
+              </button>
+              <button
+                onClick={() => setShowCancelWarning(false)}
+                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 메뉴 필드 삭제 확인 팝업 */}
+      {showDeleteMenuConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-white mb-4">메뉴 항목 삭제</h3>
+            <p className="text-gray-300 mb-6">
+              정말로 이 메뉴 항목을 삭제하시겠습니까?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  if (menuFieldToDelete !== null) {
+                    setMenuFields(menuFields.filter(f => f.id !== menuFieldToDelete))
+                  }
+                  setShowDeleteMenuConfirm(false)
+                  setMenuFieldToDelete(null)
+                }}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
+              >
+                삭제
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteMenuConfirm(false)
+                  setMenuFieldToDelete(null)
                 }}
                 className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
               >
@@ -1944,13 +3254,73 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         </div>
       )}
 
-      {/* 컨텐�???�� ?�인 ?�업 */}
+      {/* 소제목 삭제 확인 팝업 */}
+      {showDeleteSubtitleConfirm && subtitleToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-white mb-4">소제목 삭제</h3>
+            <p className="text-gray-300 mb-6">
+              정말로 이 소제목을 삭제하시겠습니까?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  if (subtitleToDelete.menuId === 'first') {
+                    setFirstMenuField(prev => {
+                      const filtered = prev.subtitles.filter(s => s.id !== subtitleToDelete.subtitleId)
+                      // 소메뉴가 모두 삭제되면 디폴트 소메뉴 1개 추가
+                      const newSubtitles = filtered.length === 0 
+                        ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
+                        : filtered
+                      return {
+                      ...prev,
+                        subtitles: newSubtitles
+                      }
+                    })
+                  } else {
+                    setMenuFields(menuFields.map(f => {
+                      if (f.id === subtitleToDelete.menuId) {
+                        const filtered = f.subtitles.filter(s => s.id !== subtitleToDelete.subtitleId)
+                        // 소메뉴가 모두 삭제되면 디폴트 소메뉴 1개 추가
+                        const newSubtitles = filtered.length === 0
+                          ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
+                          : filtered
+                        return {
+                        ...f,
+                          subtitles: newSubtitles
+                        }
+                      }
+                      return f
+                    }))
+                  }
+                  setShowDeleteSubtitleConfirm(false)
+                  setSubtitleToDelete(null)
+                }}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
+              >
+                삭제
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteSubtitleConfirm(false)
+                  setSubtitleToDelete(null)
+                }}
+                className="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 컨텐츠 삭제 확인 팝업 */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-xl font-bold text-white mb-4">컨텐�???��</h3>
+            <h3 className="text-xl font-bold text-white mb-4">컨텐츠 삭제</h3>
             <p className="text-gray-300 mb-6">
-              ?�말�???컨텐츠�? ??��?�시겠습?�까?
+              정말로 이 컨텐츠를 삭제하시겠습니까?
               {formData.contentName && (
                 <span className="block mt-2 text-pink-400 font-semibold">
                   &quot;{formData.contentName}&quot;
@@ -1967,21 +3337,20 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       })
 
                       if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({ error: '??��???�패?�습?�다.' }))
-                        throw new Error(errorData.error || '??��???�패?�습?�다.')
+                        const errorData = await response.json().catch(() => ({ error: '삭제에 실패했습니다.' }))
+                        throw new Error(errorData.error || '삭제에 실패했습니다.')
                       }
 
                       router.push('/admin')
                     } catch (error: any) {
-
-                      alert(`??��???�패?�습?�다: ${error.message || '?????�는 ?�류'}`)
+                      alert(`삭제에 실패했습니다: ${error.message || '알 수 없는 오류'}`)
                       setShowDeleteConfirm(false)
                     }
                   }
                 }}
                 className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
               >
-                ??��
+                삭제
               </button>
               <button
                 onClick={() => setShowDeleteConfirm(false)}
@@ -1994,14 +3363,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         </div>
       )}
 
-      {/* 무결??체크 결과 ?�업 */}
+      {/* 무결성 체크 결과 팝업 */}
       {showIntegrityCheckResult && integrityCheckResult && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-2xl w-full shadow-2xl p-6 max-h-[80vh] overflow-y-auto">
-            {/* ?�더 */}
+            {/* 헤더 */}
             <div className="flex items-center justify-between mb-4">
               <h2 className={`text-xl font-bold ${integrityCheckResult.isValid ? 'text-green-600' : 'text-red-600'}`}>
-                무결??체크 결과
+                무결성 체크 결과
               </h2>
               <button
                 onClick={() => {
@@ -2019,10 +3388,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               <p className="font-semibold">{integrityCheckResult.message}</p>
             </div>
             
-            {/* ?�류 목록 */}
+            {/* 오류 목록 */}
             {!integrityCheckResult.isValid && integrityCheckResult.errors.length > 0 && (
               <div className="mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">?�류 목록:</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">오류 목록:</h3>
                 <ul className="space-y-2">
                   {integrityCheckResult.errors.map((error, index) => (
                     <li key={index} className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-200">
@@ -2033,7 +3402,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               </div>
             )}
             
-            {/* ?�터 */}
+            {/* 푸터 */}
             <div>
               <button
                 onClick={() => {
@@ -2042,14 +3411,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 }}
                 className="w-full bg-pink-500 hover:bg-pink-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
               >
-                ?�인
+                확인
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 미리 보기 ?�업 */}
+      {/* 미리 보기 팝업 */}
       {showPreview && (
         <PreviewModal
           formData={formData}
@@ -2062,7 +3431,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   )
 }
 
-// 미리보기 모달 컴포?�트
+// 미리보기 모달 컴포넌트
 function PreviewModal({ 
   formData, 
   menuFields, 
@@ -2076,14 +3445,14 @@ function PreviewModal({
 }) {
   const [viewMode, setViewMode] = useState<'pc' | 'mobile'>('pc')
   
-  // ?�플 본문 ?�스???�성
+  // 샘플 본문 텍스트 생성
   const generateSampleContent = (title: string) => {
-    return `<p>${title}???�???�사 ?�용???�기???�시?�니?? ?�제 ?��??�이 ?�사 결과????부분에 ?�시?�며, ?�러 문단?�로 구성?????�습?�다.</p>
-<p>?�사 ?�용?� ?�용?�의 ?�년?�일, ?�간, ?�별 ?�의 ?�보�?바탕?�로 ?�성?�며, �???��별로 ?�세???�석???�공?�니??</p>
-<p>??미리보기???�제 ?�사 결과?� ?�사???�이?�웃�??��??�을 보여주기 ?�한 ?�플?�니??</p>`
+    return `<p>${title}에 대한 점사 내용이 여기에 표시됩니다. 실제 제미나이 점사 결과는 이 부분에 표시되며, 여러 문단으로 구성될 수 있습니다.</p>
+<p>점사 내용은 사용자의 생년월일, 시간, 성별 등의 정보를 바탕으로 생성되며, 각 항목별로 상세한 해석을 제공합니다.</p>
+<p>이 미리보기는 실제 점사 결과와 유사한 레이아웃과 스타일을 보여주기 위한 샘플입니다.</p>`
   }
 
-  // ?�트 ?��?�?추출 ?�수
+  // 폰트 패밀리 추출 함수
   const extractFontFamily = (fontFaceCss: string): string | null => {
     if (!fontFaceCss) return null
     const match = fontFaceCss.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
@@ -2095,13 +3464,13 @@ function PreviewModal({
   const detailMenuFontFamily = extractFontFamily(formData.detailMenuFontFace || formData.fontFace || '')
   const bodyFontFamily = extractFontFamily(formData.bodyFontFace || formData.fontFace || '')
 
-  // 모든 메뉴 ??�� ?�집
+  // 모든 메뉴 항목 수집
   const allMenuItems = [
     ...(firstMenuField.value || firstMenuField.thumbnail ? [firstMenuField] : []),
     ...menuFields
   ]
 
-  // 목차 ?�성
+  // 목차 생성
   const generateTOC = () => {
     if (allMenuItems.length === 0) return null
     
@@ -2130,7 +3499,7 @@ function PreviewModal({
                   <div className="ml-4 space-y-1">
                     {menuItem.subtitles.map((sub: any, sIndex: number) => {
                       const subTitle = (sub.subtitle || '').trim()
-                      if (!subTitle || subTitle.includes('?�세메뉴 ?�석 목록')) return null
+                      if (!subTitle || subTitle.includes('상세메뉴 해석 목록')) return null
                       return (
                         <button
                           key={`toc-sub-${mIndex}-${sIndex}`}
@@ -2156,7 +3525,7 @@ function PreviewModal({
     )
   }
 
-  // ?�적 ?��????�성
+  // 동적 스타일 생성
   const dynamicStyles = `
     ${formData.menuFontFace ? formData.menuFontFace : ''}
     ${formData.subtitleFontFace ? formData.subtitleFontFace : ''}
@@ -2165,7 +3534,7 @@ function PreviewModal({
     ${!formData.menuFontFace && !formData.subtitleFontFace && !formData.detailMenuFontFace && !formData.bodyFontFace && formData.fontFace ? formData.fontFace : ''}
   `
 
-  // 목차�??�동 ?�수
+  // 목차로 이동 함수
   const scrollToTableOfContents = () => {
     const tocElement = document.getElementById('table-of-contents')
     if (tocElement) {
@@ -2176,11 +3545,11 @@ function PreviewModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className={`bg-white rounded-xl ${viewMode === 'pc' ? 'max-w-4xl' : 'max-w-md'} w-full shadow-2xl max-h-[90vh] overflow-hidden flex flex-col`}>
-        {/* ?�더 */}
+        {/* 헤더 */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <h2 className="text-2xl font-bold text-gray-900">미리 보기</h2>
           <div className="flex items-center gap-3">
-            {/* PC/모바??모드 ?�환 버튼 */}
+            {/* PC/모바일 모드 전환 버튼 */}
             <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('pc')}
@@ -2200,7 +3569,7 @@ function PreviewModal({
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                모바??모드
+                모바일 모드
               </button>
             </div>
             <button
@@ -2216,7 +3585,7 @@ function PreviewModal({
         <div className="flex-1 overflow-y-auto p-6 bg-gray-50 relative">
           <style dangerouslySetInnerHTML={{ __html: dynamicStyles }} />
           <div className={`${viewMode === 'pc' ? 'max-w-4xl' : 'max-w-md'} mx-auto`}>
-            {/* ?�목 */}
+            {/* 제목 */}
             <div className="mb-8 text-center">
               <h1 
                 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4"
@@ -2224,16 +3593,16 @@ function PreviewModal({
                   fontFamily: menuFontFamily ? `'${menuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined
                 }}
               >
-                {formData.contentName || '?�사 결과'}
+                {formData.contentName || '점사 결과'}
               </h1>
             </div>
 
-            {/* 북커�??�네??*/}
+            {/* 북커버 썸네일 */}
             {formData.bookCoverThumbnail && (
               <div className="w-full mb-10">
                 <img 
                   src={formData.bookCoverThumbnail} 
-                  alt="북커�??�네??
+                  alt="북커버 썸네일"
                   className="w-full h-auto"
                   style={{ objectFit: 'contain', display: 'block' }}
                 />
@@ -2243,7 +3612,7 @@ function PreviewModal({
             {/* 목차 */}
             {generateTOC()}
 
-            {/* 메뉴 ?�션??*/}
+            {/* 메뉴 섹션들 */}
             <div className="jeminai-results space-y-6">
               {allMenuItems.map((menuItem, menuIndex) => {
                 const menuTitle = (menuItem.value || '').trim()
@@ -2251,7 +3620,7 @@ function PreviewModal({
 
                 return (
                   <div key={`preview-menu-${menuIndex}`} id={`preview-menu-${menuIndex}`} className="menu-section bg-white rounded-xl p-6 shadow-sm space-y-4">
-                    {/* ?�메뉴 ?�목 */}
+                    {/* 대메뉴 제목 */}
                     <div 
                       className="menu-title font-bold text-lg text-gray-900"
                       style={{
@@ -2264,16 +3633,16 @@ function PreviewModal({
                       {menuTitle}
                     </div>
 
-                    {/* ?�메?�들 */}
+                    {/* 소메뉴들 */}
                     {menuItem.subtitles && menuItem.subtitles.length > 0 && (
                       <div className="space-y-4">
                         {menuItem.subtitles.map((sub: any, subIndex: number) => {
                           const subTitle = (sub.subtitle || '').trim()
-                          if (!subTitle || subTitle.includes('?�세메뉴 ?�석 목록')) return null
+                          if (!subTitle || subTitle.includes('상세메뉴 해석 목록')) return null
 
                           return (
                             <div key={`preview-subtitle-${menuIndex}-${subIndex}`} id={`preview-subtitle-${menuIndex}-${subIndex}`} className="subtitle-section space-y-2 pt-6 pb-6 border-b border-gray-100 last:border-b-0">
-                              {/* ?�메???�목 */}
+                              {/* 소메뉴 제목 */}
                               <div 
                                 className="subtitle-title font-semibold text-gray-900"
                                 style={{
@@ -2286,19 +3655,19 @@ function PreviewModal({
                                 {subTitle}
                               </div>
 
-                              {/* ?�메???�네??*/}
+                              {/* 소메뉴 썸네일 */}
                               {sub.thumbnail && (
                                 <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto' }}>
                                   <img
                                     src={sub.thumbnail}
-                                    alt="?�제�??�네??
+                                    alt="소제목 썸네일"
                                     className="w-full h-auto rounded-lg"
                                     style={{ display: 'block', objectFit: 'contain' }}
                                   />
                                 </div>
                               )}
 
-                              {/* ?�세메뉴??*/}
+                              {/* 상세메뉴들 */}
                               {sub.detailMenus && sub.detailMenus.length > 0 && (
                                 <div className="space-y-3 mt-4">
                                   {sub.detailMenus.map((detailMenu: any, dmIndex: number) => {
@@ -2307,7 +3676,7 @@ function PreviewModal({
 
                                     return (
                                       <div key={`preview-detail-${menuIndex}-${subIndex}-${dmIndex}`} className="detail-menu-section space-y-2">
-                                        {/* ?�세메뉴 ?�목 */}
+                                        {/* 상세메뉴 제목 */}
                                         <div 
                                           className="detail-menu-title font-semibold text-gray-800"
                                           style={{
@@ -2320,19 +3689,19 @@ function PreviewModal({
                                           {detailMenuTitle}
                                         </div>
 
-                                        {/* ?�세메뉴 ?�네??*/}
+                                        {/* 상세메뉴 썸네일 */}
                                         {detailMenu.thumbnail && (
                                           <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto' }}>
                                             <img
                                               src={detailMenu.thumbnail}
-                                              alt="?�세메뉴 ?�네??
+                                              alt="상세메뉴 썸네일"
                                               className="w-full h-auto rounded-lg"
                                               style={{ display: 'block', objectFit: 'contain' }}
                                             />
                                           </div>
                                         )}
 
-                                        {/* ?�세메뉴 본문 */}
+                                        {/* 상세메뉴 본문 */}
                                         <div 
                                           className="detail-menu-content text-gray-800"
                                           style={{
@@ -2351,7 +3720,7 @@ function PreviewModal({
                                 </div>
                               )}
 
-                              {/* ?�메??본문 */}
+                              {/* 소메뉴 본문 */}
                               <div 
                                 className="subtitle-content text-gray-800 mt-4"
                                 style={{
@@ -2370,12 +3739,12 @@ function PreviewModal({
                       </div>
                     )}
 
-                    {/* ?�딩 북커�?*/}
+                    {/* 엔딩 북커버 */}
                     {menuIndex === allMenuItems.length - 1 && formData.endingBookCoverThumbnail && (
                       <div className="w-full mt-4">
                         <img 
                           src={formData.endingBookCoverThumbnail} 
-                          alt="?�딩북커�??�네??
+                          alt="엔딩북커버 썸네일"
                           className="w-full h-auto"
                           style={{ objectFit: 'contain', display: 'block' }}
                         />
@@ -2385,7 +3754,7 @@ function PreviewModal({
                 )
               })}
             </div>
-            {/* ?�로??배너 - 목차�??�동 */}
+            {/* 플로팅 배너 - 목차로 이동 */}
             {allMenuItems.length > 0 && (
               <div className="sticky bottom-6 z-40 flex justify-end mt-6 mr-6">
                 <button
@@ -2395,20 +3764,20 @@ function PreviewModal({
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
-                  <span>목차�??�동</span>
+                  <span>목차로 이동</span>
                 </button>
               </div>
             )}
           </div>
         </div>
         
-        {/* ?�터 */}
+        {/* 푸터 */}
         <div className="p-6 border-t border-gray-200">
           <button
             onClick={onClose}
             className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
           >
-            ?�기
+            닫기
           </button>
         </div>
       </div>

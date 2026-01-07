@@ -26,7 +26,6 @@ export async function POST(req: NextRequest) {
       .maybeSingle()
 
     if (existingError) {
-
       throw existingError
     }
 
@@ -92,7 +91,6 @@ export async function POST(req: NextRequest) {
         .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune')
       
       if (updateError) {
-
         throw updateError
       }
       
@@ -112,7 +110,6 @@ export async function POST(req: NextRequest) {
         .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune')
       
       if (insertError) {
-
         throw insertError
       }
       
@@ -131,7 +128,6 @@ export async function POST(req: NextRequest) {
       use_sequential_fortune: (savedData as any).use_sequential_fortune ?? updateData.use_sequential_fortune ?? false
     })
   } catch (error: any) {
-
     return NextResponse.json(
       { error: error.message || '설정을 저장하는데 실패했습니다.' },
       { status: 500 }

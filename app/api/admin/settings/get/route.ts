@@ -24,8 +24,6 @@ export async function GET(req: NextRequest) {
       .maybeSingle() // 레코드가 없어도 에러가 아닌 null 반환
     
     if (error) {
-
-
       // 에러 발생 시 기본값 반환
       return NextResponse.json({
         model: 'gemini-3-flash-preview',
@@ -88,7 +86,6 @@ export async function GET(req: NextRequest) {
       }
     })
   } catch (error: any) {
-
     return NextResponse.json(
       { 
         error: error.message || '설정을 가져오는데 실패했습니다.',

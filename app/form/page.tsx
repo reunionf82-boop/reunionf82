@@ -1252,7 +1252,6 @@ function FormContent() {
       tempContainer.style.height = 'auto';
       tempContainer.style.minHeight = '0';
       
-      // tempContainer의 실제 내용 확인
       // 목차 생성 및 삽입 (View 화면과 동일하게)
       try {
         const menuSections = Array.from(tempContainer.querySelectorAll('.menu-section'));
@@ -1330,7 +1329,6 @@ function FormContent() {
              // 북커버 중복은 htmlContent(DOMParser) 단계에서 제거한다.
              // 여기서 삭제 로직을 두면 목차/북커버 배치가 깨질 수 있어 제거한다.
           }
-        } else {
         }
       } catch (e) {
       }
@@ -1393,8 +1391,10 @@ function FormContent() {
         // 전체를 하나의 긴 캔버스로 캡처 (보기 화면의 전체 스크롤 높이만큼)
         const actualHeight = tempContainer.scrollHeight || tempContainer.offsetHeight;
         const estimatedPages = Math.ceil(actualHeight / (1123 * scale)); // A4 한 페이지 높이 기준
+        
         // html2canvas로 전체 컨텐츠 캡처
         // height를 지정하지 않으면 전체 scrollHeight를 자동으로 캡처
+        
         // ✅ 전체 y-offset 청크 방식은 html2canvas가 특정 구간을 통째로 누락시키는 케이스가 있어
         // "블록(북커버/목차/메뉴섹션/엔딩북커버) 단위"로 캡처해서 순서대로 PDF에 붙인다.
         pdf = null;
@@ -1588,6 +1588,13 @@ function FormContent() {
           // 로컬 상태 업데이트
           setPdfGeneratedMap(prev => ({ ...prev, [saved.id]: true }))
         } else {
+        }
+      } catch (error) {
+      }
+      
+      // 정리
+      if (container && container.parentNode) {
+        container.parentNode.removeChild(container);
       }
       if (styleElement && styleElement.parentNode) {
         styleElement.parentNode.removeChild(styleElement);
@@ -1936,6 +1943,7 @@ function FormContent() {
 
       // realtime 모드일 경우 즉시 result 페이지로 리다이렉트
       if (fortuneViewMode === 'realtime') {
+        
         // 병렬점사 모드일 경우 대메뉴별로 분할된 데이터 준비
         let finalRequestData: any = requestData
         let menuGroups: Array<{
@@ -1983,6 +1991,7 @@ function FormContent() {
               })
             }
           })
+          
           // 첫 번째 대메뉴만 전달 (result 페이지에서 순차 처리)
           if (menuGroups.length > 0) {
             const firstGroup = menuGroups[0]
@@ -2054,7 +2063,6 @@ function FormContent() {
       // 소제목 수 계산
       const totalSubtitles = menuSubtitlePairs.length
       
-      // 디버그: 분기 체크
       // 병렬점사 모드 (useSequentialFortune === false)
       if (!useSequentialFortune) {
         // 대메뉴 단위로 분할
@@ -2099,6 +2107,185 @@ function FormContent() {
               menuIndex,
               menuItem,
               subtitles: menuSubtitlesForMenu
+            })
+          }
+        })
+        
+        
+        if (menuGroups.length === 0) {
+          alert('대메뉴 정보를 찾을 수 없습니다.')
+          setSubmitting(false)
+          setShowLoadingPopup(false)
+          return
+        }
+        
+        // 병렬점사: 첫 번째 대메뉴부터 순차적으로 처리
+        let accumulatedHtml = ''
+        
+        // 가짜 로딩바 (스트리밍 도착 전까지 계속 증가)
+        let fakeProgressInterval: NodeJS.Timeout | null = null
+        let fakeProgressStartTime = Date.now()
+        let isStreamingStarted = false
+        let streamingStartProgress = 0
+        
+        // 가짜 로딩바 시작
+        fakeProgressInterval = setInterval(() => {
+          if (isStreamingStarted) {
+            if (fakeProgressInterval) {
+              clearInterval(fakeProgressInterval)
+              fakeProgressInterval = null
+            }
+            return
+          }
+          
+          const elapsed = Date.now() - fakeProgressStartTime
+          let fakeProgress = 0
+          if (elapsed <= 30000) {
+            fakeProgress = (elapsed / 30000) * 30
+          } else {
+            const additionalTime = elapsed - 30000
+            const additionalProgress = Math.min(65, (additionalTime / 120000) * 65)
+            fakeProgress = 30 + additionalProgress
+          }
+          
+          fakeProgress = Math.min(95, fakeProgress)
+          setStreamingProgress(fakeProgress)
+          streamingStartProgress = fakeProgress
+        }, 100)
+        
+        // 대메뉴별 점사 함수 (순차적으로 처리)
+        const processMenuGroup = async (groupIndex: number, previousContext: string = ''): Promise<string> => {
+          const group = menuGroups[groupIndex]
+          if (!group) return previousContext
+          
+          const menuRequestData = {
+            ...requestData,
+            menu_subtitles: group.subtitles,
+            menu_items: [group.menuItem], // 현재 대메뉴만 전달
+            previousContext: previousContext || undefined, // 이전 대메뉴의 컨텍스트
+            isParallelMode: true,
+            currentMenuIndex: groupIndex,
+            totalMenus: menuGroups.length
+          }
+          
+          
+          let menuHtml = ''
+          let menuAccumulated = ''
+          
+          try {
+            await callJeminaiAPIStream(menuRequestData, async (data) => {
+              if (data.type === 'start') {
+                menuAccumulated = ''
+                if (groupIndex === 0) {
+                  isStreamingStarted = true
+                  if (fakeProgressInterval) {
+                    clearInterval(fakeProgressInterval)
+                    fakeProgressInterval = null
+                  }
+                  setStreamingProgress(Math.max(streamingStartProgress, 5))
+                }
+              } else if (data.type === 'chunk') {
+                menuAccumulated += data.text || ''
+                
+                // HTML 정리
+                menuAccumulated = menuAccumulated
+                  .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                  .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                  .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                  .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                  .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                  .replace(/\*\*/g, '')
+                
+                // 만세력 테이블 삽입 (첫 번째 대메뉴만)
+                if (groupIndex === 0 && manseRyeokTable && !menuAccumulated.includes('manse-ryeok-table')) {
+                  const firstMenuSectionMatch = menuAccumulated.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+                  if (firstMenuSectionMatch) {
+                    const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+                    if (thumbnailMatch) {
+                      menuAccumulated = menuAccumulated.replace(
+                        /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
+                        `$1\n${manseRyeokTable}`
+                      )
+                    } else {
+                      const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                      if (menuTitleMatch) {
+                        menuAccumulated = menuAccumulated.replace(
+                          /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
+                          `$1\n${manseRyeokTable}`
+                        )
+                      } else {
+                        menuAccumulated = menuAccumulated.replace(
+                          /(<div class="menu-section">)\s*/,
+                          `$1\n${manseRyeokTable}`
+                        )
+                      }
+                    }
+                  }
+                }
+                
+                // 진행도 업데이트
+                const baseProgress = streamingStartProgress || 30
+                const remainingProgress = 95 - baseProgress
+                const menuProgress = baseProgress + ((groupIndex + 0.5) / menuGroups.length) * remainingProgress
+                setStreamingProgress(Math.min(95, menuProgress))
+                
+                // 현재 소제목 표시
+                const subtitleMatch = menuAccumulated.match(/<h3[^>]*class="subtitle-title"[^>]*>([^<]+)<\/h3>/g)
+                if (subtitleMatch && subtitleMatch.length > 0) {
+                  const lastMatch = subtitleMatch[subtitleMatch.length - 1]
+                  const subtitleText = lastMatch.replace(/<[^>]+>/g, '').trim()
+                  const cleanSubtitle = subtitleText.replace(/^\d+-\d+[\.\s]\s*/, '').trim()
+                  if (cleanSubtitle) {
+                    setCurrentSubtitle(cleanSubtitle)
+                  }
+                }
+              } else if (data.type === 'done') {
+                menuHtml = data.html || menuAccumulated
+                
+                // HTML 정리
+                menuHtml = menuHtml
+                  .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                  .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                  .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                  .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                  .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                  .replace(/\*\*/g, '')
+                
+                // 만세력 테이블 삽입 (첫 번째 대메뉴만)
+                if (groupIndex === 0 && manseRyeokTable && !menuHtml.includes('manse-ryeok-table')) {
+                  const firstMenuSectionMatch = menuHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+                  if (firstMenuSectionMatch) {
+                    const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+                    if (thumbnailMatch) {
+                      menuHtml = menuHtml.replace(
+                        /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
+                        `$1\n${manseRyeokTable}`
+                      )
+                    } else {
+                      const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                      if (menuTitleMatch) {
+                        menuHtml = menuHtml.replace(
+                          /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
+                          `$1\n${manseRyeokTable}`
+                        )
+                      } else {
+                        menuHtml = menuHtml.replace(
+                          /(<div class="menu-section">)\s*/,
+                          `$1\n${manseRyeokTable}`
+                        )
+                      }
+                    }
+                  }
+                }
+                
+                // 진행도 업데이트
+                const baseProgress = streamingStartProgress || 30
+                const remainingProgress = 95 - baseProgress
+                const menuProgress = baseProgress + ((groupIndex + 1) / menuGroups.length) * remainingProgress
+                setStreamingProgress(Math.min(95, menuProgress))
+              } else if (data.type === 'error') {
+                throw new Error(data.error || '점사 처리 중 오류가 발생했습니다.')
+              }
             })
           } catch (error) {
             throw error
@@ -2454,6 +2641,7 @@ function FormContent() {
               }
             })()
           } else if (data.type === 'error') {
+            
             // 가짜 로딩바 중지
             if (fakeProgressInterval) {
               clearInterval(fakeProgressInterval)
@@ -2467,6 +2655,7 @@ function FormContent() {
         })
         
       } catch (streamError: any) {
+        
         // 가짜 로딩바 중지
         if (fakeProgressInterval) {
           clearInterval(fakeProgressInterval)
@@ -5190,6 +5379,7 @@ function FormContent() {
                                           icon.textContent = '🔊';
                                           text.textContent = '점사 듣기';
                                         } catch (error) {
+                                          
                                           alert(error?.message || '음성 변환에 실패했습니다.');
                                           
                                           const button = document.getElementById('ttsButton');
@@ -5606,6 +5796,7 @@ function FormContent() {
                                           
                                           if (!response.ok) {
                                             const error = await response.json();
+                                            
                                             // 재미나이 응답 디버그 정보 표시
                                             if (error.debug) {
                                             }

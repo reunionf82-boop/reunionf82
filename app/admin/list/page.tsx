@@ -34,7 +34,6 @@ export default function ContentListPage() {
         router.push('/admin/login')
       }
     } catch (error) {
-
       setAuthenticated(false)
       router.push('/admin/login')
     }
@@ -48,7 +47,6 @@ export default function ContentListPage() {
         setUseSequentialFortune(data.use_sequential_fortune)
       }
     } catch (error) {
-
     } finally {
       setLoading(false)
     }
@@ -71,11 +69,9 @@ export default function ContentListPage() {
       if (data.success) {
         setUseSequentialFortune(newValue)
       } else {
-
         alert('설정 저장에 실패했습니다.')
       }
     } catch (error) {
-
       alert('설정 저장 중 오류가 발생했습니다.')
     } finally {
       setSaving(false)

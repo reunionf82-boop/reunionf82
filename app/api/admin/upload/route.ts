@@ -63,6 +63,8 @@ export async function POST(req: NextRequest) {
     const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg'
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
     const filePath = fileName
+
+
     // 서비스 롤 키로 업로드 (RLS 우회)
     const supabase = getSupabaseClient()
     const { data: uploadData, error: uploadError } = await supabase.storage
@@ -78,10 +80,14 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       )
     }
+
+
     // 공개 URL 생성
     const { data: urlData } = supabase.storage
       .from('thumbnails')
       .getPublicUrl(filePath)
+
+
     return NextResponse.json({
       success: true,
       url: urlData.publicUrl,

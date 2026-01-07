@@ -54,6 +54,8 @@ export async function POST(request: NextRequest) {
 
     const fileName = `${savedResultId}.pdf`
     const filePath = fileName
+
+
     // Supabase Storage에 업로드 (pdfs 버킷 사용)
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('pdfs')
@@ -68,10 +70,14 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       )
     }
+
+
     // 공개 URL 생성
     const { data: urlData } = supabase.storage
       .from('pdfs')
       .getPublicUrl(filePath)
+
+
     return NextResponse.json({
       success: true,
       url: urlData.publicUrl,

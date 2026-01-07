@@ -58,6 +58,8 @@ app.post('/chat', async (req, res) => {
     // 타임아웃을 30분(1800초)으로 넉넉하게 설정
     req.setTimeout(1800000); // 30분
     res.setTimeout(1800000);
+
+    
     try {
         const {
             role_prompt,
@@ -77,6 +79,8 @@ app.post('/chat', async (req, res) => {
             remainingSubtitleIndices = [], // 2차 요청 시 남은 소제목의 원본 인덱스
             isParallelMode = false // 병렬점사 모드 여부
         } = req.body;
+
+        
         // 병렬점사 모드에서는 각 대메뉴의 소제목에 해석도구가 포함되어 있어야 함
         if (isParallelMode && menu_subtitles && menu_subtitles.length > 0) {
             menu_subtitles.slice(0, 3).forEach((sub, idx) => {
@@ -162,6 +166,7 @@ app.post('/chat', async (req, res) => {
 
         // 상세메뉴가 있는 소제목이 있는지 미리 확인
         const hasDetailMenusInSubtitles = menu_subtitles.some((s) => s.detailMenus && s.detailMenus.length > 0);
+
         const prompt = `
 ${isSecondRequest ? `
 🚨🚨🚨 **중요: 2차 요청입니다. 절대 처음부터 다시 시작하지 마세요!** 🚨🚨🚨
@@ -325,6 +330,13 @@ ${subtitlesForMenu.map((sub, subIdx) => {
         // 병렬점사 모드: sub 객체에 이미 모든 정보가 포함되어 있음
         subtitleData = sub;
         // 디버깅: 해석도구 확인
+        console.log(`[프롬프트 생성-병렬점사] 메뉴 ${menuNumber} 소제목 ${subIdx + 1}:`, {
+            subtitle: sub?.subtitle || sub,
+            hasInterpretationTool: !!(sub?.interpretation_tool),
+            interpretationTool: sub?.interpretation_tool ? sub.interpretation_tool.substring(0, 50) + '...' : '없음',
+            hasDetailMenus: !!(sub?.detailMenus && sub.detailMenus.length > 0),
+            detailMenusCount: sub?.detailMenus?.length || 0
+        });
     } else if (isSecondRequest) {
         // 직렬점사 2차 요청: 이미 필터링된 menu_subtitles를 받았으므로 직접 사용
         subtitleData = sub;
@@ -361,6 +373,7 @@ ${subtitlesForMenu.map((sub, subIdx) => {
     
         // 상세메뉴가 있는 경우 특별한 강조
         if (detailMenus.length > 0) {
+        
         // 상세메뉴 목록 텍스트 생성
         let detailMenuListText = '';
         detailMenus.forEach((dm, dmIdx) => {
@@ -536,6 +549,8 @@ ${isSecondRequest ? `
 이 마커는 긴 점사 결과를 안전하게 나누기 위해 필수입니다. 반드시 포함하세요!
 
 `;
+
+
         // 완료된 HTML에서 깨진 부분 제거하고 유효한 부분만 반환하는 함수
         const extractValidHtml = (html, completedSubtitleIndices, allMenuSubtitles) => {
             if (!completedSubtitleIndices || completedSubtitleIndices.length === 0) {
@@ -622,6 +637,8 @@ ${isSecondRequest ? `
         const parseCompletedSubtitles = (html, allMenuSubtitles) => {
             const completedSubtitles = [];
             const completedMenus = [];
+            
+            
             // HTML에서 모든 소제목 섹션 추출 (subtitle-section과 detail-menu-section 모두)
             const sectionStartRegex = /<div[^>]*class="[^"]*(subtitle-section|detail-menu-section)[^"]*"[^>]*>/gi;
             const sectionMatches = [];
@@ -666,6 +683,8 @@ ${isSecondRequest ? `
                     subtitleSections.push(section);
                 }
             }
+            
+            
             // 각 소제목이 완료되었는지 확인
             allMenuSubtitles.forEach((subtitle, index) => {
                 const menuMatch = subtitle.subtitle.match(/^(\d+)-(\d+)/);
@@ -758,6 +777,8 @@ ${isSecondRequest ? `
                 if (!found) {
                 }
             });
+            
+            
             return { completedSubtitles, completedMenus };
         };
 
@@ -766,6 +787,7 @@ ${isSecondRequest ? `
         try {
             result = await geminiModel.generateContentStream(prompt);
         } catch (streamInitError) {
+            
             if (!res.headersSent) {
                 return res.status(500).json({
                     error: '스트림 생성 실패',
@@ -859,6 +881,7 @@ ${isSecondRequest ? `
                 const allSubtitlesCompleted = completedSubtitles.length === totalCountForCheck;
                 
                 if (allSubtitlesCompleted) {
+                    
                     allSubtitlesCompletedEarly = true;
                     break; // for await 루프를 즉시 종료하여 스트림 읽기 중단
                 } else {
@@ -867,6 +890,7 @@ ${isSecondRequest ? `
             }
             }
         } catch (streamError) {
+            
             streamErrorOccurred = true;
             streamErrorMessage = streamError?.message || '스트림을 읽는 중 오류가 발생했습니다.';
             
@@ -899,6 +923,7 @@ ${isSecondRequest ? `
         let parsedCompletedIndices = []; // 파싱한 완료된 소제목 인덱스 (req.body의 completedSubtitleIndices와 구분)
         
         // 항상 완료된 소제목을 파싱하여 확인 (finishReason과 관계없이)
+        
         // 재요청인 경우 req.body의 completedSubtitleIndices 가져오기
         const requestCompletedIndices = req.body.completedSubtitleIndices || [];
         
@@ -940,6 +965,8 @@ ${isSecondRequest ? `
             totalSubtitlesCount = requestCompletedIndices.length + req.body.remainingSubtitleIndices.length;
         }
         const allSubtitlesCompleted = parsedCompletedIndices.length === totalSubtitlesCount;
+        
+        
         try {
             const response = await result.response;
             finishReason = response.candidates?.[0]?.finishReason || 'STOP';
@@ -1020,6 +1047,7 @@ ${isSecondRequest ? `
             
             // 마지막 subtitle-section이 완전히 닫히지 않았다면 (중간에 잘림)
             if (lastCloseDivIndex === -1 || lastCloseDivIndex >= html.length || depth > 0) {
+                
                 // 마지막 subtitle-section이 어느 소제목에 해당하는지 확인
                 const lastSectionContent = html.substring(lastSectionStart, Math.min(lastSectionStart + 1000, html.length));
                 let lastSubtitleIndex = -1;
@@ -1053,6 +1081,7 @@ ${isSecondRequest ? `
                 isTruncated = true;
                 // 제안 1-4: 안전한 자르기 함수 사용 (테이블 내부 자르기 방지 포함)
                 cleanHtml = safeTrimToCompletedBoundary(cleanHtml);
+                
                 // 중간에 잘린 소제목 제거 (중요: 잘린 항목은 재요청 시 다시 생성해야 함)
                 parsedCompletedIndices = removeIncompleteSubtitle(cleanHtml, parsedCompletedIndices);
             } else {
@@ -1068,6 +1097,7 @@ ${isSecondRequest ? `
                 finishReason = 'MAX_TOKENS'; // 재요청을 위해 MAX_TOKENS로 설정
                 // 제안 1-4: 안전한 자르기 함수 사용 (테이블 내부 자르기 방지 포함)
                 cleanHtml = safeTrimToCompletedBoundary(cleanHtml);
+                
                 // 중간에 잘린 소제목 제거 (중요: 잘린 항목은 재요청 시 다시 생성해야 함)
                 parsedCompletedIndices = removeIncompleteSubtitle(cleanHtml, parsedCompletedIndices);
             } else {
@@ -1076,6 +1106,7 @@ ${isSecondRequest ? `
                 parsedCompletedIndices = []; // 모두 완료되었으므로 비움
             }
         }
+
         // 조기 완료 처리된 경우 (모든 소제목이 이미 완료되었으므로 재요청 불필요)
         if (allSubtitlesCompletedEarly) {
             isTruncated = false;
@@ -1089,6 +1120,8 @@ ${isSecondRequest ? `
             const remainingIndices = menu_subtitles
                 .map((_, index) => index)
                 .filter(index => !parsedCompletedIndices.includes(index));
+            
+            
             // partial_done 이벤트 전송
             res.write(`data: ${JSON.stringify({
                 type: 'partial_done',
@@ -1097,6 +1130,7 @@ ${isSecondRequest ? `
                 completedSubtitles: parsedCompletedIndices,
                 remainingSubtitles: remainingIndices
             })}\n\n`);
+            
         }
 
         // done 이벤트 전송 (스트림 에러가 발생했어도 수집된 데이터는 전송)
@@ -1116,10 +1150,12 @@ ${isSecondRequest ? `
         
         res.write(`data: ${JSON.stringify(donePayload)}\n\n`);
         res.end();
+
         if (streamErrorOccurred) {
         }
 
     } catch (error) {
+        
         // 에러 이벤트 전송
         if (!res.headersSent) {
             res.status(500).json({

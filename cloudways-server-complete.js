@@ -260,6 +260,8 @@ app.post('/chat', async (req, res) => {
     // 타임아웃을 30분(1800초)으로 넉넉하게 설정
     req.setTimeout(1800000); // 30분
     res.setTimeout(1800000);
+
+    
     try {
         const {
             role_prompt,
@@ -277,6 +279,8 @@ app.post('/chat', async (req, res) => {
             completedSubtitles = [],
             completedSubtitleIndices = []
         } = req.body;
+
+
         if (!role_prompt || !menu_subtitles || !Array.isArray(menu_subtitles) || menu_subtitles.length === 0) {
             return res.status(400).json({ error: 'Invalid request format' });
         }
@@ -318,6 +322,7 @@ app.post('/chat', async (req, res) => {
 
         // 프롬프트 생성
         const prompt = buildPrompt(req.body);
+
         // 스트리밍 방식으로 생성
         const result = await geminiModel.generateContentStream(prompt);
 
@@ -361,7 +366,10 @@ app.post('/chat', async (req, res) => {
             finishReason: 'STOP'
         })}\n\n`);
         res.end();
+
+
     } catch (error) {
+        
         // 에러 이벤트 전송
         if (!res.headersSent) {
             res.status(500).json({

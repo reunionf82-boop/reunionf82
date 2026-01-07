@@ -90,6 +90,156 @@ ${subtitlesText.substring(0, 1500)}${subtitlesText.length > 1500 ? '...' : ''}
 
 답변:`
 
+    
+    let answer = ''
+    let response: any = null
+    let finishReason: string | undefined = undefined
+    
+    try {
+      const result = await model.generateContent(prompt)
+      response = result.response
+      
+      
+      // 응답 객체 전체 구조 로깅 (답변 추출 전)
+      if (response.candidates && response.candidates.length > 0) {
+      }
+      
+      // finishReason 확인
+      finishReason = response.candidates?.[0]?.finishReason
+      
+      // 응답 기본 정보 로깅
+      
+      // 응답이 차단되었는지 확인
+      if (finishReason === 'SAFETY' || finishReason === 'RECITATION') {
+        return NextResponse.json(
+          { error: '안전 필터에 의해 응답이 차단되었습니다.' },
+          { status: 500 }
+        )
+      }
+      
+      // MAX_TOKENS인 경우에도 부분 응답이 있을 수 있으므로 계속 진행
+      if (finishReason === 'MAX_TOKENS') {
+      }
+      
+      // 방법 1: response.text() 먼저 시도 (MAX_TOKENS인 경우에도 작동)
+      try {
+        const textMethod = response.text
+        
+        if (typeof textMethod === 'function') {
+          const textResult = textMethod.call(response)
+          
+          // 비동기일 수도 있으므로 Promise인지 확인
+          if (textResult instanceof Promise) {
+            answer = (await textResult).trim()
+          } else {
+            answer = String(textResult).trim()
+          }
+          
+          
+          if (answer) {
+          } else {
+          }
+        } else {
+        }
+      } catch (textError: any) {
+      }
+      
+      // 방법 2: candidates에서 직접 추출 (방법 1이 실패한 경우)
+      if (!answer && response.candidates && response.candidates.length > 0) {
+        const candidate = response.candidates[0]
+        if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+          // parts 배열에서 텍스트 추출
+          for (const part of candidate.content.parts) {
+            if (part && typeof part === 'object') {
+              // part.text가 있는지 확인
+              if ('text' in part && typeof part.text === 'string') {
+                answer += part.text
+              }
+              // 다른 가능한 필드들 확인
+              else if (part.text !== undefined) {
+                answer += String(part.text)
+              }
+            }
+          }
+          answer = answer.trim()
+          
+          if (answer) {
+          } else {
+          }
+        } else {
+        }
+      } else if (!answer) {
+      }
+      
+      // 방법 3: promptFeedback 확인
+      if (!answer && response.promptFeedback) {
+        if (response.promptFeedback.blockReason) {
+          throw new Error(`응답이 차단되었습니다: ${response.promptFeedback.blockReason}`)
+        }
+      }
+      
+      // 모든 방법 실패 시 상세 로그 및 클라이언트로 전달
+      if (!answer) {
+        
+        // 응답 객체를 안전하게 직렬화 (순환 참조 방지)
+        const responseInfo: any = {
+          finishReason,
+          candidatesCount: response.candidates?.length || 0,
+          hasUsageMetadata: !!response.usageMetadata,
+          hasPromptFeedback: !!response.promptFeedback,
+          responseKeys: Object.keys(response),
+        }
+        
+        // 첫 번째 candidate 상세 정보
+        if (response.candidates && response.candidates.length > 0) {
+          const candidate = response.candidates[0]
+          responseInfo.firstCandidate = {
+            finishReason: candidate.finishReason,
+            hasContent: !!candidate.content,
+            hasParts: !!(candidate.content && candidate.content.parts),
+            partsLength: candidate.content?.parts?.length || 0,
+            parts: candidate.content?.parts || null,
+            content: candidate.content ? {
+              role: candidate.content.role,
+              partsCount: candidate.content.parts?.length || 0
+            } : null
+          }
+          
+        }
+        
+        
+        // 클라이언트로 상세 정보 전달
+        return NextResponse.json(
+          { 
+            error: '답변을 추출할 수 없습니다.',
+            debug: responseInfo
+          },
+          { status: 500 }
+        )
+      }
+    } catch (apiError: any) {
+      throw apiError
+    }
+
+    // 답변이 비어있으면 에러
+    if (!answer || answer.length === 0) {
+      return NextResponse.json(
+        { error: 'Gemini API가 빈 답변을 반환했습니다. 다시 시도해주세요.' },
+        { status: 500 }
+      )
+    }
+
+    // 200자 제한 확인 및 처리
+    if (answer.length > 200) {
+      answer = answer.substring(0, 197) + '...'
+    }
+
+    return NextResponse.json({ answer })
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || '답변 생성 중 오류가 발생했습니다.' },
+      { status: 500 }
+    )
   }
 }
 

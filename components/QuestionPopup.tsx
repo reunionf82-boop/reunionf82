@@ -37,6 +37,26 @@ export default function QuestionPopup({ isOpen, onClose, menuTitle, subtitles, o
     setAnswer(null)
 
     try {
+      const response = await onQuestionSubmit(question.trim())
+      setAnswer(response)
+    } catch (err: any) {
+      setError(err.message || '답변을 생성하는 중 오류가 발생했습니다.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleClose = () => {
+    setQuestion('')
+    setAnswer(null)
+    setError(null)
+    onClose()
+  }
+
+  useEffect(() => {
+    const styleId = 'question-textarea-scrollbar-style'
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style')
       style.id = styleId
       style.textContent = `
         .question-textarea-custom::-webkit-scrollbar {

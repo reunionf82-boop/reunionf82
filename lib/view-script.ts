@@ -5,6 +5,7 @@ export const getResultViewScript = (saved: any) => {
   const contentIdStr = saved.content?.id ? saved.content.id : 'null';
 
   return `
+
     (function() {
       try {
         delete window.addQuestionButtons;
@@ -16,7 +17,6 @@ export const getResultViewScript = (saved: any) => {
             get: function() { return undefined; },
             set: function(val) {
                if (val && val.toString().includes('버튼이 이미 존재합니다')) {
-                  return;
                }
                Object.defineProperty(window, propName, {
                  value: val, writable: true, configurable: true, enumerable: true

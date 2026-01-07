@@ -171,7 +171,6 @@ function ResultContent() {
         // 결제 성공 진입 시 팝업 없이 바로 결과 화면으로 전환
         setShowRealtimeLoading(false)
       } catch (e) {
-
         setFortuneViewMode('batch')
         setShowRealtimeLoading(false)
       }
@@ -195,7 +194,6 @@ function ResultContent() {
       
       if (!response.ok) {
         const errorText = await response.text()
-
         throw new Error(`저장된 결과 목록 조회 실패: ${response.status}`)
       }
       
@@ -208,7 +206,6 @@ function ResultContent() {
         setSavedResults([])
       }
     } catch (e) {
-
       setSavedResults([])
     }
   }
@@ -313,7 +310,6 @@ function ResultContent() {
         // 저장된 결과 목록 로드
         loadSavedResults()
       } catch (e: any) {
-
         setError('결과 데이터를 불러오는 중 오류가 발생했습니다.')
       } finally {
         setLoading(false)
@@ -338,7 +334,6 @@ function ResultContent() {
         
         if (!getResponse.ok) {
           const errorData = await getResponse.json()
-
           if (!cancelled) {
             setError('결과 요청 데이터를 찾을 수 없습니다. 다시 시도해주세요.')
             setLoading(false)
@@ -352,7 +347,6 @@ function ResultContent() {
 
         const getResult = await getResponse.json()
         if (!getResult.success || !getResult.payload) {
-
           if (!cancelled) {
             setError('결과 요청 데이터를 불러오는 중 오류가 발생했습니다. 다시 시도해주세요.')
             setLoading(false)
@@ -373,7 +367,7 @@ function ResultContent() {
         
         // 병렬점사 모드 확인
         const isParallelMode = !useSequentialFortune && allMenuGroups && Array.isArray(allMenuGroups) && allMenuGroups.length > 1
-
+        
         // 초기 상태 설정: 화면은 바로 결과 레이아웃으로 전환
         setResultData({
           content,
@@ -418,10 +412,521 @@ function ResultContent() {
         }
       } catch (e: any) {
         if (cancelled) return
-
+        
         // 429 Rate Limit 에러는 점사중... 메시지가 이미 떠 있으므로 에러 메시지 표시하지 않음
         if (e?.message && (e.message.includes('429') || e.message.includes('Rate Limit'))) {
+          setIsStreamingActive(false)
+          setStreamingFinished(true)
+        } else {
+          setError(e?.message || '점사를 진행하는 중 오류가 발생했습니다.')
+          setIsStreamingActive(false)
+          setStreamingFinished(true)
+        }
+      } finally {
+        if (fakeProgressInterval) {
+          clearInterval(fakeProgressInterval)
+          fakeProgressInterval = null
+        }
+      }
+    }
 
+    // 직렬점사 전용 함수 (병렬점사 코드와 완전 분리)
+    const startSequentialStreaming = async (
+      requestData: any,
+      content: any,
+      startTime: number,
+      model: string,
+      userName: string,
+      payload: any
+    ) => {
+      let accumulatedHtml = ''
+      const manseRyeokTable: string | undefined = payload?.requestData?.manse_ryeok_table
+      let hasReceivedPartialDone = false
+
+      await callJeminaiAPIStream(requestData, async (data) => {
+          if (cancelled) return
+
+          if (data.type === 'start') {
+            accumulatedHtml = ''
+          } else if (data.type === 'partial_done') {
+            hasReceivedPartialDone = true
+            
+            // 직렬점사: partial_done이면 완료 처리 (2차 요청은 lib/jeminai.ts에서 처리)
+            let finalHtml = data.html || accumulatedHtml
+            
+            // HTML 정리
+            finalHtml = finalHtml
+              .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+              .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+              .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+              .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+              .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+              .replace(/\*\*/g, '')
+            
+            setStreamingHtml(finalHtml)
+            
+            const finalResult: ResultData = {
+              content,
+              html: finalHtml,
+              startTime,
+              model,
+              userName,
+            }
+            setResultData(finalResult)
+            setIsStreamingActive(false)
+            setStreamingFinished(true)
+            setStreamingProgress(100)
+            setLoading(false)
+            setShowRealtimePopup(false)
+          } else if (data.type === 'chunk') {
+            const chunkText = data.text || ''
+            accumulatedHtml += chunkText
+
+            // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
+            let cleanedChunkHtml = accumulatedHtml
+              .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+              .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+              .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+              .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+              .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+              .replace(/\*\*/g, '')
+
+            // 스트리밍 중에도 만세력 테이블을 가능한 한 빨리 삽입
+            if (manseRyeokTable && !cleanedChunkHtml.includes('manse-ryeok-table')) {
+              const firstMenuSectionMatch = cleanedChunkHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+              if (firstMenuSectionMatch) {
+                const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+
+                if (thumbnailMatch) {
+                  cleanedChunkHtml = cleanedChunkHtml.replace(
+                    /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
+                    `$1\n${manseRyeokTable}`
+                  )
+                } else {
+                  const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                  if (menuTitleMatch) {
+                    cleanedChunkHtml = cleanedChunkHtml.replace(
+                      /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  } else {
+                    cleanedChunkHtml = cleanedChunkHtml.replace(
+                      /(<div class="menu-section">)\s*/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  }
+                }
+              }
+            }
+
+            // 직렬점사: 청크는 실시간으로 표시 (accumulatedHtml만 사용)
+            setStreamingHtml(cleanedChunkHtml)
+            
+          } else if (data.type === 'done') {
+            // 직렬점사: partial_done을 받았으면 done 무시 (중복 방지)
+            if (hasReceivedPartialDone) {
+              return
+            }
+            
+            
+            let finalHtml = data.html || accumulatedHtml
+
+            // HTML 정리
+            finalHtml = finalHtml
+              .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+              .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+              .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+              .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+              .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+              .replace(/\*\*/g, '')
+
+            // 만세력 테이블 삽입
+            if (manseRyeokTable && !finalHtml.includes('manse-ryeok-table')) {
+              const firstMenuSectionMatch = finalHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+              if (firstMenuSectionMatch) {
+                const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+
+                if (thumbnailMatch) {
+                  finalHtml = finalHtml.replace(
+                    /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
+                    `$1\n${manseRyeokTable}`
+                  )
+                } else {
+                  const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                  if (menuTitleMatch) {
+                    finalHtml = finalHtml.replace(
+                      /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  } else {
+                    finalHtml = finalHtml.replace(
+                      /(<div class="menu-section">)\s*/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  }
+                }
+              }
+            }
+
+            // 직렬점사: finalHtml만 표시 (allAccumulatedHtml 사용 안 함)
+            setStreamingHtml(finalHtml)
+
+            const finalResult: ResultData = {
+              content,
+              html: finalHtml,
+              startTime,
+              model,
+              userName,
+            }
+            setResultData(finalResult)
+
+            setIsStreamingActive(false)
+            setStreamingFinished(true)
+            setStreamingProgress(100)
+            setLoading(false)
+            setShowRealtimePopup(false)
+          } else if (data.type === 'error') {
+            if (data.error && (data.error.includes('429') || data.error.includes('Rate Limit'))) {
+              setIsStreamingActive(false)
+              setStreamingFinished(true)
+            } else {
+              setError(data.error || '점사를 진행하는 중 일시적인 문제가 발생했습니다.')
+              setIsStreamingActive(false)
+              setStreamingFinished(true)
+            }
+          }
+        })
+    }
+
+    // 병렬점사 전용 함수 (직렬점사 코드와 완전 분리)
+    // 룰: 1) 첫 대메뉴 점사 요청 2) 청크 오는데로 즉시 표시 3) Done되면 즉시 다음 대메뉴 백그라운드 요청
+    // 4) 사용자 읽는 동안 다음 대메뉴 데이터 받기 5) 컨텍스트 유지(이전 대메뉴 완료 후 다음 요청)
+    const startParallelStreaming = async (
+      requestData: any,
+      content: any,
+      startTime: number,
+      model: string,
+      userName: string,
+      allMenuGroups: any[],
+      payload: any
+    ) => {
+      const manseRyeokTable: string | undefined = payload?.requestData?.manse_ryeok_table
+      
+      // 각 대메뉴별 완료된 HTML 저장 (화면 떨림 방지)
+      const completedMenuHtmls: string[] = []
+      let allAccumulatedHtml = ''
+      
+      // 중복 요청 방지: 각 대메뉴별로 요청 중/완료 상태 추적
+      const menuProcessingState: { [key: number]: 'idle' | 'processing' | 'done' } = {}
+      let nextMenuRequested = false // 다음 대메뉴 요청 플래그
+
+      // 대메뉴 처리 함수 (순차 실행 보장)
+      const processNextMenu = async (menuIdx: number, previousContext: string) => {
+        if (menuIdx >= allMenuGroups.length) {
+          // 모든 대메뉴 완료
+          setStreamingHtml(allAccumulatedHtml)
+          const finalResult: ResultData = {
+            content,
+            html: allAccumulatedHtml,
+            startTime,
+            model,
+            userName,
+          }
+          setResultData(finalResult)
+          setIsStreamingActive(false)
+          setStreamingFinished(true)
+          setStreamingProgress(100)
+          setLoading(false)
+          setShowRealtimePopup(false)
+          return
+        }
+        
+        // 중복 요청 방지: 이미 처리 중이거나 완료된 대메뉴는 건너뛰기
+        if (menuProcessingState[menuIdx] === 'processing' || menuProcessingState[menuIdx] === 'done') {
+          return
+        }
+        
+        // 요청 시작 표시
+        menuProcessingState[menuIdx] = 'processing'
+        nextMenuRequested = false // 다음 대메뉴 요청 플래그 초기화
+        
+        const group = allMenuGroups[menuIdx]
+        
+        const nextRequestData = {
+          ...requestData,
+          menu_subtitles: group.subtitles,
+          menu_items: [group.menuItem],
+          previousContext: previousContext, // 이전 대메뉴 완료된 텍스트 전체/요약 전달
+          isParallelMode: true,
+          currentMenuIndex: menuIdx,
+          totalMenus: allMenuGroups.length
+        }
+        
+        let menuAccumulated = '' // 현재 대메뉴의 누적 HTML
+        let hasReceivedPartialDone = false
+        let hasRequestedNextMenu = false // 다음 대메뉴 요청 여부 플래그
+        let isProcessingDone = false // done 이벤트 처리 중 플래그 (중복 방지)
+        
+        try {
+          await callJeminaiAPIStream(nextRequestData, async (nextData) => {
+            if (cancelled) return
+            
+            if (nextData.type === 'start') {
+              menuAccumulated = ''
+            } 
+            else if (nextData.type === 'chunk') {
+              // 룰 2: 청크가 오는 즉시 화면에 표시
+              const newChunk = nextData.text || ''
+              if (newChunk) {
+                menuAccumulated += newChunk
+                
+                // HTML 정리 (테이블 중첩 방지 포함)
+                let cleanedMenuHtml = menuAccumulated
+                  .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                  .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                  .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                  .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                  .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                  .replace(/\*\*/g, '')
+                
+                // 테이블 중첩 방지: 테이블 내부에 테이블이 있는지 확인
+                // (서버에서 방지해야 하지만 클라이언트에서도 안전장치)
+                cleanedMenuHtml = cleanedMenuHtml.replace(/<table[^>]*>[\s\S]*?<table/g, (match) => {
+                  // 중첩된 테이블 발견 시 내부 테이블을 div로 변환
+                  return match.replace(/<table/g, '<div class="nested-table-prevention"')
+                })
+                
+                // 만세력 테이블 삽입 (첫 번째 대메뉴만)
+                if (menuIdx === 0 && manseRyeokTable && !cleanedMenuHtml.includes('manse-ryeok-table')) {
+                  const firstMenuSectionMatch = cleanedMenuHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+                  if (firstMenuSectionMatch) {
+                    const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+                    if (thumbnailMatch) {
+                      cleanedMenuHtml = cleanedMenuHtml.replace(
+                        /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
+                        `$1\n${manseRyeokTable}`
+                      )
+                    } else {
+                      const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                      if (menuTitleMatch) {
+                        cleanedMenuHtml = cleanedMenuHtml.replace(
+                          /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
+                          `$1\n${manseRyeokTable}`
+                        )
+                      }
+                    }
+                  }
+                }
+                
+                // 룰 2: 청크 오는데로 즉시 표시 (이전 대메뉴 완료 HTML + 현재 대메뉴 누적 HTML)
+                // 이전 대메뉴 HTML은 절대 변경되지 않음 (화면 떨림 방지)
+                const displayHtml = allAccumulatedHtml + cleanedMenuHtml
+                setStreamingHtml(displayHtml)
+              }
+            } 
+            else if (nextData.type === 'partial_done') {
+              // 중복 partial_done 방지
+              if (hasReceivedPartialDone) {
+                return
+              }
+              
+              hasReceivedPartialDone = true
+              
+              let nextPartialHtml = nextData.html || menuAccumulated
+              nextPartialHtml = nextPartialHtml
+                .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                .replace(/\*\*/g, '')
+              
+              // 테이블 중첩 방지
+              nextPartialHtml = nextPartialHtml.replace(/<table[^>]*>[\s\S]*?<table/g, (match) => {
+                return match.replace(/<table/g, '<div class="nested-table-prevention"')
+              })
+              
+              // 완료된 부분을 allAccumulatedHtml에 추가 (이전 대메뉴 HTML은 그대로 유지)
+              allAccumulatedHtml += nextPartialHtml
+              completedMenuHtmls[menuIdx] = nextPartialHtml
+              menuAccumulated = ''
+              
+              // 완료된 부분 표시 (done 이벤트 대기)
+              setStreamingHtml(allAccumulatedHtml)
+              
+              // partial_done을 받은 경우, done 이벤트에서 다음 대메뉴를 요청하지 않도록 플래그 설정
+              // (마지막 대메뉴가 아닌 경우에만)
+              if (menuIdx < allMenuGroups.length - 1) {
+                // partial_done을 받았지만 done 이벤트가 올 것이므로, done에서 다음 대메뉴 요청
+                // hasRequestedNextMenu는 done에서 설정됨
+              }
+            } 
+            else if (nextData.type === 'done') {
+              // 중복 done 이벤트 방지
+              if (isProcessingDone || hasRequestedNextMenu) {
+                return
+              }
+              
+              // done 이벤트 처리 시작
+              isProcessingDone = true
+              
+              
+              let nextFinalHtml = nextData.html || menuAccumulated
+              
+              // HTML 정리 (테이블 중첩 방지 포함)
+              nextFinalHtml = nextFinalHtml
+                .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                .replace(/\*\*/g, '')
+              
+              // 테이블 중첩 방지
+              nextFinalHtml = nextFinalHtml.replace(/<table[^>]*>[\s\S]*?<table/g, (match) => {
+                return match.replace(/<table/g, '<div class="nested-table-prevention"')
+              })
+              
+              // 만세력 테이블 삽입 (첫 번째 대메뉴만)
+              if (menuIdx === 0 && manseRyeokTable && !nextFinalHtml.includes('manse-ryeok-table')) {
+                const firstMenuSectionMatch = nextFinalHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+                if (firstMenuSectionMatch) {
+                  const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+                  if (thumbnailMatch) {
+                    nextFinalHtml = nextFinalHtml.replace(
+                      /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  } else {
+                    const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                    if (menuTitleMatch) {
+                      nextFinalHtml = nextFinalHtml.replace(
+                        /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
+                        `$1\n${manseRyeokTable}`
+                      )
+                    }
+                  }
+                }
+              }
+              
+              // 완료된 대메뉴 HTML을 allAccumulatedHtml에 추가 (partial_done에서 이미 추가했으면 생략)
+              if (!hasReceivedPartialDone) {
+                allAccumulatedHtml += nextFinalHtml
+                completedMenuHtmls[menuIdx] = nextFinalHtml
+              }
+              
+              // 완료된 대메뉴 표시 (한 번에)
+              setStreamingHtml(allAccumulatedHtml)
+              
+              // 현재 대메뉴 완료 표시
+              menuProcessingState[menuIdx] = 'done'
+              
+              // 룰 3: Done 되는 순간, 즉시 다음 대메뉴를 백그라운드에서 시작
+              // 룰 5: 컨텍스트 유지 - 이전 대메뉴 완료된 텍스트 전체를 다음 요청에 전달
+              const nextContext = nextFinalHtml
+                .replace(/<[^>]+>/g, ' ') // HTML 태그 제거
+                .replace(/\s+/g, ' ') // 공백 정리
+                .trim()
+              
+              
+              // 다음 대메뉴 요청 플래그를 먼저 설정 (중복 방지)
+              hasRequestedNextMenu = true
+              nextMenuRequested = true
+              
+              
+              // 다음 대메뉴 요청 (백그라운드로 즉시 시작, await로 순차 보장)
+              // 이전 대메뉴 화면 표시에 영향 없이 진행
+              // 플래그를 먼저 설정했으므로 중복 호출 방지됨
+              await processNextMenu(menuIdx + 1, nextContext)
+            } 
+            else if (nextData.type === 'error') {
+              // 에러 발생해도 현재까지의 내용은 표시
+              setStreamingHtml(allAccumulatedHtml)
+              setIsStreamingActive(false)
+              setStreamingFinished(true)
+              setLoading(false)
+              setShowRealtimePopup(false)
+            }
+          })
+        } catch (error) {
+          // 에러 발생해도 현재까지의 내용은 표시
+          setStreamingHtml(allAccumulatedHtml)
+          setIsStreamingActive(false)
+          setStreamingFinished(true)
+          setLoading(false)
+          setShowRealtimePopup(false)
+        }
+      }
+      
+      // 룰 1: 첫 번째 대메뉴 요청 시작
+      await processNextMenu(0, '')
+    }
+
+    startStreaming()
+
+    return () => {
+      cancelled = true
+      if (fakeProgressInterval) {
+        clearInterval(fakeProgressInterval)
+      }
+    }
+  }, [isRealtime, requestKey])
+
+  // 페이지 포커스 시 저장된 결과 동기화
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        if (isRealtime) {
+          // 스트리밍 중일 때는 백그라운드 복귀 시 스트림 상태 확인
+          // 스트림은 백그라운드에서도 계속 진행되므로 별도 처리 불필요
+          // lib/jeminai.ts의 visibilitychange 핸들러가 타임아웃 방지 처리
+        } else {
+          loadSavedResults()
+        }
+      } else {
+        if (isRealtime) {
+          // 스트리밍 중 백그라운드로 전환 (전화 수신, 메신저 알림 탭, 다른 앱으로 이동 등)
+        }
+      }
+    }
+
+    const handleFocus = () => {
+      if (!isRealtime) {
+        loadSavedResults()
+      } else {
+        // 스트리밍 중 포커스 복귀
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleFocus)
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [isRealtime])
+
+  // 결과를 서버에 저장 (자동 저장용, alert 없음) - early return 이전에 정의
+  const saveResultToLocal = useCallback(async (showAlert: boolean = true) => {
+    if (typeof window === 'undefined' || !resultData) {
+      if (showAlert) {
+        alert('결과 저장에 실패했습니다. (데이터 없음)')
+      }
+      return
+    }
+    
+    // requestKey 저장 (나중에 temp_requests 삭제용)
+    const currentRequestKey = requestKey
+    
+    try {
+      // resultData에서 필요한 값들 가져오기
+      const content = resultData.content
+      const html = resultData.html || ''
+      const model = resultData.model
+      const fontFace = content?.font_face || ''
+      
+      // HTML에 모든 CSS 스타일 포함하여 저장 (result 페이지와 동일하게 표시되도록)
       let htmlWithFont = html || ''
       
       // font-family 추출
@@ -574,6 +1079,17 @@ ${fontFace ? fontFace : ''}
           })
         }
         
+        // temp_requests 삭제 (결과 저장 성공 후)
+        if (currentRequestKey) {
+          try {
+            await fetch(`/api/temp-request/delete?requestKey=${currentRequestKey}`, {
+              method: 'DELETE'
+            })
+          } catch (deleteError) {
+            // 삭제 실패는 무시
+          }
+        }
+        
         if (showAlert) {
           alert('결과가 저장되었습니다.')
         } else {
@@ -599,8 +1115,6 @@ ${fontFace ? fontFace : ''}
         throw new Error('결과 저장에 실패했습니다.')
       }
     } catch (e) {
-
-
       if (showAlert) {
         alert('결과 저장에 실패했습니다.\n\n개발자 도구 콘솔을 확인해주세요.')
       }
@@ -1586,7 +2100,6 @@ ${fontFace ? fontFace : ''}
         const selectedSpeaker = await getSelectedSpeaker()
         speaker = selectedSpeaker
       } catch (error) {
-
       }
       
       // 2. content.id가 있으면 Supabase에서 컨텐츠의 tts_speaker도 확인
@@ -1605,7 +2118,6 @@ ${fontFace ? fontFace : ''}
             content.tts_speaker = freshContent.tts_speaker
           }
         } catch (error) {
-
         }
       } else {
         // content.id가 없으면 app_settings의 화자 사용
@@ -1655,7 +2167,6 @@ ${fontFace ? fontFace : ''}
             }
             audio.onerror = (e) => {
               clearTimeout(timeout)
-
               reject(new Error(`청크 ${chunkIndex + 1} 로드 실패`))
             }
             audio.load()
@@ -1663,7 +2174,6 @@ ${fontFace ? fontFace : ''}
 
           return { url, audio }
         } catch (error) {
-
           return null
         }
       }
@@ -1727,7 +2237,6 @@ ${fontFace ? fontFace : ''}
           
           // 타임아웃 설정 (5분 - 매우 긴 오디오 대비)
           const timeout = setTimeout(() => {
-
             currentAudio.pause()
             URL.revokeObjectURL(currentUrl)
             currentAudioRef.current = null
@@ -1746,7 +2255,6 @@ ${fontFace ? fontFace : ''}
           }
           
           currentAudio.onerror = (e) => {
-
             cleanup()
             // 에러가 발생해도 다음 청크로 계속 진행하도록 resolve (reject 대신)
             resolve()
@@ -1761,7 +2269,99 @@ ${fontFace ? fontFace : ''}
           }
           
           currentAudio.play().catch((err) => {
+            cleanup()
+            // play 실패해도 다음 청크로 계속 진행
+            resolve()
+          })
+        })
 
+        // 다음 청크 미리 로드 완료 대기 및 저장
+        if (i < chunks.length - 1) {
+          try {
+            preloadedChunk = await nextChunkPromise
+            if (preloadedChunk) {
+            } else {
+            }
+          } catch (err) {
+            preloadedChunk = null
+          }
+        }
+
+        // 중지 플래그 재확인
+        if (shouldStopRef.current) {
+          if (preloadedChunk) {
+            URL.revokeObjectURL(preloadedChunk.url)
+          }
+          break
+        }
+      }
+
+      if (!shouldStopRef.current) {
+      } else {
+      }
+      setIsPlaying(false)
+      currentAudioRef.current = null
+      setShouldStop(false)
+      shouldStopRef.current = false
+    } catch (error: any) {
+      alert(error?.message || '음성 변환에 실패했습니다.')
+      setIsPlaying(false)
+      currentAudioRef.current = null
+      setShouldStop(false)
+    }
+  }
+
+  // 저장된 결과 음성으로 듣기 기능 - 청크 단위로 나누어 재생
+  const handleSavedResultTextToSpeech = async (savedResult: any) => {
+    if (!savedResult.html || playingResultId === savedResult.id) return
+
+    try {
+      setPlayingResultId(savedResult.id)
+      
+      // HTML에서 텍스트 추출
+      const textContent = extractTextFromHtml(savedResult.html)
+      
+      if (!textContent.trim()) {
+        alert('읽을 내용이 없습니다.')
+        setPlayingResultId(null)
+        return
+      }
+
+      // 저장된 컨텐츠에서 화자 정보 가져오기 (app_settings의 선택된 화자 우선 사용)
+      let speaker = 'nara' // 기본값
+      
+      // 1. 먼저 app_settings에서 선택된 화자 확인
+      try {
+        const selectedSpeaker = await getSelectedSpeaker()
+        speaker = selectedSpeaker
+      } catch (error) {
+      }
+      
+      // 2. content.id가 있으면 Supabase에서 컨텐츠의 tts_speaker도 확인
+      if (savedResult.content?.id) {
+        try {
+          const freshContent = await getContentById(savedResult.content.id)
+          
+          // 컨텐츠에 tts_speaker가 있고 'nara'가 아니면 사용 (컨텐츠별 설정이 우선)
+          if (freshContent?.tts_speaker && freshContent.tts_speaker !== 'nara') {
+            speaker = freshContent.tts_speaker
+          } else {
+          }
+          
+          // savedResult.content 객체 업데이트
+          if (freshContent?.tts_speaker && savedResult.content) {
+            savedResult.content.tts_speaker = freshContent.tts_speaker
+          }
+        } catch (error) {
+        }
+      } else {
+        // content.id가 없으면 app_settings의 화자 사용
+      }
+      
+      // 텍스트를 2000자 단위로 분할
+      const maxLength = 2000
+      const chunks = splitTextIntoChunks(textContent, maxLength)
+      
       // 다음 청크를 미리 로드하는 함수
       const preloadNextChunk = async (chunkIndex: number): Promise<{ url: string; audio: HTMLAudioElement } | null> => {
         if (chunkIndex >= chunks.length) {
@@ -1802,7 +2402,6 @@ ${fontFace ? fontFace : ''}
             }
             audio.onerror = (e) => {
               clearTimeout(timeout)
-
               reject(new Error(`청크 ${chunkIndex + 1} 로드 실패`))
             }
             audio.load()
@@ -1810,7 +2409,6 @@ ${fontFace ? fontFace : ''}
 
           return { url, audio }
         } catch (error) {
-
           return null
         }
       }
@@ -1859,7 +2457,6 @@ ${fontFace ? fontFace : ''}
           
           // 타임아웃 설정 (5분)
           const timeout = setTimeout(() => {
-
             currentAudio.pause()
             URL.revokeObjectURL(currentUrl)
             currentAudioRef.current = null
@@ -1878,7 +2475,6 @@ ${fontFace ? fontFace : ''}
           }
           
           currentAudio.onerror = (e) => {
-
             cleanup()
             // 에러가 발생해도 다음 청크로 계속 진행
             resolve()
@@ -1893,7 +2489,115 @@ ${fontFace ? fontFace : ''}
           }
           
           currentAudio.play().catch((err) => {
+            cleanup()
+            // play 실패해도 다음 청크로 계속 진행
+            resolve()
+          })
+        })
 
+        // 다음 청크 미리 로드 완료 대기 및 저장
+        if (i < chunks.length - 1) {
+          try {
+            preloadedChunk = await nextChunkPromise
+            if (preloadedChunk) {
+            } else {
+            }
+          } catch (err) {
+            preloadedChunk = null
+          }
+        }
+      }
+
+      setPlayingResultId(null)
+      currentAudioRef.current = null
+    } catch (error: any) {
+      alert(error?.message || '음성 변환에 실패했습니다.')
+      setPlayingResultId(null)
+      currentAudioRef.current = null
+    }
+  }
+
+  // 저장된 결과 삭제
+  const deleteSavedResult = async (resultId: string) => {
+    if (typeof window === 'undefined') return
+    
+    try {
+      const response = await fetch(`/api/saved-results/delete?id=${resultId}`, {
+        method: 'DELETE',
+        cache: 'no-store' // 프로덕션 환경에서 캐싱 방지
+      })
+      if (!response.ok) {
+        throw new Error('저장된 결과 삭제 실패')
+      }
+      const result = await response.json()
+      if (result.success) {
+        // 즉시 로컬 상태에서 제거 (UI 즉시 업데이트)
+        setSavedResults((prev) => prev.filter((item: any) => item.id !== resultId))
+        // 백그라운드에서 서버와 동기화
+        setTimeout(async () => {
+          await loadSavedResults()
+        }, 100)
+      } else {
+        throw new Error('저장된 결과 삭제에 실패했습니다.')
+      }
+    } catch (e) {
+      alert('저장된 결과 삭제에 실패했습니다.')
+    }
+  }
+
+  // 저장된 결과 보기
+  const viewSavedResult = (resultId: string) => {
+    if (typeof window === 'undefined') return
+    
+    try {
+      const saved = savedResults.find((r: any) => r.id === resultId)
+      
+      if (saved) {
+        // content가 문자열인 경우 파싱
+        let contentObj = saved.content
+        if (typeof saved.content === 'string') {
+          try {
+            contentObj = JSON.parse(saved.content)
+          } catch (e) {
+            contentObj = saved.content
+          }
+        } else {
+        }
+        
+        // userName을 안전하게 처리 (템플릿 리터럴 중첩 방지)
+        const userNameForScript = saved.userName ? JSON.stringify(saved.userName) : "''"
+        
+        // contentObj를 JSON 문자열로 변환 (템플릿 리터럴에서 사용)
+        const contentObjJson = JSON.stringify(contentObj || {})
+        
+        // HTML에서 <style> 태그 추출하여 <head>에 넣고, 나머지는 본문에 표시
+        let htmlContent = saved.html || ''
+        let styleContent = ''
+        
+        // HTML에 <style> 태그가 포함되어 있는지 확인
+        const styleMatch = htmlContent.match(/<style[^>]*>([\s\S]*?)<\/style>/i)
+        if (styleMatch) {
+          styleContent = styleMatch[1]
+          // HTML에서 <style> 태그 제거
+          htmlContent = htmlContent.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        }
+        
+        // 소제목 썸네일 추가 (저장된 결과) - batch 모드와 동일한 방식
+        const menuItems = contentObj?.menu_items || []
+        
+        if (menuItems.length > 0 && htmlContent) {
+          try {
+            // ** 제거는 DOMParser 전에 처리
+            let processedHtml = htmlContent.replace(/\*\*/g, '')
+            
+            const parser = new DOMParser()
+            const doc = parser.parseFromString(processedHtml, 'text/html')
+            const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
+            
+            menuSections.forEach((section, menuIndex) => {
+              const menuItem = menuItems[menuIndex]
+              
+              // menu-section에 id 추가 (목차에서 스크롤하기 위해)
               ;(section as HTMLElement).id = `menu-${menuIndex}`
               
               if (menuItem?.subtitles) {
@@ -1932,8 +2636,6 @@ ${fontFace ? fontFace : ''}
             // 썸네일이 실제로 추가되었는지 확인
             const thumbnailCount = (htmlContent.match(/subtitle-thumbnail-container/g) || []).length
           } catch (e) {
-
-
           }
         } else {
           // ** 제거는 여기서도 처리
@@ -1980,7 +2682,6 @@ ${fontFace ? fontFace : ''}
             tocHtml += '</div>'
           }
         } catch (e) {
-
         }
         
         // 플로팅 배너 HTML 생성
@@ -1998,7 +2699,6 @@ ${fontFace ? fontFace : ''}
             bannerHtml += '</div>'
           }
         } catch (e) {
-
         }
         
         // 북커버 추출 (HTML에서 북커버를 찾아서 추출하고 제거)
@@ -2020,7 +2720,6 @@ ${fontFace ? fontFace : ''}
               }
             }
           } catch (e) {
-
           }
         }
         
@@ -2215,7 +2914,6 @@ ${fontFace ? fontFace : ''}
                 try {
                   contentObj = ${contentObjJson};
                 } catch (e) {
-
                   contentObj = {};
                 }
                 
@@ -2236,7 +2934,6 @@ ${fontFace ? fontFace : ''}
                       }
                     })
                     .catch(error => {
-
                     });
                 } else {
                 }
@@ -2357,7 +3054,6 @@ ${fontFace ? fontFace : ''}
 
                     const contentHtmlEl = document.getElementById('contentHtml');
                     if (!contentHtmlEl) {
-
                       alert('콘텐츠를 찾을 수 없습니다.');
                       return;
                     }
@@ -2383,7 +3079,6 @@ ${fontFace ? fontFace : ''}
                         
                         if (!response.ok) {
                           const errorText = await response.text();
-
                           throw new Error('API 응답 실패: ' + response.status);
                         }
                         
@@ -2395,8 +3090,6 @@ ${fontFace ? fontFace : ''}
                         } else {
                         }
                       } catch (error) {
-
-
                         // 조회 실패 시 기존 값 사용
                         speaker = window.savedContentSpeaker || 'nara';
                       }
@@ -2457,7 +3150,6 @@ ${fontFace ? fontFace : ''}
                           };
                           audio.onerror = function(e) {
                             clearTimeout(timeout);
-
                             reject(new Error('청크 ' + (chunkIndex + 1) + ' 로드 실패'));
                           };
                           audio.load();
@@ -2465,7 +3157,6 @@ ${fontFace ? fontFace : ''}
 
                         return { url, audio };
                       } catch (error) {
-
                         return null;
                       }
                     };
@@ -2530,7 +3221,6 @@ ${fontFace ? fontFace : ''}
                         
                         // 타임아웃 설정 (5분)
                         const timeout = setTimeout(function() {
-
                           currentAudioElement.pause();
                           URL.revokeObjectURL(currentUrl);
                           currentAudio = null;
@@ -2549,7 +3239,6 @@ ${fontFace ? fontFace : ''}
                         };
                         
                         currentAudioElement.onerror = function(e) {
-
                           cleanup();
                           // 에러가 발생해도 다음 청크로 계속 진행
                           resolve();
@@ -2567,7 +3256,6 @@ ${fontFace ? fontFace : ''}
                         };
                         
                         currentAudioElement.play().catch(function(err) {
-
                           cleanup();
                           // play 실패해도 다음 청크로 계속 진행
                           resolve();
@@ -2582,7 +3270,6 @@ ${fontFace ? fontFace : ''}
                           } else {
                           }
                         } catch (err) {
-
                           preloadedChunk = null;
                         }
                       }
@@ -2605,7 +3292,7 @@ ${fontFace ? fontFace : ''}
                     icon.textContent = '🔊';
                     text.textContent = '점사 듣기';
                   } catch (error) {
-
+                    
                     alert(error?.message || '음성 변환에 실패했습니다.');
                     
                     const button = document.getElementById('ttsButton');
@@ -2619,7 +3306,6 @@ ${fontFace ? fontFace : ''}
                       icon.textContent = '🔊';
                       text.textContent = '점사 듣기';
                     } else {
-
                     }
                   }
                 }
@@ -2640,7 +3326,6 @@ ${fontFace ? fontFace : ''}
                       } else if (typeof window.handleTextToSpeech === 'function') {
                         window.handleTextToSpeech();
                       } else {
-
                         alert('음성 재생 기능을 초기화하는 중 오류가 발생했습니다.');
                       }
                     };
@@ -2665,7 +3350,6 @@ ${fontFace ? fontFace : ''}
                       retryCount++;
                       setTimeout(tryConnect, 200 * retryCount);
                     } else {
-
                     }
                   };
                   
@@ -2698,7 +3382,6 @@ ${fontFace ? fontFace : ''}
         alert('저장된 결과를 찾을 수 없습니다.')
       }
     } catch (e) {
-
       alert('저장된 결과를 불러오는데 실패했습니다.')
     }
   }
