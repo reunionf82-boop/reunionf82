@@ -1440,6 +1440,8 @@ function FormContent() {
         // 14400mm로 넣으면 PDF 뷰어가 1장으로 뭉개거나 중간이 잘리는 문제가 생길 수 있어
         // 안전하게 5000mm로 제한합니다.
         const maxPdfPageHeight = 5000; // mm
+        const pdfMargin = 5; // mm (상하 여백)
+        const usablePageHeight = maxPdfPageHeight - (pdfMargin * 2); // 실제 사용 가능한 높이
         
         pdf = new jsPDF({
           orientation: 'p',
@@ -1448,7 +1450,7 @@ function FormContent() {
           compress: true
         });
         
-        let currentPdfY = 0;
+        let currentPdfY = pdfMargin; // 상단 여백부터 시작
         
         const root = (tempContainer.querySelector('.container') as HTMLElement) || (tempContainer.firstElementChild as HTMLElement);
         if (!root) throw new Error('PDF 캡처 루트(.container)를 찾을 수 없습니다.');
@@ -1477,15 +1479,17 @@ function FormContent() {
           const imgH = canvasToAdd.height;
           if (imgW <= 0 || imgH <= 0) return;
           
-          const pdfImgWidth = pdfPageWidth;
+          const pdfImgWidth = pdfPageWidth - (pdfMargin * 2); // 좌우 여백 제외
           const pdfImgHeight = (imgH * pdfImgWidth) / imgW;
           
-          if (currentPdfY + pdfImgHeight > maxPdfPageHeight) {
+          // 이미지가 현재 페이지에 들어갈 공간이 부족하면 새 페이지로 넘김
+          // 하단 여백(pdfMargin)을 고려하여 계산
+          if (currentPdfY + pdfImgHeight > maxPdfPageHeight - pdfMargin) {
             pdf.addPage([pdfPageWidth, maxPdfPageHeight]);
-            currentPdfY = 0;
+            currentPdfY = pdfMargin; // 새 페이지의 상단 여백부터 시작
           }
           
-          pdf.addImage(canvasToAdd.toDataURL('image/jpeg', 0.95), 'JPEG', 0, currentPdfY, pdfImgWidth, pdfImgHeight);
+          pdf.addImage(canvasToAdd.toDataURL('image/jpeg', 0.95), 'JPEG', pdfMargin, currentPdfY, pdfImgWidth, pdfImgHeight);
           currentPdfY += pdfImgHeight;
         };
         
