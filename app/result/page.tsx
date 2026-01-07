@@ -364,9 +364,21 @@ function ResultContent() {
         }
 
         const payload = getResult.payload
-        const { requestData, content, startTime, model, userName } = payload
+        const { requestData, content, startTime, model, userName, useSequentialFortune } = payload
+        
+        // allMenuGroups는 payload 최상위 또는 requestData에 있을 수 있음
+        const allMenuGroups = payload.allMenuGroups || requestData?.allMenuGroups || []
 
         if (cancelled) return
+        
+        // 병렬점사 모드 확인
+        const isParallelMode = !useSequentialFortune && allMenuGroups && Array.isArray(allMenuGroups) && allMenuGroups.length > 1
+        
+        console.log('🔍 [startStreaming 초기화] 모드 설정:', {
+          useSequentialFortune,
+          allMenuGroupsLength: allMenuGroups?.length || 0,
+          isParallelMode
+        })
 
         // 초기 상태 설정: 화면은 바로 결과 레이아웃으로 전환
         setResultData({
@@ -404,22 +416,72 @@ function ResultContent() {
           })
         }, 500)
 
-        let accumulatedHtml = ''
-        const manseRyeokTable: string | undefined = payload?.requestData?.manse_ryeok_table
+        // 직렬점사와 병렬점사 완전 분리
+        if (isParallelMode) {
+          await startParallelStreaming(requestData, content, startTime, model, userName, allMenuGroups, payload)
+        } else {
+          await startSequentialStreaming(requestData, content, startTime, model, userName, payload)
+        }
+      } catch (e: any) {
+        if (cancelled) return
+        console.error('결과 페이지: realtime 스트리밍 중 예외 발생:', e)
         
-        await callJeminaiAPIStream(requestData, (data) => {
+        // 429 Rate Limit 에러는 점사중... 메시지가 이미 떠 있으므로 에러 메시지 표시하지 않음
+        if (e?.message && (e.message.includes('429') || e.message.includes('Rate Limit'))) {
+          console.error('429 Rate Limit 에러 - 에러 메시지 표시하지 않음 (점사중... 메시지가 이미 표시됨)')
+          setIsStreamingActive(false)
+          setStreamingFinished(true)
+        } else {
+          setError(e?.message || '점사를 진행하는 중 오류가 발생했습니다.')
+          setIsStreamingActive(false)
+          setStreamingFinished(true)
+        }
+      } finally {
+        if (fakeProgressInterval) {
+          clearInterval(fakeProgressInterval)
+          fakeProgressInterval = null
+        }
+      }
+    }
+
+    // 직렬점사 전용 함수 (병렬점사 코드와 완전 분리)
+    const startSequentialStreaming = async (
+      requestData: any,
+      content: any,
+      startTime: number,
+      model: string,
+      userName: string,
+      payload: any
+    ) => {
+      console.log('🔄 [직렬점사] 스트리밍 시작')
+      let accumulatedHtml = ''
+      const manseRyeokTable: string | undefined = payload?.requestData?.manse_ryeok_table
+      let hasReceivedPartialDone = false
+
+      await callJeminaiAPIStream(requestData, async (data) => {
           if (cancelled) return
 
           if (data.type === 'start') {
             accumulatedHtml = ''
           } else if (data.type === 'partial_done') {
-            // 길이 제한 도달: 완료 처리 (2차 요청 없이)
-            console.warn('⚠️ [점사] 길이 제한 도달 - 현재까지 생성된 내용으로 완료 처리')
+            hasReceivedPartialDone = true
+            console.warn('⚠️ [직렬점사] partial_done 수신 - 일부만 완료됨')
             console.log(`📊 HTML 길이: ${(data.html || accumulatedHtml).length.toLocaleString()}자`)
             console.log(`✅ 완료된 소제목: ${data.completedSubtitles?.length || 0}개`)
-            console.log(`⏳ 남은 소제목: ${data.remainingSubtitles?.length || 0}개 (생략됨)`)
+            console.log(`⏳ 남은 소제목: ${data.remainingSubtitles?.length || 0}개`)
             
-            const finalHtml = data.html || accumulatedHtml
+            // 직렬점사: partial_done이면 완료 처리 (2차 요청은 lib/jeminai.ts에서 처리)
+            let finalHtml = data.html || accumulatedHtml
+            
+            // HTML 정리
+            finalHtml = finalHtml
+              .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+              .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+              .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+              .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+              .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+              .replace(/\*\*/g, '')
+            
             setStreamingHtml(finalHtml)
             
             const finalResult: ResultData = {
@@ -440,44 +502,34 @@ function ResultContent() {
             accumulatedHtml += chunkText
 
             // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
-            // 테이블 태그 앞의 모든 줄바꿈을 제거하고 CSS로 간격 조정
-            accumulatedHtml = accumulatedHtml
-              // 이전 태그 닫기(>)와 테이블 사이의 모든 줄바꿈/공백 제거
+            let cleanedChunkHtml = accumulatedHtml
               .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
-              // 줄 시작부터 테이블까지의 모든 줄바꿈/공백 제거
               .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
-              // 테이블 앞의 공백 문자 제거 (줄바꿈 없이 바로 붙이기)
               .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
-              // 텍스트 단락 태그(</p>, </div>, </h3> 등) 뒤의 모든 공백과 줄바꿈 제거 후 테이블
               .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
-              // 모든 종류의 태그 뒤의 연속된 줄바꿈과 공백을 제거하고 테이블 바로 붙이기
               .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
-              // ** 문자 제거 (마크다운 강조 표시 제거)
               .replace(/\*\*/g, '')
 
             // 스트리밍 중에도 만세력 테이블을 가능한 한 빨리 삽입
-            if (manseRyeokTable && !accumulatedHtml.includes('manse-ryeok-table')) {
-              const firstMenuSectionMatch = accumulatedHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+            if (manseRyeokTable && !cleanedChunkHtml.includes('manse-ryeok-table')) {
+              const firstMenuSectionMatch = cleanedChunkHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
               if (firstMenuSectionMatch) {
                 const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
 
                 if (thumbnailMatch) {
-                  // 썸네일 바로 다음에 삽입 (줄바꿈 한 줄만)
-                  accumulatedHtml = accumulatedHtml.replace(
+                  cleanedChunkHtml = cleanedChunkHtml.replace(
                     /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
                     `$1\n${manseRyeokTable}`
                   )
                 } else {
                   const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
                   if (menuTitleMatch) {
-                    // 메뉴 제목 다음에 삽입 (줄바꿈 한 줄만)
-                    accumulatedHtml = accumulatedHtml.replace(
+                    cleanedChunkHtml = cleanedChunkHtml.replace(
                       /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
                       `$1\n${manseRyeokTable}`
                     )
                   } else {
-                    // 첫 번째 menu-section 시작 부분에 삽입 (줄바꿈 한 줄만)
-                    accumulatedHtml = accumulatedHtml.replace(
+                    cleanedChunkHtml = cleanedChunkHtml.replace(
                       /(<div class="menu-section">)\s*/,
                       `$1\n${manseRyeokTable}`
                     )
@@ -486,41 +538,41 @@ function ResultContent() {
               }
             }
 
-            setStreamingHtml(accumulatedHtml)
+            // 직렬점사: 청크는 실시간으로 표시 (accumulatedHtml만 사용)
+            setStreamingHtml(cleanedChunkHtml)
             
           } else if (data.type === 'done') {
+            // 직렬점사: partial_done을 받았으면 done 무시 (중복 방지)
+            if (hasReceivedPartialDone) {
+              console.log('✅ [직렬점사] partial_done을 이미 받았으므로 done 이벤트 무시')
+              return
+            }
+            
+            console.log('✅ [직렬점사] done 이벤트 수신')
+            
             let finalHtml = data.html || accumulatedHtml
 
-            // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
-            // 테이블 태그 앞의 모든 줄바꿈을 제거하고 CSS로 간격 조정
+            // HTML 정리
             finalHtml = finalHtml
-              // 이전 태그 닫기(>)와 테이블 사이의 모든 줄바꿈/공백 제거
               .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
-              // 줄 시작부터 테이블까지의 모든 줄바꿈/공백 제거
               .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
-              // 테이블 앞의 공백 문자 제거 (줄바꿈 없이 바로 붙이기)
               .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
-              // 텍스트 단락 태그(</p>, </div>, </h3> 등) 뒤의 모든 공백과 줄바꿈 제거 후 테이블
               .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
-              // 모든 종류의 태그 뒤의 연속된 줄바꿈과 공백을 제거하고 테이블 바로 붙이기
               .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
-              // ** 문자 제거 (마크다운 강조 표시 제거)
               .replace(/\*\*/g, '')
 
-            // 만세력 테이블이 있고 첫 번째 menu-section에 없으면 삽입 (batch 모드와 동일한 위치 규칙, 중복 방지)
+            // 만세력 테이블 삽입
             if (manseRyeokTable && !finalHtml.includes('manse-ryeok-table')) {
               const firstMenuSectionMatch = finalHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
               if (firstMenuSectionMatch) {
                 const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
 
                 if (thumbnailMatch) {
-                  // 썸네일 바로 다음에 삽입 (줄바꿈 한 줄만)
                   finalHtml = finalHtml.replace(
                     /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
                     `$1\n${manseRyeokTable}`
                   )
                 } else {
-                  // 썸네일이 없으면 메뉴 제목 다음에 삽입 (줄바꿈 한 줄만)
                   const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
                   if (menuTitleMatch) {
                     finalHtml = finalHtml.replace(
@@ -528,7 +580,6 @@ function ResultContent() {
                       `$1\n${manseRyeokTable}`
                     )
                   } else {
-                    // 메뉴 제목도 없으면 첫 번째 menu-section 시작 부분에 삽입 (줄바꿈 한 줄만)
                     finalHtml = finalHtml.replace(
                       /(<div class="menu-section">)\s*/,
                       `$1\n${manseRyeokTable}`
@@ -538,6 +589,7 @@ function ResultContent() {
               }
             }
 
+            // 직렬점사: finalHtml만 표시 (allAccumulatedHtml 사용 안 함)
             setStreamingHtml(finalHtml)
 
             const finalResult: ResultData = {
@@ -549,52 +601,303 @@ function ResultContent() {
             }
             setResultData(finalResult)
 
-            // sessionStorage 대신 Supabase에 저장하므로 여기서는 저장하지 않음
-            // (이미 saved_results 테이블에 저장됨)
-
             setIsStreamingActive(false)
             setStreamingFinished(true)
             setStreamingProgress(100)
             setLoading(false)
             setShowRealtimePopup(false)
           } else if (data.type === 'error') {
-            console.error('결과 페이지: realtime 스트리밍 에러:', data.error)
-            // 429 Rate Limit 에러는 점사중... 메시지가 이미 떠 있으므로 에러 메시지 표시하지 않음
+            console.error('❌ [직렬점사] 스트리밍 에러:', data.error)
             if (data.error && (data.error.includes('429') || data.error.includes('Rate Limit'))) {
-              console.error('429 Rate Limit 에러 - 에러 메시지 표시하지 않음 (점사중... 메시지가 이미 표시됨)')
               setIsStreamingActive(false)
               setStreamingFinished(true)
             } else {
-              // 서버/클라이언트에서 이미 사용자 친화적 메시지를 보냈으므로 그대로 사용
-              setError(data.error || '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.')
+              setError(data.error || '점사를 진행하는 중 일시적인 문제가 발생했습니다.')
               setIsStreamingActive(false)
               setStreamingFinished(true)
             }
           }
         })
-      } catch (e: any) {
-        if (cancelled) return
-        console.error('결과 페이지: realtime 스트리밍 중 예외 발생:', e)
-        
-        // 429 Rate Limit 에러는 점사중... 메시지가 이미 떠 있으므로 에러 메시지 표시하지 않음
-        if (e?.message && (e.message.includes('429') || e.message.includes('Rate Limit'))) {
-          console.error('429 Rate Limit 에러 - 에러 메시지 표시하지 않음 (점사중... 메시지가 이미 표시됨)')
+    }
+
+    // 병렬점사 전용 함수 (직렬점사 코드와 완전 분리)
+    // 룰: 1) 첫 대메뉴 점사 요청 2) 청크 오는데로 즉시 표시 3) Done되면 즉시 다음 대메뉴 백그라운드 요청
+    // 4) 사용자 읽는 동안 다음 대메뉴 데이터 받기 5) 컨텍스트 유지(이전 대메뉴 완료 후 다음 요청)
+    const startParallelStreaming = async (
+      requestData: any,
+      content: any,
+      startTime: number,
+      model: string,
+      userName: string,
+      allMenuGroups: any[],
+      payload: any
+    ) => {
+      console.log('🔄 [병렬점사] 스트리밍 시작 - 이어달리기 방식으로 순차 처리')
+      const manseRyeokTable: string | undefined = payload?.requestData?.manse_ryeok_table
+      
+      // 각 대메뉴별 완료된 HTML 저장 (화면 떨림 방지)
+      const completedMenuHtmls: string[] = []
+      let allAccumulatedHtml = ''
+      
+      // 중복 요청 방지: 각 대메뉴별로 요청 중/완료 상태 추적
+      const menuProcessingState: { [key: number]: 'idle' | 'processing' | 'done' } = {}
+      let nextMenuRequested = false // 다음 대메뉴 요청 플래그
+
+      // 대메뉴 처리 함수 (순차 실행 보장)
+      const processNextMenu = async (menuIdx: number, previousContext: string) => {
+        if (menuIdx >= allMenuGroups.length) {
+          // 모든 대메뉴 완료
+          console.log('✅ [병렬점사] 모든 대메뉴 완료')
+          setStreamingHtml(allAccumulatedHtml)
+          const finalResult: ResultData = {
+            content,
+            html: allAccumulatedHtml,
+            startTime,
+            model,
+            userName,
+          }
+          setResultData(finalResult)
           setIsStreamingActive(false)
+          setStreamingFinished(true)
+          setStreamingProgress(100)
           setLoading(false)
+          setShowRealtimePopup(false)
           return
         }
         
-        // 에러 메시지가 이미 사용자 친화적이면 그대로 사용
-        const errorMsg = e?.message && (
-          e.message.includes('잠시 후') || 
-          e.message.includes('대기 중') ||
-          e.message.includes('시도해주세요')
-        ) ? e.message : '점사를 진행하는 중 일시적인 문제가 발생했습니다. 다시 시도해 주시거나 고객센터로 문의해 주세요.'
+        // 중복 요청 방지: 이미 처리 중이거나 완료된 대메뉴는 건너뛰기
+        if (menuProcessingState[menuIdx] === 'processing' || menuProcessingState[menuIdx] === 'done') {
+          console.log(`⚠️ [병렬점사-대메뉴 ${menuIdx + 1}] 이미 처리 중이거나 완료됨 - 중복 요청 방지`)
+          return
+        }
         
-        setError(errorMsg)
-        setIsStreamingActive(false)
-        setLoading(false)
+        // 요청 시작 표시
+        menuProcessingState[menuIdx] = 'processing'
+        nextMenuRequested = false // 다음 대메뉴 요청 플래그 초기화
+        
+        const group = allMenuGroups[menuIdx]
+        console.log(`=== [병렬점사] 대메뉴 ${menuIdx + 1}/${allMenuGroups.length} 요청 시작 ===`)
+        console.log(`📝 대메뉴 제목: ${group.menuItem?.value || group.menuItem?.title || '제목없음'}`)
+        console.log(`📊 소제목 개수: ${group.subtitles.length}개`)
+        
+        const nextRequestData = {
+          ...requestData,
+          menu_subtitles: group.subtitles,
+          menu_items: [group.menuItem],
+          previousContext: previousContext, // 이전 대메뉴 완료된 텍스트 전체/요약 전달
+          isParallelMode: true,
+          currentMenuIndex: menuIdx,
+          totalMenus: allMenuGroups.length
+        }
+        
+        let menuAccumulated = '' // 현재 대메뉴의 누적 HTML
+        let hasReceivedPartialDone = false
+        let hasRequestedNextMenu = false // 다음 대메뉴 요청 여부 플래그
+        let isProcessingDone = false // done 이벤트 처리 중 플래그 (중복 방지)
+        
+        try {
+          await callJeminaiAPIStream(nextRequestData, async (nextData) => {
+            if (cancelled) return
+            
+            if (nextData.type === 'start') {
+              menuAccumulated = ''
+              console.log(`🔄 [병렬점사-대메뉴 ${menuIdx + 1}] 스트리밍 시작`)
+            } 
+            else if (nextData.type === 'chunk') {
+              // 룰 2: 청크가 오는 즉시 화면에 표시
+              const newChunk = nextData.text || ''
+              if (newChunk) {
+                menuAccumulated += newChunk
+                
+                // HTML 정리 (테이블 중첩 방지 포함)
+                let cleanedMenuHtml = menuAccumulated
+                  .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                  .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                  .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                  .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                  .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                  .replace(/\*\*/g, '')
+                
+                // 테이블 중첩 방지: 테이블 내부에 테이블이 있는지 확인
+                // (서버에서 방지해야 하지만 클라이언트에서도 안전장치)
+                cleanedMenuHtml = cleanedMenuHtml.replace(/<table[^>]*>[\s\S]*?<table/g, (match) => {
+                  // 중첩된 테이블 발견 시 내부 테이블을 div로 변환
+                  return match.replace(/<table/g, '<div class="nested-table-prevention"')
+                })
+                
+                // 만세력 테이블 삽입 (첫 번째 대메뉴만)
+                if (menuIdx === 0 && manseRyeokTable && !cleanedMenuHtml.includes('manse-ryeok-table')) {
+                  const firstMenuSectionMatch = cleanedMenuHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+                  if (firstMenuSectionMatch) {
+                    const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+                    if (thumbnailMatch) {
+                      cleanedMenuHtml = cleanedMenuHtml.replace(
+                        /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
+                        `$1\n${manseRyeokTable}`
+                      )
+                    } else {
+                      const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                      if (menuTitleMatch) {
+                        cleanedMenuHtml = cleanedMenuHtml.replace(
+                          /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
+                          `$1\n${manseRyeokTable}`
+                        )
+                      }
+                    }
+                  }
+                }
+                
+                // 룰 2: 청크 오는데로 즉시 표시 (이전 대메뉴 완료 HTML + 현재 대메뉴 누적 HTML)
+                // 이전 대메뉴 HTML은 절대 변경되지 않음 (화면 떨림 방지)
+                const displayHtml = allAccumulatedHtml + cleanedMenuHtml
+                setStreamingHtml(displayHtml)
+              }
+            } 
+            else if (nextData.type === 'partial_done') {
+              // 중복 partial_done 방지
+              if (hasReceivedPartialDone) {
+                console.log(`⚠️ [병렬점사-대메뉴 ${menuIdx + 1}] partial_done을 이미 받았으므로 무시`)
+                return
+              }
+              
+              hasReceivedPartialDone = true
+              console.log(`⚠️ [병렬점사-대메뉴 ${menuIdx + 1}] partial_done 수신 - 일부만 완료됨`)
+              
+              let nextPartialHtml = nextData.html || menuAccumulated
+              nextPartialHtml = nextPartialHtml
+                .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                .replace(/\*\*/g, '')
+              
+              // 테이블 중첩 방지
+              nextPartialHtml = nextPartialHtml.replace(/<table[^>]*>[\s\S]*?<table/g, (match) => {
+                return match.replace(/<table/g, '<div class="nested-table-prevention"')
+              })
+              
+              // 완료된 부분을 allAccumulatedHtml에 추가 (이전 대메뉴 HTML은 그대로 유지)
+              allAccumulatedHtml += nextPartialHtml
+              completedMenuHtmls[menuIdx] = nextPartialHtml
+              menuAccumulated = ''
+              
+              // 완료된 부분 표시 (done 이벤트 대기)
+              setStreamingHtml(allAccumulatedHtml)
+              
+              // partial_done을 받은 경우, done 이벤트에서 다음 대메뉴를 요청하지 않도록 플래그 설정
+              // (마지막 대메뉴가 아닌 경우에만)
+              if (menuIdx < allMenuGroups.length - 1) {
+                // partial_done을 받았지만 done 이벤트가 올 것이므로, done에서 다음 대메뉴 요청
+                // hasRequestedNextMenu는 done에서 설정됨
+              }
+            } 
+            else if (nextData.type === 'done') {
+              // 중복 done 이벤트 방지
+              if (isProcessingDone || hasRequestedNextMenu) {
+                console.log(`⚠️ [병렬점사-대메뉴 ${menuIdx + 1}] done 이벤트 중복 방지 (isProcessingDone: ${isProcessingDone}, hasRequestedNextMenu: ${hasRequestedNextMenu})`)
+                return
+              }
+              
+              // done 이벤트 처리 시작
+              isProcessingDone = true
+              
+              console.log(`✅ [병렬점사-대메뉴 ${menuIdx + 1}] done 이벤트 수신 - 다음 대메뉴 백그라운드 시작`)
+              
+              let nextFinalHtml = nextData.html || menuAccumulated
+              
+              // HTML 정리 (테이블 중첩 방지 포함)
+              nextFinalHtml = nextFinalHtml
+                .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
+                .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
+                .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
+                .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
+                .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
+                .replace(/\*\*/g, '')
+              
+              // 테이블 중첩 방지
+              nextFinalHtml = nextFinalHtml.replace(/<table[^>]*>[\s\S]*?<table/g, (match) => {
+                return match.replace(/<table/g, '<div class="nested-table-prevention"')
+              })
+              
+              // 만세력 테이블 삽입 (첫 번째 대메뉴만)
+              if (menuIdx === 0 && manseRyeokTable && !nextFinalHtml.includes('manse-ryeok-table')) {
+                const firstMenuSectionMatch = nextFinalHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
+                if (firstMenuSectionMatch) {
+                  const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
+                  if (thumbnailMatch) {
+                    nextFinalHtml = nextFinalHtml.replace(
+                      /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
+                      `$1\n${manseRyeokTable}`
+                    )
+                  } else {
+                    const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
+                    if (menuTitleMatch) {
+                      nextFinalHtml = nextFinalHtml.replace(
+                        /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
+                        `$1\n${manseRyeokTable}`
+                      )
+                    }
+                  }
+                }
+              }
+              
+              // 완료된 대메뉴 HTML을 allAccumulatedHtml에 추가 (partial_done에서 이미 추가했으면 생략)
+              if (!hasReceivedPartialDone) {
+                allAccumulatedHtml += nextFinalHtml
+                completedMenuHtmls[menuIdx] = nextFinalHtml
+              }
+              
+              // 완료된 대메뉴 표시 (한 번에)
+              setStreamingHtml(allAccumulatedHtml)
+              
+              // 현재 대메뉴 완료 표시
+              menuProcessingState[menuIdx] = 'done'
+              
+              // 룰 3: Done 되는 순간, 즉시 다음 대메뉴를 백그라운드에서 시작
+              // 룰 5: 컨텍스트 유지 - 이전 대메뉴 완료된 텍스트 전체를 다음 요청에 전달
+              const nextContext = nextFinalHtml
+                .replace(/<[^>]+>/g, ' ') // HTML 태그 제거
+                .replace(/\s+/g, ' ') // 공백 정리
+                .trim()
+              
+              console.log(`🚀 [병렬점사-대메뉴 ${menuIdx + 1}] 완료 - 다음 대메뉴(${menuIdx + 2}) 백그라운드 시작`)
+              console.log(`📝 [병렬점사] 다음 대메뉴에 전달할 컨텍스트 길이: ${nextContext.length}자`)
+              
+              // 다음 대메뉴 요청 플래그를 먼저 설정 (중복 방지)
+              hasRequestedNextMenu = true
+              nextMenuRequested = true
+              
+              console.log(`✅ [병렬점사-대메뉴 ${menuIdx + 1}] done 처리 완료, 다음 대메뉴(${menuIdx + 2}) 요청 시작`)
+              
+              // 다음 대메뉴 요청 (백그라운드로 즉시 시작, await로 순차 보장)
+              // 이전 대메뉴 화면 표시에 영향 없이 진행
+              // 플래그를 먼저 설정했으므로 중복 호출 방지됨
+              await processNextMenu(menuIdx + 1, nextContext)
+            } 
+            else if (nextData.type === 'error') {
+              console.error(`❌ [병렬점사-대메뉴 ${menuIdx + 1}] 에러:`, nextData.error)
+              // 에러 발생해도 현재까지의 내용은 표시
+              setStreamingHtml(allAccumulatedHtml)
+              setIsStreamingActive(false)
+              setStreamingFinished(true)
+              setLoading(false)
+              setShowRealtimePopup(false)
+            }
+          })
+        } catch (error) {
+          console.error(`❌ [병렬점사-대메뉴 ${menuIdx + 1}] 처리 실패:`, error)
+          // 에러 발생해도 현재까지의 내용은 표시
+          setStreamingHtml(allAccumulatedHtml)
+          setIsStreamingActive(false)
+          setStreamingFinished(true)
+          setLoading(false)
+          setShowRealtimePopup(false)
+        }
       }
+      
+      // 룰 1: 첫 번째 대메뉴 요청 시작
+      await processNextMenu(0, '')
     }
 
     startStreaming()

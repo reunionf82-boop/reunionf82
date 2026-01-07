@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function ContentListPage() {
@@ -8,6 +8,79 @@ export default function ContentListPage() {
   const [contents, setContents] = useState<any[]>([])
   const [selectedContent, setSelectedContent] = useState<string>('')
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [useSequentialFortune, setUseSequentialFortune] = useState<boolean>(false)
+  const [loading, setLoading] = useState<boolean>(true)
+  const [saving, setSaving] = useState<boolean>(false)
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    checkAuth()
+  }, [])
+
+  useEffect(() => {
+    if (authenticated === true) {
+      loadSettings()
+    }
+  }, [authenticated])
+
+  const checkAuth = async () => {
+    try {
+      const response = await fetch('/api/admin/auth/check')
+      const data = await response.json()
+      if (data.authenticated) {
+        setAuthenticated(true)
+      } else {
+        setAuthenticated(false)
+        router.push('/admin/login')
+      }
+    } catch (error) {
+      console.error('인증 확인 실패:', error)
+      setAuthenticated(false)
+      router.push('/admin/login')
+    }
+  }
+
+  const loadSettings = async () => {
+    try {
+      const response = await fetch('/api/admin/settings/get')
+      const data = await response.json()
+      if (data.use_sequential_fortune !== undefined) {
+        setUseSequentialFortune(data.use_sequential_fortune)
+      }
+    } catch (error) {
+      console.error('설정 로드 실패:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleToggleFortuneMode = async () => {
+    const newValue = !useSequentialFortune
+    setSaving(true)
+    try {
+      const response = await fetch('/api/admin/settings/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          use_sequential_fortune: newValue
+        }),
+      })
+      const data = await response.json()
+      if (data.success) {
+        setUseSequentialFortune(newValue)
+      } else {
+        console.error('설정 저장 실패:', data.error)
+        alert('설정 저장에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('설정 저장 에러:', error)
+      alert('설정 저장 중 오류가 발생했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const handleInput = () => {
     if (selectedContent.trim()) {
@@ -45,6 +118,18 @@ export default function ContentListPage() {
     setEditingIndex(index)
   }
 
+  if (authenticated === null) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="text-gray-400">인증 확인 중...</div>
+      </div>
+    )
+  }
+
+  if (authenticated === false) {
+    return null // 리다이렉트 중
+  }
+
   return (
     <div className="min-h-screen bg-black text-white p-8">
       {/* 리스트 화면도 더 넓게 사용하기 위해 최대 너비를 확장 */}
@@ -52,6 +137,41 @@ export default function ContentListPage() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">컨텐츠 리스트</h1>
           <p className="text-gray-400">컨텐츠를 관리하세요</p>
+          
+          {/* 병렬점사/직렬점사 토글 버튼 */}
+          <div className="mt-6 bg-gray-800 rounded-lg p-6 border-2 border-gray-600">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <h3 className="text-xl font-bold text-white mb-2">점사 모드 설정</h3>
+                <p className="text-sm text-gray-300 leading-relaxed">
+                  {useSequentialFortune 
+                    ? '직렬점사: 상품메뉴 구성 전체를 한 번에 점사 요청합니다.' 
+                    : '병렬점사: 대메뉴 단위로 순차적 점사 요청하며, 이전 대메뉴의 컨텍스트를 유지합니다.'}
+                </p>
+              </div>
+              <div className="ml-6 flex items-center gap-3">
+                <span className={`text-sm font-medium ${!useSequentialFortune ? 'text-pink-400' : 'text-gray-400'}`}>
+                  병렬
+                </span>
+                <button
+                  onClick={handleToggleFortuneMode}
+                  disabled={loading || saving}
+                  className={`relative inline-flex h-10 w-20 items-center rounded-full transition-colors duration-200 ${
+                    useSequentialFortune ? 'bg-pink-500' : 'bg-gray-600'
+                  } ${loading || saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:opacity-90'}`}
+                >
+                  <span
+                    className={`inline-block h-8 w-8 transform rounded-full bg-white shadow-lg transition-transform duration-200 ${
+                      useSequentialFortune ? 'translate-x-11' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+                <span className={`text-sm font-medium ${useSequentialFortune ? 'text-pink-400' : 'text-gray-400'}`}>
+                  직렬
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* 입력 필드와 버튼들 */}

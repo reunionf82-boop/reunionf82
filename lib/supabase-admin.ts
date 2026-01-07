@@ -706,11 +706,39 @@ export async function saveFortuneViewMode(mode: 'batch' | 'realtime') {
         throw error
       }
     }
-
+    
     return true
   } catch (e) {
     console.error('점사 모드 저장 에러:', e)
     throw e
+  }
+}
+
+// 병렬/직렬 점사 모드 조회
+export async function getUseSequentialFortune(): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('use_sequential_fortune')
+      .eq('id', 1)
+      .single()
+
+    if (error) {
+      console.log('병렬/직렬 점사 모드 조회 실패, 기본값 사용:', error.message)
+      console.log('에러 상세:', error)
+      return false // 기본값: 병렬점사 (false)
+    }
+
+    const useSequential = (data as any)?.use_sequential_fortune
+    console.log('=== getUseSequentialFortune 결과 ===')
+    console.log('DB에서 가져온 값:', useSequential)
+    console.log('타입:', typeof useSequential)
+    console.log('최종 반환값 (useSequential === true):', useSequential === true)
+    console.log('===============================')
+    return useSequential === true // true면 직렬점사, false면 병렬점사
+  } catch (e) {
+    console.error('병렬/직렬 점사 모드 조회 에러:', e)
+    return false // 기본값: 병렬점사
   }
 }
 

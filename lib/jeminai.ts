@@ -36,6 +36,14 @@ interface JeminaiRequest {
   isSecondRequest?: boolean
   completedSubtitles?: Array<any>
   completedSubtitleIndices?: number[]
+  isParallelMode?: boolean
+  currentMenuIndex?: number
+  totalMenus?: number
+  allMenuGroups?: Array<{
+    menuIndex: number
+    menuItem: any
+    subtitles: Array<{ subtitle: string; interpretation_tool: string; char_count: number }>
+  }>
 }
 
 interface JeminaiResponse {
@@ -131,7 +139,11 @@ export async function callJeminaiAPIStream(
         day_gan_info: request.day_gan_info,
         isSecondRequest: request.isSecondRequest,
         completedSubtitles: request.completedSubtitles,
-        completedSubtitleIndices: request.completedSubtitleIndices
+        completedSubtitleIndices: request.completedSubtitleIndices,
+        previousContext: (request as any).previousContext,
+        isParallelMode: (request as any).isParallelMode,
+        currentMenuIndex: (request as any).currentMenuIndex,
+        totalMenus: (request as any).totalMenus
       }
       
       // 디버그: 전달되는 모델 값 확인
@@ -387,25 +399,8 @@ export async function callJeminaiAPIStream(
                 })
               } else if (data.type === 'done') {
                 lastChunkTime = Date.now() // done 수신 시 시간 갱신
-                
-                // partial_done을 이미 받았다면 done에서 재요청하지 않음 (중복 방지)
-                if (hasReceivedPartialDone) {
-                  console.log('✅ partial_done을 이미 받았으므로 done 이벤트에서 재요청을 건너뜁니다.')
-                  finalResponse = {
-                    html: data.html,
-                    isTruncated: data.isTruncated,
-                    finishReason: data.finishReason,
-                    usage: data.usage
-                  }
-                  onChunk({
-                    type: 'done',
-                    html: data.html,
-                    isTruncated: data.isTruncated,
-                    finishReason: data.finishReason,
-                    usage: data.usage
-                  })
-                  break // 스트림 읽기 중단
-                }
+                // 병렬점사 모드 확인 (요청 객체에서 확인)
+                const isParallelMode = request?.isParallelMode === true
                 
                 // MAX_TOKENS로 종료된 경우 처리
                 if (data.finishReason === 'MAX_TOKENS') {
@@ -423,8 +418,17 @@ export async function callJeminaiAPIStream(
                 }
                 
                 if (data.html) {
-                  // MAX_TOKENS로 인한 잘림이고 미완료 소제목이 있으면 재요청 (partial_done을 받지 않은 경우만)
-                  if (!hasReceivedPartialDone && data.finishReason === 'MAX_TOKENS' && data.isTruncated && data.completedSubtitleIndices && data.completedSubtitleIndices.length > 0) {
+                  // MAX_TOKENS로 인한 잘림이고 미완료 소제목이 있으면 재요청
+                  // (partial_done 수신 여부와 무관하게, 완료 인덱스가 있으면 재요청 가능)
+                  const shouldRetry =
+                    data.finishReason === 'MAX_TOKENS' &&
+                    data.isTruncated &&
+                    data.completedSubtitleIndices &&
+                    data.completedSubtitleIndices.length > 0
+
+                  // 재요청이 필요한 경우: 여기서 "중간 done"을 호출자에게 내보내지 않는다.
+                  // 최종 병합 HTML이 준비된 뒤에만 done 이벤트를 1회 전달한다.
+                  if (shouldRetry) {
                     
                     // 완료된 HTML 저장
                     const completedHtml = data.html
@@ -472,6 +476,8 @@ export async function callJeminaiAPIStream(
                           // 재요청 시작 시 첫 번째 HTML 유지
                           retryAccumulatedHtml = ''
                           onChunk(retryChunk)
+                        } else if (retryChunk.type === 'done') {
+                          // 재요청의 done은 상위로 전달하지 않음 (최종 merged done은 아래에서 1회만 전송)
                         } else {
                           // 기타 이벤트는 그대로 전달
                           onChunk(retryChunk)
@@ -532,7 +538,7 @@ export async function callJeminaiAPIStream(
                       }
                     }
                   } else {
-                    // 일반적인 done 이벤트 처리
+                    // 일반적인 done 이벤트 처리 (재요청 불필요한 최종 완료)
                     finalResponse = {
                       html: data.html,
                       isTruncated: data.isTruncated,

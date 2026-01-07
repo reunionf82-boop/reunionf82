@@ -12,6 +12,7 @@ export default function AdminPage() {
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3-flash-preview')
   const [selectedSpeaker, setSelectedSpeaker] = useState<string>('nara')
   const [fortuneViewMode, setFortuneViewMode] = useState<'batch' | 'realtime'>('batch')
+  const [useSequentialFortune, setUseSequentialFortune] = useState<boolean>(false)
 
   useEffect(() => {
     checkAuth()
@@ -112,6 +113,11 @@ export default function AdminPage() {
       const loadedFortuneMode = data.fortune_view_mode === 'realtime' ? 'realtime' : 'batch'
       console.log('로드된 점사 모드:', loadedFortuneMode)
       setFortuneViewMode(loadedFortuneMode)
+
+      // use_sequential_fortune 로드
+      if (data.use_sequential_fortune !== undefined) {
+        setUseSequentialFortune(data.use_sequential_fortune)
+      }
     } catch (error) {
       console.error('설정 로드 실패:', error)
       // 에러 발생 시에도 기본값으로 변경하지 않고 현재 값 유지
@@ -196,6 +202,32 @@ export default function AdminPage() {
     } catch (error) {
       console.error('점사 모드 저장 실패:', error)
       alert('점사 모드 저장에 실패했습니다. 콘솔을 확인해주세요.')
+    }
+  }
+
+  const handleToggleSequentialFortune = async () => {
+    const newValue = !useSequentialFortune
+    try {
+      const response = await fetch('/api/admin/settings/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ use_sequential_fortune: newValue }),
+      })
+
+      if (!response.ok) {
+        throw new Error('점사 방식 저장 실패')
+      }
+
+      const result = await response.json()
+      if (result.use_sequential_fortune !== undefined) {
+        setUseSequentialFortune(result.use_sequential_fortune)
+        console.log('점사 방식 저장 완료:', result.use_sequential_fortune ? '직렬점사' : '병렬점사')
+      }
+    } catch (error) {
+      console.error('점사 방식 저장 실패:', error)
+      alert('점사 방식 저장에 실패했습니다. 콘솔을 확인해주세요.')
     }
   }
 
@@ -325,6 +357,40 @@ export default function AdminPage() {
                 <option value="ndain">다인 (여성)</option>
                 <option value="jinho">진호 (남성)</option>
               </select>
+            </div>
+            {/* 병렬점사/직렬점사 토글 */}
+            <div className="flex items-center gap-3 bg-gray-800 rounded-lg p-3 border border-gray-700">
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-white mb-1">점사 방식</h3>
+                <p className="text-xs text-gray-400">
+                  {useSequentialFortune 
+                    ? '직렬점사: 상품메뉴 구성 전체를 한 번에 점사 요청' 
+                    : '병렬점사: 대메뉴 단위로 순차적 점사 요청 (컨텍스트 유지)'}
+                </p>
+                <p className="text-xs text-yellow-400 font-medium mt-2">
+                  ⚠️ 주의: 재회상담은 직렬점사가 최적이니 변경하지 마세요!
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-medium ${!useSequentialFortune ? 'text-pink-400' : 'text-gray-400'}`}>
+                  병렬
+                </span>
+                <button
+                  onClick={handleToggleSequentialFortune}
+                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors duration-200 ${
+                    useSequentialFortune ? 'bg-pink-500' : 'bg-gray-600'
+                  } cursor-pointer hover:opacity-90`}
+                >
+                  <span
+                    className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-md transition-transform duration-200 ${
+                      useSequentialFortune ? 'translate-x-7' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+                <span className={`text-xs font-medium ${useSequentialFortune ? 'text-pink-400' : 'text-gray-400'}`}>
+                  직렬
+                </span>
+              </div>
             </div>
             {/* 모델 선택 */}
             <div className="flex items-center gap-2 mt-2 bg-gray-800 rounded-lg p-2 border border-gray-700">

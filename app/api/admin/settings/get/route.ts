@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     // 직접 모든 필드를 조회하여 실제 DB 값을 확인
     const { data, error } = await supabase
       .from('app_settings')
-      .select('id, selected_model, selected_speaker, fortune_view_mode, updated_at')
+      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, updated_at')
       .eq('id', 1)
       .maybeSingle() // 레코드가 없어도 에러가 아닌 null 반환
     
@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
     const modelValue = data.selected_model
     const speakerValue = data.selected_speaker
     const fortuneModeValue = (data as any).fortune_view_mode
+    const useSequentialFortuneValue = (data as any).use_sequential_fortune
     
     const finalModel = (modelValue != null && String(modelValue).trim() !== '') 
       ? String(modelValue).trim() 
@@ -70,10 +71,15 @@ export async function GET(req: NextRequest) {
       ? String(fortuneModeValue).trim()
       : 'batch'
 
+    const finalUseSequentialFortune = useSequentialFortuneValue !== null && useSequentialFortuneValue !== undefined
+      ? Boolean(useSequentialFortuneValue)
+      : false
+
     return NextResponse.json({
       model: finalModel,
       speaker: finalSpeaker,
-      fortune_view_mode: finalFortuneMode
+      fortune_view_mode: finalFortuneMode,
+      use_sequential_fortune: finalUseSequentialFortune
     }, {
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',

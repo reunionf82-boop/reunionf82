@@ -11,11 +11,16 @@ export async function POST(req: NextRequest) {
   try {
     console.log('=== 재미나이 API 라우트 시작 ===')
     const body = await req.json()
-    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-3-flash-preview', manse_ryeok_table, manse_ryeok_text, manse_ryeok_json, day_gan_info, isSecondRequest, completedSubtitles, completedSubtitleIndices } = body
+    const { role_prompt, restrictions, menu_subtitles, user_info, partner_info, menu_items, model = 'gemini-3-flash-preview', manse_ryeok_table, manse_ryeok_text, manse_ryeok_json, day_gan_info, isSecondRequest, completedSubtitles, completedSubtitleIndices, previousContext, isParallelMode, currentMenuIndex, totalMenus } = body
     
     console.log('요청 모델:', model)
     console.log('메뉴 소제목 개수:', menu_subtitles?.length)
     console.log('2차 요청 여부:', isSecondRequest || false)
+    console.log('병렬점사 모드:', isParallelMode || false)
+    if (isParallelMode) {
+      console.log('현재 대메뉴 인덱스:', currentMenuIndex, '/', totalMenus)
+      console.log('이전 컨텍스트 길이:', previousContext?.length || 0)
+    }
     
     // 상세메뉴 데이터 구조 확인을 위한 정밀 로그
     if (menu_subtitles && menu_subtitles.length > 0) {
@@ -179,6 +184,16 @@ ${isSecondRequest ? `
 **아래에 나열된 남은 메뉴/소제목만 해석하세요.**
 **메뉴 제목이나 썸네일을 다시 생성하지 마세요. 오직 남은 소제목의 해석 내용만 생성하세요.**
 **다시 강조: 처음부터 다시 시작하지 마세요!**
+
+---
+` : ''}
+${isParallelMode && previousContext ? `
+🔄 **병렬점사 모드: 이전 대메뉴 컨텍스트** 🔄
+이전 대메뉴에서 생성된 점사 내용입니다. 이 내용을 참고하여 현재 대메뉴의 점사를 자연스럽게 이어가세요.
+**중요:** 이전 내용을 그대로 반복하지 말고, 현재 대메뉴의 내용만 새로 생성하되, 전체적인 맥락과 흐름을 유지하세요.
+
+**이전 대메뉴 점사 내용:**
+${previousContext.substring(0, 5000)}${previousContext.length > 5000 ? '\n...(이전 내용의 일부만 표시, 전체 맥락 참고)' : ''}
 
 ---
 ` : ''}

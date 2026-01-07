@@ -16,12 +16,12 @@ export async function POST(req: NextRequest) {
     
     const supabase = getAdminSupabaseClient()
     const body = await req.json()
-    const { model, speaker, fortune_view_mode } = body
+    const { model, speaker, fortune_view_mode, use_sequential_fortune } = body
 
     // 기존 레코드 조회
     const { data: existing, error: existingError } = await supabase
       .from('app_settings')
-      .select('id, selected_model, selected_speaker, fortune_view_mode')
+      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune')
       .eq('id', 1)
       .maybeSingle()
 
@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
       selected_model?: string
       selected_speaker?: string
       fortune_view_mode?: string
+      use_sequential_fortune?: boolean
     } = {
       updated_at: new Date().toISOString()
     }
@@ -71,6 +72,15 @@ export async function POST(req: NextRequest) {
       updateData.fortune_view_mode = 'batch'
     }
 
+    // use_sequential_fortune 업데이트 (직렬점사=true, 병렬점사=false)
+    if (use_sequential_fortune !== undefined && use_sequential_fortune !== null) {
+      updateData.use_sequential_fortune = Boolean(use_sequential_fortune)
+    } else if (existing) {
+      updateData.use_sequential_fortune = (existing as any).use_sequential_fortune ?? false
+    } else {
+      updateData.use_sequential_fortune = false
+    }
+
     let savedData: any = null
 
     if (existing) {
@@ -79,7 +89,7 @@ export async function POST(req: NextRequest) {
         .from('app_settings')
         .update(updateData)
         .eq('id', 1)
-        .select('id, selected_model, selected_speaker, fortune_view_mode')
+        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune')
       
       if (updateError) {
         console.error('업데이트 에러:', updateError)
@@ -99,7 +109,7 @@ export async function POST(req: NextRequest) {
           id: 1,
           ...updateData
         })
-        .select('id, selected_model, selected_speaker, fortune_view_mode')
+        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune')
       
       if (insertError) {
         console.error('생성 에러:', insertError)
@@ -117,7 +127,8 @@ export async function POST(req: NextRequest) {
       success: true,
       model: savedData.selected_model || updateData.selected_model,
       speaker: savedData.selected_speaker || updateData.selected_speaker,
-      fortune_view_mode: (savedData as any).fortune_view_mode || updateData.fortune_view_mode
+      fortune_view_mode: (savedData as any).fortune_view_mode || updateData.fortune_view_mode,
+      use_sequential_fortune: (savedData as any).use_sequential_fortune ?? updateData.use_sequential_fortune ?? false
     })
   } catch (error: any) {
     console.error('설정 저장 에러:', error)

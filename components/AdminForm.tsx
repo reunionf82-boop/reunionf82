@@ -210,9 +210,22 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         subtitle_char_count: initialData.subtitle_char_count || 500,
         detail_menu_char_count: initialData.detail_menu_char_count || 500,
         menu_font_size: initialData.menu_font_size || 16,
+        menu_font_bold: initialData.menu_font_bold || false,
         subtitle_font_size: initialData.subtitle_font_size || 14,
+        subtitle_font_bold: initialData.subtitle_font_bold || false,
+        detail_menu_font_size: initialData.detail_menu_font_size || 12,
+        detail_menu_font_bold: initialData.detail_menu_font_bold || false,
         body_font_size: initialData.body_font_size || 11,
+        body_font_bold: initialData.body_font_bold || false,
         font_face: initialData.font_face || '',
+        menu_font_face: initialData.menu_font_face || '',
+        subtitle_font_face: initialData.subtitle_font_face || '',
+        detail_menu_font_face: initialData.detail_menu_font_face || '',
+        body_font_face: initialData.body_font_face || '',
+        menu_color: initialData.menu_color || '',
+        subtitle_color: initialData.subtitle_color || '',
+        detail_menu_color: initialData.detail_menu_color || '',
+        body_color: initialData.body_color || '',
         menu_items: initialData.menu_items || [],
         is_new: initialData.is_new || false,
         tts_speaker: initialData.tts_speaker || 'nara',
@@ -1166,9 +1179,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       
       setMenuFields(newMenuFields)
       
-      // 모달 닫기
+      // 모달 닫기 (입력 필드 내용은 유지)
       setShowEasyUploadModal(false)
-      setEasyUploadData({ menus: '', subtitles: '', subtitleTools: '', detailMenus: '', tools: '' })
+      // setEasyUploadData({ menus: '', subtitles: '', subtitleTools: '', detailMenus: '', tools: '' }) // 반영 후에도 입력 필드 내용 유지
     } catch (error) {
       console.error('파싱 오류:', error)
       alert('데이터 파싱 중 오류가 발생했습니다. 형식을 확인해주세요.')
@@ -3188,7 +3201,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               <button
                 onClick={() => {
                   setShowEasyUploadModal(false)
-                  setEasyUploadData({ menus: '', subtitles: '', subtitleTools: '', detailMenus: '', tools: '' })
+                  // 취소 버튼은 팝업만 닫고 입력 필드 내용은 유지
+                  // setEasyUploadData({ menus: '', subtitles: '', subtitleTools: '', detailMenus: '', tools: '' })
                 }}
                 className="bg-gray-700 hover:bg-gray-600 text-white font-medium px-8 py-3 rounded-lg transition-colors duration-200"
               >
