@@ -677,7 +677,6 @@ export function convertLunarToSolarAccurate(year: number, month: number, day: nu
       day: solarDate.day
     }
   } catch (error) {
-    console.error('음력->양력 변환 오류:', error)
     return null
   }
 }
@@ -695,7 +694,6 @@ export function convertSolarToLunarAccurate(year: number, month: number, day: nu
       day: lunarDate.day
     }
   } catch (error) {
-    console.error('양력->음력 변환 오류:', error)
     return null
   }
 }

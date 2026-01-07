@@ -43,7 +43,6 @@ export async function POST(req: NextRequest) {
       )
     }
   } catch (error: any) {
-    console.error('로그인 오류:', error)
     return NextResponse.json(
       { error: '로그인 중 오류가 발생했습니다.' },
       { status: 500 }

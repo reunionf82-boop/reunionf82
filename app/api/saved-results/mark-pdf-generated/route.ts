@@ -36,7 +36,6 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
-      console.error('PDF 생성 여부 저장 실패:', error)
       // pdf_generated 필드가 없을 수 있으므로 에러를 무시하거나 필드 추가 필요
       return NextResponse.json(
         { error: 'PDF 생성 여부 저장에 실패했습니다.', details: error.message },
@@ -49,7 +48,6 @@ export async function POST(request: NextRequest) {
       data
     })
   } catch (error: any) {
-    console.error('PDF 생성 여부 저장 API 오류:', error)
     return NextResponse.json(
       { error: '서버 오류가 발생했습니다.', details: error.message },
       { status: 500 }

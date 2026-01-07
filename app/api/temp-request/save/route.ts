@@ -45,7 +45,6 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
-      console.error('임시 요청 데이터 저장 실패:', error)
       return NextResponse.json(
         { error: '임시 요청 데이터 저장에 실패했습니다.', details: error.message },
         { status: 500 }
@@ -57,7 +56,6 @@ export async function POST(request: NextRequest) {
       requestKey: data.id
     })
   } catch (error: any) {
-    console.error('임시 요청 데이터 저장 API 오류:', error)
     return NextResponse.json(
       { error: '서버 오류가 발생했습니다.', details: error.message },
       { status: 500 }

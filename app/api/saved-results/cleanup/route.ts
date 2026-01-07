@@ -35,7 +35,6 @@ export async function POST(request: NextRequest) {
       .select()
 
     if (error) {
-      console.error('오래된 저장된 결과 삭제 실패:', error)
       return NextResponse.json(
         { error: '삭제 실패', details: error.message },
         { status: 500 }
@@ -50,20 +49,10 @@ export async function POST(request: NextRequest) {
       message: `${deletedCount}개의 오래된 저장된 결과가 삭제되었습니다.`
     })
   } catch (error: any) {
-    console.error('자동 삭제 API 오류:', error)
     return NextResponse.json(
       { error: '서버 오류가 발생했습니다.', details: error.message },
       { status: 500 }
     )
   }
 }
-
-
-
-
-
-
-
-
-
 

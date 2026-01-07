@@ -20,17 +20,3 @@ export function getAdminSupabaseClient() {
   })
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-

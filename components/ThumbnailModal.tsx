@@ -21,7 +21,6 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
   // 모달이 열릴 때 초기화
   useEffect(() => {
     if (isOpen) {
-      console.log('ThumbnailModal: 모달 열림, currentThumbnail:', currentThumbnail)
       setSelectedFile(null)
       setFilePreviewUrl(null)
       setShowDeleteConfirm(false)
@@ -31,7 +30,6 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
   // currentThumbnail이 변경될 때 파일 선택 초기화 (모달이 열려있는 동안)
   useEffect(() => {
     if (isOpen && currentThumbnail !== undefined) {
-      console.log('ThumbnailModal: currentThumbnail 변경, 파일 선택 초기화:', currentThumbnail)
       setSelectedFile(null)
       setFilePreviewUrl(null)
     }
@@ -87,9 +85,7 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
 
     setUploading(true)
     try {
-      console.log('ThumbnailModal: 업로드 시작, 파일:', selectedFile.name, selectedFile.size)
       const url = await uploadThumbnailFile(selectedFile)
-      console.log('ThumbnailModal: 업로드 성공, URL:', url)
       if (!url || url.trim() === '') {
         throw new Error('업로드된 파일의 URL을 받지 못했습니다.')
       }
@@ -99,12 +95,6 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
       setSelectedFile(null)
       setFilePreviewUrl(null)
     } catch (error: any) {
-      console.error('ThumbnailModal: 업로드 실패:', error)
-      console.error('에러 상세:', {
-        message: error?.message,
-        error: error?.error,
-        stack: error?.stack
-      })
       const errorMessage = error?.message || error?.error?.message || '알 수 없는 오류가 발생했습니다.'
       alert(`썸네일 업로드에 실패했습니다.\n${errorMessage}`)
     } finally {
@@ -134,7 +124,6 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
       const fileName = urlParts[urlParts.length - 1].split('?')[0] // 쿼리 파라미터 제거
       return `thumbnails/${fileName}`
     } catch (error) {
-      console.error('파일 경로 추출 실패:', error)
       return ''
     }
   }
@@ -152,15 +141,12 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
             await deleteThumbnail(filePath)
           }
         } catch (error) {
-          console.error('기존 썸네일 삭제 실패:', error)
           // 삭제 실패해도 계속 진행
         }
       }
 
       // 새 썸네일 업로드
-      console.log('ThumbnailModal: 수정 업로드 시작, 파일:', selectedFile.name, selectedFile.size)
       const url = await uploadThumbnailFile(selectedFile)
-      console.log('ThumbnailModal: 수정 업로드 성공, URL:', url)
       if (!url || url.trim() === '') {
         throw new Error('업로드된 파일의 URL을 받지 못했습니다.')
       }
@@ -170,12 +156,6 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
       setSelectedFile(null)
       setFilePreviewUrl(null)
     } catch (error: any) {
-      console.error('ThumbnailModal: 수정 실패:', error)
-      console.error('에러 상세:', {
-        message: error?.message,
-        error: error?.error,
-        stack: error?.stack
-      })
       const errorMessage = error?.message || error?.error?.message || '알 수 없는 오류가 발생했습니다.'
       alert(`썸네일 수정에 실패했습니다.\n${errorMessage}`)
     } finally {
@@ -201,7 +181,6 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
           alert('파일 경로를 찾을 수 없습니다.')
         }
       } catch (error) {
-        console.error('삭제 실패:', error)
         alert('썸네일 삭제에 실패했습니다.')
       } finally {
         setUploading(false)

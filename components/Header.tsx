@@ -41,24 +41,3 @@ export default function Header() {
   )
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

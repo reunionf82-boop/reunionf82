@@ -34,8 +34,6 @@ export default function ServiceCard({ service }: ServiceCardProps) {
     // Supabase에서 선택된 모델 가져오기
     try {
       const selectedModel = await getSelectedModel()
-      console.log('ServiceCard: Supabase에서 모델 가져옴:', selectedModel)
-      
       // sessionStorage에 데이터 저장 (URL 파라미터 대신)
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('form_title', service.title)
@@ -49,8 +47,6 @@ export default function ServiceCard({ service }: ServiceCardProps) {
       // 깔끔한 URL로 이동
       router.push('/form')
     } catch (error) {
-      console.error('모델 로드 실패, 기본값 사용:', error)
-      
       // sessionStorage에 데이터 저장
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('form_title', service.title)

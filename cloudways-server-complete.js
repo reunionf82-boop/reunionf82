@@ -12,7 +12,6 @@ const app = express();
 try {
   require('dotenv').config();
 } catch (e) {
-  console.log('dotenv 패키지가 없습니다. 환경 변수는 시스템에서 직접 로드됩니다.');
 }
 
 // 1. 보안 설정 (Vercel에서 오는 요청만 허용)
@@ -30,8 +29,6 @@ app.timeout = 0;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_JEMINAI_API_URL || '여기에_Gemini_API_키를_입력하세요';
 
 if (!GEMINI_API_KEY || GEMINI_API_KEY === '여기에_Gemini_API_키를_입력하세요') {
-    console.error('⚠️ GEMINI_API_KEY가 설정되지 않았습니다!');
-    console.error('환경 변수로 설정하거나 코드에 직접 입력하세요.');
 }
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
@@ -263,10 +260,6 @@ app.post('/chat', async (req, res) => {
     // 타임아웃을 30분(1800초)으로 넉넉하게 설정
     req.setTimeout(1800000); // 30분
     res.setTimeout(1800000);
-
-    console.log('=== 점사 API 요청 수신 ===');
-    console.log('요청 본문 키:', Object.keys(req.body));
-    
     try {
         const {
             role_prompt,
@@ -284,11 +277,6 @@ app.post('/chat', async (req, res) => {
             completedSubtitles = [],
             completedSubtitleIndices = []
         } = req.body;
-
-        console.log('모델:', model);
-        console.log('메뉴 소제목 개수:', menu_subtitles?.length);
-        console.log('2차 요청 여부:', isSecondRequest);
-
         if (!role_prompt || !menu_subtitles || !Array.isArray(menu_subtitles) || menu_subtitles.length === 0) {
             return res.status(400).json({ error: 'Invalid request format' });
         }
@@ -330,9 +318,6 @@ app.post('/chat', async (req, res) => {
 
         // 프롬프트 생성
         const prompt = buildPrompt(req.body);
-        console.log('프롬프트 생성 완료, 길이:', prompt.length);
-        console.log('스트리밍 시작...');
-
         // 스트리밍 방식으로 생성
         const result = await geminiModel.generateContentStream(prompt);
 
@@ -363,7 +348,6 @@ app.post('/chat', async (req, res) => {
 
             // 100개 청크마다 진행 상황 로그
             if (chunkCount % 100 === 0) {
-                console.log(`전송된 청크: ${chunkCount}개, 누적 텍스트 길이: ${accumulatedText.length}자`);
             }
         }
 
@@ -377,13 +361,7 @@ app.post('/chat', async (req, res) => {
             finishReason: 'STOP'
         })}\n\n`);
         res.end();
-
-        console.log(`스트리밍 완료, 총 청크: ${chunkCount}개, 총 텍스트 길이: ${accumulatedText.length}자`);
-
     } catch (error) {
-        console.error('에러 발생:', error);
-        console.error('에러 스택:', error.stack);
-        
         // 에러 이벤트 전송
         if (!res.headersSent) {
             res.status(500).json({
@@ -405,8 +383,4 @@ app.get('/health', (req, res) => {
 // 6. 서버 시작
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`✅ 점사 AI 백엔드 서버가 ${PORT}번 포트에서 실행 중...`);
-    console.log(`📡 엔드포인트: http://localhost:${PORT}/chat`);
-    console.log(`🔑 GEMINI_API_KEY 설정 여부: ${GEMINI_API_KEY && GEMINI_API_KEY !== '여기에_Gemini_API_키를_입력하세요' ? '✅ 설정됨' : '❌ 설정 안 됨'}`);
-    console.log(`🌐 외부 접속: http://[서버 IP]:${PORT}/health (헬스 체크)`);
 });

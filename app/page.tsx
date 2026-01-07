@@ -28,7 +28,6 @@ export default function Home() {
       }))
       setServices(convertedServices)
     } catch (error) {
-      console.error('서비스 로드 실패:', error)
     } finally {
       setLoading(false)
     }

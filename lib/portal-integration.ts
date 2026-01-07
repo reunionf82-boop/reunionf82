@@ -55,7 +55,6 @@ export function verifyJWT(token: string): PortalUserInfo {
 
     return payload as PortalUserInfo;
   } catch (error) {
-    console.error('JWT verification failed:', error);
     throw error;
   }
 }
@@ -89,7 +88,6 @@ export function verifyHMACSignature(
     // 타임스탬프 검증
     const now = Math.floor(Date.now() / 1000);
     if (Math.abs(now - timestamp) > maxAge) {
-      console.error('Timestamp expired or invalid');
       return false;
     }
 
@@ -106,7 +104,6 @@ export function verifyHMACSignature(
       Buffer.from(expectedSignature, 'hex')
     );
   } catch (error) {
-    console.error('HMAC signature verification failed:', error);
     return false;
   }
 }
@@ -177,7 +174,6 @@ export async function requestPayment(
       paymentUrl: data.paymentUrl,
     };
   } catch (error: any) {
-    console.error('Payment request error:', error);
     return {
       success: false,
       error: error.message || '결제 요청 중 오류가 발생했습니다.',
@@ -206,24 +202,4 @@ export function verifyPaymentCallback(
 ): boolean {
   return verifyHMACSignature(data, signature, PORTAL_SECRET_KEY, timestamp);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

@@ -52,31 +52,10 @@ export async function POST(request: NextRequest) {
       paymentUrl: result.paymentUrl,
     });
   } catch (error: any) {
-    console.error('Payment request error:', error);
     return NextResponse.json(
       { error: '결제 요청 중 오류가 발생했습니다.' },
       { status: 500 }
     );
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

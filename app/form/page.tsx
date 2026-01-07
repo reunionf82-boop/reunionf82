@@ -57,7 +57,6 @@ function FormContent() {
           const savedModel = await getSelectedModel()
           setModel(savedModel)
         } catch (error) {
-          console.error('모델 로드 실패, 기본값 사용:', error)
           setModel('gemini-3-flash-preview')
         }
       }
@@ -236,13 +235,11 @@ function FormContent() {
             setFormLocked(true)
             setIsLoadingFromStorage(false)
           } else {
-            console.error('토큰 검증 실패:', data.error)
             alert('유효하지 않은 접근입니다.')
             setIsLoadingFromStorage(false)
           }
         })
         .catch((error) => {
-          console.error('토큰 검증 오류:', error)
           alert('사용자 정보를 불러오는 중 오류가 발생했습니다.')
           setIsLoadingFromStorage(false)
         })
@@ -273,7 +270,6 @@ function FormContent() {
             if (userInfo.partnerBirthHour) setPartnerBirthHour(userInfo.partnerBirthHour)
           }
         } catch (error) {
-          console.error('LocalStorage에서 정보 불러오기 실패:', error)
         } finally {
           setIsLoadingFromStorage(false)
         }
@@ -313,7 +309,6 @@ function FormContent() {
         
         localStorage.setItem('userInfo', JSON.stringify(userInfo))
       } catch (error) {
-        console.error('LocalStorage에 정보 저장 실패:', error)
       }
     }
   }, [
@@ -330,7 +325,6 @@ function FormContent() {
       
       if (!response.ok) {
         const errorText = await response.text()
-        console.error('API 응답 실패:', response.status, errorText)
         throw new Error(`저장된 결과 목록 조회 실패: ${response.status}`)
       }
       
@@ -350,7 +344,6 @@ function FormContent() {
         setPdfGeneratedMap({})
       }
     } catch (e) {
-      console.error('저장된 결과 불러오기 실패:', e)
       setSavedResults([])
     }
   }
@@ -418,7 +411,6 @@ function FormContent() {
         throw new Error(result.error || '저장된 결과 삭제에 실패했습니다.')
       }
     } catch (e: any) {
-      console.error('저장된 결과 삭제 실패:', e)
       alert(e?.message || '저장된 결과 삭제에 실패했습니다.')
     }
   }
@@ -569,7 +561,6 @@ function FormContent() {
       setPlayingResultId(null)
       setCurrentAudio(null)
     } catch (error: any) {
-      console.error('저장된 결과 음성 변환 실패:', error)
       alert(error?.message || '음성 변환에 실패했습니다.')
       setPlayingResultId(null)
       setCurrentAudio(null)
@@ -756,7 +747,6 @@ function FormContent() {
           
           htmlContent = doc.body.innerHTML;
         } catch (e) {
-          console.error('HTML 처리 실패:', e);
         }
       }
 
@@ -1263,13 +1253,6 @@ function FormContent() {
       tempContainer.style.minHeight = '0';
       
       // tempContainer의 실제 내용 확인
-      console.log('tempContainer 내용 확인:', {
-        innerHTML: tempContainer.innerHTML.substring(0, 500),
-        textContent: tempContainer.textContent?.substring(0, 200),
-        childrenCount: tempContainer.children.length,
-        computedStyle: window.getComputedStyle(tempContainer).backgroundColor
-      });
-      
       // 목차 생성 및 삽입 (View 화면과 동일하게)
       try {
         const menuSections = Array.from(tempContainer.querySelectorAll('.menu-section'));
@@ -1346,18 +1329,10 @@ function FormContent() {
              
              // 북커버 중복은 htmlContent(DOMParser) 단계에서 제거한다.
              // 여기서 삭제 로직을 두면 목차/북커버 배치가 깨질 수 있어 제거한다.
-             
-             console.log('목차 삽입 완료:', {
-               hasBookCover: !!bookCover,
-               hasFirstMenu: !!firstMenu,
-               tocHtmlLength: tocHtml.length
-             });
           }
         } else {
-          console.warn('목차 생성: 메뉴 섹션을 찾을 수 없습니다.');
         }
       } catch (e) {
-        console.error('PDF 목차 생성 실패:', e);
       }
       
       // 이미지 로드 대기 및 렌더링 대기
@@ -1373,7 +1348,6 @@ function FormContent() {
             }
             return new Promise((resolve, reject) => {
               const timeout = setTimeout(() => {
-                console.warn('이미지 로드 타임아웃:', (img as HTMLImageElement).src);
                 resolve(null); // 타임아웃되어도 계속 진행
               }, 5000);
               (img as HTMLImageElement).onload = () => {
@@ -1419,18 +1393,8 @@ function FormContent() {
         // 전체를 하나의 긴 캔버스로 캡처 (보기 화면의 전체 스크롤 높이만큼)
         const actualHeight = tempContainer.scrollHeight || tempContainer.offsetHeight;
         const estimatedPages = Math.ceil(actualHeight / (1123 * scale)); // A4 한 페이지 높이 기준
-        console.log(`PDF 캡처 시작: 예상 높이 ${actualHeight}px (약 ${estimatedPages}페이지)`);
-        
         // html2canvas로 전체 컨텐츠 캡처
         // height를 지정하지 않으면 전체 scrollHeight를 자동으로 캡처
-        console.log(`캡처 대상 높이: ${actualHeight}px, tempContainer 내용 확인:`, {
-          scrollHeight: tempContainer.scrollHeight,
-          offsetHeight: tempContainer.offsetHeight,
-          clientHeight: tempContainer.clientHeight,
-          hasContent: tempContainer.innerHTML.length > 0,
-          viewWidth: viewWidth
-        });
-        
         // ✅ 전체 y-offset 청크 방식은 html2canvas가 특정 구간을 통째로 누락시키는 케이스가 있어
         // "블록(북커버/목차/메뉴섹션/엔딩북커버) 단위"로 캡처해서 순서대로 PDF에 붙인다.
         pdf = null;
@@ -1624,22 +1588,12 @@ function FormContent() {
           // 로컬 상태 업데이트
           setPdfGeneratedMap(prev => ({ ...prev, [saved.id]: true }))
         } else {
-          console.error('PDF 생성 여부 저장 실패:', await response.text())
-        }
-      } catch (error) {
-        console.error('PDF 생성 여부 저장 중 오류:', error)
-      }
-      
-      // 정리
-      if (container && container.parentNode) {
-        container.parentNode.removeChild(container);
       }
       if (styleElement && styleElement.parentNode) {
         styleElement.parentNode.removeChild(styleElement);
       }
 
     } catch (error) {
-      console.error('PDF 생성 오류:', error);
       alert(`PDF 생성 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`);
       // 컨테이너 제거
       if (container && container.parentNode) {
@@ -1680,7 +1634,6 @@ function FormContent() {
       const foundContent = data?.find((item: any) => item.content_name === decodedTitle)
       
       if (!foundContent) {
-        console.error('Form 페이지: 컨텐츠를 찾을 수 없습니다. title:', decodedTitle)
       }
       
       // tts_speaker가 없거나 'nara'이면 app_settings에서 선택된 화자 사용
@@ -1689,13 +1642,11 @@ function FormContent() {
           const selectedSpeaker = await getSelectedSpeaker()
           foundContent.tts_speaker = selectedSpeaker
         } catch (error) {
-          console.error('Form 페이지: 선택된 화자 조회 실패:', error)
         }
       }
       
       setContent(foundContent || null)
     } catch (error) {
-      console.error('컨텐츠 로드 실패:', error)
       setContent(null)
     } finally {
       setLoading(false)
@@ -1839,7 +1790,6 @@ function FormContent() {
         try {
           currentModel = await getSelectedModel()
         } catch (error) {
-          console.error('모델 로드 실패, 기본값 사용:', error)
           currentModel = 'gemini-3-flash-preview'
         }
       }
@@ -1916,7 +1866,6 @@ function FormContent() {
               convertedDate = convertLunarToSolarAccurate(birthYear, birthMonth, birthDay, calendarType === 'lunar-leap')
             }
           } catch (error) {
-            console.error('음력/양력 변환 오류:', error)
             convertedDate = null
           }
           
@@ -1933,14 +1882,12 @@ function FormContent() {
           manseRyeokTable = generateManseRyeokTable(manseRyeokData, name, captionInfo) // HTML 테이블 (화면 표시용)
           manseRyeokText = generateManseRyeokText(manseRyeokData) // 텍스트 형식 (제미나이 프롬프트용)
         } catch (error) {
-          console.error('만세력 계산 오류:', error)
         }
       }
       
       // 만세력 생성 검증
       const manseRyeokJsonString = manseRyeokData ? JSON.stringify(manseRyeokData, null, 2) : ''
       if (!manseRyeokText || !manseRyeokText.trim() || !manseRyeokData) {
-        console.error('만세력 데이터가 생성되지 않았습니다.', { manseRyeokTextLength: manseRyeokText?.length || 0, hasData: !!manseRyeokData })
         alert('만세력 데이터 생성에 실패했습니다. 생년월일/태어난 시를 다시 확인해주세요.')
         setSubmitting(false)
         setShowLoadingPopup(false)
@@ -1975,11 +1922,7 @@ function FormContent() {
       let fortuneViewMode: 'batch' | 'realtime' = 'batch'
       try {
         fortuneViewMode = await getFortuneViewMode()
-        console.log('=== 점사 모드 확인 ===')
-        console.log('fortuneViewMode:', fortuneViewMode)
-        console.log('====================')
       } catch (error) {
-        console.error('Form 페이지: 점사 모드 로드 실패, 기본 batch 사용:', error)
         fortuneViewMode = 'batch'
       }
 
@@ -1987,21 +1930,12 @@ function FormContent() {
       let useSequentialFortune = true // 기본값: 직렬점사
       try {
         useSequentialFortune = await getUseSequentialFortune()
-        console.log('=== 병렬/직렬 점사 모드 확인 ===')
-        console.log('useSequentialFortune 값:', useSequentialFortune)
-        console.log('병렬점사 모드 여부:', !useSequentialFortune)
-        console.log('==============================')
       } catch (error) {
-        console.error('Form 페이지: 병렬/직렬 점사 모드 로드 실패, 기본 직렬 사용:', error)
         useSequentialFortune = true
       }
 
       // realtime 모드일 경우 즉시 result 페이지로 리다이렉트
       if (fortuneViewMode === 'realtime') {
-        console.log('=== realtime 모드로 분기 ===')
-        console.log('result 페이지로 리다이렉트')
-        console.log('병렬점사 모드:', !useSequentialFortune)
-        
         // 병렬점사 모드일 경우 대메뉴별로 분할된 데이터 준비
         let finalRequestData: any = requestData
         let menuGroups: Array<{
@@ -2010,7 +1944,6 @@ function FormContent() {
           subtitles: Array<{ subtitle: string; interpretation_tool: string; char_count: number }>
         }> = []
         if (!useSequentialFortune) {
-          console.log('=== realtime 모드: 병렬점사 분할 시작 ===')
           // 대메뉴 단위로 분할
           const menuItems = content.menu_items || []
           menuGroups = []
@@ -2050,9 +1983,6 @@ function FormContent() {
               })
             }
           })
-          
-          console.log('분할된 대메뉴 그룹 개수:', menuGroups.length)
-          
           // 첫 번째 대메뉴만 전달 (result 페이지에서 순차 처리)
           if (menuGroups.length > 0) {
             const firstGroup = menuGroups[0]
@@ -2065,7 +1995,6 @@ function FormContent() {
               totalMenus: menuGroups.length,
               allMenuGroups: menuGroups // 전체 그룹 정보도 전달
             } as any
-            console.log('첫 번째 대메뉴 소제목 개수:', firstGroup.subtitles.length)
           }
         }
         
@@ -2101,7 +2030,6 @@ function FormContent() {
 
           const saveResult = await saveResponse.json()
         } catch (e: any) {
-          console.error('Form 페이지: Supabase 저장 실패:', e?.message || e)
           // 저장 실패해도 페이지 이동은 진행 (에러는 result 페이지에서 처리)
         }
         
@@ -2127,19 +2055,10 @@ function FormContent() {
       const totalSubtitles = menuSubtitlePairs.length
       
       // 디버그: 분기 체크
-      console.log('=== batch 모드 분기 체크 ===')
-      console.log('useSequentialFortune:', useSequentialFortune)
-      console.log('typeof useSequentialFortune:', typeof useSequentialFortune)
-      console.log('!useSequentialFortune:', !useSequentialFortune)
-      console.log('useSequentialFortune === false:', useSequentialFortune === false)
-      console.log('==========================')
-      
       // 병렬점사 모드 (useSequentialFortune === false)
       if (!useSequentialFortune) {
-        console.log('=== 병렬점사 모드 실행 ===')
         // 대메뉴 단위로 분할
         const menuItems = content.menu_items || []
-        console.log('전체 대메뉴 개수:', menuItems.length)
         const menuGroups: Array<{
           menuIndex: number
           menuItem: any
@@ -2180,190 +2099,6 @@ function FormContent() {
               menuIndex,
               menuItem,
               subtitles: menuSubtitlesForMenu
-            })
-            console.log(`대메뉴 ${menuIndex + 1} (${menuItem.value || menuItem.title || '제목없음'}): 소제목 ${menuSubtitlesForMenu.length}개`)
-          }
-        })
-        
-        console.log('분할된 대메뉴 그룹 개수:', menuGroups.length)
-        
-        if (menuGroups.length === 0) {
-          alert('대메뉴 정보를 찾을 수 없습니다.')
-          setSubmitting(false)
-          setShowLoadingPopup(false)
-          return
-        }
-        
-        // 병렬점사: 첫 번째 대메뉴부터 순차적으로 처리
-        let accumulatedHtml = ''
-        
-        // 가짜 로딩바 (스트리밍 도착 전까지 계속 증가)
-        let fakeProgressInterval: NodeJS.Timeout | null = null
-        let fakeProgressStartTime = Date.now()
-        let isStreamingStarted = false
-        let streamingStartProgress = 0
-        
-        // 가짜 로딩바 시작
-        fakeProgressInterval = setInterval(() => {
-          if (isStreamingStarted) {
-            if (fakeProgressInterval) {
-              clearInterval(fakeProgressInterval)
-              fakeProgressInterval = null
-            }
-            return
-          }
-          
-          const elapsed = Date.now() - fakeProgressStartTime
-          let fakeProgress = 0
-          if (elapsed <= 30000) {
-            fakeProgress = (elapsed / 30000) * 30
-          } else {
-            const additionalTime = elapsed - 30000
-            const additionalProgress = Math.min(65, (additionalTime / 120000) * 65)
-            fakeProgress = 30 + additionalProgress
-          }
-          
-          fakeProgress = Math.min(95, fakeProgress)
-          setStreamingProgress(fakeProgress)
-          streamingStartProgress = fakeProgress
-        }, 100)
-        
-        // 대메뉴별 점사 함수 (순차적으로 처리)
-        const processMenuGroup = async (groupIndex: number, previousContext: string = ''): Promise<string> => {
-          const group = menuGroups[groupIndex]
-          if (!group) return previousContext
-          
-          const menuRequestData = {
-            ...requestData,
-            menu_subtitles: group.subtitles,
-            menu_items: [group.menuItem], // 현재 대메뉴만 전달
-            previousContext: previousContext || undefined, // 이전 대메뉴의 컨텍스트
-            isParallelMode: true,
-            currentMenuIndex: groupIndex,
-            totalMenus: menuGroups.length
-          }
-          
-          console.log(`=== 대메뉴 ${groupIndex + 1}/${menuGroups.length} 요청 시작 ===`)
-          console.log('전달할 소제목 개수:', group.subtitles.length)
-          console.log('전달할 대메뉴:', group.menuItem.value || group.menuItem.title || '제목없음')
-          
-          let menuHtml = ''
-          let menuAccumulated = ''
-          
-          try {
-            await callJeminaiAPIStream(menuRequestData, async (data) => {
-              if (data.type === 'start') {
-                menuAccumulated = ''
-                if (groupIndex === 0) {
-                  isStreamingStarted = true
-                  if (fakeProgressInterval) {
-                    clearInterval(fakeProgressInterval)
-                    fakeProgressInterval = null
-                  }
-                  setStreamingProgress(Math.max(streamingStartProgress, 5))
-                }
-              } else if (data.type === 'chunk') {
-                menuAccumulated += data.text || ''
-                
-                // HTML 정리
-                menuAccumulated = menuAccumulated
-                  .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
-                  .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
-                  .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
-                  .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
-                  .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
-                  .replace(/\*\*/g, '')
-                
-                // 만세력 테이블 삽입 (첫 번째 대메뉴만)
-                if (groupIndex === 0 && manseRyeokTable && !menuAccumulated.includes('manse-ryeok-table')) {
-                  const firstMenuSectionMatch = menuAccumulated.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
-                  if (firstMenuSectionMatch) {
-                    const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
-                    if (thumbnailMatch) {
-                      menuAccumulated = menuAccumulated.replace(
-                        /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
-                        `$1\n${manseRyeokTable}`
-                      )
-                    } else {
-                      const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
-                      if (menuTitleMatch) {
-                        menuAccumulated = menuAccumulated.replace(
-                          /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
-                          `$1\n${manseRyeokTable}`
-                        )
-                      } else {
-                        menuAccumulated = menuAccumulated.replace(
-                          /(<div class="menu-section">)\s*/,
-                          `$1\n${manseRyeokTable}`
-                        )
-                      }
-                    }
-                  }
-                }
-                
-                // 진행도 업데이트
-                const baseProgress = streamingStartProgress || 30
-                const remainingProgress = 95 - baseProgress
-                const menuProgress = baseProgress + ((groupIndex + 0.5) / menuGroups.length) * remainingProgress
-                setStreamingProgress(Math.min(95, menuProgress))
-                
-                // 현재 소제목 표시
-                const subtitleMatch = menuAccumulated.match(/<h3[^>]*class="subtitle-title"[^>]*>([^<]+)<\/h3>/g)
-                if (subtitleMatch && subtitleMatch.length > 0) {
-                  const lastMatch = subtitleMatch[subtitleMatch.length - 1]
-                  const subtitleText = lastMatch.replace(/<[^>]+>/g, '').trim()
-                  const cleanSubtitle = subtitleText.replace(/^\d+-\d+[\.\s]\s*/, '').trim()
-                  if (cleanSubtitle) {
-                    setCurrentSubtitle(cleanSubtitle)
-                  }
-                }
-              } else if (data.type === 'done') {
-                menuHtml = data.html || menuAccumulated
-                
-                // HTML 정리
-                menuHtml = menuHtml
-                  .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
-                  .replace(/(\n\s*)+(\s*<table[^>]*>)/g, '$2')
-                  .replace(/([^>\s])\s+(\s*<table[^>]*>)/g, '$1$2')
-                  .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
-                  .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
-                  .replace(/\*\*/g, '')
-                
-                // 만세력 테이블 삽입 (첫 번째 대메뉴만)
-                if (groupIndex === 0 && manseRyeokTable && !menuHtml.includes('manse-ryeok-table')) {
-                  const firstMenuSectionMatch = menuHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
-                  if (firstMenuSectionMatch) {
-                    const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
-                    if (thumbnailMatch) {
-                      menuHtml = menuHtml.replace(
-                        /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
-                        `$1\n${manseRyeokTable}`
-                      )
-                    } else {
-                      const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
-                      if (menuTitleMatch) {
-                        menuHtml = menuHtml.replace(
-                          /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
-                          `$1\n${manseRyeokTable}`
-                        )
-                      } else {
-                        menuHtml = menuHtml.replace(
-                          /(<div class="menu-section">)\s*/,
-                          `$1\n${manseRyeokTable}`
-                        )
-                      }
-                    }
-                  }
-                }
-                
-                // 진행도 업데이트
-                const baseProgress = streamingStartProgress || 30
-                const remainingProgress = 95 - baseProgress
-                const menuProgress = baseProgress + ((groupIndex + 1) / menuGroups.length) * remainingProgress
-                setStreamingProgress(Math.min(95, menuProgress))
-              } else if (data.type === 'error') {
-                throw new Error(data.error || '점사 처리 중 오류가 발생했습니다.')
-              }
             })
           } catch (error) {
             throw error
@@ -2436,7 +2171,6 @@ function FormContent() {
                 setSavedResults(prev => [saved, ...prev])
               }
             } catch (error) {
-              console.error('결과 저장 실패:', error)
             }
           })()
           
@@ -2450,7 +2184,6 @@ function FormContent() {
           }
           router.push('/result')
         } catch (error: any) {
-          console.error('병렬점사 처리 실패:', error)
           alert('점사 처리 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'))
           setSubmitting(false)
           setShowLoadingPopup(false)
@@ -2715,15 +2448,12 @@ function FormContent() {
                 setSubmitting(false)
                 router.push('/result')
               } catch (e: any) {
-                console.error('Form 페이지: batch 모드 결과 저장 실패:', e?.message || e)
                 alert('결과 저장에 실패했습니다. 다시 시도해주세요.')
                 setShowLoadingPopup(false)
                 setSubmitting(false)
               }
             })()
           } else if (data.type === 'error') {
-            console.error('스트리밍 에러:', data.error)
-            
             // 가짜 로딩바 중지
             if (fakeProgressInterval) {
               clearInterval(fakeProgressInterval)
@@ -2737,12 +2467,6 @@ function FormContent() {
         })
         
       } catch (streamError: any) {
-        console.error('=== 스트리밍 호출 실패 ===')
-        console.error('에러 타입:', typeof streamError)
-        console.error('에러 객체:', streamError)
-        console.error('에러 메시지:', streamError?.message)
-        console.error('에러 스택:', streamError?.stack)
-        
         // 가짜 로딩바 중지
         if (fakeProgressInterval) {
           clearInterval(fakeProgressInterval)
@@ -2754,9 +2478,7 @@ function FormContent() {
         alert(streamError?.message || '결제 처리 중 오류가 발생했습니다.\n\n개발자 도구 콘솔을 확인해주세요.')
       }
     } catch (error: any) {
-      console.error('재미나이 API 호출 실패:', error)
       const errorMessage = error?.message || '결제 처리 중 오류가 발생했습니다.'
-      console.error('에러 상세:', error)
       alert(`${errorMessage}\n\n개발자 도구 콘솔을 확인해주세요.`)
       setSubmitting(false)
     }
@@ -2988,7 +2710,6 @@ function FormContent() {
                     // src를 강제로 다시 설정하여 재시도
                     img.src = currentUrl + '?retry=' + Date.now()
                   } else {
-                    console.error('썸네일 이미지 로드 재시도 실패:', cachedThumbnailUrl || content?.thumbnail_url)
                     setThumbnailError(true)
                   }
                 }}
@@ -3090,7 +2811,6 @@ function FormContent() {
                     })
                   }
                 } catch (e) {
-                  console.error('preview_thumbnails 파싱 에러:', e)
                 }
               }
             }
@@ -3205,7 +2925,6 @@ function FormContent() {
                               // src를 강제로 다시 설정하여 재시도
                               img.src = thumbnail + '?retry=' + Date.now()
                             } else {
-                              console.error('Preview 썸네일 이미지 로드 재시도 실패:', thumbnail, index)
                               setPreviewThumbnailErrors(prev => ({ ...prev, [index]: true }))
                             }
                           }}
@@ -3301,7 +3020,6 @@ function FormContent() {
                                         // src를 강제로 다시 설정하여 재시도
                                         img.src = thumbnail + '?retry=' + Date.now()
                                       } else {
-                                        console.error('Preview 모달 썸네일 이미지 로드 재시도 실패:', thumbnail, index)
                                         setPreviewThumbnailErrors(prev => ({ ...prev, [index]: true }))
                                       }
                                     }}
@@ -3964,7 +3682,6 @@ function FormContent() {
                                 alert('PDF 파일을 찾을 수 없습니다.')
                               }
                             } catch (error) {
-                              console.error('PDF 다운로드 실패:', error)
                               alert('PDF 다운로드에 실패했습니다.')
                             }
                           }}
@@ -4181,7 +3898,6 @@ function FormContent() {
                                     htmlContent = bodyMatch[1];
                                   }
                                 } catch (e) {
-                                  console.error('HTML 처리 실패:', e);
                                 }
                               }
                               
@@ -4243,7 +3959,6 @@ function FormContent() {
                                   }
                                 }
                               } catch (e) {
-                                console.error('목차 생성 실패:', e);
                               }
                               
                               // 플로팅 배너 HTML 생성
@@ -4261,7 +3976,6 @@ function FormContent() {
                                   bannerHtml += '</div>';
                                 }
                               } catch (e) {
-                                console.error('플로팅 배너 생성 실패:', e);
                               }
                               
                               // 북커버 추출 (HTML에서 북커버를 찾아서 추출하고 제거)
@@ -4282,7 +3996,6 @@ function FormContent() {
                                     }
                                   }
                                 } catch (e) {
-                                  console.error('북커버 추출 실패:', e);
                                 }
                               }
                               
@@ -5135,7 +4848,6 @@ function FormContent() {
                                             }
                                             currentAudio = null;
                                           } catch (e) {
-                                            console.error('새 창: 오디오 중지 중 오류:', e);
                                             currentAudio = null;
                                           }
                                         }
@@ -5150,7 +4862,6 @@ function FormContent() {
                                             }
                                           });
                                         } catch (e) {
-                                          console.error('새 창: 추가 오디오 중지 중 오류:', e);
                                         }
                                         
                                         isPlaying = false;
@@ -5235,7 +4946,6 @@ function FormContent() {
                                                 }
                                               }
                                             } catch (error) {
-                                              console.error('새 창: Supabase에서 화자 조회 실패:', error);
                                               // 조회 실패 시 기존 값 사용
                                               speaker = window.savedContentSpeaker || 'nara';
                                             }
@@ -5312,7 +5022,6 @@ function FormContent() {
                                                 audio.onerror = (e) => {
                                                   clearInterval(stopCheckInterval);
                                                   clearTimeout(timeout);
-                                                  console.error('새 창: 청크 ' + (chunkIndex + 1) + ' 오디오 로드 에러:', e);
                                                   reject(new Error('청크 ' + (chunkIndex + 1) + ' 로드 실패'));
                                                 };
                                                 audio.load();
@@ -5326,7 +5035,6 @@ function FormContent() {
 
                                               return { url, audio };
                                             } catch (error) {
-                                              console.error('새 창: 청크', chunkIndex + 1, '미리 로드 실패:', error);
                                               return null;
                                             }
                                           };
@@ -5390,7 +5098,6 @@ function FormContent() {
                                               
                                               // 타임아웃 설정 (5분)
                                               const timeout = setTimeout(() => {
-                                                console.error('새 창: 청크 ' + (i + 1) + ' 재생 타임아웃');
                                                 currentAudioElement.pause();
                                                 URL.revokeObjectURL(currentUrl);
                                                 currentAudio = null;
@@ -5406,7 +5113,6 @@ function FormContent() {
                                                     currentAudioElement.pause();
                                                     currentAudioElement.currentTime = 0;
                                                   } catch (e) {
-                                                    console.error('오디오 중지 중 오류:', e);
                                                   }
                                                   URL.revokeObjectURL(currentUrl);
                                                   currentAudio = null;
@@ -5431,7 +5137,6 @@ function FormContent() {
                                               };
                                               
                                               currentAudioElement.onerror = (e) => {
-                                                console.error('새 창: 청크 ' + (i + 1) + ' 재생 중 오류:', e, currentAudioElement.error);
                                                 cleanup();
                                                 // 에러가 발생해도 다음 청크로 계속 진행
                                                 resolve();
@@ -5449,7 +5154,6 @@ function FormContent() {
                                               };
                                               
                                               currentAudioElement.play().catch((err) => {
-                                                console.error('새 창: 청크 ' + (i + 1) + ' play() 실패:', err);
                                                 cleanup();
                                                 // play 실패해도 다음 청크로 계속 진행
                                                 resolve();
@@ -5464,7 +5168,6 @@ function FormContent() {
                                                 } else {
                                                 }
                                               } catch (err) {
-                                                console.error('새 창: 청크 ' + (i + 2) + ' 미리 로드 중 에러:', err);
                                                 preloadedChunk = null;
                                               }
                                             }
@@ -5487,12 +5190,6 @@ function FormContent() {
                                           icon.textContent = '🔊';
                                           text.textContent = '점사 듣기';
                                         } catch (error) {
-                                          console.error('=== 음성 변환 실패 ===');
-                                          console.error('에러 객체:', error);
-                                          console.error('에러 메시지:', error?.message);
-                                          console.error('에러 스택:', error?.stack);
-                                          console.error('===================');
-                                          
                                           alert(error?.message || '음성 변환에 실패했습니다.');
                                           
                                           const button = document.getElementById('ttsButton');
@@ -5534,7 +5231,6 @@ function FormContent() {
                                               } else if (typeof window.stopTextToSpeech === 'function') {
                                                 window.stopTextToSpeech();
                                               } else {
-                                                console.error('stopTextToSpeech 함수를 찾을 수 없습니다.');
                                                 // 폴백: 직접 중지
                                                 stopAndResetAudio();
                                               }
@@ -5547,7 +5243,6 @@ function FormContent() {
                                             } else if (typeof window.handleTextToSpeech === 'function') {
                                               window.handleTextToSpeech();
                                             } else {
-                                              console.error('handleTextToSpeech 함수를 찾을 수 없습니다.');
                                               alert('음성 재생 기능을 초기화하는 중 오류가 발생했습니다.');
                                             }
                                           };
@@ -5569,7 +5264,6 @@ function FormContent() {
                                             retryCount++;
                                             setTimeout(tryConnect, 200 * retryCount);
                                           } else {
-                                            console.error('TTS 버튼 연결 실패: 최대 재시도 횟수 초과');
                                           }
                                         };
                                         
@@ -5608,7 +5302,6 @@ function FormContent() {
                                           usedQuestionCounts = JSON.parse(savedCounts);
                                         }
                                       } catch (e) {
-                                        console.error('질문 횟수 로드 실패:', e);
                                         usedQuestionCounts = {};
                                       }
                                       
@@ -5913,15 +5606,8 @@ function FormContent() {
                                           
                                           if (!response.ok) {
                                             const error = await response.json();
-                                            console.error('API 오류:', error);
-                                            
                                             // 재미나이 응답 디버그 정보 표시
                                             if (error.debug) {
-                                              console.error('=== 재미나이 응답 디버그 정보 ===');
-                                              console.error('Finish Reason:', error.debug.finishReason);
-                                              console.error('Candidates 개수:', error.debug.candidatesCount);
-                                              console.error('첫 번째 Candidate 정보:', error.debug.firstCandidate);
-                                              console.error('Response 전체 구조:', error.debug);
                                             }
                                             
                                             throw new Error(error.error || '답변 생성에 실패했습니다.');
@@ -5930,7 +5616,6 @@ function FormContent() {
                                           const data = await response.json();
                                           
                                           if (!data.answer) {
-                                            console.error('답변이 없습니다:', data);
                                             throw new Error('답변을 받지 못했습니다.');
                                           }
                                           
@@ -5941,7 +5626,6 @@ function FormContent() {
                                           try {
                                             localStorage.setItem('question_counts_' + ${JSON.stringify(saved.id)}, JSON.stringify(usedQuestionCounts));
                                           } catch (e) {
-                                            console.error('질문 횟수 저장 실패:', e);
                                           }
                                           
                                           // 남은 질문 수는 이미 제출 시점에 업데이트했으므로 여기서는 확인만
@@ -6092,12 +5776,10 @@ function FormContent() {
                                       // 필요시에만 호출 (중복 방지 로직이 내부에 있음)
                                     }
                                   } catch (e) {
-                                    console.error('외부에서 함수 호출 실패:', e);
                                   }
                                 }, 500)
                               }
                             } catch (e) {
-                              console.error('저장된 결과 보기 실패:', e)
                               alert('저장된 결과를 불러오는데 실패했습니다.')
                             }
                           }}

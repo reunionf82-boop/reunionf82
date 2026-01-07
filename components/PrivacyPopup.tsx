@@ -88,23 +88,3 @@ export default function PrivacyPopup({ isOpen, onClose }: PrivacyPopupProps) {
   )
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

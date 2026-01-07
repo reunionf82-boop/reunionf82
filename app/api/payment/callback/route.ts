@@ -30,10 +30,6 @@ export async function POST(request: NextRequest) {
 
     // 서명 검증
     if (!verifyPaymentCallback(body, signature, timestamp)) {
-      console.error('Payment callback signature verification failed', {
-        paymentId: body.paymentId,
-        timestamp,
-      });
       return NextResponse.json(
         { error: '서명 검증 실패' },
         { status: 401 }
@@ -45,24 +41,11 @@ export async function POST(request: NextRequest) {
       // 결제 완료 처리
       // TODO: 여기서 AI 생성 프로세스를 시작하거나
       // 결제 완료 상태를 저장하여 사용자가 결과를 받을 수 있도록 처리
-      
-      console.log('Payment completed:', {
-        paymentId: body.paymentId,
-        userId: body.userId,
-        contentId: body.contentId,
-        amount: body.amount,
-      });
-
       return NextResponse.json({
         success: true,
         message: '결제 완료 처리되었습니다.',
       });
     } else if (body.status === 'cancelled') {
-      console.log('Payment cancelled:', {
-        paymentId: body.paymentId,
-        userId: body.userId,
-      });
-
       return NextResponse.json({
         success: false,
         status: 'cancelled',
@@ -70,12 +53,6 @@ export async function POST(request: NextRequest) {
       });
     } else {
       // 결제 실패
-      console.error('Payment failed:', {
-        paymentId: body.paymentId,
-        userId: body.userId,
-        status: body.status,
-      });
-
       return NextResponse.json({
         success: false,
         status: 'failed',
@@ -83,31 +60,10 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (error: any) {
-    console.error('Payment callback error:', error);
     return NextResponse.json(
       { error: '콜백 처리 중 오류가 발생했습니다.' },
       { status: 500 }
     );
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

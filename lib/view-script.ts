@@ -5,8 +5,6 @@ export const getResultViewScript = (saved: any) => {
   const contentIdStr = saved.content?.id ? saved.content.id : 'null';
 
   return `
-    console.log('=== View Script Loaded (v14.1 for Form Page) ===');
-
     (function() {
       try {
         delete window.addQuestionButtons;
@@ -18,7 +16,7 @@ export const getResultViewScript = (saved: any) => {
             get: function() { return undefined; },
             set: function(val) {
                if (val && val.toString().includes('버튼이 이미 존재합니다')) {
-                 console.warn('Old ' + propName + ' blocked'); return;
+                  return;
                }
                Object.defineProperty(window, propName, {
                  value: val, writable: true, configurable: true, enumerable: true
@@ -35,7 +33,6 @@ export const getResultViewScript = (saved: any) => {
     window.savedContentId = ${contentIdStr};
 
     window.addQuestionButtons = function() {
-      console.log('=== addQuestionButtons (v14.1) ===');
       const contentHtml = document.getElementById('contentHtml');
       if (!contentHtml) return false;
       

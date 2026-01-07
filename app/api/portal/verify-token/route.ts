@@ -31,7 +31,6 @@ export async function POST(request: NextRequest) {
       userInfo,
     });
   } catch (error: any) {
-    console.error('JWT token verification failed:', error);
     return NextResponse.json(
       { 
         error: '토큰 검증 실패',
@@ -41,24 +40,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

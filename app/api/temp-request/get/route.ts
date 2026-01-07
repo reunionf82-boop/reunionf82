@@ -34,7 +34,6 @@ export async function GET(request: NextRequest) {
       .single()
 
     if (error) {
-      console.error('임시 요청 데이터 조회 실패:', error)
       return NextResponse.json(
         { error: '임시 요청 데이터를 찾을 수 없습니다.', details: error.message },
         { status: 404 }
@@ -69,7 +68,6 @@ export async function GET(request: NextRequest) {
       payload: data.payload
     })
   } catch (error: any) {
-    console.error('임시 요청 데이터 조회 API 오류:', error)
     return NextResponse.json(
       { error: '서버 오류가 발생했습니다.', details: error.message },
       { status: 500 }

@@ -41,8 +41,6 @@ app.timeout = 0;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '여기에_Gemini_API_키를_입력하세요';
 
 if (!GEMINI_API_KEY || GEMINI_API_KEY === '여기에_Gemini_API_키를_입력하세요') {
-    console.error('⚠️ GEMINI_API_KEY가 설정되지 않았습니다!');
-    console.error('환경 변수로 설정하거나 코드에 직접 입력하세요.');
 }
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
@@ -60,10 +58,6 @@ app.post('/chat', async (req, res) => {
     // 타임아웃을 30분(1800초)으로 넉넉하게 설정
     req.setTimeout(1800000); // 30분
     res.setTimeout(1800000);
-
-    console.log('=== 점사 API 요청 수신 ===');
-    console.log('요청 본문 키:', Object.keys(req.body));
-    
     try {
         const {
             role_prompt,
@@ -83,19 +77,11 @@ app.post('/chat', async (req, res) => {
             remainingSubtitleIndices = [], // 2차 요청 시 남은 소제목의 원본 인덱스
             isParallelMode = false // 병렬점사 모드 여부
         } = req.body;
-
-        console.log('모델:', model);
-        console.log('메뉴 소제목 개수:', menu_subtitles?.length);
-        console.log('병렬점사 모드:', isParallelMode);
-        
         // 병렬점사 모드에서는 각 대메뉴의 소제목에 해석도구가 포함되어 있어야 함
         if (isParallelMode && menu_subtitles && menu_subtitles.length > 0) {
-            console.log('=== 병렬점사 모드: 해석도구 확인 ===');
             menu_subtitles.slice(0, 3).forEach((sub, idx) => {
                 const tool = sub?.interpretation_tool || (typeof sub === 'object' ? sub.interpretation_tool : '');
-                console.log(`소제목 ${idx + 1} (${sub?.subtitle || sub}): 해석도구 ${tool ? '있음: ' + tool.substring(0, 50) : '없음'}`);
             });
-            console.log('====================================');
         }
 
         if (!role_prompt || !menu_subtitles || !Array.isArray(menu_subtitles) || menu_subtitles.length === 0) {
@@ -143,7 +129,6 @@ app.post('/chat', async (req, res) => {
             try {
                 parsedManseRyeok = JSON.parse(manse_ryeok_json);
             } catch (e) {
-                console.error('만세력 JSON 파싱 실패:', e);
             }
         }
 
@@ -177,8 +162,6 @@ app.post('/chat', async (req, res) => {
 
         // 상세메뉴가 있는 소제목이 있는지 미리 확인
         const hasDetailMenusInSubtitles = menu_subtitles.some((s) => s.detailMenus && s.detailMenus.length > 0);
-        console.log('프롬프트 생성 전 체크: 상세메뉴가 있는 소제목 존재 여부:', hasDetailMenusInSubtitles);
-
         const prompt = `
 ${isSecondRequest ? `
 🚨🚨🚨 **중요: 2차 요청입니다. 절대 처음부터 다시 시작하지 마세요!** 🚨🚨🚨
@@ -342,13 +325,6 @@ ${subtitlesForMenu.map((sub, subIdx) => {
         // 병렬점사 모드: sub 객체에 이미 모든 정보가 포함되어 있음
         subtitleData = sub;
         // 디버깅: 해석도구 확인
-        console.log(`[프롬프트 생성-병렬점사] 메뉴 ${menuNumber} 소제목 ${subIdx + 1}:`, {
-            subtitle: sub?.subtitle || sub,
-            hasInterpretationTool: !!(sub?.interpretation_tool),
-            interpretationTool: sub?.interpretation_tool ? sub.interpretation_tool.substring(0, 50) + '...' : '없음',
-            hasDetailMenus: !!(sub?.detailMenus && sub.detailMenus.length > 0),
-            detailMenusCount: sub?.detailMenus?.length || 0
-        });
     } else if (isSecondRequest) {
         // 직렬점사 2차 요청: 이미 필터링된 menu_subtitles를 받았으므로 직접 사용
         subtitleData = sub;
@@ -371,16 +347,13 @@ ${subtitlesForMenu.map((sub, subIdx) => {
         });
         if (originalSub?.interpretation_tool) {
             tool = originalSub.interpretation_tool;
-            console.log(`✅ [병렬점사] 원본 menu_subtitles에서 해석도구 찾음: "${sub?.subtitle || sub}"`);
         } else {
-            console.warn(`⚠️ [병렬점사] 소제목 "${sub?.subtitle || sub}"에 해석도구가 없습니다! (원본에서도 찾지 못함)`);
         }
     }
     const detailMenus = subtitleData?.detailMenus || sub?.detailMenus || [];
     // 관리자 form에서 설정한 char_count 값을 사용
     const charCount = subtitleData?.char_count || sub?.char_count;
     if (!charCount || charCount <= 0) {
-        console.error(`❌ 소제목 "${sub.subtitle}"의 char_count가 설정되지 않았거나 0 이하입니다. char_count: ${charCount}`);
         // 기본값을 사용하지 않고 명시적으로 에러 표시
     }
     const thumbnail = subtitleData?.thumbnail || sub?.thumbnail || '';
@@ -388,8 +361,6 @@ ${subtitlesForMenu.map((sub, subIdx) => {
     
         // 상세메뉴가 있는 경우 특별한 강조
         if (detailMenus.length > 0) {
-        console.log(`[프롬프트 생성] 소제목 "${sub.subtitle}"에 상세메뉴 ${detailMenus.length}개 포함됨`);
-        
         // 상세메뉴 목록 텍스트 생성
         let detailMenuListText = '';
         detailMenus.forEach((dm, dmIdx) => {
@@ -407,12 +378,10 @@ ${subtitlesForMenu.map((sub, subIdx) => {
                         });
                         if (originalDm?.interpretation_tool) {
                             dmTool = originalDm.interpretation_tool;
-                            console.log(`✅ [병렬점사] 상세메뉴 해석도구 찾음: "${dm?.detailMenu || dmIdx + 1}"`);
                         }
                     }
                 
                 if (!dmTool) {
-                    console.warn(`⚠️ [병렬점사] 소제목 "${sub?.subtitle || sub}"의 상세메뉴 "${dm?.detailMenu || dmIdx + 1}"에 해석도구가 없습니다!`);
                 }
             }
             
@@ -567,10 +536,6 @@ ${isSecondRequest ? `
 이 마커는 긴 점사 결과를 안전하게 나누기 위해 필수입니다. 반드시 포함하세요!
 
 `;
-
-        console.log('프롬프트 생성 완료, 길이:', prompt.length);
-        console.log('스트리밍 시작...');
-
         // 완료된 HTML에서 깨진 부분 제거하고 유효한 부분만 반환하는 함수
         const extractValidHtml = (html, completedSubtitleIndices, allMenuSubtitles) => {
             if (!completedSubtitleIndices || completedSubtitleIndices.length === 0) {
@@ -657,11 +622,6 @@ ${isSecondRequest ? `
         const parseCompletedSubtitles = (html, allMenuSubtitles) => {
             const completedSubtitles = [];
             const completedMenus = [];
-            
-            console.log('=== parseCompletedSubtitles 시작 ===');
-            console.log('HTML 길이:', html.length);
-            console.log('전체 소제목 개수:', allMenuSubtitles.length);
-            
             // HTML에서 모든 소제목 섹션 추출 (subtitle-section과 detail-menu-section 모두)
             const sectionStartRegex = /<div[^>]*class="[^"]*(subtitle-section|detail-menu-section)[^"]*"[^>]*>/gi;
             const sectionMatches = [];
@@ -706,9 +666,6 @@ ${isSecondRequest ? `
                     subtitleSections.push(section);
                 }
             }
-            
-            console.log('추출된 section 개수 (subtitle-section + detail-menu-section):', subtitleSections.length);
-            
             // 각 소제목이 완료되었는지 확인
             allMenuSubtitles.forEach((subtitle, index) => {
                 const menuMatch = subtitle.subtitle.match(/^(\d+)-(\d+)/);
@@ -792,7 +749,6 @@ ${isSecondRequest ? `
                                     completedMenus.push(menuNumber - 1);
                                 }
                                 found = true;
-                                console.log(`소제목 ${index} (${subtitle.subtitle}) 완료 감지 ${isDetailMenuSection ? '(detail-menu-section)' : '(subtitle-section)'}`);
                                 break;
                             }
                         }
@@ -800,14 +756,8 @@ ${isSecondRequest ? `
                 }
                 
                 if (!found) {
-                    console.log(`소제목 ${index} (${subtitle.subtitle}) 미완료`);
                 }
             });
-            
-            console.log('=== parseCompletedSubtitles 완료 ===');
-            console.log('완료된 소제목:', completedSubtitles.length, '개');
-            console.log('완료된 소제목 인덱스:', completedSubtitles);
-            
             return { completedSubtitles, completedMenus };
         };
 
@@ -816,10 +766,6 @@ ${isSecondRequest ? `
         try {
             result = await geminiModel.generateContentStream(prompt);
         } catch (streamInitError) {
-            console.error('스트림 생성 실패:', streamInitError);
-            console.error('에러 메시지:', streamInitError?.message || String(streamInitError));
-            console.error('에러 스택:', streamInitError?.stack || 'N/A');
-            
             if (!res.headersSent) {
                 return res.status(500).json({
                     error: '스트림 생성 실패',
@@ -864,7 +810,6 @@ ${isSecondRequest ? `
                     } else if (chunk && chunk.text) {
                         chunkText = chunk.text;
                     } else {
-                        console.warn(`청크 ${chunkCount}: 텍스트를 추출할 수 없음, chunk 타입: ${typeof chunk}`);
                         continue;
                     }
                     
@@ -879,12 +824,10 @@ ${isSecondRequest ? `
 
             // 100개 청크마다 진행 상황 로그
             if (chunkCount % 100 === 0) {
-                console.log(`전송된 청크: ${chunkCount}개, 누적 텍스트 길이: ${accumulatedText.length}자`);
             }
 
                     // 길이 제한 로직 삭제 (MAX_TOKENS까지 계속 진행)
                 } catch (chunkError) {
-                    console.error(`청크 ${chunkCount} 처리 중 에러:`, chunkError);
                     // 개별 청크 에러는 로그만 남기고 계속 진행
                     continue;
                 }
@@ -916,9 +859,6 @@ ${isSecondRequest ? `
                 const allSubtitlesCompleted = completedSubtitles.length === totalCountForCheck;
                 
                 if (allSubtitlesCompleted) {
-                    console.log(`✅ [청크 ${chunkCount}] 모든 소제목이 완료되었습니다! 스트림을 즉시 중단합니다.`);
-                    console.log(`accumulatedText 길이: ${accumulatedText.length}자`);
-                    
                     allSubtitlesCompletedEarly = true;
                     break; // for await 루프를 즉시 종료하여 스트림 읽기 중단
                 } else {
@@ -927,17 +867,11 @@ ${isSecondRequest ? `
             }
             }
         } catch (streamError) {
-            console.error('스트림 읽기 중 에러 발생:', streamError);
-            console.error('에러 메시지:', streamError?.message || String(streamError));
-            console.error('에러 스택:', streamError?.stack || 'N/A');
-            console.error(`에러 발생 시점 - 청크: ${chunkCount}개, 누적 텍스트: ${accumulatedText.length}자`);
-            
             streamErrorOccurred = true;
             streamErrorMessage = streamError?.message || '스트림을 읽는 중 오류가 발생했습니다.';
             
             // 스트림 에러가 발생했지만 이미 일부 데이터가 있으면 계속 진행
             if (accumulatedText.trim().length > 0) {
-                console.log('일부 데이터가 수집되었으므로 계속 진행합니다.');
                 // 에러가 발생했지만 데이터가 있으면 경고만 전송하고 계속 진행
                 res.write(`data: ${JSON.stringify({ type: 'warning', message: '스트림 파싱 중 일부 에러가 발생했지만 수집된 데이터를 계속 전송합니다.' })}\n\n`);
             } else {
@@ -965,8 +899,6 @@ ${isSecondRequest ? `
         let parsedCompletedIndices = []; // 파싱한 완료된 소제목 인덱스 (req.body의 completedSubtitleIndices와 구분)
         
         // 항상 완료된 소제목을 파싱하여 확인 (finishReason과 관계없이)
-        console.log('=== 완료된 소제목 확인 시작 ===');
-        
         // 재요청인 경우 req.body의 completedSubtitleIndices 가져오기
         const requestCompletedIndices = req.body.completedSubtitleIndices || [];
         
@@ -991,7 +923,6 @@ ${isSecondRequest ? `
                 if (filteredIdx < req.body.remainingSubtitleIndices.length) {
                     return req.body.remainingSubtitleIndices[filteredIdx];
                 }
-                console.warn(`⚠️ 필터링된 인덱스 ${filteredIdx}가 remainingSubtitleIndices 범위를 벗어남`);
                 return -1; // 잘못된 인덱스
             }).filter(idx => idx >= 0); // 잘못된 인덱스 제거
             
@@ -1009,17 +940,10 @@ ${isSecondRequest ? `
             totalSubtitlesCount = requestCompletedIndices.length + req.body.remainingSubtitleIndices.length;
         }
         const allSubtitlesCompleted = parsedCompletedIndices.length === totalSubtitlesCount;
-        
-        console.log(`전체 소제목: ${totalSubtitlesCount}개`);
-        console.log(`완료된 소제목: ${parsedCompletedIndices.length}개`);
-        console.log(`모든 소제목 완료 여부: ${allSubtitlesCompleted ? '✅ 예' : '❌ 아니오'}`);
-        
         try {
             const response = await result.response;
             finishReason = response.candidates?.[0]?.finishReason || 'STOP';
-            console.log(`응답에서 가져온 finishReason: ${finishReason}`);
         } catch (responseError) {
-            console.error('응답 대기 중 에러:', responseError);
             // 에러가 발생해도 계속 처리
         }
         
@@ -1096,8 +1020,6 @@ ${isSecondRequest ? `
             
             // 마지막 subtitle-section이 완전히 닫히지 않았다면 (중간에 잘림)
             if (lastCloseDivIndex === -1 || lastCloseDivIndex >= html.length || depth > 0) {
-                console.log('⚠️ 마지막 subtitle-section이 중간에 잘렸습니다. 완료된 목록에서 제외합니다.');
-                
                 // 마지막 subtitle-section이 어느 소제목에 해당하는지 확인
                 const lastSectionContent = html.substring(lastSectionStart, Math.min(lastSectionStart + 1000, html.length));
                 let lastSubtitleIndex = -1;
@@ -1111,14 +1033,12 @@ ${isSecondRequest ? `
                 });
                 
                 if (lastSubtitleIndex >= 0 && completedIndices.includes(lastSubtitleIndex)) {
-                    console.log(`⚠️ 소제목 ${lastSubtitleIndex} (${menu_subtitles[lastSubtitleIndex]?.subtitle})가 중간에 잘렸습니다. 완료 목록에서 제거합니다.`);
                     return completedIndices.filter(idx => idx !== lastSubtitleIndex);
                 } else if (lastSubtitleIndex === -1) {
                     // 마지막 subtitle-section을 찾지 못했지만, 완료 목록의 마지막 항목은 제거 (안전장치)
                     const sortedIndices = [...completedIndices].sort((a, b) => a - b);
                     if (sortedIndices.length > 0) {
                         const lastCompletedIndex = sortedIndices[sortedIndices.length - 1];
-                        console.log(`⚠️ 마지막 subtitle-section을 식별하지 못했지만, 마지막 완료 항목(${lastCompletedIndex})을 제거합니다.`);
                         return completedIndices.filter(idx => idx !== lastCompletedIndex);
                     }
                 }
@@ -1130,16 +1050,12 @@ ${isSecondRequest ? `
         // 실제 MAX_TOKENS인 경우에만 HTML 추출 및 재요청 처리
         if (finishReason === 'MAX_TOKENS') {
             if (!allSubtitlesCompleted) {
-                console.log('❌ MAX_TOKENS로 인해 일부 소제목이 미완료 상태입니다. 재요청이 필요합니다.');
                 isTruncated = true;
                 // 제안 1-4: 안전한 자르기 함수 사용 (테이블 내부 자르기 방지 포함)
                 cleanHtml = safeTrimToCompletedBoundary(cleanHtml);
-                console.log(`안전하게 자른 HTML 길이: ${cleanHtml.length}자`);
-                
                 // 중간에 잘린 소제목 제거 (중요: 잘린 항목은 재요청 시 다시 생성해야 함)
                 parsedCompletedIndices = removeIncompleteSubtitle(cleanHtml, parsedCompletedIndices);
             } else {
-                console.log('✅ MAX_TOKENS에 도달했지만 모든 소제목이 완료되었습니다.');
                 isTruncated = false;
                 finishReason = 'STOP';
                 parsedCompletedIndices = []; // 모두 완료되었으므로 비움
@@ -1147,31 +1063,24 @@ ${isSecondRequest ? `
         } else {
             // finishReason이 STOP인 경우
             if (!allSubtitlesCompleted) {
-                console.log('❌ finishReason이 STOP이지만 일부 소제목이 미완료 상태입니다. 재요청이 필요합니다.');
                 // 미완료 소제목이 있으면 재요청 필요
                 isTruncated = true;
                 finishReason = 'MAX_TOKENS'; // 재요청을 위해 MAX_TOKENS로 설정
                 // 제안 1-4: 안전한 자르기 함수 사용 (테이블 내부 자르기 방지 포함)
                 cleanHtml = safeTrimToCompletedBoundary(cleanHtml);
-                console.log(`안전하게 자른 HTML 길이: ${cleanHtml.length}자`);
-                
                 // 중간에 잘린 소제목 제거 (중요: 잘린 항목은 재요청 시 다시 생성해야 함)
                 parsedCompletedIndices = removeIncompleteSubtitle(cleanHtml, parsedCompletedIndices);
             } else {
-                console.log('✅ 모든 소제목이 완료되었습니다.');
                 isTruncated = false;
                 finishReason = 'STOP';
                 parsedCompletedIndices = []; // 모두 완료되었으므로 비움
             }
         }
-        console.log('=== 완료된 소제목 확인 완료 ===');
-
         // 조기 완료 처리된 경우 (모든 소제목이 이미 완료되었으므로 재요청 불필요)
         if (allSubtitlesCompletedEarly) {
             isTruncated = false;
             finishReason = 'STOP';
             parsedCompletedIndices = []; // 조기 완료는 모든 소제목이 완료된 것이므로 비움
-            console.log('✅ 조기 완료 처리: isTruncated=false, finishReason=STOP');
         }
 
         // partial_done 이벤트 전송 (MAX_TOKENS이고 미완료 소제목이 있고, 1차 요청인 경우)
@@ -1180,9 +1089,6 @@ ${isSecondRequest ? `
             const remainingIndices = menu_subtitles
                 .map((_, index) => index)
                 .filter(index => !parsedCompletedIndices.includes(index));
-            
-            console.log('⚠️ [partial_done 전송] 1차 요청 부분 완료');
-            
             // partial_done 이벤트 전송
             res.write(`data: ${JSON.stringify({
                 type: 'partial_done',
@@ -1191,8 +1097,6 @@ ${isSecondRequest ? `
                 completedSubtitles: parsedCompletedIndices,
                 remainingSubtitles: remainingIndices
             })}\n\n`);
-            
-            console.log('✅ partial_done 이벤트 전송 완료');
         }
 
         // done 이벤트 전송 (스트림 에러가 발생했어도 수집된 데이터는 전송)
@@ -1212,18 +1116,10 @@ ${isSecondRequest ? `
         
         res.write(`data: ${JSON.stringify(donePayload)}\n\n`);
         res.end();
-
-        console.log(`스트리밍 완료, 총 청크: ${chunkCount}개, 총 텍스트 길이: ${accumulatedText.length}자`);
-        console.log(`finishReason: ${finishReason}, isTruncated: ${isTruncated}`);
-        console.log(`조기 완료 여부: ${allSubtitlesCompletedEarly ? '예' : '아니오'}`);
         if (streamErrorOccurred) {
-            console.log(`⚠️ 스트림 에러 발생했지만 데이터 전송 완료: ${streamErrorMessage}`);
         }
 
     } catch (error) {
-        console.error('에러 발생:', error);
-        console.error('에러 스택:', error.stack);
-        
         // 에러 이벤트 전송
         if (!res.headersSent) {
             res.status(500).json({
@@ -1245,7 +1141,4 @@ app.get('/health', (req, res) => {
 // 6. 서버 시작
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`✅ 점사 AI 백엔드 서버가 ${PORT}번 포트에서 실행 중...`);
-    console.log(`📡 엔드포인트: http://localhost:${PORT}/chat`);
-    console.log(`🔑 GEMINI_API_KEY 설정 여부: ${GEMINI_API_KEY && GEMINI_API_KEY !== '여기에_Gemini_API_키를_입력하세요' ? '✅ 설정됨' : '❌ 설정 안 됨'}`);
 });

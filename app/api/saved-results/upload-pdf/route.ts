@@ -54,13 +54,6 @@ export async function POST(request: NextRequest) {
 
     const fileName = `${savedResultId}.pdf`
     const filePath = fileName
-
-    console.log('=== PDF 업로드 시작 ===')
-    console.log('파일명:', file.name)
-    console.log('파일 크기:', file.size)
-    console.log('저장 경로:', filePath)
-    console.log('저장된 결과 ID:', savedResultId)
-
     // Supabase Storage에 업로드 (pdfs 버킷 사용)
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('pdfs')
@@ -70,30 +63,21 @@ export async function POST(request: NextRequest) {
       })
 
     if (uploadError) {
-      console.error('Supabase PDF 업로드 에러:', uploadError)
       return NextResponse.json(
         { error: uploadError.message || 'PDF 업로드에 실패했습니다.' },
         { status: 500 }
       )
     }
-
-    console.log('PDF 업로드 성공:', uploadData)
-
     // 공개 URL 생성
     const { data: urlData } = supabase.storage
       .from('pdfs')
       .getPublicUrl(filePath)
-
-    console.log('PDF 공개 URL:', urlData.publicUrl)
-    console.log('=== PDF 업로드 완료 ===')
-
     return NextResponse.json({
       success: true,
       url: urlData.publicUrl,
       path: filePath
     })
   } catch (error: any) {
-    console.error('PDF 업로드 API 오류:', error)
     return NextResponse.json(
       { error: '서버 오류가 발생했습니다.', details: error.message },
       { status: 500 }

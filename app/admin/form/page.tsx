@@ -23,7 +23,6 @@ function AdminFormContent() {
         router.push('/admin/login')
       }
     } catch (error) {
-      console.error('인증 확인 실패:', error)
       setAuthenticated(false)
       router.push('/admin/login')
     }

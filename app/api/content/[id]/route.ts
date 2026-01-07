@@ -29,31 +29,10 @@ export async function GET(
       tts_speaker: content.tts_speaker || 'nara'
     })
   } catch (error: any) {
-    console.error('컨텐츠 조회 에러:', error)
     return NextResponse.json(
       { error: error?.message || '컨텐츠 조회 중 오류가 발생했습니다.' },
       { status: 500 }
     )
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

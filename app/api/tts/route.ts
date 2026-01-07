@@ -4,11 +4,6 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     let { text, speaker } = body
-
-    console.log('=== TTS API 호출 ===');
-    console.log('요청 body의 speaker:', speaker);
-    console.log('요청 body의 text 길이:', text?.length || 0);
-
     if (!text) {
       return NextResponse.json(
         { error: '텍스트가 필요합니다.' },
@@ -20,11 +15,6 @@ export async function POST(req: NextRequest) {
     const selectedSpeaker = speaker || 'nara'
     const validSpeakers = ['nara', 'mijin', 'nhajun', 'ndain', 'jinho']
     const finalSpeaker = validSpeakers.includes(selectedSpeaker) ? selectedSpeaker : 'nara'
-    
-    console.log('선택된 화자 (selectedSpeaker):', selectedSpeaker);
-    console.log('최종 화자 (finalSpeaker):', finalSpeaker);
-    console.log('========================');
-
     // 텍스트 정리: HTML 엔티티 디코딩 및 특수 문자 처리
     // HTML 엔티티 디코딩
     text = text
@@ -89,129 +79,6 @@ export async function POST(req: NextRequest) {
       
       text = truncated.trim()
       const originalByteLength = getByteLength(text) // 원본 바이트 길이 (잘리기 전)
-      console.log(`텍스트 길이 제한: ${text.length}자 (${getByteLength(text)}바이트)로 잘림 (원본: ${originalLength}자)`)
-    }
-    
-    // 최종 길이 재확인 (안전장치)
-    if (text.length > MAX_TEXT_LENGTH) {
-      text = text.substring(0, MAX_TEXT_LENGTH).trim()
-    }
-    if (getByteLength(text) > MAX_BYTE_LENGTH) {
-      // 바이트 길이 기준으로 추가 자르기
-      let finalText = text
-      while (getByteLength(finalText) > MAX_BYTE_LENGTH && finalText.length > 0) {
-        finalText = finalText.substring(0, finalText.length - 10)
-      }
-      text = finalText.trim()
-      console.log(`최종 텍스트 길이 재확인: ${text.length}자 (${getByteLength(text)}바이트)`)
-    }
-
-    // 환경 변수에서 네이버 클라우드 플랫폼 인증 정보 가져오기
-    const clientId = process.env.NAVER_CLOVA_CLIENT_ID
-    const clientSecret = process.env.NAVER_CLOVA_CLIENT_SECRET
-
-    if (!clientId || !clientSecret) {
-      console.error('Clova Voice API 인증 정보 누락:', {
-        hasClientId: !!clientId,
-        hasClientSecret: !!clientSecret,
-      })
-      return NextResponse.json(
-        { error: 'Clova Voice API 인증 정보가 설정되지 않았습니다.' },
-        { status: 500 }
-      )
-    }
-
-    // API 키 형식 검증 (기본적인 형식 확인)
-    if (clientId.length < 10 || clientSecret.length < 10) {
-      console.error('Clova Voice API 인증 정보 형식 오류:', {
-        clientIdLength: clientId.length,
-        clientSecretLength: clientSecret.length,
-      })
-      return NextResponse.json(
-        { error: 'Clova Voice API 인증 정보 형식이 올바르지 않습니다.' },
-        { status: 500 }
-      )
-    }
-
-    // Clova Voice API 엔드포인트
-    const url = 'https://naveropenapi.apigw.ntruss.com/tts-premium/v1/tts'
-
-    // 헤더 설정
-    const headers = {
-      'X-NCP-APIGW-API-KEY-ID': clientId,
-      'X-NCP-APIGW-API-KEY': clientSecret,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    }
-
-    // 요청 데이터 (URLSearchParams가 자동으로 인코딩)
-    const params = new URLSearchParams()
-    params.append('speaker', finalSpeaker)
-    params.append('volume', '0')
-    params.append('speed', '0')
-    params.append('pitch', '0')
-    params.append('format', 'mp3')
-    params.append('text', text)
-
-    // API 호출
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: headers,
-      body: params.toString(),
-    })
-
-    if (!response.ok) {
-      let errorText = ''
-      try {
-        errorText = await response.text()
-        console.error('=== Clova Voice API 에러 ===')
-        console.error('응답 상태:', response.status, response.statusText)
-        console.error('에러 응답 본문:', errorText)
-        console.error('요청 헤더:', {
-          'X-NCP-APIGW-API-KEY-ID': clientId ? `${clientId.substring(0, 4)}...` : '없음',
-          'X-NCP-APIGW-API-KEY': clientSecret ? `${clientSecret.substring(0, 4)}...` : '없음',
-        })
-        console.error('요청 파라미터:', {
-          speaker: finalSpeaker,
-          textLength: text.length,
-          textPreview: text.substring(0, 50) + '...',
-        })
-        console.error('========================')
-        
-        // 401 Unauthorized 에러인 경우 특별 처리
-        if (response.status === 401) {
-          return NextResponse.json(
-            { error: '음성 변환 실패: Authentication Failed (API 키가 올바르지 않거나 만료되었습니다. 환경 변수를 확인해주세요.)' },
-            { status: 401 }
-          )
-        }
-        
-        // JSON 형식의 에러 메시지 파싱 시도
-        try {
-          const errorJson = JSON.parse(errorText)
-          const errorMessage = errorJson.error?.message || errorJson.message || errorText
-          return NextResponse.json(
-            { error: `음성 변환 실패: ${errorMessage}` },
-            { status: response.status }
-          )
-        } catch {
-          // JSON 파싱 실패 시 원본 텍스트 사용
-          return NextResponse.json(
-            { error: `음성 변환 실패 (${response.status}): ${errorText || '알 수 없는 오류'}` },
-            { status: response.status }
-          )
-        }
-      } catch (e) {
-        console.error('에러 응답 읽기 실패:', e)
-        return NextResponse.json(
-          { error: `음성 변환 실패: ${response.status}` },
-          { status: response.status }
-        )
-      }
-    }
-
-    // 오디오 데이터를 ArrayBuffer로 변환
-    const audioBuffer = await response.arrayBuffer()
-
     // MP3 오디오 데이터 반환
     return new NextResponse(audioBuffer, {
       headers: {
@@ -220,7 +87,6 @@ export async function POST(req: NextRequest) {
       },
     })
   } catch (error: any) {
-    console.error('TTS API 에러:', error)
     return NextResponse.json(
       { error: error?.message || '음성 변환 중 오류가 발생했습니다.' },
       { status: 500 }

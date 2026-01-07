@@ -33,7 +33,6 @@ export async function DELETE(request: NextRequest) {
       .eq('id', requestKey)
 
     if (error) {
-      console.error('임시 요청 데이터 삭제 실패:', error)
       return NextResponse.json(
         { error: '임시 요청 데이터 삭제에 실패했습니다.', details: error.message },
         { status: 500 }
@@ -45,7 +44,6 @@ export async function DELETE(request: NextRequest) {
       message: '임시 요청 데이터가 삭제되었습니다.'
     })
   } catch (error: any) {
-    console.error('임시 요청 데이터 삭제 API 오류:', error)
     return NextResponse.json(
       { error: '서버 오류가 발생했습니다.', details: error.message },
       { status: 500 }
