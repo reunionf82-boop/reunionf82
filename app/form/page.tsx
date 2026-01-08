@@ -533,14 +533,16 @@ function FormContent() {
       } catch (e) {
       }
 
-      // 컨텐츠에 typecast_voice_id가 있으면 타입캐스트로 강제(명시 override)
+      // 컨텐츠별 override:
+      // - provider가 'typecast'로 명시된 경우에만 타입캐스트로 전환
+      // - voice id는 "타입캐스트일 때 사용할 값"일 뿐, 제공자를 강제하지 않는다
       const contentVoiceId = (savedResult.content?.typecast_voice_id && String(savedResult.content.typecast_voice_id).trim() !== '')
         ? String(savedResult.content.typecast_voice_id).trim()
         : ''
       if (contentVoiceId) {
         typecastVoiceId = contentVoiceId
-        ttsProvider = 'typecast'
-      } else if (savedResult.content?.tts_provider === 'typecast') {
+      }
+      if (savedResult.content?.tts_provider === 'typecast') {
         ttsProvider = 'typecast'
       }
 
@@ -553,6 +555,14 @@ function FormContent() {
         const chunk = chunks[i]
 
         // TTS API 호출 (provider/voiceId 포함)
+        const isLocalDebug =
+          typeof window !== 'undefined' &&
+          (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
+        if (isLocalDebug) {
+          console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId })
+        }
+
         const response = await fetch('/api/tts', {
           method: 'POST',
           headers: {
@@ -560,6 +570,14 @@ function FormContent() {
           },
           body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
         })
+        if (isLocalDebug) {
+          console.log('[tts] response', {
+            ok: response.ok,
+            status: response.status,
+            usedProvider: response.headers.get('X-TTS-Provider'),
+            usedVoiceId: response.headers.get('X-TTS-VoiceId'),
+          })
+        }
 
         if (!response.ok) {
           const error = await response.json()
@@ -5695,8 +5713,6 @@ function FormContent() {
                                                   if (vc) {
                                                     typecastVoiceId = vc;
                                                     window.savedContentTypecastVoiceId = typecastVoiceId;
-                                                    ttsProvider = 'typecast';
-                                                    window.savedContentTtsProvider = ttsProvider;
                                                   }
                                                 }
                                               }
@@ -5724,6 +5740,13 @@ function FormContent() {
                                                 return null;
                                               }
 
+                                              const isLocalDebug =
+                                                (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+                                              const outgoingVoiceId = (ttsProvider === 'typecast') ? typecastVoiceId : '';
+                                              if (isLocalDebug) {
+                                                console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId });
+                                              }
+
                                               const response = await fetch('/api/tts', {
                                                 method: 'POST',
                                                 headers: {
@@ -5731,6 +5754,14 @@ function FormContent() {
                                                 },
                                                 body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
                                               });
+                                              if (isLocalDebug) {
+                                                console.log('[tts] response', {
+                                                  ok: response.ok,
+                                                  status: response.status,
+                                                  usedProvider: response.headers.get('X-TTS-Provider'),
+                                                  usedVoiceId: response.headers.get('X-TTS-VoiceId'),
+                                                });
+                                              }
 
                                               // 응답 받은 후에도 shouldStop 재확인
                                               if (shouldStop) {
@@ -5822,6 +5853,13 @@ function FormContent() {
                                               preloadedChunk = null;
                                             } else {
                                               // 첫 번째 청크이거나 미리 로드 실패한 경우 즉시 요청
+                                              const isLocalDebug =
+                                                (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+                                              const outgoingVoiceId = (ttsProvider === 'typecast') ? typecastVoiceId : '';
+                                              if (isLocalDebug) {
+                                                console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId });
+                                              }
+
                                               const response = await fetch('/api/tts', {
                                                 method: 'POST',
                                                 headers: {
@@ -5829,6 +5867,14 @@ function FormContent() {
                                                 },
                                                 body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
                                               });
+                                              if (isLocalDebug) {
+                                                console.log('[tts] response', {
+                                                  ok: response.ok,
+                                                  status: response.status,
+                                                  usedProvider: response.headers.get('X-TTS-Provider'),
+                                                  usedVoiceId: response.headers.get('X-TTS-VoiceId'),
+                                                });
+                                              }
 
                                               if (!response.ok) {
                                                 const error = await response.json();

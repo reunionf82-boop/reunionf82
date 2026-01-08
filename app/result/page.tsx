@@ -2287,7 +2287,6 @@ ${fontFace ? fontFace : ''}
           const vc = String((freshContent as any)?.typecast_voice_id || '').trim()
           if (vc) {
             typecastVoiceId = vc
-            ttsProvider = 'typecast'
           }
           
           // content 객체 업데이트
@@ -2316,6 +2315,14 @@ ${fontFace ? fontFace : ''}
           const chunk = chunks[chunkIndex]
 
           // TTS API 호출 (provider/voiceId 포함)
+          const isLocalDebug =
+            typeof window !== 'undefined' &&
+            (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+          const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
+          if (isLocalDebug) {
+            console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId })
+          }
+
           const response = await fetch('/api/tts', {
             method: 'POST',
             headers: {
@@ -2323,6 +2330,14 @@ ${fontFace ? fontFace : ''}
             },
             body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
           })
+          if (isLocalDebug) {
+            console.log('[tts] response', {
+              ok: response.ok,
+              status: response.status,
+              usedProvider: response.headers.get('X-TTS-Provider'),
+              usedVoiceId: response.headers.get('X-TTS-VoiceId'),
+            })
+          }
 
           if (!response.ok) {
             const error = await response.json()
@@ -2385,6 +2400,14 @@ ${fontFace ? fontFace : ''}
           preloadedChunk = null
         } else {
           // 첫 번째 청크이거나 미리 로드 실패한 경우 즉시 요청
+          const isLocalDebug =
+            typeof window !== 'undefined' &&
+            (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+          const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
+          if (isLocalDebug) {
+            console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId })
+          }
+
           const response = await fetch('/api/tts', {
             method: 'POST',
             headers: {
@@ -2392,6 +2415,14 @@ ${fontFace ? fontFace : ''}
             },
             body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
           })
+          if (isLocalDebug) {
+            console.log('[tts] response', {
+              ok: response.ok,
+              status: response.status,
+              usedProvider: response.headers.get('X-TTS-Provider'),
+              usedVoiceId: response.headers.get('X-TTS-VoiceId'),
+            })
+          }
 
           if (!response.ok) {
             const error = await response.json()
@@ -2554,7 +2585,6 @@ ${fontFace ? fontFace : ''}
           const vc = String((freshContent as any)?.typecast_voice_id || '').trim()
           if (vc) {
             typecastVoiceId = vc
-            ttsProvider = 'typecast'
           }
           if (savedResult.content) {
             ;(savedResult.content as any).tts_provider = (freshContent as any)?.tts_provider
@@ -2580,6 +2610,14 @@ ${fontFace ? fontFace : ''}
           const chunk = chunks[chunkIndex]
 
           // TTS API 호출 (provider/voiceId 포함)
+          const isLocalDebug =
+            typeof window !== 'undefined' &&
+            (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+          const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
+          if (isLocalDebug) {
+            console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId })
+          }
+
           const response = await fetch('/api/tts', {
             method: 'POST',
             headers: {
@@ -2587,6 +2625,14 @@ ${fontFace ? fontFace : ''}
             },
             body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
           })
+          if (isLocalDebug) {
+            console.log('[tts] response', {
+              ok: response.ok,
+              status: response.status,
+              usedProvider: response.headers.get('X-TTS-Provider'),
+              usedVoiceId: response.headers.get('X-TTS-VoiceId'),
+            })
+          }
 
           if (!response.ok) {
             const error = await response.json()
@@ -2641,6 +2687,14 @@ ${fontFace ? fontFace : ''}
           preloadedChunk = null
         } else {
           // 첫 번째 청크이거나 미리 로드 실패한 경우 즉시 요청
+          const isLocalDebug =
+            typeof window !== 'undefined' &&
+            (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+          const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
+          if (isLocalDebug) {
+            console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId })
+          }
+
           const response = await fetch('/api/tts', {
             method: 'POST',
             headers: {
@@ -2648,6 +2702,14 @@ ${fontFace ? fontFace : ''}
             },
             body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
           })
+          if (isLocalDebug) {
+            console.log('[tts] response', {
+              ok: response.ok,
+              status: response.status,
+              usedProvider: response.headers.get('X-TTS-Provider'),
+              usedVoiceId: response.headers.get('X-TTS-VoiceId'),
+            })
+          }
 
           if (!response.ok) {
             const error = await response.json()
@@ -3314,7 +3376,6 @@ ${fontFace ? fontFace : ''}
                         const vc = String(data.typecast_voice_id || '').trim();
                         if (vc) {
                           window.savedContentTypecastVoiceId = vc;
-                          window.savedContentTtsProvider = 'typecast';
                         }
                       }
                     })
@@ -3526,8 +3587,6 @@ ${fontFace ? fontFace : ''}
                           if (vc) {
                             typecastVoiceId = vc;
                             window.savedContentTypecastVoiceId = typecastVoiceId;
-                            ttsProvider = 'typecast';
-                            window.savedContentTtsProvider = ttsProvider;
                           }
                         }
                       } catch (error) {
@@ -3561,6 +3620,13 @@ ${fontFace ? fontFace : ''}
                         const chunk = chunks[chunkIndex];
 
                         // TTS API 호출 (provider/voiceId 포함)
+                        const isLocalDebug =
+                          (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+                        const outgoingVoiceId = (ttsProvider === 'typecast') ? typecastVoiceId : '';
+                        if (isLocalDebug) {
+                          console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId });
+                        }
+
                         const response = await fetch('/api/tts', {
                           method: 'POST',
                           headers: {
@@ -3568,6 +3634,14 @@ ${fontFace ? fontFace : ''}
                           },
                           body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
                         });
+                        if (isLocalDebug) {
+                          console.log('[tts] response', {
+                            ok: response.ok,
+                            status: response.status,
+                            usedProvider: response.headers.get('X-TTS-Provider'),
+                            usedVoiceId: response.headers.get('X-TTS-VoiceId'),
+                          });
+                        }
 
                         if (!response.ok) {
                           const error = await response.json();
@@ -3631,6 +3705,13 @@ ${fontFace ? fontFace : ''}
                       } else {
                         // 첫 번째 청크이거나 미리 로드 실패한 경우 즉시 요청
                         
+                        const isLocalDebug =
+                          (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+                        const outgoingVoiceId = (ttsProvider === 'typecast') ? typecastVoiceId : '';
+                        if (isLocalDebug) {
+                          console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId });
+                        }
+
                         const response = await fetch('/api/tts', {
                           method: 'POST',
                           headers: {
@@ -3638,6 +3719,14 @@ ${fontFace ? fontFace : ''}
                           },
                           body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
                         });
+                        if (isLocalDebug) {
+                          console.log('[tts] response', {
+                            ok: response.ok,
+                            status: response.status,
+                            usedProvider: response.headers.get('X-TTS-Provider'),
+                            usedVoiceId: response.headers.get('X-TTS-VoiceId'),
+                          });
+                        }
                         
                         if (!response.ok) {
                           const error = await response.json();

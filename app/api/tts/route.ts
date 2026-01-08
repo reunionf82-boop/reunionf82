@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { TypecastClient } from '@neosapience/typecast-js'
+import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -8,6 +9,30 @@ const getTypecastClient = () => {
   const apiKey = process.env.TYPECAST_API_KEY
   if (!apiKey) return null
   return new TypecastClient({ apiKey })
+}
+
+const DEFAULT_TYPECAST_VOICE_ID = 'tc_5ecbbc6099979700087711d8'
+
+async function getSelectedTtsProviderFromDb(): Promise<{ provider: 'naver' | 'typecast'; voiceId: string }> {
+  try {
+    const supabase = getAdminSupabaseClient()
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('id, selected_tts_provider, selected_typecast_voice_id')
+      .eq('id', 1)
+      .maybeSingle()
+
+    if (error || !data) {
+      return { provider: 'naver', voiceId: DEFAULT_TYPECAST_VOICE_ID }
+    }
+
+    const provider = (data as any).selected_tts_provider === 'typecast' ? 'typecast' : 'naver'
+    const voiceId = String((data as any).selected_typecast_voice_id || '').trim() || DEFAULT_TYPECAST_VOICE_ID
+    return { provider, voiceId }
+  } catch {
+    // ✅ 값을 못 읽었으면 네이버
+    return { provider: 'naver', voiceId: DEFAULT_TYPECAST_VOICE_ID }
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -23,17 +48,24 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // provider 판정 (강화)
-    // - "네이버로 설정했는데도 Typecast로 새는" 문제 방지:
-    //   voiceId(tc_...)로 provider를 추론하지 않는다.
-    // - Typecast는 오직 provider가 명시적으로 'typecast'일 때만 사용한다.
-    const providerRaw = typeof provider === 'string' ? provider.trim().toLowerCase() : ''
-    const voiceIdRaw = typeof voiceId === 'string' ? voiceId.trim() : ''
-    const finalProvider: 'naver' | 'typecast' =
-      providerRaw === 'typecast' ? 'typecast' : 'naver'
+    // ✅ 최종 분기 규칙(요구사항)
+    // - 디폴트: 네이버
+    // - selected_tts_provider가 typecast이면 typecast
+    // - 서버오류/값을 못 읽으면 네이버
+    // => 클라이언트 provider/voiceId는 신뢰하지 않고 서버가 DB에서 결정한다.
+    const settings = await getSelectedTtsProviderFromDb()
+    const finalProvider: 'naver' | 'typecast' = settings.provider
+    const finalVoiceId: string = settings.voiceId
 
-    const defaultTypecastVoiceId = 'tc_5ecbbc6099979700087711d8'
-    const finalVoiceId = voiceIdRaw || defaultTypecastVoiceId
+    const logPrefix = '[api/tts]'
+    const safeTextLen = typeof text === 'string' ? text.length : 0
+    // NOTE: 텍스트 원문은 로그에 남기지 않는다(민감정보/개인정보 가능성).
+    console.log(`${logPrefix} request`, {
+      selectedProvider: finalProvider,
+      hasTypecastKey: !!process.env.TYPECAST_API_KEY,
+      voiceIdStartsWithTc: typeof finalVoiceId === 'string' ? finalVoiceId.startsWith('tc_') : false,
+      textLen: safeTextLen,
+    })
 
     // 화자 설정 (기본값: nara)
     const selectedSpeaker = speaker || 'nara'
@@ -122,99 +154,86 @@ export async function POST(req: NextRequest) {
 
     // Typecast TTS (공식 SDK 사용)
     if (finalProvider === 'typecast') {
+      // 타입캐스트는 voice id가 정상일 때만 시도 (아니면 네이버로 폴백)
       const client = getTypecastClient()
       if (!client) {
-        return NextResponse.json(
-          {
-            error: 'Typecast API 키(TYPECAST_API_KEY)가 설정되지 않았습니다.',
-            ...(process.env.NODE_ENV !== 'production'
-              ? { _debug: { provider: finalProvider, voiceId: finalVoiceId, providerRaw } }
-              : {}),
-          },
-          { status: 500 }
-        )
-      }
+        console.warn(`${logPrefix} typecast disabled: missing TYPECAST_API_KEY -> fallback to naver`)
+      } else if (!finalVoiceId.startsWith('tc_')) {
+        console.warn(`${logPrefix} typecast disabled: invalid voiceId -> fallback to naver`, { voiceId: finalVoiceId })
+      } else {
+        const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+        try {
+          // 429 완화: 짧은 백오프 재시도
+          let lastErr: any = null
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              const audio = await client.textToSpeech({
+                text,
+                model: 'ssfm-v21',
+                voice_id: finalVoiceId,
+                language: 'kor',
+                output: {
+                  volume: 100,
+                  audio_pitch: 0,
+                  audio_tempo: 1,
+                  audio_format: 'mp3'
+                }
+              })
 
-      try {
-        // 429 완화: 짧은 백오프 재시도
-        let lastErr: any = null
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            const audio = await client.textToSpeech({
-              text,
-              model: 'ssfm-v21',
-              voice_id: finalVoiceId,
-              language: 'kor',
-              output: {
-                volume: 100,
-                audio_pitch: 0,
-                audio_tempo: 1,
-                audio_format: 'mp3'
+              const format = (audio as any)?.format || 'mp3'
+              const mime =
+                format === 'wav' ? 'audio/wav' :
+                format === 'mp3' ? 'audio/mpeg' :
+                'application/octet-stream'
+
+              const audioData = (audio as any)?.audioData
+              if (!audioData) {
+                // 타입캐스트 응답 이상이면 네이버로 폴백
+                console.warn(`${logPrefix} typecast invalid response: missing audioData -> fallback to naver`, {
+                  voiceId: finalVoiceId,
+                })
+                break
               }
-            })
 
-            const format = (audio as any)?.format || 'mp3'
-            const mime =
-              format === 'wav' ? 'audio/wav' :
-              format === 'mp3' ? 'audio/mpeg' :
-              'application/octet-stream'
+              const buffer = audioData instanceof ArrayBuffer
+                ? Buffer.from(new Uint8Array(audioData))
+                : Buffer.isBuffer(audioData)
+                  ? audioData
+                  : Buffer.from(audioData)
 
-            const audioData = (audio as any)?.audioData
-            if (!audioData) {
-              return NextResponse.json(
-                { error: 'Typecast 응답에 audioData가 없습니다.' },
-                { status: 500 }
-              )
+              return new NextResponse(buffer, {
+                headers: {
+                  'Content-Type': mime,
+                  'Content-Disposition': `inline; filename="speech.${format}"`,
+                  'Cache-Control': 'no-store',
+                  'X-TTS-Provider': 'typecast',
+                  'X-TTS-VoiceId': finalVoiceId,
+                },
+              })
+            } catch (err: any) {
+              lastErr = err
+              const statusCode = err?.statusCode || err?.status
+              console.warn(`${logPrefix} typecast error -> fallback to naver`, {
+                attempt,
+                statusCode,
+                message: err?.message,
+                voiceId: finalVoiceId,
+              })
+              // ✅ 요구사항: typecast 서버오류(402 포함)면 네이버로 폴백
+              if (statusCode === 429 && attempt < 2) {
+                await sleep(500 * Math.pow(2, attempt))
+                continue
+              }
+              break
             }
-
-            const buffer = audioData instanceof ArrayBuffer
-              ? Buffer.from(new Uint8Array(audioData))
-              : Buffer.isBuffer(audioData)
-                ? audioData
-                : Buffer.from(audioData)
-
-            return new NextResponse(buffer, {
-              headers: {
-                'Content-Type': mime,
-                'Content-Disposition': `inline; filename="speech.${format}"`,
-                'Cache-Control': 'no-store',
-                'X-TTS-Provider': finalProvider,
-                'X-TTS-VoiceId': finalVoiceId,
-              },
-            })
-          } catch (err: any) {
-            lastErr = err
-            const statusCode = err?.statusCode || err?.status
-            if (statusCode === 429 && attempt < 2) {
-              await sleep(500 * Math.pow(2, attempt))
-              continue
-            }
-            throw err
           }
+          // 마지막 에러가 있더라도 네이버로 폴백 (요구사항)
+          void lastErr
+        } catch {
+          // 예외도 네이버로 폴백
+          console.warn(`${logPrefix} typecast exception -> fallback to naver`, { voiceId: finalVoiceId })
         }
-        throw lastErr
-      } catch (e: any) {
-        // SDK 에러 메시지 최대한 그대로 전달
-        const msg = e?.message || 'Typecast 음성 변환에 실패했습니다.'
-        const status = e?.statusCode || e?.status || 500
-        return NextResponse.json(
-          {
-            error: msg,
-            ...(process.env.NODE_ENV !== 'production'
-              ? { _debug: { provider: finalProvider, voiceId: finalVoiceId, providerRaw } }
-              : {}),
-          },
-          {
-            status,
-            headers: {
-              'Cache-Control': 'no-store',
-              'X-TTS-Provider': finalProvider,
-              'X-TTS-VoiceId': finalVoiceId,
-            },
-          }
-        )
       }
     }
 
@@ -308,7 +327,7 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'audio/mpeg',
         'Content-Disposition': 'inline; filename="speech.mp3"',
         'Cache-Control': 'no-store',
-        'X-TTS-Provider': finalProvider,
+        'X-TTS-Provider': 'naver',
       },
     })
   } catch (error: any) {
