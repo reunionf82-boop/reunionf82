@@ -31,7 +31,6 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     }
 
-
     if (id) {
       // 업데이트
       const { data, error } = await supabase

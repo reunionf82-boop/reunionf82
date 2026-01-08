@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState, useRef, useMemo, memo, useCallback } from 'react'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { getContentById, getSelectedSpeaker, getFortuneViewMode } from '@/lib/supabase-admin'
+import SupabaseVideo from '@/components/SupabaseVideo'
 
 interface ResultData {
   content: any
@@ -15,10 +16,12 @@ interface ResultData {
 }
 
 interface ParsedSubtitle {
-  detailMenus?: Array<{ detailMenu: string; contentHtml?: string; thumbnail?: string }>;
+  detailMenus?: Array<{ detailMenu: string; contentHtml?: string; thumbnail_image_url?: string; thumbnail_video_url?: string; thumbnail?: string }>;
   title: string
   contentHtml: string
   thumbnail?: string
+  thumbnail_image_url?: string
+  thumbnail_video_url?: string
   detailMenuSectionHtml?: string
   isDetailMenu?: boolean // 상세메뉴 여부 플래그 (소메뉴와 동급으로 취급)
   detailMenuIndex?: number // 상세메뉴 인덱스 (원래 소메뉴 내에서의 순서)
@@ -1494,6 +1497,8 @@ ${fontFace ? fontFace : ''}
       const allMenuSubtitles: Array<{
         subtitle: string
         thumbnail?: string
+        thumbnail_image_url?: string
+        thumbnail_video_url?: string
         interpretation_tool?: string
         isDetailMenu?: boolean
       }> = []
@@ -1542,9 +1547,14 @@ ${fontFace ? fontFace : ''}
           const key = `S:${removeNumberPrefix(trimmedSubtitle).replace(/\s+/g, ' ').trim()}`
           if (!seenExpected.has(key) && key !== 'S:') {
             seenExpected.add(key)
+            // thumbnail_image_url과 thumbnail_video_url을 thumbnail 필드에 저장 (하위 호환성)
+            const thumbnailImageUrl = foundSub?.thumbnail_image_url || foundSub?.thumbnail || ''
+            const thumbnailVideoUrl = foundSub?.thumbnail_video_url || ''
             allMenuSubtitles.push({
               subtitle: trimmedSubtitle,
-              thumbnail: foundSub?.thumbnail,
+              thumbnail: thumbnailImageUrl, // 하위 호환성을 위해 thumbnail 필드에 저장
+              thumbnail_image_url: thumbnailImageUrl,
+              thumbnail_video_url: thumbnailVideoUrl,
               interpretation_tool: foundSub?.interpretation_tool || tool,
               isDetailMenu: false,
             })
@@ -1559,10 +1569,15 @@ ${fontFace ? fontFace : ''}
             const key = `D:${removeNumberPrefix(dmTitle).replace(/\s+/g, ' ').trim()}`
             if (seenExpected.has(key) || key === 'D:') return
             seenExpected.add(key)
+            // thumbnail_image_url과 thumbnail_video_url을 thumbnail 필드에 저장 (하위 호환성)
+            const thumbnailImageUrl = dm?.thumbnail_image_url || dm?.thumbnail || ''
+            const thumbnailVideoUrl = dm?.thumbnail_video_url || ''
             allMenuSubtitles.push({
               subtitle: dmTitle,
-              thumbnail: dm.thumbnail,
-              interpretation_tool: dm.interpretation_tool || '',
+              thumbnail: thumbnailImageUrl, // 하위 호환성을 위해 thumbnail 필드에 저장
+              thumbnail_image_url: thumbnailImageUrl,
+              thumbnail_video_url: thumbnailVideoUrl,
+              interpretation_tool: dm?.interpretation_tool || '',
               isDetailMenu: true,
             })
           })
@@ -1607,7 +1622,9 @@ ${fontFace ? fontFace : ''}
           nodeCursor += 1
         }
 
-        const thumbnail = expected?.thumbnail || ''
+        const thumbnail = expected?.thumbnail || expected?.thumbnail_image_url || ''
+        const thumbnailImageUrl = expected?.thumbnail_image_url || expected?.thumbnail || ''
+        const thumbnailVideoUrl = expected?.thumbnail_video_url || ''
         const interpretationTool = expected?.interpretation_tool || ''
 
         let contentHtml = ''
@@ -1649,6 +1666,8 @@ ${fontFace ? fontFace : ''}
           title: expectedTitle || `항목 ${expectedIdx + 1}`,
           contentHtml: cleanedContentHtml || '',
           thumbnail: thumbnail,
+          thumbnail_image_url: thumbnailImageUrl,
+          thumbnail_video_url: thumbnailVideoUrl,
           detailMenus: undefined,
           detailMenuSectionHtml: undefined,
           isDetailMenu: expectedIsDetail,
@@ -1800,6 +1819,10 @@ ${fontFace ? fontFace : ''}
   const MIN_COMPLETE_CHARS_SUBTITLE = 30
   const MIN_COMPLETE_CHARS_DETAIL = 50
   const isItemComplete = (sub: ParsedSubtitle) => {
+    // ✅ 점사가 "완료"로 판정된 경우에는 길이 기준으로 숨기지 않는다.
+    // 간혹 특정 항목이 짧게 끝나면 MIN_COMPLETE_CHARS 기준을 못 넘어서
+    // activePos가 남아 전체 메뉴가 숨겨지는 문제가 발생할 수 있음.
+    if (fortuneViewMode === 'realtime' && streamingFinished) return true
     const len = (sub.contentHtml || '').trim().length
     const min = sub.isDetailMenu ? MIN_COMPLETE_CHARS_DETAIL : MIN_COMPLETE_CHARS_SUBTITLE
     return len >= min
@@ -1816,6 +1839,9 @@ ${fontFace ? fontFace : ''}
     }
     return null
   }, [parsedMenus])
+
+  // 점사 완료 시에는 진행 위치(activePos)로 UI를 제한하지 않는다.
+  const shouldGateByActivePos = fortuneViewMode === 'realtime' && !streamingFinished
 
   if (loading) {
     return (
@@ -2608,17 +2634,175 @@ ${fontFace ? fontFace : ''}
                   // subtitle-section에 id 추가 (목차에서 스크롤하기 위해)
                   ;(subSection as HTMLElement).id = `subtitle-${menuIndex}-${subIndex}`
                   
-                  if (subtitle?.thumbnail) {
+                  const thumbnailImageUrl = subtitle?.thumbnail_image_url || subtitle?.thumbnail || ''
+                  const thumbnailVideoUrl = subtitle?.thumbnail_video_url || ''
+                  if (thumbnailImageUrl || thumbnailVideoUrl) {
                     const titleDiv = subSection.querySelector('.subtitle-title')
                     if (titleDiv) {
                       const thumbnailImg = doc.createElement('div')
                       thumbnailImg.className = 'subtitle-thumbnail-container'
-                      thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;'
-                      thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" />`
+                      thumbnailImg.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #f3f4f6; border-radius: 8px; overflow: hidden;'
+                      if (thumbnailVideoUrl && thumbnailImageUrl) {
+                        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+                        const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''
+                        const containerDiv = doc.createElement('div')
+                        containerDiv.style.cssText = 'position: relative; width: 100%; height: 100%;'
+                        
+                        const imgEl = doc.createElement('img')
+                        imgEl.src = thumbnailImageUrl
+                        imgEl.alt = '소제목 썸네일'
+                        imgEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;'
+                        imgEl.id = `subtitle-thumbnail-img-result-${menuIndex}-${subIndex}`
+                        
+                        const videoEl = doc.createElement('video')
+                        videoEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; display: none;'
+                        videoEl.id = `subtitle-thumbnail-video-result-${menuIndex}-${subIndex}`
+                        videoEl.poster = thumbnailImageUrl
+                        videoEl.setAttribute('autoPlay', '')
+                        videoEl.setAttribute('muted', '')
+                        videoEl.setAttribute('loop', '')
+                        videoEl.setAttribute('playsInline', '')
+                        videoEl.setAttribute('preload', 'auto')
+                        
+                        const sourceEl = doc.createElement('source')
+                        sourceEl.src = `${bucketUrl}/${thumbnailVideoUrl}.webm`
+                        sourceEl.type = 'video/webm'
+                        videoEl.appendChild(sourceEl)
+                        
+                        containerDiv.appendChild(imgEl)
+                        containerDiv.appendChild(videoEl)
+                        thumbnailImg.appendChild(containerDiv)
+                        
+                        // 동영상 로드 및 재생 설정
+                        videoEl.addEventListener('loadeddata', function() {
+                          if (imgEl) imgEl.style.display = 'none'
+                          if (videoEl) {
+                            videoEl.style.display = 'block'
+                            videoEl.play().catch(() => {
+                              // 자동 재생 실패 시 무시 (브라우저 정책)
+                            })
+                          }
+                        })
+                        videoEl.addEventListener('canplaythrough', function() {
+                          if (imgEl && imgEl.style.display !== 'none') imgEl.style.display = 'none'
+                          if (videoEl && videoEl.style.display !== 'block') {
+                            videoEl.style.display = 'block'
+                            videoEl.play().catch(() => {
+                              // 자동 재생 실패 시 무시 (브라우저 정책)
+                            })
+                          }
+                        })
+                        // 즉시 로드 시작
+                        videoEl.load()
+                        // 약간의 지연 후 재생 시도 (브라우저가 준비될 때까지)
+                        setTimeout(() => {
+                          if (videoEl.readyState >= 2) { // HAVE_CURRENT_DATA 이상
+                            if (imgEl) imgEl.style.display = 'none'
+                            videoEl.style.display = 'block'
+                            videoEl.play().catch(() => {
+                              // 자동 재생 실패 시 무시 (브라우저 정책)
+                            })
+                          }
+                        }, 100)
+                      } else if (thumbnailImageUrl) {
+                        const imgEl = doc.createElement('img')
+                        imgEl.src = thumbnailImageUrl
+                        imgEl.alt = '소제목 썸네일'
+                        imgEl.style.cssText = 'width: 100%; height: 100%; display: block; object-fit: contain;'
+                        thumbnailImg.appendChild(imgEl)
+                      }
                       titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling)
-                    } else {
                     }
-                  } else {
+                  }
+                  
+                  // 상세메뉴 썸네일 추가
+                  if (subtitle?.detailMenus && Array.isArray(subtitle.detailMenus)) {
+                    const detailMenuSections = Array.from(subSection.querySelectorAll('.detail-menu-section'))
+                    detailMenuSections.forEach((detailMenuSection, dmIndex) => {
+                      const detailMenu = subtitle.detailMenus[dmIndex]
+                      if (detailMenu) {
+                        const detailMenuThumbnailImageUrl = detailMenu?.thumbnail_image_url || detailMenu?.thumbnail || ''
+                        const detailMenuThumbnailVideoUrl = detailMenu?.thumbnail_video_url || ''
+                        if (detailMenuThumbnailImageUrl || detailMenuThumbnailVideoUrl) {
+                          const detailMenuTitle = detailMenuSection.querySelector('.detail-menu-title')
+                          if (detailMenuTitle) {
+                            const thumbnailImg = doc.createElement('div')
+                            thumbnailImg.className = 'subtitle-thumbnail-container'
+                            thumbnailImg.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #f3f4f6; border-radius: 8px; overflow: hidden;'
+                            if (detailMenuThumbnailVideoUrl && detailMenuThumbnailImageUrl) {
+                              const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+                              const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''
+                              const containerDiv = doc.createElement('div')
+                              containerDiv.style.cssText = 'position: relative; width: 100%; height: 100%;'
+                              
+                              const imgEl = doc.createElement('img')
+                              imgEl.src = detailMenuThumbnailImageUrl
+                              imgEl.alt = '상세메뉴 썸네일'
+                              imgEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;'
+                              imgEl.id = `detail-menu-thumbnail-img-result-${menuIndex}-${subIndex}-${dmIndex}`
+                              
+                              const videoEl = doc.createElement('video')
+                              videoEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; display: none;'
+                              videoEl.id = `detail-menu-thumbnail-video-result-${menuIndex}-${subIndex}-${dmIndex}`
+                              videoEl.poster = detailMenuThumbnailImageUrl
+                              videoEl.setAttribute('autoPlay', '')
+                              videoEl.setAttribute('muted', '')
+                              videoEl.setAttribute('loop', '')
+                              videoEl.setAttribute('playsInline', '')
+                              videoEl.setAttribute('preload', 'auto')
+                              
+                              const sourceEl = doc.createElement('source')
+                              sourceEl.src = `${bucketUrl}/${detailMenuThumbnailVideoUrl}.webm`
+                              sourceEl.type = 'video/webm'
+                              videoEl.appendChild(sourceEl)
+                              
+                              containerDiv.appendChild(imgEl)
+                              containerDiv.appendChild(videoEl)
+                              thumbnailImg.appendChild(containerDiv)
+                              
+                              // 동영상 로드 및 재생 설정
+                              videoEl.addEventListener('loadeddata', function() {
+                                if (imgEl) imgEl.style.display = 'none'
+                                if (videoEl) {
+                                  videoEl.style.display = 'block'
+                                  videoEl.play().catch(() => {
+                                    // 자동 재생 실패 시 무시 (브라우저 정책)
+                                  })
+                                }
+                              })
+                              videoEl.addEventListener('canplaythrough', function() {
+                                if (imgEl && imgEl.style.display !== 'none') imgEl.style.display = 'none'
+                                if (videoEl && videoEl.style.display !== 'block') {
+                                  videoEl.style.display = 'block'
+                                  videoEl.play().catch(() => {
+                                    // 자동 재생 실패 시 무시 (브라우저 정책)
+                                  })
+                                }
+                              })
+                              // 즉시 로드 시작
+                              videoEl.load()
+                              // 약간의 지연 후 재생 시도 (브라우저가 준비될 때까지)
+                              setTimeout(() => {
+                                if (videoEl.readyState >= 2) { // HAVE_CURRENT_DATA 이상
+                                  if (imgEl) imgEl.style.display = 'none'
+                                  videoEl.style.display = 'block'
+                                  videoEl.play().catch(() => {
+                                    // 자동 재생 실패 시 무시 (브라우저 정책)
+                                  })
+                                }
+                              }, 100)
+                            } else if (detailMenuThumbnailImageUrl) {
+                              const imgEl = doc.createElement('img')
+                              imgEl.src = detailMenuThumbnailImageUrl
+                              imgEl.alt = '상세메뉴 썸네일'
+                              imgEl.style.cssText = 'width: 100%; height: 100%; display: block; object-fit: contain;'
+                              thumbnailImg.appendChild(imgEl)
+                            }
+                            detailMenuTitle.parentNode?.insertBefore(thumbnailImg, detailMenuTitle.nextSibling)
+                          }
+                        }
+                      }
+                    })
                   }
                 })
               } else {
@@ -2876,17 +3060,22 @@ ${fontFace ? fontFace : ''}
                 .subtitle-thumbnail-container {
                   display: flex;
                   justify-content: center;
-                  width: 50%;
+                  align-items: center;
+                  width: 300px;
+                  height: 300px;
                   margin-left: auto;
                   margin-right: auto;
                   margin-top: 8px;
                   margin-bottom: 8px;
-                }
-                .subtitle-thumbnail-container img {
-                  width: 100%;
-                  height: auto;
-                  display: block;
+                  background: #f3f4f6;
                   border-radius: 8px;
+                  overflow: hidden;
+                }
+                .subtitle-thumbnail-container img,
+                .subtitle-thumbnail-container video {
+                  width: 100%;
+                  height: 100%;
+                  display: block;
                   object-fit: contain;
                 }
               </style>
@@ -3483,17 +3672,21 @@ ${fontFace ? fontFace : ''}
         </div>
 
         {/* 북커버 썸네일 (점사 전에 바로 표시) */}
-        {content?.book_cover_thumbnail && (
-          <div className="book-cover-thumbnail-container w-full mb-10">
-            <img 
-              src={content.book_cover_thumbnail} 
-              alt="북커버 썸네일"
-              className="w-full h-auto"
-              style={{ 
-                objectFit: 'contain', 
-                display: 'block' 
-              }}
-            />
+        {(content?.book_cover_thumbnail || content?.book_cover_thumbnail_video) && (
+          <div className="book-cover-thumbnail-container w-full mb-10" style={{ aspectRatio: '9/16' }}>
+            {content?.book_cover_thumbnail_video && content?.book_cover_thumbnail ? (
+              <SupabaseVideo
+                thumbnailImageUrl={content.book_cover_thumbnail}
+                videoBaseName={content.book_cover_thumbnail_video}
+                className="w-full h-full rounded-lg"
+              />
+            ) : content?.book_cover_thumbnail ? (
+              <img 
+                src={content.book_cover_thumbnail} 
+                alt="북커버 썸네일"
+                className="w-full h-full object-contain rounded-lg"
+              />
+            ) : null}
           </div>
         )}
 
@@ -3549,7 +3742,7 @@ ${fontFace ? fontFace : ''}
               
               {parsedMenus.map((menu, menuIndex) => {
                 // 활성 항목의 메뉴까지만 표시 (이후 메뉴는 숨김)
-                if (activePos && menuIndex > activePos.menuIndex) return null
+                if (shouldGateByActivePos && activePos && menuIndex > activePos.menuIndex) return null
                 return (
                 <div key={`menu-${menuIndex}`} id={`menu-${menuIndex}`} className="menu-section space-y-3">
                   <div 
@@ -3564,6 +3757,33 @@ ${fontFace ? fontFace : ''}
                     {menu.title}
                   </div>
 
+                  {/* 대메뉴 썸네일 (이미지/동영상) */}
+                  {(() => {
+                    const menuItem = content?.menu_items?.[menuIndex]
+                    const menuThumbnailImageUrl = menuItem?.thumbnail_image_url || menuItem?.thumbnail || ''
+                    const menuThumbnailVideoUrl = menuItem?.thumbnail_video_url || ''
+                    if (menuThumbnailImageUrl || menuThumbnailVideoUrl) {
+                      return (
+                        <div className="w-full mb-4">
+                          {menuThumbnailVideoUrl && menuThumbnailImageUrl ? (
+                            <SupabaseVideo
+                              thumbnailImageUrl={menuThumbnailImageUrl}
+                              videoBaseName={menuThumbnailVideoUrl}
+                              className="w-full h-auto rounded-lg"
+                            />
+                          ) : menuThumbnailImageUrl ? (
+                            <img 
+                              src={menuThumbnailImageUrl} 
+                              alt="대메뉴 썸네일"
+                              className="w-full h-auto object-contain rounded-lg"
+                            />
+                          ) : null}
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
+
                   {/* 첫 번째 대제목 아래 만세력 테이블 (1-1 소제목 준비 이후에만 표시) */}
                   {menuIndex === 0 && menu.manseHtml && firstSubtitleReady && (
                     <div
@@ -3575,10 +3795,11 @@ ${fontFace ? fontFace : ''}
                   <div className="space-y-4">
                     {menu.subtitles.map((sub, subIndex) => {
                       // 활성 항목까지만 표시 (이후 항목은 숨김)
-                      if (activePos && menuIndex === activePos.menuIndex && subIndex > activePos.subIndex) return null
+                      if (shouldGateByActivePos && activePos && menuIndex === activePos.menuIndex && subIndex > activePos.subIndex) return null
 
                       const complete = isItemComplete(sub)
                       const isActive =
+                        shouldGateByActivePos &&
                         !!activePos &&
                         menuIndex === activePos.menuIndex &&
                         subIndex === activePos.subIndex &&
@@ -3603,16 +3824,32 @@ ${fontFace ? fontFace : ''}
                           >
                             {title}
                           </div>
-                          {sub.thumbnail && (
-                            <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto' }}>
-                              <img
-                                src={sub.thumbnail}
-                                alt={sub.isDetailMenu ? '상세메뉴 썸네일' : '소제목 썸네일'}
-                                className="w-full h-auto rounded-lg"
-                                style={{ display: 'block', objectFit: 'contain' }}
-                              />
-                            </div>
-                          )}
+                          {(() => {
+                            const thumbnailImageUrl = sub.thumbnail_image_url || sub.thumbnail || ''
+                            const thumbnailVideoUrl = sub.thumbnail_video_url || ''
+                            if (thumbnailImageUrl || thumbnailVideoUrl) {
+                              return (
+                                <div className="mx-auto my-2 w-[300px] h-[300px] rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
+                                  {thumbnailVideoUrl && thumbnailImageUrl ? (
+                                    <SupabaseVideo
+                                      thumbnailImageUrl={thumbnailImageUrl}
+                                      videoBaseName={thumbnailVideoUrl}
+                                      className="w-full h-full"
+                                      objectFit="contain"
+                                    />
+                                  ) : thumbnailImageUrl ? (
+                                    <img
+                                      src={thumbnailImageUrl}
+                                      alt={sub.isDetailMenu ? '상세메뉴 썸네일' : '소제목 썸네일'}
+                                      className="w-full h-full object-contain"
+                                      style={{ display: 'block' }}
+                                    />
+                                  ) : null}
+                                </div>
+                              )
+                            }
+                            return null
+                          })()}
                           {complete ? (
                             <div 
                               className="subtitle-content text-gray-800" 
@@ -3647,17 +3884,21 @@ ${fontFace ? fontFace : ''}
                   </div>
                   
                   {/* 엔딩북커버 썸네일 (마지막 대제목 라운드 박스 안, 소제목들 아래) */}
-                  {menuIndex === parsedMenus.length - 1 && content?.ending_book_cover_thumbnail && (
-                    <div className="ending-book-cover-thumbnail-container w-full mt-4">
-                      <img 
-                        src={content.ending_book_cover_thumbnail} 
-                        alt="엔딩북커버 썸네일"
-                        className="w-full h-auto"
-                        style={{ 
-                          objectFit: 'contain', 
-                          display: 'block' 
-                        }}
-                      />
+                  {menuIndex === parsedMenus.length - 1 && (content?.ending_book_cover_thumbnail || content?.ending_book_cover_thumbnail_video) && (
+                    <div className="ending-book-cover-thumbnail-container w-full mt-4" style={{ aspectRatio: '9/16' }}>
+                      {content?.ending_book_cover_thumbnail_video && content?.ending_book_cover_thumbnail ? (
+                        <SupabaseVideo
+                          thumbnailImageUrl={content.ending_book_cover_thumbnail}
+                          videoBaseName={content.ending_book_cover_thumbnail_video}
+                          className="w-full h-full rounded-lg"
+                        />
+                      ) : content?.ending_book_cover_thumbnail ? (
+                        <img 
+                          src={content.ending_book_cover_thumbnail} 
+                          alt="엔딩북커버 썸네일"
+                          className="w-full h-full object-contain rounded-lg"
+                        />
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -3803,14 +4044,130 @@ ${fontFace ? fontFace : ''}
                             }
                             
                             // 소제목 썸네일 추가
-                            if (subtitle?.thumbnail) {
+                            const thumbnailImageUrl = subtitle?.thumbnail_image_url || subtitle?.thumbnail || ''
+                            const thumbnailVideoUrl = subtitle?.thumbnail_video_url || ''
+                            if (thumbnailImageUrl || thumbnailVideoUrl) {
                               if (subtitleTitle) {
                                 const thumbnailImg = doc.createElement('div')
                                 thumbnailImg.className = 'subtitle-thumbnail-container'
-                                thumbnailImg.style.cssText = 'display: flex; justify-content: center; width: 50%; margin-left: auto; margin-right: auto;'
-                                thumbnailImg.innerHTML = `<img src="${subtitle.thumbnail}" alt="소제목 썸네일" style="width: 100%; height: auto; display: block; border-radius: 8px; object-fit: contain;" />`
+                                thumbnailImg.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #f3f4f6; border-radius: 8px; overflow: hidden;'
+                                if (thumbnailVideoUrl && thumbnailImageUrl) {
+                                  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+                                  const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''
+                                  const containerDiv = doc.createElement('div')
+                                  containerDiv.style.cssText = 'position: relative; width: 100%; height: 100%;'
+                                  
+                                  const imgEl = doc.createElement('img')
+                                  imgEl.src = thumbnailImageUrl
+                                  imgEl.alt = '소제목 썸네일'
+                                  imgEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;'
+                                  imgEl.id = `subtitle-thumbnail-img-batch-${menuIndex}-${subIndex}`
+                                  
+                                  const videoEl = doc.createElement('video')
+                                  videoEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; display: none;'
+                                  videoEl.id = `subtitle-thumbnail-video-batch-${menuIndex}-${subIndex}`
+                                  videoEl.poster = thumbnailImageUrl
+                                  videoEl.setAttribute('autoPlay', '')
+                                  videoEl.setAttribute('muted', '')
+                                  videoEl.setAttribute('loop', '')
+                                  videoEl.setAttribute('playsInline', '')
+                                  videoEl.setAttribute('preload', 'auto')
+                                  
+                                  const sourceEl = doc.createElement('source')
+                                  sourceEl.src = `${bucketUrl}/${thumbnailVideoUrl}.webm`
+                                  sourceEl.type = 'video/webm'
+                                  videoEl.appendChild(sourceEl)
+                                  
+                                  containerDiv.appendChild(imgEl)
+                                  containerDiv.appendChild(videoEl)
+                                  thumbnailImg.appendChild(containerDiv)
+                                  
+                                  // 동영상 로드 및 재생 설정
+                                  videoEl.addEventListener('canplay', function() {
+                                    if (imgEl) imgEl.style.display = 'none'
+                                    if (videoEl) {
+                                      videoEl.style.display = 'block'
+                                      videoEl.play().catch(() => {
+                                        // 자동 재생 실패 시 무시 (브라우저 정책)
+                                      })
+                                    }
+                                  })
+                                  videoEl.load()
+                                } else if (thumbnailImageUrl) {
+                                  thumbnailImg.innerHTML = `<img src="${thumbnailImageUrl}" alt="소제목 썸네일" style="width: 100%; height: 100%; display: block; object-fit: contain;" />`
+                                }
                                 subtitleTitle.parentNode?.insertBefore(thumbnailImg, subtitleTitle.nextSibling)
                               }
+                            }
+                            
+                            // 상세메뉴 썸네일 추가
+                            if (subtitle?.detailMenus && Array.isArray(subtitle.detailMenus)) {
+                              const detailMenuSections = Array.from(subSection.querySelectorAll('.detail-menu-section'))
+                              detailMenuSections.forEach((detailMenuSection, dmIndex) => {
+                                const detailMenu = subtitle.detailMenus[dmIndex]
+                                if (detailMenu) {
+                                  const detailMenuThumbnailImageUrl = detailMenu?.thumbnail_image_url || detailMenu?.thumbnail || ''
+                                  const detailMenuThumbnailVideoUrl = detailMenu?.thumbnail_video_url || ''
+                                  if (detailMenuThumbnailImageUrl || detailMenuThumbnailVideoUrl) {
+                                    const detailMenuTitle = detailMenuSection.querySelector('.detail-menu-title')
+                                    if (detailMenuTitle) {
+                                      const thumbnailImg = doc.createElement('div')
+                                      thumbnailImg.className = 'subtitle-thumbnail-container'
+                                      thumbnailImg.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #f3f4f6; border-radius: 8px; overflow: hidden;'
+                                      if (detailMenuThumbnailVideoUrl && detailMenuThumbnailImageUrl) {
+                                        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+                                        const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''
+                                        const containerDiv = doc.createElement('div')
+                                        containerDiv.style.cssText = 'position: relative; width: 100%; height: 100%;'
+                                        
+                                        const imgEl = doc.createElement('img')
+                                        imgEl.src = detailMenuThumbnailImageUrl
+                                        imgEl.alt = '상세메뉴 썸네일'
+                                        imgEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;'
+                                        imgEl.id = `detail-menu-thumbnail-img-batch-${menuIndex}-${subIndex}-${dmIndex}`
+                                        
+                                        const videoEl = doc.createElement('video')
+                                        videoEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; display: none;'
+                                        videoEl.id = `detail-menu-thumbnail-video-batch-${menuIndex}-${subIndex}-${dmIndex}`
+                                        videoEl.poster = detailMenuThumbnailImageUrl
+                                        videoEl.setAttribute('autoPlay', '')
+                                        videoEl.setAttribute('muted', '')
+                                        videoEl.setAttribute('loop', '')
+                                        videoEl.setAttribute('playsInline', '')
+                                        videoEl.setAttribute('preload', 'auto')
+                                        
+                                        const sourceEl = doc.createElement('source')
+                                        sourceEl.src = `${bucketUrl}/${detailMenuThumbnailVideoUrl}.webm`
+                                        sourceEl.type = 'video/webm'
+                                        videoEl.appendChild(sourceEl)
+                                        
+                                        containerDiv.appendChild(imgEl)
+                                        containerDiv.appendChild(videoEl)
+                                        thumbnailImg.appendChild(containerDiv)
+                                        
+                                        // 동영상 로드 및 재생 설정
+                                        videoEl.addEventListener('canplay', function() {
+                                          if (imgEl) imgEl.style.display = 'none'
+                                          if (videoEl) {
+                                            videoEl.style.display = 'block'
+                                            videoEl.play().catch(() => {
+                                              // 자동 재생 실패 시 무시 (브라우저 정책)
+                                            })
+                                          }
+                                        })
+                                        videoEl.load()
+                                      } else if (detailMenuThumbnailImageUrl) {
+                                        const imgEl = doc.createElement('img')
+                                        imgEl.src = detailMenuThumbnailImageUrl
+                                        imgEl.alt = '상세메뉴 썸네일'
+                                        imgEl.style.cssText = 'width: 100%; height: 100%; display: block; object-fit: contain;'
+                                        thumbnailImg.appendChild(imgEl)
+                                      }
+                                      detailMenuTitle.parentNode?.insertBefore(thumbnailImg, detailMenuTitle.nextSibling)
+                                    }
+                                  }
+                                }
+                              })
                             }
                             
                             // 상세메뉴 추가 (HTML에서 파싱한 내용 사용)
@@ -3944,12 +4301,40 @@ ${fontFace ? fontFace : ''}
                       })
                       
                       // 엔딩북커버 썸네일 추가 (마지막 menu-section 안, 소제목들 아래)
-                      if (endingBookCoverThumbnail && menuSections.length > 0) {
+                      const endingBookCoverThumbnailImageUrl = content?.ending_book_cover_thumbnail || ''
+                      const endingBookCoverThumbnailVideoUrl = content?.ending_book_cover_thumbnail_video || ''
+                      if ((endingBookCoverThumbnailImageUrl || endingBookCoverThumbnailVideoUrl) && menuSections.length > 0) {
                         const lastSection = menuSections[menuSections.length - 1]
                         const endingBookCoverDiv = doc.createElement('div')
                         endingBookCoverDiv.className = 'ending-book-cover-thumbnail-container'
-                        endingBookCoverDiv.style.cssText = 'width: 100%; margin-top: 1rem; display: flex; justify-content: center;'
-                        endingBookCoverDiv.innerHTML = `<img src="${endingBookCoverThumbnail}" alt="엔딩북커버 썸네일" style="width: 100%; height: auto; object-fit: contain; display: block;" />`
+                        endingBookCoverDiv.style.cssText = 'width: 100%; margin-top: 1rem; aspect-ratio: 9/16;'
+                        if (endingBookCoverThumbnailVideoUrl && endingBookCoverThumbnailImageUrl) {
+                          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+                          const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''
+                          endingBookCoverDiv.innerHTML = `
+                            <div style="position: relative; width: 100%; height: 100%;">
+                              <img src="${endingBookCoverThumbnailImageUrl}" alt="엔딩북커버 썸네일" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 8px;" id="ending-thumbnail-img-batch" />
+                              <video style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 8px; display: none;" id="ending-thumbnail-video-batch" poster="${endingBookCoverThumbnailImageUrl}" autoPlay muted loop playsInline preload="auto">
+                                <source src="${bucketUrl}/${endingBookCoverThumbnailVideoUrl}.webm" type="video/webm" />
+                              </video>
+                            </div>
+                            <script>
+                              (function() {
+                                const video = document.getElementById('ending-thumbnail-video-batch');
+                                const img = document.getElementById('ending-thumbnail-img-batch');
+                                if (video) {
+                                  video.addEventListener('canplay', function() {
+                                    if (img) img.style.display = 'none';
+                                    if (video) video.style.display = 'block';
+                                  });
+                                  video.load();
+                                }
+                              })();
+                            </script>
+                          `
+                        } else if (endingBookCoverThumbnailImageUrl) {
+                          endingBookCoverDiv.innerHTML = `<img src="${endingBookCoverThumbnailImageUrl}" alt="엔딩북커버 썸네일" style="width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 8px;" />`
+                        }
                         // 마지막 자식 요소 뒤에 추가
                         lastSection.appendChild(endingBookCoverDiv)
                       }

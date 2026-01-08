@@ -28,6 +28,7 @@ export interface ContentData {
   content_type?: 'saju' | 'gonghap'
   content_name?: string
   thumbnail_url?: string
+  thumbnail_video_url?: string // 컨텐츠명 동영상 썸네일 (WebM 파일명, 확장자 제외)
   price?: string
   summary?: string
   introduction?: string
@@ -53,12 +54,37 @@ export interface ContentData {
   subtitle_color?: string // 소메뉴 컬러
   detail_menu_color?: string // 상세메뉴 컬러
   body_color?: string // 본문 컬러
-  menu_items?: Array<{ id: number; value: string; thumbnail?: string }>
+  menu_items?: Array<{
+    id: number
+    value: string
+    thumbnail?: string // 하위 호환성(이전 저장 구조)
+    thumbnail_image_url?: string
+    thumbnail_video_url?: string
+    subtitles?: Array<{
+      id: number
+      subtitle: string
+      interpretation_tool: string
+      thumbnail?: string // 하위 호환성
+      thumbnail_image_url?: string
+      thumbnail_video_url?: string
+      detailMenus?: Array<{
+        id: number
+        detailMenu: string
+        interpretation_tool: string
+        thumbnail?: string // 하위 호환성
+        thumbnail_image_url?: string
+        thumbnail_video_url?: string
+      }>
+    }>
+  }>
   is_new?: boolean
   tts_speaker?: string // TTS 화자 (nara, jinho, mijin, nhajun, ndain)
   preview_thumbnails?: string[] // 재회상품 미리보기 썸네일 배열 (최대 3개)
-  book_cover_thumbnail?: string // 북커버 썸네일 (첫 번째 대제목 전, 9:16 비율)
-  ending_book_cover_thumbnail?: string // 엔딩북커버 썸네일 (마지막 대제목 밑, 9:16 비율)
+  preview_thumbnails_video?: string[] // 재회상품 미리보기 동영상 썸네일 배열 (WebM 파일명, 확장자 제외)
+  book_cover_thumbnail?: string // 북커버 이미지 썸네일 (첫 번째 대제목 전, 9:16 비율)
+  book_cover_thumbnail_video?: string // 북커버 동영상 썸네일 (WebM 파일명, 확장자 제외)
+  ending_book_cover_thumbnail?: string // 엔딩북커버 이미지 썸네일 (마지막 대제목 밑, 9:16 비율)
+  ending_book_cover_thumbnail_video?: string // 엔딩북커버 동영상 썸네일 (WebM 파일명, 확장자 제외)
   created_at?: string
   updated_at?: string
 }
@@ -448,17 +474,21 @@ export async function deleteThumbnail(filePath: string) {
 }
 
 // 썸네일 업로드 (API 라우트를 통해 서버 사이드에서 업로드)
-export async function uploadThumbnailFile(file: File) {
-  // 파일 크기 제한 (10MB)
-  const maxSize = 10 * 1024 * 1024
+export async function uploadThumbnailFile(file: File): Promise<{ url: string; videoBaseName?: string; fileType: 'image' | 'video' }> {
+  // 파일 타입 확인 (MIME 타입과 확장자 모두 확인)
+  const fileExt = file.name.split('.').pop()?.toLowerCase() || ''
+  const isImageByType = file.type.startsWith('image/')
+  const isVideoByType = file.type === 'video/webm'
+  const isImageByExt = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt)
+  const isVideoByExt = ['webm'].includes(fileExt)
+  
+  const isImage = isImageByType || isImageByExt
+  const isVideo = isVideoByType || isVideoByExt
+  
+  // 파일 크기 제한 (동영상은 50MB, 이미지는 10MB)
+  const maxSize = isVideo ? 50 * 1024 * 1024 : 10 * 1024 * 1024
   if (file.size > maxSize) {
-    throw new Error('파일 크기는 10MB를 초과할 수 없습니다.')
-  }
-
-  // 파일 확장자 확인
-  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
-  if (!allowedTypes.includes(file.type)) {
-    throw new Error('지원하는 이미지 형식: JPEG, PNG, GIF, WebP')
+    throw new Error(isVideo ? '동영상 파일 크기는 50MB를 초과할 수 없습니다.' : '이미지 파일 크기는 10MB를 초과할 수 없습니다.')
   }
 
   // API 라우트를 통해 업로드 (서버 사이드에서 서비스 롤 키 사용)
@@ -471,12 +501,43 @@ export async function uploadThumbnailFile(file: File) {
   })
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: '업로드에 실패했습니다.' }))
-    throw new Error(errorData.error || '파일 업로드에 실패했습니다.')
+    // Content-Type 확인
+    const contentType = response.headers.get('content-type')
+    let errorMessage = '파일 업로드에 실패했습니다.'
+    
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        const errorData = await response.json()
+        errorMessage = errorData.error || errorMessage
+      } catch (e) {
+        // JSON 파싱 실패
+        errorMessage = `업로드 실패 (상태 코드: ${response.status})`
+      }
+    } else {
+      // HTML 응답인 경우
+      const text = await response.text()
+      if (text.includes('관리자 권한이 필요합니다')) {
+        errorMessage = '관리자 권한이 필요합니다. 로그인 후 다시 시도해주세요.'
+      } else {
+        errorMessage = `업로드 실패 (상태 코드: ${response.status})`
+      }
+    }
+    throw new Error(errorMessage)
+  }
+
+  // 성공 응답 처리
+  const contentType = response.headers.get('content-type')
+  if (!contentType || !contentType.includes('application/json')) {
+    const text = await response.text()
+    throw new Error(`서버 응답 형식 오류: ${text.substring(0, 100)}`)
   }
 
   const data = await response.json()
-  return data.url
+  return {
+    url: data.url,
+    videoBaseName: data.videoBaseName,
+    fileType: data.fileType || (isVideo ? 'video' : 'image')
+  }
 }
 
 // 모델 설정 가져오기

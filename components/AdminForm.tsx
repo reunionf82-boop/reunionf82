@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { getContentById, type ContentData } from '@/lib/supabase-admin'
+import { getContentById, type ContentData, getThumbnailUrl } from '@/lib/supabase-admin'
 import ThumbnailModal from '@/components/ThumbnailModal'
+import SupabaseVideo from '@/components/SupabaseVideo'
 
 interface AdminFormProps {
   onAdd?: (service: any) => void
@@ -24,7 +25,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     isFree: false,
     showNew: false,
     contentName: '',
-    thumbnailUrl: '',
+    thumbnailImageUrl: '', // 이미지 썸네일 (JPG)
+    thumbnailVideoUrl: '', // 동영상 썸네일 (WebM 파일명, 확장자 제외)
     summary: '',
     introduction: '',
     recommendation: '',
@@ -48,37 +50,86 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     detailMenuColor: '', // 상세메뉴 컬러
     bodyColor: '', // 본문 컬러
     ttsSpeaker: speakerParam || 'nara', // URL 파라미터 또는 기본값: nara
-    previewThumbnails: ['', '', ''], // 재회상품 미리보기 썸네일 3개
-    bookCoverThumbnail: '', // 북커버 썸네일 (첫 번째 대제목 전)
-    endingBookCoverThumbnail: '', // 엔딩북커버 썸네일 (마지막 대제목 밑)
+    previewThumbnailImageUrls: ['', '', ''], // 재회상품 미리보기 이미지 썸네일 3개
+    bookCoverThumbnailImageUrl: '', // 북커버 이미지 썸네일
+    bookCoverThumbnailVideoUrl: '', // 북커버 동영상 썸네일 (WebM 파일명, 확장자 제외)
+    endingBookCoverThumbnailImageUrl: '', // 엔딩북커버 이미지 썸네일
+    endingBookCoverThumbnailVideoUrl: '', // 엔딩북커버 동영상 썸네일 (WebM 파일명, 확장자 제외)
   })
   const [menuFields, setMenuFields] = useState<Array<{ 
     id: number; 
     value: string; 
-    thumbnail?: string;
+    thumbnail?: string; // 하위 호환성(이전 구조)
+    thumbnailImageUrl?: string; // 이미지 썸네일
+    thumbnailVideoUrl?: string; // 동영상 썸네일 (WebM 파일명, 확장자 제외)
     subtitles: Array<{ 
       id: number; 
       subtitle: string; 
       interpretation_tool: string; 
-      thumbnail?: string;
-      detailMenus: Array<{ id: number; detailMenu: string; interpretation_tool: string; thumbnail?: string }>;
+      thumbnail?: string; // 하위 호환성(이전 구조)
+      thumbnailImageUrl?: string; // 이미지 썸네일
+      thumbnailVideoUrl?: string; // 동영상 썸네일 (WebM 파일명, 확장자 제외)
+      detailMenus: Array<{
+        id: number
+        detailMenu: string
+        interpretation_tool: string
+        thumbnail?: string // 하위 호환성(이전 구조)
+        thumbnailImageUrl?: string
+        thumbnailVideoUrl?: string
+      }>;
     }>;
   }>>([])
   const [firstMenuField, setFirstMenuField] = useState<{ 
     value: string; 
-    thumbnail: string;
+    thumbnail: string; // { imageUrl: string, videoUrl: string } JSON 문자열
+    thumbnailImageUrl?: string; // 이미지 썸네일 (신규 구조)
+    thumbnailVideoUrl?: string; // 동영상 썸네일 (신규 구조, WebM 파일명)
     subtitles: Array<{ 
       id: number; 
       subtitle: string; 
       interpretation_tool: string; 
-      thumbnail?: string;
-      detailMenus: Array<{ id: number; detailMenu: string; interpretation_tool: string; thumbnail?: string }>;
+      thumbnail?: string; // { imageUrl: string, videoUrl: string } JSON 문자열
+      thumbnailImageUrl?: string; // 이미지 썸네일 (신규 구조)
+      thumbnailVideoUrl?: string; // 동영상 썸네일 (신규 구조, WebM 파일명)
+      detailMenus: Array<{
+        id: number
+        detailMenu: string
+        interpretation_tool: string
+        thumbnail?: string // 하위 호환성(이전 구조)
+        thumbnailImageUrl?: string
+        thumbnailVideoUrl?: string
+      }>;
     }>;
-  }>({ value: '', thumbnail: '', subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }] })
+  }>({ value: '', thumbnail: '', thumbnailImageUrl: '', thumbnailVideoUrl: '', subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }] })
   const [initialData, setInitialData] = useState<any>(null)
   const [hasChanges, setHasChanges] = useState(false)
   const [showThumbnailModal, setShowThumbnailModal] = useState(false)
-  const [currentThumbnailField, setCurrentThumbnailField] = useState<'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | 'bookCover' | 'endingBookCover' | number | `menu-${number}` | `subtitle-first-${number}` | `subtitle-menu-${number}-${number}` | `detail-menu-first-${number}-${number}` | `detail-menu-menu-${number}-${number}-${number}`>('main')
+  const [currentThumbnailField, setCurrentThumbnailField] = useState<
+    | 'main-image'
+    | 'main-video'
+    | 'firstMenu-image'
+    | 'firstMenu-video'
+    | 'firstMenu'
+    | 'preview-0-image'
+    | 'preview-1-image'
+    | 'preview-2-image'
+    | 'bookCover-image'
+    | 'bookCover-video'
+    | 'endingBookCover-image'
+    | 'endingBookCover-video'
+    | number
+    | `menu-${number}-image`
+    | `menu-${number}-video`
+    | `subtitle-first-${number}-image`
+    | `subtitle-first-${number}-video`
+    | `subtitle-menu-${number}-${number}-image`
+    | `subtitle-menu-${number}-${number}-video`
+    | `detail-menu-first-${number}-${number}-image`
+    | `detail-menu-first-${number}-${number}-video`
+    | `detail-menu-menu-${number}-${number}-${number}-image`
+    | `detail-menu-menu-${number}-${number}-${number}-video`
+  >('main-image')
+  const [currentThumbnailType, setCurrentThumbnailType] = useState<'image' | 'video'>('image') // 이미지 또는 동영상 타입
   const [showDeleteSubtitleConfirm, setShowDeleteSubtitleConfirm] = useState(false)
   const [subtitleToDelete, setSubtitleToDelete] = useState<{ menuId: number | 'first'; subtitleId: number } | null>(null)
   const [showCancelWarning, setShowCancelWarning] = useState(false)
@@ -120,7 +171,134 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const [showDetailMenuColorPopup, setShowDetailMenuColorPopup] = useState(false)
   const [showBodyColorPopup, setShowBodyColorPopup] = useState(false)
 
+
   // 초기 데이터 로드 (수정 모드 또는 복제 모드)
+  // 동영상 업로드 시 자동 생성된 썸네일 이미지 URL 수신
+  useEffect(() => {
+    const handleThumbnailImageCaptured = (event: CustomEvent) => {
+      if (!event.detail?.thumbnailImageUrl) return
+      
+      if (currentThumbnailField === 'main-video') {
+        setFormData(prev => ({ ...prev, thumbnailImageUrl: event.detail.thumbnailImageUrl }))
+      } else if (currentThumbnailField === 'firstMenu-video') {
+        setFirstMenuField(prev => ({ ...prev, thumbnailImageUrl: event.detail.thumbnailImageUrl }))
+      } else if (currentThumbnailField === 'bookCover-video') {
+        setFormData(prev => ({ ...prev, bookCoverThumbnailImageUrl: event.detail.thumbnailImageUrl }))
+      } else if (currentThumbnailField === 'endingBookCover-video') {
+        setFormData(prev => ({ ...prev, endingBookCoverThumbnailImageUrl: event.detail.thumbnailImageUrl }))
+      } else if (typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('menu-') && currentThumbnailField.endsWith('-video')) {
+        const menuId = parseFloat(currentThumbnailField.replace('menu-', '').replace('-video', ''))
+        setMenuFields(prev => prev.map(f => {
+          const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+          return (fId === menuId || String(f.id) === String(menuId)) 
+            ? { ...f, thumbnailImageUrl: event.detail.thumbnailImageUrl }
+            : f
+        }))
+      } else if (typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('subtitle-')) {
+        const parts = currentThumbnailField.split('-')
+        if (parts[1] === 'first') {
+          // subtitle-first-{subtitleId}-video
+          const subtitleIdStr = parts[2]
+          setFirstMenuField(prev => ({
+            ...prev,
+            subtitles: prev.subtitles.map(s => {
+              const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
+              const targetId = parseFloat(subtitleIdStr)
+              if (sId === targetId || String(s.id) === subtitleIdStr) {
+                return { ...s, thumbnailImageUrl: event.detail.thumbnailImageUrl }
+              }
+              return s
+            })
+          }))
+        } else if (parts[1] === 'menu') {
+          // subtitle-menu-{menuId}-{subtitleId}-video
+          const menuIdStr = parts[2]
+          const subtitleIdStr = parts[3]
+          setMenuFields(prev => prev.map(f => {
+            const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+            const menuId = parseFloat(menuIdStr)
+            if (fId === menuId || String(f.id) === menuIdStr) {
+              return {
+                ...f,
+                subtitles: f.subtitles.map(s => {
+                  // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                  if (String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === parseFloat(subtitleIdStr)) {
+                    return { ...s, thumbnailImageUrl: event.detail.thumbnailImageUrl }
+                  }
+                  return s
+                })
+              }
+            }
+            return f
+          }))
+        }
+      } else if (typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('detail-menu-')) {
+        const parts = currentThumbnailField.split('-')
+        if (parts[2] === 'first') {
+          // detail-menu-first-{subtitleId}-{detailMenuId}-video
+          const subtitleIdStr = parts[3]
+          const detailMenuIdStr = parts[4]
+          setFirstMenuField(prev => ({
+            ...prev,
+            subtitles: prev.subtitles.map(s => {
+              // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+              if (String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === parseFloat(subtitleIdStr)) {
+                return {
+                  ...s,
+                  detailMenus: s.detailMenus.map(dm => {
+                    // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                    if (String(dm.id) === detailMenuIdStr || (typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))) === parseFloat(detailMenuIdStr)) {
+                      return { ...dm, thumbnailImageUrl: event.detail.thumbnailImageUrl }
+                    }
+                    return dm
+                  })
+                }
+              }
+              return s
+            })
+          }))
+        } else if (parts[2] === 'menu') {
+          // detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId}-video
+          const menuIdStr = parts[3]
+          const subtitleIdStr = parts[4]
+          const detailMenuIdStr = parts[5]
+          setMenuFields(prev => prev.map(f => {
+            const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+            const menuId = parseFloat(menuIdStr)
+            if (fId === menuId || String(f.id) === menuIdStr) {
+              return {
+                ...f,
+                subtitles: f.subtitles.map(s => {
+                  // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                  if (String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === parseFloat(subtitleIdStr)) {
+                    return {
+                      ...s,
+                      detailMenus: s.detailMenus.map(dm => {
+                        // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                        if (String(dm.id) === detailMenuIdStr || (typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))) === parseFloat(detailMenuIdStr)) {
+                          return { ...dm, thumbnailImageUrl: event.detail.thumbnailImageUrl }
+                        }
+                        return dm
+                      })
+                    }
+                  }
+                  return s
+                })
+              }
+            }
+            return f
+          }))
+        }
+      }
+    }
+
+    window.addEventListener('thumbnailImageCaptured', handleThumbnailImageCaptured as EventListener)
+    
+    return () => {
+      window.removeEventListener('thumbnailImageCaptured', handleThumbnailImageCaptured as EventListener)
+    }
+  }, [currentThumbnailField])
+
   useEffect(() => {
     if (contentId) {
       loadContent(parseInt(contentId))
@@ -134,7 +312,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     if (initialData) {
       // 현재 상태를 initialData와 같은 형식으로 변환
       const allMenuItems = [
-        ...(firstMenuField.value || firstMenuField.thumbnail ? [firstMenuField] : []),
+        ...(firstMenuField.value || firstMenuField.thumbnailImageUrl || firstMenuField.thumbnailVideoUrl ? [firstMenuField] : []),
         ...menuFields
       ]
       
@@ -155,7 +333,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         restrictions: formData.description || '',
         content_type: formData.isNew ? 'saju' : 'gonghap',
         content_name: formData.contentName || '',
-        thumbnail_url: formData.thumbnailUrl || '',
+        thumbnail_url: formData.thumbnailImageUrl || '', // 이미지 썸네일
+        thumbnail_video_url: formData.thumbnailVideoUrl || '', // 동영상 썸네일 (파일명, 확장자 제외)
         price: formData.price || '',
         summary: formData.summary || '',
         introduction: formData.introduction || '',
@@ -183,15 +362,31 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         body_color: formData.bodyColor || '',
         menu_items: allMenuItems.map((item, index) => ({
           id: index,
-          value: item.value,
-          thumbnail: item.thumbnail,
-          subtitles: item.subtitles || []
+          value: item.value || '',
+          thumbnail_image_url: (item.thumbnailImageUrl && item.thumbnailImageUrl.trim()) ? item.thumbnailImageUrl.trim() : '',
+          thumbnail_video_url: (item.thumbnailVideoUrl && item.thumbnailVideoUrl.trim()) ? item.thumbnailVideoUrl.trim() : '',
+          subtitles: (item.subtitles || []).map((sub: any) => ({
+            id: sub.id,
+            subtitle: sub.subtitle || '',
+            interpretation_tool: sub.interpretation_tool || '',
+            thumbnail_image_url: (sub.thumbnailImageUrl && sub.thumbnailImageUrl.trim()) ? sub.thumbnailImageUrl.trim() : '',
+            thumbnail_video_url: (sub.thumbnailVideoUrl && sub.thumbnailVideoUrl.trim()) ? sub.thumbnailVideoUrl.trim() : '',
+            detailMenus: (sub.detailMenus || []).map((dm: any) => ({
+              id: dm.id,
+              detailMenu: dm.detailMenu || '',
+              interpretation_tool: dm.interpretation_tool || '',
+              thumbnail_image_url: (dm.thumbnailImageUrl && dm.thumbnailImageUrl.trim()) ? dm.thumbnailImageUrl.trim() : '',
+              thumbnail_video_url: (dm.thumbnailVideoUrl && dm.thumbnailVideoUrl.trim()) ? dm.thumbnailVideoUrl.trim() : ''
+            }))
+          }))
         })),
         is_new: formData.showNew,
         tts_speaker: formData.ttsSpeaker || 'nara',
-        preview_thumbnails: formData.previewThumbnails || ['', '', ''],
-        book_cover_thumbnail: formData.bookCoverThumbnail || '',
-        ending_book_cover_thumbnail: formData.endingBookCoverThumbnail || '',
+        preview_thumbnails: formData.previewThumbnailImageUrls || ['', '', ''],
+        book_cover_thumbnail: formData.bookCoverThumbnailImageUrl || '',
+        book_cover_thumbnail_video: formData.bookCoverThumbnailVideoUrl || '',
+        ending_book_cover_thumbnail: formData.endingBookCoverThumbnailImageUrl || '',
+        ending_book_cover_thumbnail_video: formData.endingBookCoverThumbnailVideoUrl || '',
       }
       
       // initialData도 정규화 (menu_items 배열 처리)
@@ -201,6 +396,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         content_type: initialData.content_type || '',
         content_name: initialData.content_name || '',
         thumbnail_url: initialData.thumbnail_url || '',
+        thumbnail_video_url: initialData.thumbnail_video_url || '',
         price: initialData.price || '',
         summary: initialData.summary || '',
         introduction: initialData.introduction || '',
@@ -238,12 +434,13 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       const normalizeMenuItems = (items: any[]) => {
         return items.map((item: any) => ({
           value: item.value || '',
-          thumbnail: item.thumbnail || '',
+          thumbnailImageUrl: item.thumbnailImageUrl || item.thumbnail || '', // 하위 호환성
+          thumbnailVideoUrl: item.thumbnailVideoUrl || '',
           subtitles: item.subtitles || []
         })).sort((a, b) => {
           // value와 thumbnail을 조합해서 정렬 (일관된 비교를 위해)
-          const aKey = `${a.value}|${a.thumbnail}`
-          const bKey = `${b.value}|${b.thumbnail}`
+          const aKey = `${a.value}|${a.thumbnailImageUrl || a.thumbnailVideoUrl}`
+          const bKey = `${b.value}|${b.thumbnailImageUrl || b.thumbnailVideoUrl}`
           return aKey.localeCompare(bKey)
         })
       }
@@ -267,20 +464,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         formData.title || 
         formData.description || 
         formData.contentName || 
-        formData.thumbnailUrl ||
+        formData.thumbnailImageUrl ||
+        formData.thumbnailVideoUrl ||
         formData.price ||
         formData.summary ||
         formData.introduction ||
         formData.recommendation ||
         formData.fontFace ||
         firstMenuField.value ||
-        firstMenuField.thumbnail ||
+        firstMenuField.thumbnailImageUrl ||
+        firstMenuField.thumbnailVideoUrl ||
         firstMenuField.subtitles.some(s => s.subtitle || s.interpretation_tool) ||
         menuFields.length > 0 ||
-        menuFields.some(f => f.value || f.thumbnail || f.subtitles.some(s => s.subtitle || s.interpretation_tool)) ||
-        formData.previewThumbnails.some(thumb => thumb && thumb.trim()) ||
-        formData.bookCoverThumbnail ||
-        formData.endingBookCoverThumbnail
+        menuFields.some(f => f.value || f.thumbnailImageUrl || f.thumbnailVideoUrl || f.subtitles.some(s => s.subtitle || s.interpretation_tool)) ||
+        formData.previewThumbnailImageUrls.some(thumb => thumb && thumb.trim()) ||
+        formData.bookCoverThumbnailImageUrl ||
+        formData.bookCoverThumbnailVideoUrl ||
+        formData.endingBookCoverThumbnailImageUrl ||
+        formData.endingBookCoverThumbnailVideoUrl
       )
       
       setHasChanges(hasAnyValue)
@@ -299,7 +500,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         isFree: data.content_type === 'gonghap',
         showNew: data.is_new || false,
         contentName: data.content_name || '',
-        thumbnailUrl: data.thumbnail_url || '',
+        thumbnailImageUrl: data.thumbnail_url || '',
+        thumbnailVideoUrl: data.thumbnail_video_url || '',
         summary: data.summary || '',
         introduction: data.introduction || '',
         recommendation: data.recommendation || '',
@@ -323,9 +525,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         detailMenuColor: data.detail_menu_color || '',
         bodyColor: data.body_color || '',
         ttsSpeaker: data.tts_speaker || 'nara',
-        previewThumbnails: (() => {
-          let thumbnails = data.preview_thumbnails
-          // 문자열인 경우 파싱
+        previewThumbnailImageUrls: (() => {
+          // 기존 preview_thumbnails를 이미지 URL로 사용 (하위 호환성)
+          let thumbnails = data.preview_thumbnails || []
           if (typeof thumbnails === 'string') {
             try {
               thumbnails = JSON.parse(thumbnails)
@@ -333,23 +535,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               thumbnails = []
             }
           }
-          // 배열이 아니거나 길이가 3이 아니면 기본값 사용
-          if (!Array.isArray(thumbnails) || thumbnails.length !== 3) {
-            // 배열이지만 길이가 다르면 3개로 맞춤
-            if (Array.isArray(thumbnails)) {
-              while (thumbnails.length < 3) {
-                thumbnails.push('')
-              }
-              thumbnails = thumbnails.slice(0, 3)
-            } else {
-              thumbnails = ['', '', '']
-            }
+          if (!Array.isArray(thumbnails)) {
+            thumbnails = []
           }
-          return thumbnails
+          while (thumbnails.length < 3) {
+            thumbnails.push('')
+          }
+          return thumbnails.slice(0, 3)
         })(),
-        bookCoverThumbnail: data.book_cover_thumbnail || '',
-        endingBookCoverThumbnail: data.ending_book_cover_thumbnail || '',
+        bookCoverThumbnailImageUrl: data.book_cover_thumbnail || '',
+        bookCoverThumbnailVideoUrl: data.book_cover_thumbnail_video || '',
+        endingBookCoverThumbnailImageUrl: data.ending_book_cover_thumbnail || '',
+        endingBookCoverThumbnailVideoUrl: data.ending_book_cover_thumbnail_video || '',
       })
+      
+      // 동영상 파일 상태 확인
+      if (data.thumbnail_video_url) {
+      }
+      
       // 기존 데이터를 새 구조로 변환
       if (data.menu_items && data.menu_items.length > 0) {
         // menu_items에 subtitles가 있는지 확인 (새 구조)
@@ -360,17 +563,31 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           const firstItem = data.menu_items[0]
           const firstMenuSubtitles = firstItem.subtitles && firstItem.subtitles.length > 0 
             ? firstItem.subtitles.map((s: any, idx: number) => {
+                // 소메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+                let subtitleThumbnailImageUrl = s.thumbnail_image_url || s.thumbnail || ''
+                if (!subtitleThumbnailImageUrl && s.thumbnail_video_url) {
+                  subtitleThumbnailImageUrl = getThumbnailUrl(`${s.thumbnail_video_url}.jpg`)
+                }
                 return {
                   id: s.id || Date.now() + idx,
                   subtitle: s.subtitle || '',
                   interpretation_tool: s.interpretation_tool || '',
-                  thumbnail: s.thumbnail || '',
-                  detailMenus: (s.detailMenus || []).map((dm: any) => ({
-                    id: dm.id || Date.now() + Math.random(),
-                    detailMenu: dm.detailMenu || '',
-                    interpretation_tool: dm.interpretation_tool || '',
-                    thumbnail: dm.thumbnail || undefined
-                  }))
+                  thumbnailImageUrl: subtitleThumbnailImageUrl,
+                  thumbnailVideoUrl: s.thumbnail_video_url || '',
+                  detailMenus: (s.detailMenus || []).map((dm: any) => {
+                    // 상세메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+                    let detailMenuThumbnailImageUrl = dm.thumbnail_image_url || dm.thumbnail || ''
+                    if (!detailMenuThumbnailImageUrl && dm.thumbnail_video_url) {
+                      detailMenuThumbnailImageUrl = getThumbnailUrl(`${dm.thumbnail_video_url}.jpg`)
+                    }
+                    return {
+                      id: dm.id || Date.now() + Math.random(),
+                      detailMenu: dm.detailMenu || '',
+                      interpretation_tool: dm.interpretation_tool || '',
+                      thumbnailImageUrl: detailMenuThumbnailImageUrl,
+                      thumbnailVideoUrl: dm.thumbnail_video_url || ''
+                    }
+                  })
                 }
               })
             : [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
@@ -378,39 +595,64 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           const firstMenuValue = firstItem.value || ''
           setFirstMenuField({
             value: firstMenuValue,
-            thumbnail: firstItem.thumbnail || '',
+            thumbnail: firstItem.thumbnail || '', // 하위 호환성(이전 구조 유지)
+            thumbnailImageUrl: firstItem.thumbnail_image_url || firstItem.thumbnail || '', // 하위 호환성
+            thumbnailVideoUrl: firstItem.thumbnail_video_url || '',
             // 대메뉴에 값이 있는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
             subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
-              ? [{ id: Date.now(), subtitle: '', interpretation_tool: '' }]
-              : firstMenuSubtitles
+              ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
+              : firstMenuSubtitles // 이미 thumbnailImageUrl과 thumbnailVideoUrl로 변환되어 있음
           })
           
           // 나머지 메뉴 항목들
           setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
             const menuSubtitles = item.subtitles && item.subtitles.length > 0
               ? item.subtitles.map((s: any, subIdx: number) => {
+                  // 소메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+                  let subtitleThumbnailImageUrl = s.thumbnail_image_url || s.thumbnail || ''
+                  if (!subtitleThumbnailImageUrl && s.thumbnail_video_url) {
+                    subtitleThumbnailImageUrl = getThumbnailUrl(`${s.thumbnail_video_url}.jpg`)
+                  }
                   return {
                   id: s.id || Date.now() + idx * 1000 + subIdx,
                   subtitle: s.subtitle || '',
                   interpretation_tool: s.interpretation_tool || '',
-                    thumbnail: s.thumbnail || '',
-                    detailMenus: (s.detailMenus || []).map((dm: any) => ({
-                    id: dm.id || Date.now() + Math.random(),
-                    detailMenu: dm.detailMenu || '',
-                    interpretation_tool: dm.interpretation_tool || ''
-                  }))
+                    thumbnailImageUrl: subtitleThumbnailImageUrl,
+                    thumbnailVideoUrl: s.thumbnail_video_url || '',
+                    detailMenus: (s.detailMenus || []).map((dm: any) => {
+                      // 상세메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+                      let detailMenuThumbnailImageUrl = dm.thumbnail_image_url || dm.thumbnail || ''
+                      if (!detailMenuThumbnailImageUrl && dm.thumbnail_video_url) {
+                        detailMenuThumbnailImageUrl = getThumbnailUrl(`${dm.thumbnail_video_url}.jpg`)
+                      }
+                      return {
+                        id: dm.id || Date.now() + Math.random(),
+                        detailMenu: dm.detailMenu || '',
+                        interpretation_tool: dm.interpretation_tool || '',
+                        thumbnailImageUrl: detailMenuThumbnailImageUrl,
+                        thumbnailVideoUrl: dm.thumbnail_video_url || ''
+                      }
+                    })
                   }
                 })
               : [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '', detailMenus: [] }]
             
             const menuValue = item.value || ''
+            // 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+            let menuThumbnailImageUrl = item.thumbnail_image_url || item.thumbnail || ''
+            if (!menuThumbnailImageUrl && item.thumbnail_video_url) {
+              // 동영상 파일명에서 썸네일 이미지 URL 생성 (예: video.webm -> video.jpg)
+              const videoBaseName = item.thumbnail_video_url
+              menuThumbnailImageUrl = getThumbnailUrl(`${videoBaseName}.jpg`)
+            }
             return {
               id: item.id || Date.now() + idx + 1000,
               value: menuValue,
-              thumbnail: item.thumbnail || '',
+              thumbnailImageUrl: menuThumbnailImageUrl,
+              thumbnailVideoUrl: item.thumbnail_video_url || '',
               // 대메뉴에 값이 있는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
               subtitles: menuValue.trim().length > 0 && menuSubtitles.length === 0
-                ? [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '' }]
+                ? [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '', detailMenus: [] }]
                 : menuSubtitles
             }
           }))
@@ -454,7 +696,13 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         }
       } else {
         // 메뉴 항목이 없으면 기본값
-        setFirstMenuField({ value: '', thumbnail: '', subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }] })
+        setFirstMenuField({
+          value: '',
+          thumbnail: '',
+          thumbnailImageUrl: '',
+          thumbnailVideoUrl: '',
+          subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }],
+        })
         setMenuFields([])
       }
     } catch (error) {
@@ -478,7 +726,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         isFree: data.content_type === 'gonghap',
         showNew: data.is_new || false,
         contentName: duplicatedContentName,
-        thumbnailUrl: data.thumbnail_url || '',
+        thumbnailImageUrl: data.thumbnail_url || '',
+        thumbnailVideoUrl: data.thumbnail_video_url || '',
         summary: data.summary || '',
         introduction: data.introduction || '',
         recommendation: data.recommendation || '',
@@ -502,8 +751,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         detailMenuColor: data.detail_menu_color || '',
         bodyColor: data.body_color || '',
         ttsSpeaker: data.tts_speaker || 'nara',
-        previewThumbnails: (() => {
-          let thumbnails = data.preview_thumbnails
+        previewThumbnailImageUrls: (() => {
+          // 기존 preview_thumbnails를 이미지 URL로 사용 (하위 호환성)
+          let thumbnails = data.preview_thumbnails || []
           if (typeof thumbnails === 'string') {
             try {
               thumbnails = JSON.parse(thumbnails)
@@ -511,21 +761,23 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               thumbnails = []
             }
           }
-          if (!Array.isArray(thumbnails) || thumbnails.length !== 3) {
-            if (Array.isArray(thumbnails)) {
-              while (thumbnails.length < 3) {
-                thumbnails.push('')
-              }
-              thumbnails = thumbnails.slice(0, 3)
-            } else {
-              thumbnails = ['', '', '']
-            }
+          if (!Array.isArray(thumbnails)) {
+            thumbnails = []
           }
-          return thumbnails
+          while (thumbnails.length < 3) {
+            thumbnails.push('')
+          }
+          return thumbnails.slice(0, 3)
         })(),
-        bookCoverThumbnail: data.book_cover_thumbnail || '',
-        endingBookCoverThumbnail: data.ending_book_cover_thumbnail || '',
+        bookCoverThumbnailImageUrl: data.book_cover_thumbnail || '',
+        bookCoverThumbnailVideoUrl: data.book_cover_thumbnail_video || '',
+        endingBookCoverThumbnailImageUrl: data.ending_book_cover_thumbnail || '',
+        endingBookCoverThumbnailVideoUrl: data.ending_book_cover_thumbnail_video || '',
       })
+      
+      // 동영상 파일 상태 확인
+      if (data.thumbnail_video_url) {
+      }
       
       // 기존 데이터를 새 구조로 변환 (loadContent와 동일한 로직)
       if (data.menu_items && data.menu_items.length > 0) {
@@ -535,50 +787,118 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           // 새 구조
           const firstItem = data.menu_items[0]
           const firstMenuSubtitles = firstItem.subtitles && firstItem.subtitles.length > 0 
-            ? firstItem.subtitles.map((s: any, idx: number) => ({
-                id: Date.now() + idx,
-                subtitle: s.subtitle || '',
-                interpretation_tool: s.interpretation_tool || '',
-                thumbnail: s.thumbnail || '',
-                detailMenus: (s.detailMenus || []).map((dm: any) => ({
-                  id: Date.now() + Math.random(),
-                  detailMenu: dm.detailMenu || '',
-                  interpretation_tool: dm.interpretation_tool || '',
-                  thumbnail: dm.thumbnail || undefined
-                }))
-              }))
+            ? firstItem.subtitles.map((s: any, idx: number) => {
+                // 소메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+                let subtitleThumbnailImageUrl = s.thumbnail_image_url || s.thumbnail || ''
+                if (!subtitleThumbnailImageUrl && s.thumbnail_video_url) {
+                  subtitleThumbnailImageUrl = getThumbnailUrl(`${s.thumbnail_video_url}.jpg`)
+                }
+                return {
+                  id: Date.now() + idx,
+                  subtitle: s.subtitle || '',
+                  interpretation_tool: s.interpretation_tool || '',
+                  thumbnail: subtitleThumbnailImageUrl,
+                  detailMenus: (s.detailMenus || []).map((dm: any) => {
+                    // 상세메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+                    let detailMenuThumbnailImageUrl = dm.thumbnail_image_url || dm.thumbnail || ''
+                    if (!detailMenuThumbnailImageUrl && dm.thumbnail_video_url) {
+                      detailMenuThumbnailImageUrl = getThumbnailUrl(`${dm.thumbnail_video_url}.jpg`)
+                    }
+                    return {
+                      id: Date.now() + Math.random(),
+                      detailMenu: dm.detailMenu || '',
+                      interpretation_tool: dm.interpretation_tool || '',
+                      thumbnail: detailMenuThumbnailImageUrl
+                    }
+                  })
+                }
+              })
             : [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
           
           const firstMenuValue = firstItem.value || ''
+          // 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+          let firstMenuThumbnailImageUrl = firstItem.thumbnail_image_url || firstItem.thumbnail || ''
+          if (!firstMenuThumbnailImageUrl && firstItem.thumbnail_video_url) {
+            // 동영상 파일명에서 썸네일 이미지 URL 생성 (예: video.webm -> video.jpg)
+            const videoBaseName = firstItem.thumbnail_video_url
+            firstMenuThumbnailImageUrl = getThumbnailUrl(`${videoBaseName}.jpg`)
+          }
           setFirstMenuField({
             value: firstMenuValue,
             thumbnail: firstItem.thumbnail || '',
+            thumbnailImageUrl: firstMenuThumbnailImageUrl,
+            thumbnailVideoUrl: firstItem.thumbnail_video_url || '',
             subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
               ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
-              : firstMenuSubtitles
+              : firstMenuSubtitles.map((s: any) => ({
+                  ...s,
+                  thumbnailImageUrl: (() => {
+                    const imageUrl = s.thumbnail_image_url || s.thumbnail || ''
+                    const videoUrl = s.thumbnail_video_url || ''
+                    // 소메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+                    if (!imageUrl && videoUrl) {
+                      return getThumbnailUrl(`${videoUrl}.jpg`)
+                    }
+                    return imageUrl
+                  })(),
+                  thumbnailVideoUrl: s.thumbnail_video_url || '',
+                  detailMenus: (s.detailMenus || []).map((dm: any) => ({
+                    ...dm,
+                    thumbnailImageUrl: (() => {
+                      const imageUrl = dm.thumbnail_image_url || dm.thumbnail || ''
+                      const videoUrl = dm.thumbnail_video_url || ''
+                      // 상세메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+                      if (!imageUrl && videoUrl) {
+                        return getThumbnailUrl(`${videoUrl}.jpg`)
+                      }
+                      return imageUrl
+                    })(),
+                    thumbnailVideoUrl: dm.thumbnail_video_url || ''
+                  }))
+                }))
           })
           
           setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
             const menuSubtitles = item.subtitles && item.subtitles.length > 0
-              ? item.subtitles.map((s: any, subIdx: number) => ({
-                  id: Date.now() + idx * 1000 + subIdx,
-                  subtitle: s.subtitle || '',
-                  interpretation_tool: s.interpretation_tool || '',
-                  thumbnail: s.thumbnail || '',
-                  detailMenus: (s.detailMenus || []).map((dm: any) => ({
-                    id: Date.now() + Math.random(),
-                    detailMenu: dm.detailMenu || '',
-                    interpretation_tool: dm.interpretation_tool || '',
-                    thumbnail: dm.thumbnail || undefined
-                  }))
-                }))
+              ? item.subtitles.map((s: any, subIdx: number) => {
+                  // 소메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+                  let subtitleThumbnailImageUrl = s.thumbnail_image_url || s.thumbnail || ''
+                  if (!subtitleThumbnailImageUrl && s.thumbnail_video_url) {
+                    subtitleThumbnailImageUrl = getThumbnailUrl(`${s.thumbnail_video_url}.jpg`)
+                  }
+                  return {
+                    id: Date.now() + idx * 1000 + subIdx,
+                    subtitle: s.subtitle || '',
+                    interpretation_tool: s.interpretation_tool || '',
+                    thumbnail: subtitleThumbnailImageUrl,
+                    detailMenus: (s.detailMenus || []).map((dm: any) => {
+                      // 상세메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+                      let detailMenuThumbnailImageUrl = dm.thumbnail_image_url || dm.thumbnail || ''
+                      if (!detailMenuThumbnailImageUrl && dm.thumbnail_video_url) {
+                        detailMenuThumbnailImageUrl = getThumbnailUrl(`${dm.thumbnail_video_url}.jpg`)
+                      }
+                      return {
+                        id: Date.now() + Math.random(),
+                        detailMenu: dm.detailMenu || '',
+                        interpretation_tool: dm.interpretation_tool || '',
+                        thumbnail: detailMenuThumbnailImageUrl
+                      }
+                    })
+                  }
+                })
               : [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '', detailMenus: [] }]
             
             const menuValue = item.value || ''
+            // 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+            let menuThumbnailImageUrl = item.thumbnail_image_url || item.thumbnail || ''
+            if (!menuThumbnailImageUrl && item.thumbnail_video_url) {
+              const videoBaseName = item.thumbnail_video_url
+              menuThumbnailImageUrl = getThumbnailUrl(`${videoBaseName}.jpg`)
+            }
             return {
               id: Date.now() + idx + 1000,
               value: menuValue,
-              thumbnail: item.thumbnail || '',
+              thumbnail: menuThumbnailImageUrl,
               subtitles: menuValue.trim().length > 0 && menuSubtitles.length === 0
                 ? [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '', detailMenus: [] }]
                 : menuSubtitles
@@ -619,7 +939,13 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           }))
         }
       } else {
-        setFirstMenuField({ value: '', thumbnail: '', subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }] })
+        setFirstMenuField({
+          value: '',
+          thumbnail: '',
+          thumbnailImageUrl: '',
+          thumbnailVideoUrl: '',
+          subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }],
+        })
         setMenuFields([])
       }
     } catch (error) {
@@ -633,7 +959,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     try {
       // 모든 메뉴 항목에서 소제목과 해석도구 추출
       const allMenuItems = [
-        ...(firstMenuField.value || firstMenuField.thumbnail ? [firstMenuField] : []),
+        ...(firstMenuField.value || firstMenuField.thumbnailImageUrl || firstMenuField.thumbnailVideoUrl ? [firstMenuField] : []),
         ...menuFields
       ]
       
@@ -655,7 +981,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         restrictions: formData.description,
         content_type: formData.isNew ? 'saju' : 'gonghap',
         content_name: formData.contentName,
-        thumbnail_url: formData.thumbnailUrl,
+        thumbnail_url: formData.thumbnailImageUrl,
+        thumbnail_video_url: formData.thumbnailVideoUrl,
         price: formData.price,
         summary: formData.summary,
         introduction: formData.introduction,
@@ -683,16 +1010,34 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         body_color: formData.bodyColor || '',
         menu_items: allMenuItems.map((item, index) => ({
           id: index,
-          value: item.value,
-          thumbnail: item.thumbnail,
-          subtitles: item.subtitles || []
+          value: item.value || '',
+          thumbnail_image_url: (item.thumbnailImageUrl && item.thumbnailImageUrl.trim()) ? item.thumbnailImageUrl.trim() : '',
+          thumbnail_video_url: (item.thumbnailVideoUrl && item.thumbnailVideoUrl.trim()) ? item.thumbnailVideoUrl.trim() : '',
+          subtitles: (item.subtitles || []).map((sub: any) => ({
+            id: sub.id,
+            subtitle: sub.subtitle || '',
+            interpretation_tool: sub.interpretation_tool || '',
+            thumbnail_image_url: (sub.thumbnailImageUrl && sub.thumbnailImageUrl.trim()) ? sub.thumbnailImageUrl.trim() : '',
+            thumbnail_video_url: (sub.thumbnailVideoUrl && sub.thumbnailVideoUrl.trim()) ? sub.thumbnailVideoUrl.trim() : '',
+            detailMenus: (sub.detailMenus || []).map((dm: any) => ({
+              id: dm.id,
+              detailMenu: dm.detailMenu || '',
+              interpretation_tool: dm.interpretation_tool || '',
+              thumbnail_image_url: (dm.thumbnailImageUrl && dm.thumbnailImageUrl.trim()) ? dm.thumbnailImageUrl.trim() : '',
+              thumbnail_video_url: (dm.thumbnailVideoUrl && dm.thumbnailVideoUrl.trim()) ? dm.thumbnailVideoUrl.trim() : ''
+            }))
+          }))
         })),
         is_new: formData.showNew,
         tts_speaker: formData.ttsSpeaker || 'nara',
-        preview_thumbnails: formData.previewThumbnails || ['', '', ''],
-        book_cover_thumbnail: formData.bookCoverThumbnail || '',
-        ending_book_cover_thumbnail: formData.endingBookCoverThumbnail || '',
+        preview_thumbnails: formData.previewThumbnailImageUrls || ['', '', ''],
+        book_cover_thumbnail: formData.bookCoverThumbnailImageUrl || '',
+        book_cover_thumbnail_video: formData.bookCoverThumbnailVideoUrl || '',
+        ending_book_cover_thumbnail: formData.endingBookCoverThumbnailImageUrl || '',
+        ending_book_cover_thumbnail_video: formData.endingBookCoverThumbnailVideoUrl || '',
       }
+      
+      // 디버깅: menu_items 데이터 확인
       
       // API 라우트를 통해 저장 (서버 사이드에서 서비스 롤 키 사용)
       const response = await fetch('/api/admin/content/save', {
@@ -712,6 +1057,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: '알 수 없는 오류가 발생했습니다.' }))
+        console.error('저장 실패:', errorData)
+        console.error('전송된 데이터:', JSON.stringify(contentData, null, 2))
         throw new Error(errorData.error || '저장에 실패했습니다.')
       }
 
@@ -734,7 +1081,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     }
   }
 
-  const handleThumbnailClick = (field: 'main' | 'firstMenu' | 'preview-0' | 'preview-1' | 'preview-2' | 'bookCover' | 'endingBookCover' | number) => {
+  const handleThumbnailClick = (field: 'main-image' | 'main-video' | 'firstMenu-image' | 'firstMenu-video' | 'preview-0-image' | 'preview-1-image' | 'preview-2-image' | 'bookCover-image' | 'bookCover-video' | 'endingBookCover-image' | 'endingBookCover-video' | number | `menu-${number}-image` | `menu-${number}-video` | `subtitle-first-${number}-image` | `subtitle-first-${number}-video` | `subtitle-menu-${number}-${number}-image` | `subtitle-menu-${number}-${number}-video` | `detail-menu-first-${number}-${number}-image` | `detail-menu-first-${number}-${number}-video` | `detail-menu-menu-${number}-${number}-${number}-image` | `detail-menu-menu-${number}-${number}-${number}-video`) => {
     setCurrentThumbnailField(field)
     setShowThumbnailModal(true)
   }
@@ -1059,12 +1406,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             id: existingSubtitle?.id || Date.now() + Math.random(),
             subtitle: sub.subtitle,
             interpretation_tool: sub.tool,
-            thumbnail: existingSubtitle?.thumbnail || undefined, // 기존 썸네일 유지 (없으면 undefined)
+            thumbnailImageUrl: existingSubtitle?.thumbnailImageUrl || existingSubtitle?.thumbnail || '', // 하위 호환성
+            thumbnailVideoUrl: existingSubtitle?.thumbnailVideoUrl || '',
               detailMenus: sub.detailMenus.map((dm, idx) => ({
                 id: existingSubtitle?.detailMenus?.[idx]?.id || Date.now() + Math.random() + idx,
                 detailMenu: dm.detailMenu,
                 interpretation_tool: dm.interpretation_tool || '',
-                thumbnail: existingSubtitle?.detailMenus?.[idx]?.thumbnail || undefined
+                thumbnailImageUrl: existingSubtitle?.detailMenus?.[idx]?.thumbnailImageUrl || existingSubtitle?.detailMenus?.[idx]?.thumbnail || '', // 하위 호환성
+                thumbnailVideoUrl: existingSubtitle?.detailMenus?.[idx]?.thumbnailVideoUrl || ''
               })) || []
           }
         })
@@ -1083,7 +1432,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         return {
           id: existingMenu?.id || Date.now() + 1000 + groupIndex,
           value: group.menuTitle,
-          thumbnail: existingMenu?.thumbnail || undefined, // 기존 썸네일 유지 (없으면 undefined)
+          thumbnailImageUrl: existingMenu?.thumbnailImageUrl || existingMenu?.thumbnail || '', // 하위 호환성
+          thumbnailVideoUrl: existingMenu?.thumbnailVideoUrl || '',
           subtitles: group.subtitles.map((sub, subIndex) => {
             // 숫자 접두사로 매칭
             const subtitlePrefix = extractNumberPrefix(sub.subtitle)
@@ -1097,12 +1447,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               id: existingSubtitle?.id || Date.now() + 2000 + groupIndex * 100 + subIndex,
               subtitle: sub.subtitle,
               interpretation_tool: sub.tool,
-              thumbnail: existingSubtitle?.thumbnail || undefined, // 기존 썸네일 유지 (없으면 undefined)
+              thumbnailImageUrl: existingSubtitle?.thumbnailImageUrl || existingSubtitle?.thumbnail || '', // 하위 호환성
+              thumbnailVideoUrl: existingSubtitle?.thumbnailVideoUrl || '',
               detailMenus: sub.detailMenus.map((dm, idx) => ({
                 id: existingSubtitle?.detailMenus?.[idx]?.id || Date.now() + 3000 + groupIndex * 100 + subIndex * 10 + idx,
                 detailMenu: dm.detailMenu,
                 interpretation_tool: dm.interpretation_tool || '',
-                thumbnail: existingSubtitle?.detailMenus?.[idx]?.thumbnail || undefined
+                thumbnailImageUrl: existingSubtitle?.detailMenus?.[idx]?.thumbnailImageUrl || existingSubtitle?.detailMenus?.[idx]?.thumbnail || '', // 하위 호환성
+                thumbnailVideoUrl: existingSubtitle?.detailMenus?.[idx]?.thumbnailVideoUrl || ''
               })) || []
             }
           })
@@ -1119,49 +1471,87 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     }
   }
 
-  const handleThumbnailSelect = (url: string) => {
-    if (currentThumbnailField === 'main') {
-      setFormData(prev => ({ ...prev, thumbnailUrl: url }))
+  const handleThumbnailSelect = async (value: string) => {
+    if (currentThumbnailField === 'main-image') {
+      setFormData(prev => ({ ...prev, thumbnailImageUrl: value }))
+    } else if (currentThumbnailField === 'main-video') {
+      setFormData(prev => ({ ...prev, thumbnailVideoUrl: value }))
+      // 동영상 업로드 시 자동으로 생성된 썸네일 이미지 URL이 있으면 설정
+      // 이벤트 리스너는 useEffect에서 처리
+    } else if (typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('menu-') && currentThumbnailField.endsWith('-image')) {
+      const menuId = parseFloat(currentThumbnailField.replace('menu-', '').replace('-image', ''))
+      setMenuFields(menuFields.map(f => {
+        const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+        if (fId === menuId || String(f.id) === String(menuId)) {
+          return { ...f, thumbnailImageUrl: value }
+        }
+        return f
+      }))
+    } else if (typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('menu-') && currentThumbnailField.endsWith('-video')) {
+      const menuId = parseFloat(currentThumbnailField.replace('menu-', '').replace('-video', ''))
+      setMenuFields(menuFields.map(f => {
+        const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+        if (fId === menuId || String(f.id) === String(menuId)) {
+          return { ...f, thumbnailVideoUrl: value }
+        }
+        return f
+      }))
     } else if (typeof currentThumbnailField === 'number') {
+      // 하위 호환성: 숫자로 전달된 경우 이미지로 처리
       setMenuFields(menuFields.map(f => 
-        f.id === currentThumbnailField ? { ...f, thumbnail: url } : f
+        f.id === currentThumbnailField ? { ...f, thumbnailImageUrl: value } : f
       ))
-    } else if (currentThumbnailField === 'firstMenu') {
-      setFirstMenuField(prev => ({ ...prev, thumbnail: url }))
-    } else if (currentThumbnailField === 'preview-0' || currentThumbnailField === 'preview-1' || currentThumbnailField === 'preview-2') {
+    } else if (currentThumbnailField === 'firstMenu-image') {
+      setFirstMenuField(prev => ({ ...prev, thumbnailImageUrl: value }))
+    } else if (currentThumbnailField === 'firstMenu-video') {
+      setFirstMenuField(prev => ({ ...prev, thumbnailVideoUrl: value }))
+    } else if (currentThumbnailField.startsWith('preview-') && currentThumbnailField.endsWith('-image')) {
       const index = parseInt(currentThumbnailField.split('-')[1])
       setFormData(prev => {
-        const newThumbnails = [...prev.previewThumbnails]
-        newThumbnails[index] = url
-        return { ...prev, previewThumbnails: newThumbnails }
+        const newThumbnails = [...prev.previewThumbnailImageUrls]
+        newThumbnails[index] = value
+        return { ...prev, previewThumbnailImageUrls: newThumbnails }
       })
-    } else if (currentThumbnailField === 'bookCover') {
+    } else if (currentThumbnailField === 'bookCover-image') {
       setFormData(prev => ({
         ...prev,
-        bookCoverThumbnail: url
+        bookCoverThumbnailImageUrl: value
       }))
-    } else if (currentThumbnailField === 'endingBookCover') {
+    } else if (currentThumbnailField === 'bookCover-video') {
       setFormData(prev => ({
         ...prev,
-        endingBookCoverThumbnail: url
+        bookCoverThumbnailVideoUrl: value
+      }))
+    } else if (currentThumbnailField === 'endingBookCover-image') {
+      setFormData(prev => ({
+        ...prev,
+        endingBookCoverThumbnailImageUrl: value
+      }))
+    } else if (currentThumbnailField === 'endingBookCover-video') {
+      setFormData(prev => ({
+        ...prev,
+        endingBookCoverThumbnailVideoUrl: value
       }))
     } else if (typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('subtitle-')) {
       const parts = currentThumbnailField.split('-')
       
       if (parts[1] === 'first') {
-        // subtitle-first-{subtitleId} 형식
-        // 소수점이 포함된 ID를 처리하기 위해 parseFloat 사용
+        // subtitle-first-{subtitleId}-image 또는 subtitle-first-{subtitleId}-video 형식
         const subtitleIdStr = parts[2]
-        const subtitleId = parseFloat(subtitleIdStr)
+        const isImage = currentThumbnailField.endsWith('-image')
+        const isVideo = currentThumbnailField.endsWith('-video')
         setFirstMenuField(prev => {
           const updated = {
           ...prev,
             subtitles: prev.subtitles.map(s => {
-              // ID를 문자열로 변환하여 비교 (소수점 포함 ID 대응)
               const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
               const targetId = parseFloat(subtitleIdStr)
               if (sId === targetId || String(s.id) === subtitleIdStr) {
-                return { ...s, thumbnail: url }
+                if (isImage) {
+                  return { ...s, thumbnailImageUrl: value }
+                } else if (isVideo) {
+                  return { ...s, thumbnailVideoUrl: value }
+                }
               }
               return s
             })
@@ -1169,24 +1559,26 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           return updated
         })
       } else if (parts[1] === 'menu') {
-        // subtitle-menu-{menuId}-{subtitleId} 형식
+        // subtitle-menu-{menuId}-{subtitleId}-image 또는 subtitle-menu-{menuId}-{subtitleId}-video 형식
         const menuIdStr = parts[2]
         const subtitleIdStr = parts[3]
-        const menuId = Number(menuIdStr)
-        const subtitleId = Number(subtitleIdStr)
+        const isImage = currentThumbnailField.endsWith('-image')
+        const isVideo = currentThumbnailField.endsWith('-video')
         
         setMenuFields(prevFields => {
           const updated = prevFields.map(f => {
-            // 타입 안전한 비교 (소수점 포함 ID 대응)
             const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
             const menuIdNum = parseFloat(menuIdStr)
             if (fId === menuIdNum || String(f.id) === menuIdStr) {
               const updatedSubtitles = f.subtitles.map(s => {
-                // 소수점 포함 ID 대응
                 const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
                 const targetSubtitleId = parseFloat(subtitleIdStr)
                 if (sId === targetSubtitleId || String(s.id) === subtitleIdStr) {
-                  return { ...s, thumbnail: url }
+                  if (isImage) {
+                    return { ...s, thumbnailImageUrl: value }
+                  } else if (isVideo) {
+                    return { ...s, thumbnailVideoUrl: value }
+                  }
                 }
                 return s
               })
@@ -1206,11 +1598,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       const parts = currentThumbnailField.split('-')
       
       if (parts[2] === 'first') {
-        // detail-menu-first-{subtitleId}-{detailMenuId} 형식
+        // detail-menu-first-{subtitleId}-{detailMenuId}-image 또는 detail-menu-first-{subtitleId}-{detailMenuId}-video 형식
         const subtitleIdStr = parts[3]
         const detailMenuIdStr = parts[4]
-        const subtitleId = parseFloat(subtitleIdStr)
-        const detailMenuId = parseFloat(detailMenuIdStr)
+        const isImage = currentThumbnailField.endsWith('-image')
+        const isVideo = currentThumbnailField.endsWith('-video')
         
         setFirstMenuField(prev => {
           const updated = {
@@ -1225,7 +1617,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     const dmId = typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))
                     const targetDetailMenuId = parseFloat(detailMenuIdStr)
                     if (dmId === targetDetailMenuId || String(dm.id) === detailMenuIdStr) {
-                      return { ...dm, thumbnail: url }
+                      if (isImage) {
+                        return { ...dm, thumbnailImageUrl: value }
+                      } else if (isVideo) {
+                        return { ...dm, thumbnailVideoUrl: value }
+                      }
                     }
                     return dm
                   })
@@ -1237,13 +1633,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           return updated
         })
       } else if (parts[2] === 'menu') {
-        // detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId} 형식
+        // detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId}-image 또는 detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId}-video 형식
         const menuIdStr = parts[3]
         const subtitleIdStr = parts[4]
         const detailMenuIdStr = parts[5]
-        const menuId = parseFloat(menuIdStr)
-        const subtitleId = parseFloat(subtitleIdStr)
-        const detailMenuId = parseFloat(detailMenuIdStr)
+        const isImage = currentThumbnailField.endsWith('-image')
+        const isVideo = currentThumbnailField.endsWith('-video')
         
         setMenuFields(prevFields => {
           const updated = prevFields.map(f => {
@@ -1260,7 +1655,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       const dmId = typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))
                       const targetDetailMenuId = parseFloat(detailMenuIdStr)
                       if (dmId === targetDetailMenuId || String(dm.id) === detailMenuIdStr) {
-                        return { ...dm, thumbnail: url }
+                        if (isImage) {
+                          return { ...dm, thumbnailImageUrl: value }
+                        } else if (isVideo) {
+                          return { ...dm, thumbnailVideoUrl: value }
+                        }
                       }
                       return dm
                     })
@@ -1373,25 +1772,30 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           </label>
           <div className="flex gap-2">
             {[0, 1, 2].map((index) => (
-              <button
-                key={index}
-                type="button"
-                onClick={() => {
-                  setCurrentThumbnailField(`preview-${index}` as any)
-                  setShowThumbnailModal(true)
-                }}
-                className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-36 h-64 flex items-center justify-center"
-              >
-                {formData.previewThumbnails[index] ? (
-                  <img 
-                    src={formData.previewThumbnails[index]} 
-                    alt={`미리보기 ${index + 1}`} 
-                    className="absolute inset-0 w-full h-full object-contain"
-                  />
-                ) : (
-                  <span className="text-xs">+</span>
-                )}
-              </button>
+              <div key={index} className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentThumbnailType('image')
+                    setCurrentThumbnailField(`preview-${index}-image` as any)
+                    setShowThumbnailModal(true)
+                  }}
+                  className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden flex items-center justify-center"
+                  style={{ aspectRatio: '9/16', width: '120px' }}
+                >
+                  {formData.previewThumbnailImageUrls[index] ? (
+                    <img 
+                      src={formData.previewThumbnailImageUrls[index]} 
+                      alt={`미리보기 썸네일 ${index + 1}`} 
+                      className="absolute inset-0 w-full h-full object-contain"
+                    />
+                  ) : (
+                    <span className="text-xs leading-tight text-center">
+                      <div>미리보기 썸네일</div>
+                    </span>
+                  )}
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -1412,24 +1816,73 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             />
             <button
               type="button"
-              onClick={() => handleThumbnailClick('main')}
-              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-6 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
+              onClick={() => {
+                setCurrentThumbnailType('image')
+                handleThumbnailClick('main-image')
+              }}
+              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
             >
-              {formData.thumbnailUrl ? (
+              {formData.thumbnailImageUrl ? (
                 <img 
-                  src={formData.thumbnailUrl} 
-                  alt="썸네일" 
+                  src={formData.thumbnailImageUrl} 
+                  alt="이미지 썸네일" 
                   className="absolute inset-0 w-full h-full object-contain"
                 />
               ) : (
-                <span className="text-xs">썸네일</span>
+                <span className="text-xs leading-tight text-center">
+                  <div>이미지</div>
+                  <div>썸네일</div>
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentThumbnailType('video')
+                handleThumbnailClick('main-video')
+              }}
+              className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center ${
+                formData.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
+              }`}
+            >
+              {formData.thumbnailVideoUrl && formData.thumbnailImageUrl ? (
+                <>
+                  <img 
+                    src={formData.thumbnailImageUrl} 
+                    alt="동영상 썸네일" 
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                  {/* 반투명 동영상 플레이 아이콘 */}
+                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                    <svg 
+                      className="w-8 h-8 text-white opacity-80" 
+                      fill="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M8 5v14l11-7z"/>
+                    </svg>
+                  </div>
+                </>
+              ) : formData.thumbnailVideoUrl ? (
+                <span className="text-xs text-green-400 leading-tight text-center">
+                  <div>동영상</div>
+                  <div>썸네일</div>
+                </span>
+              ) : (
+                <span className="text-xs leading-tight text-center">
+                  <div>동영상</div>
+                  <div>썸네일</div>
+                </span>
               )}
             </button>
           </div>
           <div className="mt-3 text-sm text-gray-400 space-y-1">
-            <p>1. 썸네일을 16:9로 생성하세요</p>
-            <p>2. 썸네일을 포토스케이프에서 가로를 680 픽셀로 줄이고 jpg 저장품질을 100으로 저장하세요</p>
-            <p>3. <a href="https://compresspng.com/ko/" target="_blank" rel="noopener noreferrer" className="text-pink-400 hover:text-pink-300 underline">https://compresspng.com/ko/</a> 사이트에서 JPEG 탭을 선택하고 2번에서 저장된 파일을 드래그&드랍해서 파일용량을 최적화하세요</p>
+            <p>1. 이미지 썸네일을 16:9로 생성하세요</p>
+            <p>2. 이미지 썸네일을 포토스케이프에서 가로를 680 픽셀로 줄이고 jpg 저장품질을 100으로 저장하세요</p>
+            <p>3. <a href="https://compresspng.com/ko/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">https://compresspng.com/ko/</a> 사이트에서 JPEG 탭을 선택하고 2번에서 저장된 파일을 드래그&드랍해서 파일용량을 최적화하세요</p>
+            <p>4. 동영상 썸네일을 CMD 창에서( ffmpeg -i 인풋.mp4 -an -vf scale=640:-1 -b:v 500k 아웃풋.webm ) WebM으로 생성하세요</p>
+            <p className="ml-4">- scale=640 : 1024 등으로 조절 가능</p>
+            <p className="ml-4">- 500k : 1000k 등으로 조절 가능</p>
           </div>
         </div>
 
@@ -1511,23 +1964,69 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             <label className="block text-xs font-medium text-gray-400 mb-2 text-center">
               북커버 (첫 번째 대제목 전, 9:16 비율)
             </label>
-            <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={() => handleThumbnailClick('bookCover')}
-              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center"
-              style={{ aspectRatio: '9/16' }}
-            >
-              {formData.bookCoverThumbnail ? (
-                <img 
-                  src={formData.bookCoverThumbnail} 
-                  alt="북커버 썸네일" 
-                  className="absolute inset-0 w-full h-full object-contain"
-                />
-              ) : (
-                <span className="text-xs text-center">북커버<br/>썸네일</span>
-              )}
-            </button>
+            <div className="flex justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentThumbnailType('image')
+                  handleThumbnailClick('bookCover-image')
+                }}
+                className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center"
+                style={{ aspectRatio: '9/16' }}
+              >
+                {formData.bookCoverThumbnailImageUrl ? (
+                  <img 
+                    src={formData.bookCoverThumbnailImageUrl} 
+                    alt="북커버 이미지 썸네일" 
+                    className="absolute inset-0 w-full h-full object-contain"
+                  />
+                ) : (
+                  <span className="text-xs leading-tight text-center">
+                    <div>북커버</div>
+                    <div>이미지</div>
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentThumbnailType('video')
+                  handleThumbnailClick('bookCover-video')
+                }}
+                className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center ${
+                  formData.bookCoverThumbnailVideoUrl ? 'border-2 border-green-400' : ''
+                }`}
+                style={{ aspectRatio: '9/16' }}
+              >
+                {formData.bookCoverThumbnailVideoUrl && formData.bookCoverThumbnailImageUrl ? (
+                  <>
+                    <img 
+                      src={formData.bookCoverThumbnailImageUrl} 
+                      alt="북커버 동영상 썸네일" 
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                      <svg 
+                        className="w-8 h-8 text-white opacity-80" 
+                        fill="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M8 5v14l11-7z"/>
+                      </svg>
+                    </div>
+                  </>
+                ) : formData.bookCoverThumbnailVideoUrl ? (
+                  <span className="text-xs text-green-400 leading-tight text-center">
+                    <div>북커버</div>
+                    <div>동영상</div>
+                  </span>
+                ) : (
+                  <span className="text-xs leading-tight text-center">
+                    <div>북커버</div>
+                    <div>동영상</div>
+                  </span>
+                )}
+              </button>
             </div>
           </div>
           
@@ -1556,17 +2055,62 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             />
             <button
               type="button"
-              onClick={() => handleThumbnailClick('firstMenu')}
-              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden min-w-[85px] h-[48px] flex items-center justify-center"
+              onClick={() => {
+                setCurrentThumbnailType('image')
+                handleThumbnailClick('firstMenu-image')
+              }}
+              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
             >
-              {firstMenuField.thumbnail ? (
+              {firstMenuField.thumbnailImageUrl ? (
                 <img 
-                  src={firstMenuField.thumbnail} 
-                  alt="썸네일" 
+                  src={firstMenuField.thumbnailImageUrl} 
+                  alt="첫 메뉴 이미지 썸네일" 
                   className="absolute inset-0 w-full h-full object-contain"
                 />
               ) : (
-                <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                <span className="text-xs leading-tight text-center">
+                  <div>이미지</div>
+                  <div>썸네일</div>
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentThumbnailType('video')
+                handleThumbnailClick('firstMenu-video')
+              }}
+              className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center ${
+                firstMenuField.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
+              }`}
+            >
+              {firstMenuField.thumbnailVideoUrl && firstMenuField.thumbnailImageUrl ? (
+                <>
+                  <img 
+                    src={firstMenuField.thumbnailImageUrl} 
+                    alt="첫 메뉴 동영상 썸네일" 
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                    <svg 
+                      className="w-6 h-6 text-white opacity-80" 
+                      fill="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M8 5v14l11-7z"/>
+                    </svg>
+                  </div>
+                </>
+              ) : firstMenuField.thumbnailVideoUrl ? (
+                <span className="text-xs text-green-400 leading-tight text-center">
+                  <div>동영상</div>
+                  <div>썸네일</div>
+                </span>
+              ) : (
+                <span className="text-xs leading-tight text-center">
+                  <div>동영상</div>
+                  <div>썸네일</div>
+                </span>
               )}
             </button>
             <button
@@ -1613,32 +2157,64 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   <button
                     type="button"
                     onClick={() => {
-                      setCurrentThumbnailField(`subtitle-first-${subtitle.id}` as any)
+                      setCurrentThumbnailType('image')
+                      setCurrentThumbnailField(`subtitle-first-${subtitle.id}-image` as any)
                       setShowThumbnailModal(true)
                     }}
-                    className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                    className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-1 py-1 rounded-lg transition-colors duration-200 relative overflow-hidden w-[50px] h-[36px] flex items-center justify-center"
                   >
-                      {subtitle.thumbnail && subtitle.thumbnail.trim() ? (
+                      {subtitle.thumbnailImageUrl && subtitle.thumbnailImageUrl.trim() ? (
                       <img 
-                        src={subtitle.thumbnail} 
-                        alt="썸네일" 
+                        src={subtitle.thumbnailImageUrl} 
+                        alt="소제목 이미지 썸네일" 
                         className="absolute inset-0 w-full h-full object-contain"
-                          onError={(e) => {
-                            // 이미지 로드 실패 시 텍스트로 대체
-                            const target = e.target as HTMLImageElement
-                            target.style.display = 'none'
-                            const parent = target.parentElement
-                            if (parent && !parent.querySelector('span')) {
-                              const span = document.createElement('span')
-                              span.className = 'text-[10px] leading-tight whitespace-nowrap'
-                              span.textContent = '썸네일'
-                              parent.appendChild(span)
-                            }
-                          }}
                       />
                     ) : (
-                      <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                      <span className="text-[8px] leading-tight text-center">
+                        <div>이미지</div>
+                        <div>썸네일</div>
+                      </span>
                     )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentThumbnailType('video')
+                      setCurrentThumbnailField(`subtitle-first-${subtitle.id}-video` as any)
+                      setShowThumbnailModal(true)
+                    }}
+                    className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-1 py-1 rounded-lg transition-colors duration-200 relative overflow-hidden w-[50px] h-[36px] flex items-center justify-center ${
+                      subtitle.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
+                    }`}
+                  >
+                      {subtitle.thumbnailVideoUrl && subtitle.thumbnailImageUrl ? (
+                        <>
+                          <img 
+                            src={subtitle.thumbnailImageUrl} 
+                            alt="소제목 동영상 썸네일" 
+                            className="absolute inset-0 w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                            <svg 
+                              className="w-4 h-4 text-white opacity-80" 
+                              fill="currentColor" 
+                              viewBox="0 0 24 24"
+                            >
+                              <path d="M8 5v14l11-7z"/>
+                            </svg>
+                          </div>
+                        </>
+                      ) : subtitle.thumbnailVideoUrl ? (
+                        <span className="text-[8px] text-green-400 leading-tight text-center">
+                          <div>동영상</div>
+                          <div>썸네일</div>
+                        </span>
+                      ) : (
+                        <span className="text-[8px] leading-tight text-center">
+                          <div>동영상</div>
+                          <div>썸네일</div>
+                        </span>
+                      )}
                   </button>
                   {subIndex === 0 ? (
                     <button
@@ -1707,30 +2283,63 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         <button
                           type="button"
                           onClick={() => {
-                            setCurrentThumbnailField(`detail-menu-first-${subtitle.id}-${detailMenu.id}` as any)
+                            setCurrentThumbnailType('image')
+                            setCurrentThumbnailField(`detail-menu-first-${subtitle.id}-${detailMenu.id}-image` as any)
                             setShowThumbnailModal(true)
                           }}
-                          className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                          className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-1 py-1 rounded-lg transition-colors duration-200 relative overflow-hidden w-[50px] h-[36px] flex items-center justify-center"
                         >
-                          {detailMenu.thumbnail && detailMenu.thumbnail.trim() ? (
+                          {detailMenu.thumbnailImageUrl && detailMenu.thumbnailImageUrl.trim() ? (
                             <img 
-                              src={detailMenu.thumbnail} 
-                              alt="썸네일" 
+                              src={detailMenu.thumbnailImageUrl} 
+                              alt="상세메뉴 이미지 썸네일" 
                               className="absolute inset-0 w-full h-full object-contain"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement
-                                target.style.display = 'none'
-                                const parent = target.parentElement
-                                if (parent && !parent.querySelector('span')) {
-                                  const span = document.createElement('span')
-                                  span.className = 'text-[10px] leading-tight whitespace-nowrap'
-                                  span.textContent = '썸네일'
-                                  parent.appendChild(span)
-                                }
-                              }}
                             />
                           ) : (
-                            <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                            <span className="text-[8px] leading-tight text-center">
+                              <div>이미지</div>
+                              <div>썸네일</div>
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCurrentThumbnailType('video')
+                            setCurrentThumbnailField(`detail-menu-first-${subtitle.id}-${detailMenu.id}-video` as any)
+                            setShowThumbnailModal(true)
+                          }}
+                          className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-1 py-1 rounded-lg transition-colors duration-200 relative overflow-hidden w-[50px] h-[36px] flex items-center justify-center ${
+                            detailMenu.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
+                          }`}
+                        >
+                          {detailMenu.thumbnailVideoUrl && detailMenu.thumbnailImageUrl ? (
+                            <>
+                              <img 
+                                src={detailMenu.thumbnailImageUrl} 
+                                alt="상세메뉴 동영상 썸네일" 
+                                className="absolute inset-0 w-full h-full object-cover"
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                                <svg 
+                                  className="w-4 h-4 text-white opacity-80" 
+                                  fill="currentColor" 
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path d="M8 5v14l11-7z"/>
+                                </svg>
+                              </div>
+                            </>
+                          ) : detailMenu.thumbnailVideoUrl ? (
+                            <span className="text-[8px] text-green-400 leading-tight text-center">
+                              <div>동영상</div>
+                              <div>썸네일</div>
+                            </span>
+                          ) : (
+                            <span className="text-[8px] leading-tight text-center">
+                              <div>동영상</div>
+                              <div>썸네일</div>
+                            </span>
                           )}
                         </button>
                         {detailIndex === 0 ? (
@@ -1741,7 +2350,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                               subtitles: prev.subtitles.map(s => 
                                 s.id === subtitle.id ? {
                                   ...s,
-                                  detailMenus: [...s.detailMenus, { id: Date.now(), detailMenu: '', interpretation_tool: '', thumbnail: undefined }]
+                                  detailMenus: [...s.detailMenus, { id: Date.now(), detailMenu: '', interpretation_tool: '', thumbnailImageUrl: '', thumbnailVideoUrl: '' }]
                                 } : s
                               )
                             }))}
@@ -1776,7 +2385,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                           subtitles: prev.subtitles.map(s => 
                             s.id === subtitle.id ? {
                               ...s,
-                              detailMenus: [{ id: Date.now(), detailMenu: '', interpretation_tool: '', thumbnail: undefined }]
+                              detailMenus: [{ id: Date.now(), detailMenu: '', interpretation_tool: '', thumbnailImageUrl: '', thumbnailVideoUrl: '' }]
                             } : s
                           )
                         }))}
@@ -1822,17 +2431,62 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 />
                 <button
                   type="button"
-                  onClick={() => handleThumbnailClick(field.id)}
-                  className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-6 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
+                  onClick={() => {
+                    setCurrentThumbnailType('image')
+                    handleThumbnailClick(`menu-${field.id}-image` as any)
+                  }}
+                  className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
                 >
-                  {field.thumbnail ? (
+                  {field.thumbnailImageUrl ? (
                     <img 
-                      src={field.thumbnail} 
-                      alt="썸네일" 
+                      src={field.thumbnailImageUrl} 
+                      alt="메뉴 이미지 썸네일" 
                       className="absolute inset-0 w-full h-full object-contain"
                     />
                   ) : (
-                    <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                    <span className="text-xs leading-tight text-center">
+                      <div>이미지</div>
+                      <div>썸네일</div>
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentThumbnailType('video')
+                    handleThumbnailClick(`menu-${field.id}-video` as any)
+                  }}
+                  className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center ${
+                    field.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
+                  }`}
+                >
+                  {field.thumbnailVideoUrl && field.thumbnailImageUrl ? (
+                    <>
+                      <img 
+                        src={field.thumbnailImageUrl} 
+                        alt="메뉴 동영상 썸네일" 
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                        <svg 
+                          className="w-6 h-6 text-white opacity-80" 
+                          fill="currentColor" 
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M8 5v14l11-7z"/>
+                        </svg>
+                      </div>
+                    </>
+                  ) : field.thumbnailVideoUrl ? (
+                    <span className="text-xs text-green-400 leading-tight text-center">
+                      <div>동영상</div>
+                      <div>썸네일</div>
+                    </span>
+                  ) : (
+                    <span className="text-xs leading-tight text-center">
+                      <div>동영상</div>
+                      <div>썸네일</div>
+                    </span>
                   )}
                 </button>
                 <button
@@ -1885,22 +2539,69 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       <button
                         type="button"
                         onClick={() => {
+                          setCurrentThumbnailType('image')
                           const fieldId = field.id
                           const subtitleId = subtitle.id
-                          const fieldKey = `subtitle-menu-${fieldId}-${subtitleId}`
+                          const fieldKey = `subtitle-menu-${fieldId}-${subtitleId}-image`
                           setCurrentThumbnailField(fieldKey as any)
                           setShowThumbnailModal(true)
                         }}
-                        className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                        className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-1 py-1 rounded-lg transition-colors duration-200 relative overflow-hidden w-[50px] h-[36px] flex items-center justify-center"
                       >
-                        {subtitle.thumbnail ? (
+                        {subtitle.thumbnailImageUrl ? (
                           <img 
-                            src={subtitle.thumbnail} 
-                            alt="썸네일" 
+                            src={subtitle.thumbnailImageUrl} 
+                            alt="소제목 이미지 썸네일" 
                             className="absolute inset-0 w-full h-full object-contain"
                           />
                         ) : (
-                          <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                          <span className="text-[8px] leading-tight text-center">
+                            <div>이미지</div>
+                            <div>썸네일</div>
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCurrentThumbnailType('video')
+                          const fieldId = field.id
+                          const subtitleId = subtitle.id
+                          const fieldKey = `subtitle-menu-${fieldId}-${subtitleId}-video`
+                          setCurrentThumbnailField(fieldKey as any)
+                          setShowThumbnailModal(true)
+                        }}
+                        className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-1 py-1 rounded-lg transition-colors duration-200 relative overflow-hidden w-[50px] h-[36px] flex items-center justify-center ${
+                          subtitle.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
+                        }`}
+                      >
+                        {subtitle.thumbnailVideoUrl && subtitle.thumbnailImageUrl ? (
+                          <>
+                            <img 
+                              src={subtitle.thumbnailImageUrl} 
+                              alt="소제목 동영상 썸네일" 
+                              className="absolute inset-0 w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                              <svg 
+                                className="w-4 h-4 text-white opacity-80" 
+                                fill="currentColor" 
+                                viewBox="0 0 24 24"
+                              >
+                                <path d="M8 5v14l11-7z"/>
+                              </svg>
+                            </div>
+                          </>
+                        ) : subtitle.thumbnailVideoUrl ? (
+                          <span className="text-[8px] text-green-400 leading-tight text-center">
+                            <div>동영상</div>
+                            <div>썸네일</div>
+                          </span>
+                        ) : (
+                          <span className="text-[8px] leading-tight text-center">
+                            <div>동영상</div>
+                            <div>썸네일</div>
+                          </span>
                         )}
                       </button>
                       {subIndex === 0 ? (
@@ -1976,34 +2677,71 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                             <button
                               type="button"
                               onClick={() => {
+                                setCurrentThumbnailType('image')
                                 const fieldId = field.id
                                 const subtitleId = subtitle.id
                                 const detailMenuId = detailMenu.id
-                                const fieldKey = `detail-menu-menu-${fieldId}-${subtitleId}-${detailMenuId}`
+                                const fieldKey = `detail-menu-menu-${fieldId}-${subtitleId}-${detailMenuId}-image`
                                 setCurrentThumbnailField(fieldKey as any)
                                 setShowThumbnailModal(true)
                               }}
-                              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-2 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[60px] h-[36px] flex items-center justify-center"
+                              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-1 py-1 rounded-lg transition-colors duration-200 relative overflow-hidden w-[50px] h-[36px] flex items-center justify-center"
                             >
-                              {detailMenu.thumbnail && detailMenu.thumbnail.trim() ? (
+                              {detailMenu.thumbnailImageUrl && detailMenu.thumbnailImageUrl.trim() ? (
                                 <img 
-                                  src={detailMenu.thumbnail} 
-                                  alt="썸네일" 
+                                  src={detailMenu.thumbnailImageUrl} 
+                                  alt="상세메뉴 이미지 썸네일" 
                                   className="absolute inset-0 w-full h-full object-contain"
-                                  onError={(e) => {
-                                    const target = e.target as HTMLImageElement
-                                    target.style.display = 'none'
-                                    const parent = target.parentElement
-                                    if (parent && !parent.querySelector('span')) {
-                                      const span = document.createElement('span')
-                                      span.className = 'text-[10px] leading-tight whitespace-nowrap'
-                                      span.textContent = '썸네일'
-                                      parent.appendChild(span)
-                                    }
-                                  }}
                                 />
                               ) : (
-                                <span className="text-[10px] leading-tight whitespace-nowrap">썸네일</span>
+                                <span className="text-[8px] leading-tight text-center">
+                                  <div>이미지</div>
+                                  <div>썸네일</div>
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCurrentThumbnailType('video')
+                                const fieldId = field.id
+                                const subtitleId = subtitle.id
+                                const detailMenuId = detailMenu.id
+                                const fieldKey = `detail-menu-menu-${fieldId}-${subtitleId}-${detailMenuId}-video`
+                                setCurrentThumbnailField(fieldKey as any)
+                                setShowThumbnailModal(true)
+                              }}
+                              className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-1 py-1 rounded-lg transition-colors duration-200 relative overflow-hidden w-[50px] h-[36px] flex items-center justify-center ${
+                                detailMenu.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
+                              }`}
+                            >
+                              {detailMenu.thumbnailVideoUrl && detailMenu.thumbnailImageUrl ? (
+                                <>
+                                  <img 
+                                    src={detailMenu.thumbnailImageUrl} 
+                                    alt="상세메뉴 동영상 썸네일" 
+                                    className="absolute inset-0 w-full h-full object-cover"
+                                  />
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                                    <svg 
+                                      className="w-4 h-4 text-white opacity-80" 
+                                      fill="currentColor" 
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path d="M8 5v14l11-7z"/>
+                                    </svg>
+                                  </div>
+                                </>
+                              ) : detailMenu.thumbnailVideoUrl ? (
+                                <span className="text-[8px] text-green-400 leading-tight text-center">
+                                  <div>상세메뉴</div>
+                                  <div>동영상</div>
+                                </span>
+                              ) : (
+                                <span className="text-[8px] leading-tight text-center">
+                                  <div>상세메뉴</div>
+                                  <div>동영상</div>
+                                </span>
                               )}
                             </button>
                             {detailIndex === 0 ? (
@@ -2015,7 +2753,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                                     subtitles: f.subtitles.map(s => 
                                       s.id === subtitle.id ? {
                                         ...s,
-                                        detailMenus: [...s.detailMenus, { id: Date.now(), detailMenu: '', interpretation_tool: '', thumbnail: undefined }]
+                                        detailMenus: [...s.detailMenus, { id: Date.now(), detailMenu: '', interpretation_tool: '', thumbnailImageUrl: '', thumbnailVideoUrl: '' }]
                                       } : s
                                     )
                                   } : f
@@ -2077,23 +2815,69 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             <label className="block text-xs font-medium text-gray-400 mb-2 text-center">
               엔딩북커버 (마지막 대제목 밑, 9:16 비율)
             </label>
-            <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={() => handleThumbnailClick('endingBookCover')}
-              className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center"
-              style={{ aspectRatio: '9/16' }}
-            >
-              {formData.endingBookCoverThumbnail ? (
-                <img 
-                  src={formData.endingBookCoverThumbnail} 
-                  alt="엔딩북커버 썸네일" 
-                  className="absolute inset-0 w-full h-full object-contain"
-                />
-              ) : (
-                <span className="text-xs text-center">엔딩북커버<br/>썸네일</span>
-              )}
-            </button>
+            <div className="flex justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentThumbnailType('image')
+                  handleThumbnailClick('endingBookCover-image')
+                }}
+                className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center"
+                style={{ aspectRatio: '9/16' }}
+              >
+                {formData.endingBookCoverThumbnailImageUrl ? (
+                  <img 
+                    src={formData.endingBookCoverThumbnailImageUrl} 
+                    alt="엔딩북커버 이미지 썸네일" 
+                    className="absolute inset-0 w-full h-full object-contain"
+                  />
+                ) : (
+                  <span className="text-xs leading-tight text-center">
+                    <div>엔딩북커버</div>
+                    <div>이미지</div>
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentThumbnailType('video')
+                  handleThumbnailClick('endingBookCover-video')
+                }}
+                className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center ${
+                  formData.endingBookCoverThumbnailVideoUrl ? 'border-2 border-green-400' : ''
+                }`}
+                style={{ aspectRatio: '9/16' }}
+              >
+                {formData.endingBookCoverThumbnailVideoUrl && formData.endingBookCoverThumbnailImageUrl ? (
+                  <>
+                    <img 
+                      src={formData.endingBookCoverThumbnailImageUrl} 
+                      alt="엔딩북커버 동영상 썸네일" 
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                      <svg 
+                        className="w-8 h-8 text-white opacity-80" 
+                        fill="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M8 5v14l11-7z"/>
+                      </svg>
+                    </div>
+                  </>
+                ) : formData.endingBookCoverThumbnailVideoUrl ? (
+                  <span className="text-xs text-green-400 leading-tight text-center">
+                    <div>엔딩북커버</div>
+                    <div>동영상</div>
+                  </span>
+                ) : (
+                  <span className="text-xs leading-tight text-center">
+                    <div>엔딩북커버</div>
+                    <div>동영상</div>
+                  </span>
+                )}
+              </button>
             </div>
             {/* 무결성 체크 버튼 */}
             <div className="flex justify-end gap-2 mt-3">
@@ -3084,32 +3868,70 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         isOpen={showThumbnailModal}
         onClose={() => setShowThumbnailModal(false)}
         onSelect={handleThumbnailSelect}
+        thumbnailType={
+          currentThumbnailField === 'main-video' || 
+          currentThumbnailField === 'firstMenu-video' ||
+          currentThumbnailField === 'bookCover-video' ||
+          currentThumbnailField === 'endingBookCover-video' ||
+          (typeof currentThumbnailField === 'string' && currentThumbnailField.endsWith('-video'))
+            ? 'video' 
+            : 'image'
+        }
         currentThumbnail={
-          currentThumbnailField === 'main'
-            ? formData.thumbnailUrl
-            : currentThumbnailField === 'firstMenu'
-            ? firstMenuField.thumbnail
+          currentThumbnailField === 'main-image'
+            ? formData.thumbnailImageUrl
+            : currentThumbnailField === 'main-video'
+            ? (formData.thumbnailImageUrl || (formData.thumbnailVideoUrl ? getThumbnailUrl(`${formData.thumbnailVideoUrl}.jpg`) : ''))
+            : currentThumbnailField === 'firstMenu-image'
+            ? firstMenuField.thumbnailImageUrl
+            : currentThumbnailField === 'firstMenu-video'
+            ? (firstMenuField.thumbnailImageUrl || (firstMenuField.thumbnailVideoUrl ? getThumbnailUrl(`${firstMenuField.thumbnailVideoUrl}.jpg`) : ''))
+            : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('menu-') && currentThumbnailField.endsWith('-image')
+            ? menuFields.find(f => {
+                const menuId = parseFloat(currentThumbnailField.replace('menu-', '').replace('-image', ''))
+                const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+                return fId === menuId || String(f.id) === String(menuId)
+              })?.thumbnailImageUrl
+            : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('menu-') && currentThumbnailField.endsWith('-video')
+            ? (() => {
+                const menuField = menuFields.find(f => {
+                  const menuId = parseFloat(currentThumbnailField.replace('menu-', '').replace('-video', ''))
+                  const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+                  return fId === menuId || String(f.id) === String(menuId)
+                })
+                return menuField?.thumbnailImageUrl || (menuField?.thumbnailVideoUrl ? getThumbnailUrl(`${menuField.thumbnailVideoUrl}.jpg`) : '')
+              })()
             : typeof currentThumbnailField === 'number'
-            ? menuFields.find(f => f.id === currentThumbnailField)?.thumbnail
-            : (currentThumbnailField === 'preview-0' || currentThumbnailField === 'preview-1' || currentThumbnailField === 'preview-2')
-            ? formData.previewThumbnails[parseInt(currentThumbnailField.split('-')[1])]
-            : currentThumbnailField === 'bookCover'
-            ? formData.bookCoverThumbnail
-            : currentThumbnailField === 'endingBookCover'
-            ? formData.endingBookCoverThumbnail
+            ? menuFields.find(f => f.id === currentThumbnailField)?.thumbnailImageUrl
+            : currentThumbnailField.startsWith('preview-') && currentThumbnailField.endsWith('-image')
+            ? formData.previewThumbnailImageUrls[parseInt(currentThumbnailField.split('-')[1])]
+            : currentThumbnailField === 'bookCover-image'
+            ? formData.bookCoverThumbnailImageUrl
+            : currentThumbnailField === 'bookCover-video'
+            ? (formData.bookCoverThumbnailImageUrl || (formData.bookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.bookCoverThumbnailVideoUrl}.jpg`) : ''))
+            : currentThumbnailField === 'endingBookCover-image'
+            ? formData.endingBookCoverThumbnailImageUrl
+            : currentThumbnailField === 'endingBookCover-video'
+            ? (formData.endingBookCoverThumbnailImageUrl || (formData.endingBookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.endingBookCoverThumbnailVideoUrl}.jpg`) : ''))
             : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('subtitle-')
             ? (() => {
                 const parts = currentThumbnailField.split('-')
                 if (parts[1] === 'first') {
-                  // 소수점이 포함된 ID를 처리하기 위해 parseFloat 사용
+                  // 소수점이 포함된 ID를 처리하기 위해 문자열 비교를 우선
                   const subtitleIdStr = parts[2]
                   const subtitleIdNum = parseFloat(subtitleIdStr)
-                  const thumbnail = firstMenuField.subtitles.find(s => {
-                    // ID를 문자열 또는 숫자로 비교 (소수점 포함 ID 대응)
-                    const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
-                    return sId === subtitleIdNum || String(s.id) === subtitleIdStr
-                  })?.thumbnail
-                  return thumbnail
+                  const isImage = currentThumbnailField.endsWith('-image')
+                  const isVideo = currentThumbnailField.endsWith('-video')
+                  const subtitle = firstMenuField.subtitles.find(s => {
+                    // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                    return String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === subtitleIdNum
+                  })
+                  if (isImage) {
+                    return subtitle?.thumbnailImageUrl
+                  } else if (isVideo) {
+                    return subtitle?.thumbnailImageUrl || (subtitle?.thumbnailVideoUrl ? getThumbnailUrl(`${subtitle.thumbnailVideoUrl}.jpg`) : '')
+                  }
+                  return subtitle?.thumbnailImageUrl || subtitle?.thumbnailVideoUrl
                 } else if (parts[1] === 'menu') {
                   // 소수점이 포함된 ID를 처리하기 위해 parseFloat 사용
                   const menuIdStr = parts[2]
@@ -3124,13 +3946,17 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   })
                   if (menuField) {
                     const subtitle = menuField.subtitles.find(s => {
-                      // ID를 문자열 또는 숫자로 비교 (소수점 포함 ID 대응)
-                      const sId = typeof s.id === 'number' ? s.id : parseFloat(String(s.id))
-                      const match = sId === subtitleIdNum || String(s.id) === subtitleIdStr
-                      return match
+                      // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                      return String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === subtitleIdNum
                     })
-                    const thumbnail = subtitle?.thumbnail
-                    return thumbnail
+                    const isImage = currentThumbnailField.endsWith('-image')
+                    const isVideo = currentThumbnailField.endsWith('-video')
+                    if (isImage) {
+                      return subtitle?.thumbnailImageUrl
+                    } else if (isVideo) {
+                      return subtitle?.thumbnailImageUrl || (subtitle?.thumbnailVideoUrl ? getThumbnailUrl(`${subtitle.thumbnailVideoUrl}.jpg`) : '')
+                    }
+                    return subtitle?.thumbnailImageUrl || subtitle?.thumbnailVideoUrl
                   }
                   return undefined
                 }
@@ -3154,11 +3980,18 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       const dmId = typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))
                       return dmId === detailMenuIdNum || String(dm.id) === detailMenuIdStr
                     })
-                    return detailMenu?.thumbnail
+                    const isImage = currentThumbnailField.endsWith('-image')
+                    const isVideo = currentThumbnailField.endsWith('-video')
+                    if (isImage) {
+                      return detailMenu?.thumbnailImageUrl
+                    } else if (isVideo) {
+                      return detailMenu?.thumbnailImageUrl || (detailMenu?.thumbnailVideoUrl ? getThumbnailUrl(`${detailMenu.thumbnailVideoUrl}.jpg`) : '')
+                    }
+                    return detailMenu?.thumbnailImageUrl || detailMenu?.thumbnailVideoUrl
                   }
                   return undefined
                 } else if (parts[2] === 'menu') {
-                  // detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId} 형식
+                  // detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId}-image 또는 detail-menu-menu-{menuId}-{subtitleId}-{detailMenuId}-video 형식
                   const menuIdStr = parts[3]
                   const menuIdNum = parseFloat(menuIdStr)
                   const subtitleIdStr = parts[4]
@@ -3179,10 +4012,110 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         const dmId = typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))
                         return dmId === detailMenuIdNum || String(dm.id) === detailMenuIdStr
                       })
-                      return detailMenu?.thumbnail
+                      const isImage = currentThumbnailField.endsWith('-image')
+                      const isVideo = currentThumbnailField.endsWith('-video')
+                      if (isImage) {
+                        return detailMenu?.thumbnailImageUrl
+                      } else if (isVideo) {
+                        return detailMenu?.thumbnailImageUrl || (detailMenu?.thumbnailVideoUrl ? getThumbnailUrl(`${detailMenu.thumbnailVideoUrl}.jpg`) : '')
+                      }
+                      return detailMenu?.thumbnailImageUrl || detailMenu?.thumbnailVideoUrl
                     }
                   }
                   return undefined
+                }
+                return undefined
+              })()
+            : undefined
+        }
+        currentVideoBaseName={
+          currentThumbnailField === 'main-video'
+            ? formData.thumbnailVideoUrl
+            : currentThumbnailField === 'firstMenu-video'
+            ? firstMenuField.thumbnailVideoUrl
+            : currentThumbnailField === 'bookCover-video'
+            ? formData.bookCoverThumbnailVideoUrl
+            : currentThumbnailField === 'endingBookCover-video'
+            ? formData.endingBookCoverThumbnailVideoUrl
+            : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('menu-') && currentThumbnailField.endsWith('-video')
+            ? menuFields.find(f => {
+                const menuId = parseFloat(currentThumbnailField.replace('menu-', '').replace('-video', ''))
+                const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+                return fId === menuId || String(f.id) === String(menuId)
+              })?.thumbnailVideoUrl
+            : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('subtitle-') && currentThumbnailField.endsWith('-video')
+            ? (() => {
+                const parts = currentThumbnailField.split('-')
+                if (parts[1] === 'first') {
+                  const subtitleIdStr = parts[2]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const subtitle = firstMenuField.subtitles.find(s => {
+                    // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                    return String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === subtitleIdNum
+                  })
+                  return subtitle?.thumbnailVideoUrl
+                } else if (parts[1] === 'menu') {
+                  const menuIdStr = parts[2]
+                  const menuIdNum = parseFloat(menuIdStr)
+                  const subtitleIdStr = parts[3]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const menuField = menuFields.find(f => {
+                    const fieldIdNum = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+                    return fieldIdNum === menuIdNum || String(f.id) === menuIdStr
+                  })
+                  if (menuField) {
+                    const subtitle = menuField.subtitles.find(s => {
+                      // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                      return String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === subtitleIdNum
+                    })
+                    return subtitle?.thumbnailVideoUrl
+                  }
+                }
+                return undefined
+              })()
+            : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('detail-menu-') && currentThumbnailField.endsWith('-video')
+            ? (() => {
+                const parts = currentThumbnailField.split('-')
+                if (parts[2] === 'first') {
+                  const subtitleIdStr = parts[3]
+                  const detailMenuIdStr = parts[4]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const detailMenuIdNum = parseFloat(detailMenuIdStr)
+                  const subtitle = firstMenuField.subtitles.find(s => {
+                    // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                    return String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === subtitleIdNum
+                  })
+                  if (subtitle) {
+                    const detailMenu = subtitle.detailMenus.find(dm => {
+                      // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                      return String(dm.id) === detailMenuIdStr || (typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))) === detailMenuIdNum
+                    })
+                    return detailMenu?.thumbnailVideoUrl
+                  }
+                } else if (parts[2] === 'menu') {
+                  const menuIdStr = parts[3]
+                  const menuIdNum = parseFloat(menuIdStr)
+                  const subtitleIdStr = parts[4]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const detailMenuIdStr = parts[5]
+                  const detailMenuIdNum = parseFloat(detailMenuIdStr)
+                  const menuField = menuFields.find(f => {
+                    const fieldIdNum = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+                    return fieldIdNum === menuIdNum || String(f.id) === menuIdStr
+                  })
+                  if (menuField) {
+                    const subtitle = menuField.subtitles.find(s => {
+                      // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                      return String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === subtitleIdNum
+                    })
+                    if (subtitle) {
+                      const detailMenu = subtitle.detailMenus.find(dm => {
+                        // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                        return String(dm.id) === detailMenuIdStr || (typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))) === detailMenuIdNum
+                      })
+                      return detailMenu?.thumbnailVideoUrl
+                    }
+                  }
                 }
                 return undefined
               })()
@@ -3466,7 +4399,7 @@ function PreviewModal({
 
   // 모든 메뉴 항목 수집
   const allMenuItems = [
-    ...(firstMenuField.value || firstMenuField.thumbnail ? [firstMenuField] : []),
+    ...(firstMenuField.value || firstMenuField.thumbnailImageUrl || firstMenuField.thumbnailVideoUrl ? [firstMenuField] : []),
     ...menuFields
   ]
 
@@ -3598,14 +4531,25 @@ function PreviewModal({
             </div>
 
             {/* 북커버 썸네일 */}
-            {formData.bookCoverThumbnail && (
-              <div className="w-full mb-10">
-                <img 
-                  src={formData.bookCoverThumbnail} 
-                  alt="북커버 썸네일"
-                  className="w-full h-auto"
-                  style={{ objectFit: 'contain', display: 'block' }}
-                />
+            {(formData.bookCoverThumbnailImageUrl || formData.bookCoverThumbnailVideoUrl) && (
+              <div className="-mx-6 mb-10">
+                <div className="w-full aspect-[9/16] bg-gray-100 overflow-hidden">
+                  {formData.bookCoverThumbnailVideoUrl && formData.bookCoverThumbnailImageUrl ? (
+                    <SupabaseVideo
+                      thumbnailImageUrl={formData.bookCoverThumbnailImageUrl}
+                      videoBaseName={formData.bookCoverThumbnailVideoUrl}
+                      className="w-full h-full"
+                      objectFit="contain"
+                    />
+                  ) : formData.bookCoverThumbnailImageUrl ? (
+                    <img
+                      src={formData.bookCoverThumbnailImageUrl}
+                      alt="북커버 썸네일"
+                      className="w-full h-full object-contain"
+                      style={{ display: 'block' }}
+                    />
+                  ) : null}
+                </div>
               </div>
             )}
 
@@ -3656,14 +4600,22 @@ function PreviewModal({
                               </div>
 
                               {/* 소메뉴 썸네일 */}
-                              {sub.thumbnail && (
+                              {(sub.thumbnailImageUrl || sub.thumbnailVideoUrl) && (
                                 <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto' }}>
-                                  <img
-                                    src={sub.thumbnail}
-                                    alt="소제목 썸네일"
-                                    className="w-full h-auto rounded-lg"
-                                    style={{ display: 'block', objectFit: 'contain' }}
-                                  />
+                                  {sub.thumbnailVideoUrl && sub.thumbnailImageUrl ? (
+                                    <SupabaseVideo
+                                      thumbnailImageUrl={sub.thumbnailImageUrl}
+                                      videoBaseName={sub.thumbnailVideoUrl}
+                                      className="w-full h-auto rounded-lg"
+                                    />
+                                  ) : sub.thumbnailImageUrl ? (
+                                    <img
+                                      src={sub.thumbnailImageUrl}
+                                      alt="소제목 썸네일"
+                                      className="w-full h-auto rounded-lg"
+                                      style={{ display: 'block', objectFit: 'contain' }}
+                                    />
+                                  ) : null}
                                 </div>
                               )}
 
@@ -3690,14 +4642,22 @@ function PreviewModal({
                                         </div>
 
                                         {/* 상세메뉴 썸네일 */}
-                                        {detailMenu.thumbnail && (
+                                        {(detailMenu.thumbnailImageUrl || detailMenu.thumbnailVideoUrl) && (
                                           <div className="flex justify-center" style={{ width: '50%', marginLeft: 'auto', marginRight: 'auto' }}>
-                                            <img
-                                              src={detailMenu.thumbnail}
-                                              alt="상세메뉴 썸네일"
-                                              className="w-full h-auto rounded-lg"
-                                              style={{ display: 'block', objectFit: 'contain' }}
-                                            />
+                                            {detailMenu.thumbnailVideoUrl && detailMenu.thumbnailImageUrl ? (
+                                              <SupabaseVideo
+                                                thumbnailImageUrl={detailMenu.thumbnailImageUrl}
+                                                videoBaseName={detailMenu.thumbnailVideoUrl}
+                                                className="w-full h-auto rounded-lg"
+                                              />
+                                            ) : detailMenu.thumbnailImageUrl ? (
+                                              <img
+                                                src={detailMenu.thumbnailImageUrl}
+                                                alt="상세메뉴 썸네일"
+                                                className="w-full h-auto rounded-lg"
+                                                style={{ display: 'block', objectFit: 'contain' }}
+                                              />
+                                            ) : null}
                                           </div>
                                         )}
 
@@ -3740,14 +4700,24 @@ function PreviewModal({
                     )}
 
                     {/* 엔딩 북커버 */}
-                    {menuIndex === allMenuItems.length - 1 && formData.endingBookCoverThumbnail && (
-                      <div className="w-full mt-4">
-                        <img 
-                          src={formData.endingBookCoverThumbnail} 
-                          alt="엔딩북커버 썸네일"
-                          className="w-full h-auto"
-                          style={{ objectFit: 'contain', display: 'block' }}
-                        />
+                    {menuIndex === allMenuItems.length - 1 && (formData.endingBookCoverThumbnailImageUrl || formData.endingBookCoverThumbnailVideoUrl) && (
+                      <div className="-mx-6 mt-6">
+                        <div className="w-full aspect-[9/16] bg-gray-100 overflow-hidden">
+                        {formData.endingBookCoverThumbnailVideoUrl && formData.endingBookCoverThumbnailImageUrl ? (
+                          <SupabaseVideo
+                            thumbnailImageUrl={formData.endingBookCoverThumbnailImageUrl}
+                            videoBaseName={formData.endingBookCoverThumbnailVideoUrl}
+                            className="w-full h-full"
+                            objectFit="contain"
+                          />
+                        ) : formData.endingBookCoverThumbnailImageUrl ? (
+                          <img 
+                            src={formData.endingBookCoverThumbnailImageUrl} 
+                            alt="엔딩북커버 썸네일"
+                            className="w-full h-full object-contain"
+                          />
+                        ) : null}
+                        </div>
                       </div>
                     )}
                   </div>

@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { getSelectedModel } from '@/lib/supabase-admin'
+import SupabaseVideo from '@/components/SupabaseVideo'
 
 interface Service {
   title: string
@@ -10,7 +11,8 @@ interface Service {
   summary?: string
   isNew?: boolean
   isFree?: boolean
-  thumbnailUrl?: string
+  thumbnailImageUrl?: string
+  thumbnailVideoUrl?: string
 }
 
 interface ServiceCardProps {
@@ -29,6 +31,9 @@ const formatPrice = (price: string): string => {
 
 export default function ServiceCard({ service }: ServiceCardProps) {
   const router = useRouter()
+  
+  // 동영상 썸네일이 있는지 확인
+  const hasVideo = !!service.thumbnailVideoUrl
 
   const handleReunionClick = async () => {
     // Supabase에서 선택된 모델 가져오기
@@ -39,10 +44,14 @@ export default function ServiceCard({ service }: ServiceCardProps) {
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('form_title', service.title)
         sessionStorage.setItem('form_model', selectedModel)
-        // 썸네일 URL도 저장하여 form 페이지에서 즉시 사용
-        if (service.thumbnailUrl) {
-          sessionStorage.setItem('form_thumbnail_url', service.thumbnailUrl)
-        }
+        // ✅ 썸네일 캐시는 "컨텐츠별(title별)"로 분리해서 저장 (다른 폼에서 섞이는 버그 방지)
+        const imageKey = `form_thumbnail_image_url:${service.title}`
+        const videoKey = `form_thumbnail_video_url:${service.title}`
+        if (service.thumbnailImageUrl) sessionStorage.setItem(imageKey, service.thumbnailImageUrl)
+        if (service.thumbnailVideoUrl) sessionStorage.setItem(videoKey, service.thumbnailVideoUrl)
+        // 레거시 키 제거 (전역 키는 다른 컨텐츠로 오염될 수 있음)
+        sessionStorage.removeItem('form_thumbnail_image_url')
+        sessionStorage.removeItem('form_thumbnail_video_url')
       }
       
       // 깔끔한 URL로 이동
@@ -53,10 +62,14 @@ export default function ServiceCard({ service }: ServiceCardProps) {
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('form_title', service.title)
         sessionStorage.setItem('form_model', 'gemini-3-flash-preview')
-        // 썸네일 URL도 저장하여 form 페이지에서 즉시 사용
-        if (service.thumbnailUrl) {
-          sessionStorage.setItem('form_thumbnail_url', service.thumbnailUrl)
-        }
+        // ✅ 썸네일 캐시는 "컨텐츠별(title별)"로 분리해서 저장 (다른 폼에서 섞이는 버그 방지)
+        const imageKey = `form_thumbnail_image_url:${service.title}`
+        const videoKey = `form_thumbnail_video_url:${service.title}`
+        if (service.thumbnailImageUrl) sessionStorage.setItem(imageKey, service.thumbnailImageUrl)
+        if (service.thumbnailVideoUrl) sessionStorage.setItem(videoKey, service.thumbnailVideoUrl)
+        // 레거시 키 제거 (전역 키는 다른 컨텐츠로 오염될 수 있음)
+        sessionStorage.removeItem('form_thumbnail_image_url')
+        sessionStorage.removeItem('form_thumbnail_video_url')
       }
       
       // 깔끔한 URL로 이동
@@ -76,9 +89,15 @@ export default function ServiceCard({ service }: ServiceCardProps) {
             className="w-14 h-14"
           />
         </div>
-        {service.thumbnailUrl ? (
+        {hasVideo && service.thumbnailImageUrl ? (
+          <SupabaseVideo
+            thumbnailImageUrl={service.thumbnailImageUrl}
+            videoBaseName={service.thumbnailVideoUrl || ''}
+            className="absolute inset-0"
+          />
+        ) : service.thumbnailImageUrl ? (
           <img 
-            src={service.thumbnailUrl} 
+            src={service.thumbnailImageUrl} 
             alt={service.title}
             className="w-full h-full object-cover"
           />

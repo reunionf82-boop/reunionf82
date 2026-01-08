@@ -24,7 +24,8 @@ export default function Home() {
         price: content.price || '',
         isNew: content.is_new || false,
         isFree: !content.price || content.price === '' || content.price === '0',
-        thumbnailUrl: content.thumbnail_url || '',
+        thumbnailImageUrl: content.thumbnail_url || '',
+        thumbnailVideoUrl: content.thumbnail_video_url || '',
       }))
       setServices(convertedServices)
     } catch (error) {
