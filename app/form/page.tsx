@@ -785,82 +785,42 @@ function FormContent() {
       const savedBodyFontSize = saved.content?.body_font_size || 11
       const savedBodyFontBold = saved.content?.body_font_bold || false
       
+      // 각 섹션별 웹폰트 적용 (관리자 폼 설정 우선, 없으면 font_face 하위호환성)
+      const menuFontFace = saved.content?.menu_font_face || saved.content?.font_face || ''
+      const subtitleFontFace = saved.content?.subtitle_font_face || saved.content?.font_face || ''
+      const detailMenuFontFace = saved.content?.detail_menu_font_face || saved.content?.font_face || ''
+      const bodyFontFace = saved.content?.body_font_face || saved.content?.font_face || ''
+
+      // 하위 호환성을 위한 전체 폰트 (font_face)
       const fontFace = saved.content?.font_face || ''
+
       const extractFontFamily = (fontFaceCss: string): string | null => {
         if (!fontFaceCss) return null
         const match = fontFaceCss.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/)
         return match ? (match[1] || match[2]?.trim()) : null
       }
+      const menuFontFamily = extractFontFamily(menuFontFace)
+      const subtitleFontFamily = extractFontFamily(subtitleFontFace)
+      const detailMenuFontFamily = extractFontFamily(detailMenuFontFace)
+      const bodyFontFamily = extractFontFamily(bodyFontFace)
       const fontFamilyName = extractFontFamily(fontFace)
 
       // result 페이지와 완전히 동일한 동적 스타일
-      const savedDynamicStyles = `
-        ${fontFace ? fontFace : ''}
-        ${fontFamilyName ? `
-        .result-title {
-          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-        }
-        .jeminai-results {
-          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-        }
-        .jeminai-results * {
-          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-        }
-        ` : ''}
-        .jeminai-results .menu-title {
-          font-size: ${savedMenuFontSize}px !important;
-          font-weight: ${savedMenuFontBold ? 'bold' : 'normal'} !important;
-          ${saved.content?.menu_color ? `color: ${saved.content.menu_color} !important;` : ''}
-        }
-        .jeminai-results .subtitle-title {
-          font-size: ${savedSubtitleFontSize}px !important;
-          font-weight: ${savedSubtitleFontBold ? 'bold' : 'normal'} !important;
-          ${saved.content?.subtitle_color ? `color: ${saved.content.subtitle_color} !important;` : ''}
-        }
-        .jeminai-results .detail-menu-title {
-          font-size: ${savedDetailMenuFontSize}px !important;
-          font-weight: ${savedDetailMenuFontBold ? 'bold' : 'normal'} !important;
-          ${saved.content?.detail_menu_color ? `color: ${saved.content.detail_menu_color} !important;` : ''}
-        }
-        .jeminai-results .subtitle-content {
-          font-size: ${savedBodyFontSize}px !important;
-          font-weight: ${savedBodyFontBold ? 'bold' : 'normal'} !important;
-          margin-bottom: 2em !important;
-          line-height: 1.8 !important;
-          ${saved.content?.body_color ? `color: ${saved.content.body_color} !important;` : ''}
-        }
-        .jeminai-results .detail-menu-content {
-          font-size: ${savedBodyFontSize}px !important;
-          font-weight: ${savedBodyFontBold ? 'bold' : 'normal'} !important;
-          line-height: 1.8 !important;
-          margin-bottom: 0 !important;
-          ${saved.content?.body_color ? `color: ${saved.content.body_color} !important;` : ''}
-        }
-        .jeminai-results .detail-menu-container {
-          margin-bottom: 2em !important;
-        }
-        .jeminai-results .detail-menu-section {
-          margin-bottom: 2em !important;
-        }
-        .jeminai-results .detail-menu-section:last-child {
-          margin-bottom: 0 !important;
-        }
+      // (주의) PDF 생성은 같은 창에서 스타일을 주입하므로, 반드시 containerId/tempContainerId로 스코핑해서 UI 폰트 오염을 막는다.
+      const fontFaceCssForPdf = `
+        ${menuFontFace ? menuFontFace : ''}
+        ${subtitleFontFace ? subtitleFontFace : ''}
+        ${detailMenuFontFace ? detailMenuFontFace : ''}
+        ${bodyFontFace ? bodyFontFace : ''}
+        ${!menuFontFace && !subtitleFontFace && !detailMenuFontFace && !bodyFontFace && fontFace ? fontFace : ''}
       `
+      const hasSectionFonts = Boolean(menuFontFamily || subtitleFontFamily || detailMenuFontFamily || bodyFontFamily)
       
-      const fontStyles = fontFamilyName ? `
+      const fontStylesFallbackAll = fontFamilyName && !hasSectionFonts ? `
         * {
           font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
         }
         body, body *, h1, h2, h3, h4, h5, h6, p, div, span {
-          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-        }
-        .jeminai-results, .jeminai-results * {
-          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-        }
-        .menu-section, .menu-section * {
-          font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
-        }
-        .menu-title, .subtitle-title, .subtitle-content {
           font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
         }
       ` : ''
@@ -879,11 +839,16 @@ function FormContent() {
       // "보기" 버튼과 완전히 동일한 스타일 적용 (명확한 스코핑으로 UI 폰트 오염 방지)
       styleElement = document.createElement('style');
       styleElement.innerHTML = `
-        ${fontFace ? fontFace : ''}
+        ${fontFaceCssForPdf}
         /* 폰트 스타일을 containerId로 스코핑하여 UI 폰트 오염 방지 */
-        ${fontFamilyName ? `#${containerId} * { font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important; }` : ''}
+        ${fontStylesFallbackAll ? `#${containerId} ${fontStylesFallbackAll.replaceAll('\n', '\n        #'+containerId+' ')}` : ''}
+        ${menuFontFamily ? `#${containerId} .menu-title { font-family: '${menuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important; }` : ''}
+        ${subtitleFontFamily ? `#${containerId} .subtitle-title { font-family: '${subtitleFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important; }` : ''}
+        ${detailMenuFontFamily ? `#${containerId} .detail-menu-title { font-family: '${detailMenuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important; }` : ''}
+        ${bodyFontFamily ? `#${containerId} .subtitle-content, #${containerId} .detail-menu-content { font-family: '${bodyFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important; }` : ''}
+        ${fontFamilyName && !hasSectionFonts ? `#${containerId} * { font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important; }` : ''}
         #${containerId} {
-          font-family: ${fontFamilyName ? `'${fontFamilyName}', ` : ''}-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+          font-family: ${bodyFontFamily ? `'${bodyFontFamily}', ` : (fontFamilyName && !hasSectionFonts ? `'${fontFamilyName}', ` : '')}-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
           max-width: 896px;
           margin: 0 auto;
           padding: 32px 16px;
@@ -928,6 +893,13 @@ function FormContent() {
           margin-bottom: 16px;
           color: #111;
         }
+        #${containerId} .detail-menu-title {
+          font-size: 16px;
+          font-weight: 600;
+          margin-top: 16px;
+          margin-bottom: 8px;
+          color: #111;
+        }
         #${containerId} .menu-thumbnail {
           width: 100%;
           height: auto;
@@ -965,6 +937,11 @@ function FormContent() {
           color: #333;
         }
         #${containerId} .subtitle-content {
+          color: #555;
+          line-height: 1.8;
+          white-space: pre-line;
+        }
+        #${containerId} .detail-menu-content {
           color: #555;
           line-height: 1.8;
           white-space: pre-line;
@@ -1013,8 +990,11 @@ function FormContent() {
           object-fit: contain;
         }
         #${containerId} .menu-title { font-size: ${savedMenuFontSize}px !important; }
-        #${containerId} .subtitle-title { font-size: ${savedSubtitleFontSize}px !important; }
-        #${containerId} .subtitle-content { font-size: ${savedBodyFontSize}px !important; }
+        #${containerId} .menu-title { font-weight: ${savedMenuFontBold ? 'bold' : 'normal'} !important; ${saved.content?.menu_color ? `color: ${saved.content.menu_color} !important;` : ''} }
+        #${containerId} .subtitle-title { font-size: ${savedSubtitleFontSize}px !important; font-weight: ${savedSubtitleFontBold ? 'bold' : 'normal'} !important; ${saved.content?.subtitle_color ? `color: ${saved.content.subtitle_color} !important;` : ''} }
+        #${containerId} .detail-menu-title { font-size: ${savedDetailMenuFontSize}px !important; font-weight: ${savedDetailMenuFontBold ? 'bold' : 'normal'} !important; ${saved.content?.detail_menu_color ? `color: ${saved.content.detail_menu_color} !important;` : ''} }
+        #${containerId} .subtitle-content { font-size: ${savedBodyFontSize}px !important; font-weight: ${savedBodyFontBold ? 'bold' : 'normal'} !important; ${saved.content?.body_color ? `color: ${saved.content.body_color} !important;` : ''} }
+        #${containerId} .detail-menu-content { font-size: ${savedBodyFontSize}px !important; font-weight: ${savedBodyFontBold ? 'bold' : 'normal'} !important; ${saved.content?.body_color ? `color: ${saved.content.body_color} !important;` : ''} }
       `;
       document.head.appendChild(styleElement);
       
@@ -1094,19 +1074,22 @@ function FormContent() {
       
       updateProgress(30);
       
-      // 폰트 로딩 대기
-      if (fontFamilyName) {
+      // 폰트 로딩 대기 (섹션별 폰트 포함)
+      const fontFamiliesToWait = Array.from(new Set([menuFontFamily, subtitleFontFamily, detailMenuFontFamily, bodyFontFamily, fontFamilyName].filter(Boolean))) as string[]
+      if (fontFamiliesToWait.length > 0) {
         try {
           await document.fonts.ready;
-          let fontLoaded = false;
-          for (let i = 0; i < 50; i++) {
-            fontLoaded = document.fonts.check(`12px "${fontFamilyName}"`) ||
-                        document.fonts.check(`16px "${fontFamilyName}"`) ||
-                        document.fonts.check(`24px "${fontFamilyName}"`);
-            if (fontLoaded) break;
+          let allLoaded = false;
+          for (let i = 0; i < 60; i++) {
+            allLoaded = fontFamiliesToWait.every((fam) => (
+              document.fonts.check(`12px "${fam}"`) ||
+              document.fonts.check(`16px "${fam}"`) ||
+              document.fonts.check(`24px "${fam}"`)
+            ))
+            if (allLoaded) break
             await new Promise(resolve => setTimeout(resolve, 100));
           }
-          if (!fontLoaded) {
+          if (!allLoaded) {
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
         } catch (e) {
@@ -1188,16 +1171,24 @@ function FormContent() {
       tempContainer.style.pointerEvents = 'none';
       
       // 폰트 스타일 적용
-      if (fontFamilyName) {
-        tempContainer.style.fontFamily = `'${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`;
+      {
+        const baseFontFamily = bodyFontFamily || (fontFamilyName && !hasSectionFonts ? fontFamilyName : '') || ''
+        if (baseFontFamily) {
+          tempContainer.style.fontFamily = `'${baseFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif`;
+        }
         const scopedStyle = document.createElement('style');
         scopedStyle.innerHTML = `
+          ${fontFaceCssForPdf}
           #${tempContainerId} * {
-            font-family: '${fontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+            ${baseFontFamily ? `font-family: '${baseFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;` : ''}
             text-rendering: optimizeLegibility;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
           }
+          ${menuFontFamily ? `#${tempContainerId} .menu-title { font-family: '${menuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important; }` : ''}
+          ${subtitleFontFamily ? `#${tempContainerId} .subtitle-title { font-family: '${subtitleFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important; }` : ''}
+          ${detailMenuFontFamily ? `#${tempContainerId} .detail-menu-title { font-family: '${detailMenuFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important; }` : ''}
+          ${bodyFontFamily ? `#${tempContainerId} .subtitle-content, #${tempContainerId} .detail-menu-content { font-family: '${bodyFontFamily}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important; }` : ''}
           #${tempContainerId} {
             background: #f9fafb !important; /* 보기 화면과 동일한 배경색 */
           }
@@ -1247,14 +1238,31 @@ function FormContent() {
           }
           #${tempContainerId} .subtitle-title {
             font-size: ${savedSubtitleFontSize}px !important;
-            font-weight: ${savedSubtitleFontBold ? 'bold' : '600'} !important;
+            font-weight: ${savedSubtitleFontBold ? 'bold' : 'normal'} !important;
             margin-bottom: 12px;
             color: ${saved.content?.subtitle_color ? saved.content.subtitle_color : '#333'} !important;
             text-shadow: none !important;
             -webkit-text-stroke: 0 !important;
             -webkit-text-fill-color: ${saved.content?.subtitle_color ? saved.content.subtitle_color : '#333'} !important;
           }
+          #${tempContainerId} .detail-menu-title {
+            font-size: ${savedDetailMenuFontSize}px !important;
+            font-weight: ${savedDetailMenuFontBold ? 'bold' : 'normal'} !important;
+            margin-top: 16px;
+            margin-bottom: 8px;
+            color: ${saved.content?.detail_menu_color ? saved.content.detail_menu_color : '#111'} !important;
+            text-shadow: none !important;
+            -webkit-text-stroke: 0 !important;
+            -webkit-text-fill-color: ${saved.content?.detail_menu_color ? saved.content.detail_menu_color : '#111'} !important;
+          }
           #${tempContainerId} .subtitle-content {
+            font-size: ${savedBodyFontSize}px !important;
+            font-weight: ${savedBodyFontBold ? 'bold' : 'normal'} !important;
+            color: ${saved.content?.body_color ? saved.content.body_color : '#555'} !important;
+            line-height: 1.8;
+            white-space: pre-line;
+          }
+          #${tempContainerId} .detail-menu-content {
             font-size: ${savedBodyFontSize}px !important;
             font-weight: ${savedBodyFontBold ? 'bold' : 'normal'} !important;
             color: ${saved.content?.body_color ? saved.content.body_color : '#555'} !important;
