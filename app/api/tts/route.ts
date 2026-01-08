@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { TypecastClient } from '@neosapience/typecast-js'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const getTypecastClient = () => {
+  const apiKey = process.env.TYPECAST_API_KEY
+  if (!apiKey) return null
+  return new TypecastClient({ apiKey })
+}
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    let { text, speaker } = body
+    let { text, speaker, provider, voiceId } = body
 
 
     if (!text) {
@@ -12,6 +22,18 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    // provider 판정 (강화)
+    // - "네이버로 설정했는데도 Typecast로 새는" 문제 방지:
+    //   voiceId(tc_...)로 provider를 추론하지 않는다.
+    // - Typecast는 오직 provider가 명시적으로 'typecast'일 때만 사용한다.
+    const providerRaw = typeof provider === 'string' ? provider.trim().toLowerCase() : ''
+    const voiceIdRaw = typeof voiceId === 'string' ? voiceId.trim() : ''
+    const finalProvider: 'naver' | 'typecast' =
+      providerRaw === 'typecast' ? 'typecast' : 'naver'
+
+    const defaultTypecastVoiceId = 'tc_5ecbbc6099979700087711d8'
+    const finalVoiceId = voiceIdRaw || defaultTypecastVoiceId
 
     // 화자 설정 (기본값: nara)
     const selectedSpeaker = speaker || 'nara'
@@ -98,6 +120,105 @@ export async function POST(req: NextRequest) {
       text = finalText.trim()
     }
 
+    // Typecast TTS (공식 SDK 사용)
+    if (finalProvider === 'typecast') {
+      const client = getTypecastClient()
+      if (!client) {
+        return NextResponse.json(
+          {
+            error: 'Typecast API 키(TYPECAST_API_KEY)가 설정되지 않았습니다.',
+            ...(process.env.NODE_ENV !== 'production'
+              ? { _debug: { provider: finalProvider, voiceId: finalVoiceId, providerRaw } }
+              : {}),
+          },
+          { status: 500 }
+        )
+      }
+
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+      try {
+        // 429 완화: 짧은 백오프 재시도
+        let lastErr: any = null
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const audio = await client.textToSpeech({
+              text,
+              model: 'ssfm-v21',
+              voice_id: finalVoiceId,
+              language: 'kor',
+              output: {
+                volume: 100,
+                audio_pitch: 0,
+                audio_tempo: 1,
+                audio_format: 'mp3'
+              }
+            })
+
+            const format = (audio as any)?.format || 'mp3'
+            const mime =
+              format === 'wav' ? 'audio/wav' :
+              format === 'mp3' ? 'audio/mpeg' :
+              'application/octet-stream'
+
+            const audioData = (audio as any)?.audioData
+            if (!audioData) {
+              return NextResponse.json(
+                { error: 'Typecast 응답에 audioData가 없습니다.' },
+                { status: 500 }
+              )
+            }
+
+            const buffer = audioData instanceof ArrayBuffer
+              ? Buffer.from(new Uint8Array(audioData))
+              : Buffer.isBuffer(audioData)
+                ? audioData
+                : Buffer.from(audioData)
+
+            return new NextResponse(buffer, {
+              headers: {
+                'Content-Type': mime,
+                'Content-Disposition': `inline; filename="speech.${format}"`,
+                'Cache-Control': 'no-store',
+                'X-TTS-Provider': finalProvider,
+                'X-TTS-VoiceId': finalVoiceId,
+              },
+            })
+          } catch (err: any) {
+            lastErr = err
+            const statusCode = err?.statusCode || err?.status
+            if (statusCode === 429 && attempt < 2) {
+              await sleep(500 * Math.pow(2, attempt))
+              continue
+            }
+            throw err
+          }
+        }
+        throw lastErr
+      } catch (e: any) {
+        // SDK 에러 메시지 최대한 그대로 전달
+        const msg = e?.message || 'Typecast 음성 변환에 실패했습니다.'
+        const status = e?.statusCode || e?.status || 500
+        return NextResponse.json(
+          {
+            error: msg,
+            ...(process.env.NODE_ENV !== 'production'
+              ? { _debug: { provider: finalProvider, voiceId: finalVoiceId, providerRaw } }
+              : {}),
+          },
+          {
+            status,
+            headers: {
+              'Cache-Control': 'no-store',
+              'X-TTS-Provider': finalProvider,
+              'X-TTS-VoiceId': finalVoiceId,
+            },
+          }
+        )
+      }
+    }
+
+    // Naver Clova Voice (기존)
     // 환경 변수에서 네이버 클라우드 플랫폼 인증 정보 가져오기
     const clientId = process.env.NAVER_CLOVA_CLIENT_ID
     const clientSecret = process.env.NAVER_CLOVA_CLIENT_SECRET
@@ -186,12 +307,22 @@ export async function POST(req: NextRequest) {
       headers: {
         'Content-Type': 'audio/mpeg',
         'Content-Disposition': 'inline; filename="speech.mp3"',
+        'Cache-Control': 'no-store',
+        'X-TTS-Provider': finalProvider,
       },
     })
   } catch (error: any) {
     return NextResponse.json(
-      { error: error?.message || '음성 변환 중 오류가 발생했습니다.' },
-      { status: 500 }
+      {
+        error: error?.message || '음성 변환 중 오류가 발생했습니다.',
+        ...(process.env.NODE_ENV !== 'production'
+          ? { _debug: { provider: 'unknown' } }
+          : {}),
+      },
+      {
+        status: 500,
+        headers: { 'Cache-Control': 'no-store' },
+      }
     )
   }
 }

@@ -16,6 +16,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const contentId = searchParams.get('id')
   const duplicateId = searchParams.get('duplicate') // 복제할 컨텐츠 ID
   const speakerParam = searchParams.get('speaker') // URL에서 화자 파라미터 가져오기
+  const ttsProviderParam = searchParams.get('ttsProvider') // URL에서 TTS 제공자 파라미터
+  const typecastVoiceIdParam = searchParams.get('typecastVoiceId') // URL에서 Typecast voice id 파라미터
   
   const [formData, setFormData] = useState({
     title: '',
@@ -50,6 +52,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     detailMenuColor: '', // 상세메뉴 컬러
     bodyColor: '', // 본문 컬러
     ttsSpeaker: speakerParam || 'nara', // URL 파라미터 또는 기본값: nara
+    ttsProvider: ttsProviderParam === 'typecast' ? 'typecast' : 'naver', // 기본: naver
+    typecastVoiceId: typecastVoiceIdParam || 'tc_5ecbbc6099979700087711d8',
     previewThumbnailImageUrls: ['', '', ''], // 재회상품 미리보기 이미지 썸네일 3개
     bookCoverThumbnailImageUrl: '', // 북커버 이미지 썸네일
     bookCoverThumbnailVideoUrl: '', // 북커버 동영상 썸네일 (WebM 파일명, 확장자 제외)
@@ -382,6 +386,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         })),
         is_new: formData.showNew,
         tts_speaker: formData.ttsSpeaker || 'nara',
+        tts_provider: formData.ttsProvider === 'typecast' ? 'typecast' : 'naver',
+        typecast_voice_id: (formData.typecastVoiceId || '').trim(),
         preview_thumbnails: formData.previewThumbnailImageUrls || ['', '', ''],
         book_cover_thumbnail: formData.bookCoverThumbnailImageUrl || '',
         book_cover_thumbnail_video: formData.bookCoverThumbnailVideoUrl || '',
@@ -442,6 +448,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_items: initialData.menu_items || [],
         is_new: initialData.is_new || false,
         tts_speaker: initialData.tts_speaker || 'nara',
+        tts_provider: (initialData.tts_provider === 'typecast') ? 'typecast' : 'naver',
+        typecast_voice_id: String(initialData.typecast_voice_id || '').trim(),
         preview_thumbnails: normalizePreviewThumbnails(initialData.preview_thumbnails),
         book_cover_thumbnail: initialData.book_cover_thumbnail || '',
         book_cover_thumbnail_video: initialData.book_cover_thumbnail_video || '',
@@ -544,6 +552,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         detailMenuColor: data.detail_menu_color || '',
         bodyColor: data.body_color || '',
         ttsSpeaker: data.tts_speaker || 'nara',
+        ttsProvider: data.tts_provider === 'typecast' ? 'typecast' : (ttsProviderParam === 'typecast' ? 'typecast' : 'naver'),
+        typecastVoiceId: (data.typecast_voice_id && String(data.typecast_voice_id).trim() !== '')
+          ? String(data.typecast_voice_id).trim()
+          : (typecastVoiceIdParam || 'tc_5ecbbc6099979700087711d8'),
         previewThumbnailImageUrls: (() => {
           // 기존 preview_thumbnails를 이미지 URL로 사용 (하위 호환성)
           let thumbnails = data.preview_thumbnails || []
@@ -770,6 +782,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         detailMenuColor: data.detail_menu_color || '',
         bodyColor: data.body_color || '',
         ttsSpeaker: data.tts_speaker || 'nara',
+        ttsProvider: data.tts_provider === 'typecast' ? 'typecast' : (ttsProviderParam === 'typecast' ? 'typecast' : 'naver'),
+        typecastVoiceId: (data.typecast_voice_id && String(data.typecast_voice_id).trim() !== '')
+          ? String(data.typecast_voice_id).trim()
+          : (typecastVoiceIdParam || 'tc_5ecbbc6099979700087711d8'),
         previewThumbnailImageUrls: (() => {
           // 기존 preview_thumbnails를 이미지 URL로 사용 (하위 호환성)
           let thumbnails = data.preview_thumbnails || []
@@ -1049,6 +1065,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         })),
         is_new: formData.showNew,
         tts_speaker: formData.ttsSpeaker || 'nara',
+        tts_provider: formData.ttsProvider === 'typecast' ? 'typecast' : 'naver',
+        typecast_voice_id: (formData.typecastVoiceId || '').trim(),
         preview_thumbnails: formData.previewThumbnailImageUrls || ['', '', ''],
         book_cover_thumbnail: formData.bookCoverThumbnailImageUrl || '',
         book_cover_thumbnail_video: formData.bookCoverThumbnailVideoUrl || '',

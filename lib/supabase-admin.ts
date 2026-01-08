@@ -79,6 +79,8 @@ export interface ContentData {
   }>
   is_new?: boolean
   tts_speaker?: string // TTS 화자 (nara, jinho, mijin, nhajun, ndain)
+  tts_provider?: 'naver' | 'typecast' // TTS 제공자
+  typecast_voice_id?: string // Typecast voice id (tc_...)
   preview_thumbnails?: string[] // 재회상품 미리보기 썸네일 배열 (최대 3개)
   preview_thumbnails_video?: string[] // 재회상품 미리보기 동영상 썸네일 배열 (WebM 파일명, 확장자 제외)
   book_cover_thumbnail?: string // 북커버 이미지 썸네일 (첫 번째 대제목 전, 9:16 비율)

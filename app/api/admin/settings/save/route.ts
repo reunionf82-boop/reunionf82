@@ -16,12 +16,12 @@ export async function POST(req: NextRequest) {
     
     const supabase = getAdminSupabaseClient()
     const body = await req.json()
-    const { model, speaker, fortune_view_mode, use_sequential_fortune } = body
+    const { model, speaker, fortune_view_mode, use_sequential_fortune, tts_provider, typecast_voice_id } = body
 
     // 기존 레코드 조회
     const { data: existing, error: existingError } = await supabase
       .from('app_settings')
-      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune')
+      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id')
       .eq('id', 1)
       .maybeSingle()
 
@@ -36,6 +36,8 @@ export async function POST(req: NextRequest) {
       selected_speaker?: string
       fortune_view_mode?: string
       use_sequential_fortune?: boolean
+      selected_tts_provider?: string
+      selected_typecast_voice_id?: string
     } = {
       updated_at: new Date().toISOString()
     }
@@ -80,6 +82,24 @@ export async function POST(req: NextRequest) {
       updateData.use_sequential_fortune = false
     }
 
+    // tts_provider 업데이트 (naver|typecast)
+    if (tts_provider !== undefined && tts_provider !== null) {
+      updateData.selected_tts_provider = String(tts_provider).trim() === 'typecast' ? 'typecast' : 'naver'
+    } else if (existing) {
+      updateData.selected_tts_provider = (existing as any).selected_tts_provider || 'naver'
+    } else {
+      updateData.selected_tts_provider = 'naver'
+    }
+
+    // typecast_voice_id 업데이트 (빈값 허용)
+    if (typecast_voice_id !== undefined && typecast_voice_id !== null) {
+      updateData.selected_typecast_voice_id = String(typecast_voice_id).trim()
+    } else if (existing) {
+      updateData.selected_typecast_voice_id = (existing as any).selected_typecast_voice_id || ''
+    } else {
+      updateData.selected_typecast_voice_id = ''
+    }
+
     let savedData: any = null
 
     if (existing) {
@@ -88,7 +108,7 @@ export async function POST(req: NextRequest) {
         .from('app_settings')
         .update(updateData)
         .eq('id', 1)
-        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune')
+        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id')
       
       if (updateError) {
         throw updateError
@@ -107,7 +127,7 @@ export async function POST(req: NextRequest) {
           id: 1,
           ...updateData
         })
-        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune')
+        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id')
       
       if (insertError) {
         throw insertError
@@ -125,7 +145,9 @@ export async function POST(req: NextRequest) {
       model: savedData.selected_model || updateData.selected_model,
       speaker: savedData.selected_speaker || updateData.selected_speaker,
       fortune_view_mode: (savedData as any).fortune_view_mode || updateData.fortune_view_mode,
-      use_sequential_fortune: (savedData as any).use_sequential_fortune ?? updateData.use_sequential_fortune ?? false
+      use_sequential_fortune: (savedData as any).use_sequential_fortune ?? updateData.use_sequential_fortune ?? false,
+      tts_provider: (savedData as any).selected_tts_provider || updateData.selected_tts_provider || 'naver',
+      typecast_voice_id: (savedData as any).selected_typecast_voice_id || updateData.selected_typecast_voice_id || '',
     })
   } catch (error: any) {
     return NextResponse.json(

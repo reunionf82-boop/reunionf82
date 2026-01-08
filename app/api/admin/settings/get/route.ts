@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     // 직접 모든 필드를 조회하여 실제 DB 값을 확인
     const { data, error } = await supabase
       .from('app_settings')
-      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, updated_at')
+      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, updated_at')
       .eq('id', 1)
       .maybeSingle() // 레코드가 없어도 에러가 아닌 null 반환
     
@@ -27,7 +27,9 @@ export async function GET(req: NextRequest) {
       // 에러 발생 시 기본값 반환
       return NextResponse.json({
         model: 'gemini-3-flash-preview',
-        speaker: 'nara'
+        speaker: 'nara',
+        tts_provider: 'typecast',
+        typecast_voice_id: 'tc_5ecbbc6099979700087711d8'
       }, {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -41,7 +43,9 @@ export async function GET(req: NextRequest) {
     if (!data) {
       return NextResponse.json({
         model: 'gemini-3-flash-preview',
-        speaker: 'nara'
+        speaker: 'nara',
+        tts_provider: 'typecast',
+        typecast_voice_id: 'tc_5ecbbc6099979700087711d8'
       }, {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -56,6 +60,8 @@ export async function GET(req: NextRequest) {
     const speakerValue = data.selected_speaker
     const fortuneModeValue = (data as any).fortune_view_mode
     const useSequentialFortuneValue = (data as any).use_sequential_fortune
+    const ttsProviderValue = (data as any).selected_tts_provider
+    const typecastVoiceIdValue = (data as any).selected_typecast_voice_id
     
     const finalModel = (modelValue != null && String(modelValue).trim() !== '') 
       ? String(modelValue).trim() 
@@ -73,11 +79,18 @@ export async function GET(req: NextRequest) {
       ? Boolean(useSequentialFortuneValue)
       : false
 
+    const finalTtsProvider = (ttsProviderValue != null && String(ttsProviderValue).trim() === 'typecast') ? 'typecast' : 'naver'
+    const finalTypecastVoiceId = (typecastVoiceIdValue != null && String(typecastVoiceIdValue).trim() !== '')
+      ? String(typecastVoiceIdValue).trim()
+      : 'tc_5ecbbc6099979700087711d8'
+
     return NextResponse.json({
       model: finalModel,
       speaker: finalSpeaker,
       fortune_view_mode: finalFortuneMode,
-      use_sequential_fortune: finalUseSequentialFortune
+      use_sequential_fortune: finalUseSequentialFortune,
+      tts_provider: finalTtsProvider,
+      typecast_voice_id: finalTypecastVoiceId,
     }, {
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',

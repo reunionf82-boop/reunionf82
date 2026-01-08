@@ -513,8 +513,36 @@ function FormContent() {
         return
       }
 
-      // 저장된 컨텐츠에서 화자 정보 가져오기 (기본값: nara)
-      const speaker = savedResult.content?.tts_speaker || 'nara'
+      // 저장된 컨텐츠에서 TTS 설정 가져오기
+      // 기본은 app_settings(=관리자 선택)로 결정하고, 컨텐츠가 "명시적으로 타입캐스트"를 가진 경우에만 override
+      let speaker = savedResult.content?.tts_speaker || 'nara'
+      // 안전한 기본값: 네이버 (설정 조회 실패 시에도 Typecast 결제 오류로 새지 않게)
+      let ttsProvider: 'naver' | 'typecast' = 'naver'
+      let typecastVoiceId = 'tc_5ecbbc6099979700087711d8'
+
+      // app_settings 기본값(공개 설정 API)도 반영
+      try {
+        const ttsResp = await fetch('/api/settings/tts', { cache: 'no-store' })
+        if (ttsResp.ok) {
+          const ttsJson = await ttsResp.json()
+          ttsProvider = ttsJson?.tts_provider === 'naver' ? 'naver' : 'typecast'
+          typecastVoiceId = (typeof ttsJson?.typecast_voice_id === 'string' && ttsJson.typecast_voice_id.trim() !== '')
+            ? ttsJson.typecast_voice_id.trim()
+            : typecastVoiceId
+        }
+      } catch (e) {
+      }
+
+      // 컨텐츠에 typecast_voice_id가 있으면 타입캐스트로 강제(명시 override)
+      const contentVoiceId = (savedResult.content?.typecast_voice_id && String(savedResult.content.typecast_voice_id).trim() !== '')
+        ? String(savedResult.content.typecast_voice_id).trim()
+        : ''
+      if (contentVoiceId) {
+        typecastVoiceId = contentVoiceId
+        ttsProvider = 'typecast'
+      } else if (savedResult.content?.tts_provider === 'typecast') {
+        ttsProvider = 'typecast'
+      }
 
       // 텍스트를 2000자 단위로 분할
       const maxLength = 2000
@@ -524,13 +552,13 @@ function FormContent() {
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
 
-        // TTS API 호출 (화자 정보 포함)
+        // TTS API 호출 (provider/voiceId 포함)
         const response = await fetch('/api/tts', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ text: chunk, speaker }),
+          body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
         })
 
         if (!response.ok) {
@@ -5626,8 +5654,25 @@ function FormContent() {
                                             return;
                                           }
                                           
-                                          // 화자 정보 가져오기 (result 페이지와 동일한 로직)
+                                          // TTS 설정 가져오기 (result 페이지와 동일한 로직)
                                           let speaker = window.savedContentSpeaker || 'nara';
+                                          // undefined/null이면 네이버로 (실제 전역 설정은 /api/settings/tts로 덮어씀)
+                                          let ttsProvider = (window.savedContentTtsProvider === 'typecast') ? 'typecast' : 'naver';
+                                          let typecastVoiceId = window.savedContentTypecastVoiceId || 'tc_5ecbbc6099979700087711d8';
+                                          
+                                          // 관리자 기본값(app_settings)도 반영
+                                          try {
+                                            const ttsResp = await fetch('/api/settings/tts', { cache: 'no-store' });
+                                            if (ttsResp.ok) {
+                                              const ttsJson = await ttsResp.json();
+                                              if (ttsJson && ttsJson.tts_provider) {
+                                                ttsProvider = (ttsJson.tts_provider === 'naver') ? 'naver' : 'typecast';
+                                              }
+                                              if (ttsJson && ttsJson.typecast_voice_id) {
+                                                typecastVoiceId = String(ttsJson.typecast_voice_id || '').trim() || typecastVoiceId;
+                                              }
+                                            }
+                                          } catch (e) {}
                                           
                                           // content.id가 있으면 Supabase에서 최신 화자 정보 조회
                                           if (window.savedContentId) {
@@ -5639,6 +5684,20 @@ function FormContent() {
                                                 if (data.tts_speaker) {
                                                   speaker = data.tts_speaker;
                                                   window.savedContentSpeaker = speaker; // 전역 변수 업데이트
+                                                }
+                                                // 컨텐츠는 타입캐스트를 "명시한 경우에만" 전역 설정을 override
+                                                if (data.tts_provider === 'typecast') {
+                                                  ttsProvider = 'typecast';
+                                                  window.savedContentTtsProvider = ttsProvider;
+                                                }
+                                                if (data.typecast_voice_id) {
+                                                  const vc = String(data.typecast_voice_id || '').trim();
+                                                  if (vc) {
+                                                    typecastVoiceId = vc;
+                                                    window.savedContentTypecastVoiceId = typecastVoiceId;
+                                                    ttsProvider = 'typecast';
+                                                    window.savedContentTtsProvider = ttsProvider;
+                                                  }
                                                 }
                                               }
                                             } catch (error) {
@@ -5670,7 +5729,7 @@ function FormContent() {
                                                 headers: {
                                                   'Content-Type': 'application/json',
                                                 },
-                                                body: JSON.stringify({ text: chunk, speaker }),
+                                                body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
                                               });
 
                                               // 응답 받은 후에도 shouldStop 재확인
@@ -5768,7 +5827,7 @@ function FormContent() {
                                                 headers: {
                                                   'Content-Type': 'application/json',
                                                 },
-                                                body: JSON.stringify({ text: chunk, speaker }),
+                                                body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
                                               });
 
                                               if (!response.ok) {

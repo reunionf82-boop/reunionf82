@@ -2240,14 +2240,32 @@ ${fontFace ? fontFace : ''}
         return
       }
 
-      // 컨텐츠에서 화자 정보 가져오기 (app_settings의 선택된 화자 우선 사용)
-      let speaker = 'nara' // 기본값
+      // 컨텐츠에서 TTS 설정 가져오기
+      // - provider/voiceId: 기본은 타입캐스트(요청하신 기본 voice id)
+      // - speaker: 네이버 TTS일 때만 사용
+      // 안전한 기본값: 네이버 (설정 조회 실패 시에도 Typecast 결제 오류로 새지 않게)
+      let ttsProvider: 'naver' | 'typecast' = 'naver'
+      let typecastVoiceId = 'tc_5ecbbc6099979700087711d8'
+      let speaker = 'nara' // 기본값 (naver)
       
       // 1. 먼저 app_settings에서 선택된 화자 확인
       try {
         const selectedSpeaker = await getSelectedSpeaker()
         speaker = selectedSpeaker
       } catch (error) {
+      }
+
+      // 1-1. app_settings의 TTS provider/voice id (공개 설정 API)
+      try {
+        const ttsResp = await fetch('/api/settings/tts', { cache: 'no-store' })
+        if (ttsResp.ok) {
+          const ttsJson = await ttsResp.json()
+          ttsProvider = ttsJson?.tts_provider === 'naver' ? 'naver' : 'typecast'
+          typecastVoiceId = (typeof ttsJson?.typecast_voice_id === 'string' && ttsJson.typecast_voice_id.trim() !== '')
+            ? ttsJson.typecast_voice_id.trim()
+            : typecastVoiceId
+        }
+      } catch (e) {
       }
       
       // 2. content.id가 있으면 Supabase에서 컨텐츠의 tts_speaker도 확인
@@ -2260,11 +2278,24 @@ ${fontFace ? fontFace : ''}
             speaker = freshContent.tts_speaker
           } else {
           }
+
+          // 컨텐츠별 provider/voice id는 "명시적으로 타입캐스트가 설정된 경우에만" override
+          // (contents.tts_provider 기본값이 naver이면, 전역 설정(app_settings)을 덮어쓰는 문제가 생김)
+          if ((freshContent as any)?.tts_provider === 'typecast') {
+            ttsProvider = 'typecast'
+          }
+          const vc = String((freshContent as any)?.typecast_voice_id || '').trim()
+          if (vc) {
+            typecastVoiceId = vc
+            ttsProvider = 'typecast'
+          }
           
           // content 객체 업데이트
           if (freshContent?.tts_speaker) {
             content.tts_speaker = freshContent.tts_speaker
           }
+          ;(content as any).tts_provider = (freshContent as any)?.tts_provider
+          ;(content as any).typecast_voice_id = (freshContent as any)?.typecast_voice_id
         } catch (error) {
         }
       } else {
@@ -2284,13 +2315,13 @@ ${fontFace ? fontFace : ''}
         try {
           const chunk = chunks[chunkIndex]
 
-          // TTS API 호출 (화자 정보 포함)
+          // TTS API 호출 (provider/voiceId 포함)
           const response = await fetch('/api/tts', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ text: chunk, speaker }),
+            body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
           })
 
           if (!response.ok) {
@@ -2359,7 +2390,7 @@ ${fontFace ? fontFace : ''}
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ text: chunk, speaker }),
+            body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
           })
 
           if (!response.ok) {
@@ -2474,14 +2505,30 @@ ${fontFace ? fontFace : ''}
         return
       }
 
-      // 저장된 컨텐츠에서 화자 정보 가져오기 (app_settings의 선택된 화자 우선 사용)
-      let speaker = 'nara' // 기본값
+      // 저장된 컨텐츠에서 TTS 설정 가져오기
+      // 안전한 기본값: 네이버 (설정 조회 실패 시에도 Typecast 결제 오류로 새지 않게)
+      let ttsProvider: 'naver' | 'typecast' = 'naver'
+      let typecastVoiceId = 'tc_5ecbbc6099979700087711d8'
+      let speaker = 'nara' // 기본값 (naver)
       
       // 1. 먼저 app_settings에서 선택된 화자 확인
       try {
         const selectedSpeaker = await getSelectedSpeaker()
         speaker = selectedSpeaker
       } catch (error) {
+      }
+
+      // 1-1. app_settings의 TTS provider/voice id
+      try {
+        const ttsResp = await fetch('/api/settings/tts', { cache: 'no-store' })
+        if (ttsResp.ok) {
+          const ttsJson = await ttsResp.json()
+          ttsProvider = ttsJson?.tts_provider === 'naver' ? 'naver' : 'typecast'
+          typecastVoiceId = (typeof ttsJson?.typecast_voice_id === 'string' && ttsJson.typecast_voice_id.trim() !== '')
+            ? ttsJson.typecast_voice_id.trim()
+            : typecastVoiceId
+        }
+      } catch (e) {
       }
       
       // 2. content.id가 있으면 Supabase에서 컨텐츠의 tts_speaker도 확인
@@ -2498,6 +2545,20 @@ ${fontFace ? fontFace : ''}
           // savedResult.content 객체 업데이트
           if (freshContent?.tts_speaker && savedResult.content) {
             savedResult.content.tts_speaker = freshContent.tts_speaker
+          }
+
+          // 컨텐츠별 provider/voice id는 "명시적으로 타입캐스트가 설정된 경우에만" override
+          if ((freshContent as any)?.tts_provider === 'typecast') {
+            ttsProvider = 'typecast'
+          }
+          const vc = String((freshContent as any)?.typecast_voice_id || '').trim()
+          if (vc) {
+            typecastVoiceId = vc
+            ttsProvider = 'typecast'
+          }
+          if (savedResult.content) {
+            ;(savedResult.content as any).tts_provider = (freshContent as any)?.tts_provider
+            ;(savedResult.content as any).typecast_voice_id = (freshContent as any)?.typecast_voice_id
           }
         } catch (error) {
         }
@@ -2518,13 +2579,13 @@ ${fontFace ? fontFace : ''}
         try {
           const chunk = chunks[chunkIndex]
 
-          // TTS API 호출 (화자 정보 포함)
+          // TTS API 호출 (provider/voiceId 포함)
           const response = await fetch('/api/tts', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ text: chunk, speaker }),
+            body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
           })
 
           if (!response.ok) {
@@ -2585,7 +2646,7 @@ ${fontFace ? fontFace : ''}
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ text: chunk, speaker }),
+            body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
           })
 
           if (!response.ok) {
@@ -3229,6 +3290,9 @@ ${fontFace ? fontFace : ''}
                 
                 window.savedContentSpeaker = ${contentObj?.tts_speaker ? `'${contentObj.tts_speaker.replace(/'/g, "\\'")}'` : "'nara'"};
                 window.savedContentId = ${contentObj?.id ? contentObj.id : 'null'};
+                // 안전한 기본값: 네이버 (전역 설정은 아래에서 /api/settings/tts로 즉시 반영)
+                window.savedContentTtsProvider = ${contentObj?.tts_provider === 'typecast' ? "'typecast'" : (contentObj?.tts_provider === 'naver' ? "'naver'" : "'naver'")};
+                window.savedContentTypecastVoiceId = ${contentObj?.typecast_voice_id ? `'${String(contentObj.typecast_voice_id).replace(/'/g, "\\'")}'` : "'tc_5ecbbc6099979700087711d8'"};
                 
                 // content.id가 있으면 Supabase에서 최신 화자 정보 조회
                 if (window.savedContentId) {
@@ -3241,6 +3305,17 @@ ${fontFace ? fontFace : ''}
                       if (data.tts_speaker) {
                         window.savedContentSpeaker = data.tts_speaker;
                       } else {
+                      }
+                      // 컨텐츠는 타입캐스트를 "명시한 경우에만" 전역 설정을 override
+                      if (data.tts_provider === 'typecast') {
+                        window.savedContentTtsProvider = 'typecast';
+                      }
+                      if (data.typecast_voice_id) {
+                        const vc = String(data.typecast_voice_id || '').trim();
+                        if (vc) {
+                          window.savedContentTypecastVoiceId = vc;
+                          window.savedContentTtsProvider = 'typecast';
+                        }
                       }
                     })
                     .catch(error => {
@@ -3405,6 +3480,24 @@ ${fontFace ? fontFace : ''}
                     // 화자 정보 가져오기 (항상 Supabase에서 최신 정보 확인)
                     
                     let speaker = window.savedContentSpeaker || 'nara';
+                    // undefined/null이면 네이버로 (실제 전역 설정은 /api/settings/tts로 덮어씀)
+                    let ttsProvider = (window.savedContentTtsProvider === 'typecast') ? 'typecast' : 'naver';
+                    let typecastVoiceId = window.savedContentTypecastVoiceId || 'tc_5ecbbc6099979700087711d8';
+                    
+                    // 관리자 기본값(app_settings)도 반영
+                    try {
+                      const ttsResp = await fetch('/api/settings/tts', { cache: 'no-store' });
+                      if (ttsResp.ok) {
+                        const ttsJson = await ttsResp.json();
+                        if (ttsJson && ttsJson.tts_provider) {
+                          ttsProvider = (ttsJson.tts_provider === 'naver') ? 'naver' : 'typecast';
+                        }
+                        if (ttsJson && ttsJson.typecast_voice_id) {
+                          const vc = String(ttsJson.typecast_voice_id || '').trim();
+                          if (vc) typecastVoiceId = vc;
+                        }
+                      }
+                    } catch (e) {}
                     
                     // content.id가 있으면 Supabase에서 최신 화자 정보 조회
                     if (window.savedContentId) {
@@ -3423,6 +3516,19 @@ ${fontFace ? fontFace : ''}
                           speaker = data.tts_speaker;
                           window.savedContentSpeaker = speaker; // 전역 변수 업데이트
                         } else {
+                        }
+                        if (data.tts_provider === 'typecast') {
+                          ttsProvider = 'typecast';
+                          window.savedContentTtsProvider = ttsProvider;
+                        }
+                        if (data.typecast_voice_id) {
+                          const vc = String(data.typecast_voice_id || '').trim();
+                          if (vc) {
+                            typecastVoiceId = vc;
+                            window.savedContentTypecastVoiceId = typecastVoiceId;
+                            ttsProvider = 'typecast';
+                            window.savedContentTtsProvider = ttsProvider;
+                          }
                         }
                       } catch (error) {
                         // 조회 실패 시 기존 값 사용
@@ -3454,13 +3560,13 @@ ${fontFace ? fontFace : ''}
                       try {
                         const chunk = chunks[chunkIndex];
 
-                        // TTS API 호출 (화자 정보 포함)
+                        // TTS API 호출 (provider/voiceId 포함)
                         const response = await fetch('/api/tts', {
                           method: 'POST',
                           headers: {
                             'Content-Type': 'application/json',
                           },
-                          body: JSON.stringify({ text: chunk, speaker }),
+                          body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
                         });
 
                         if (!response.ok) {
@@ -3530,7 +3636,7 @@ ${fontFace ? fontFace : ''}
                           headers: {
                             'Content-Type': 'application/json',
                           },
-                          body: JSON.stringify({ text: chunk, speaker }),
+                          body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
                         });
                         
                         if (!response.ok) {
