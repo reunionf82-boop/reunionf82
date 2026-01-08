@@ -2037,17 +2037,80 @@ ${fontFace ? fontFace : ''}
   // 경과 시간 계산 (실제 값으로 덮어쓰기)
   const resolvedElapsedTime = startTime ? Date.now() - startTime : 0
 
-  // HTML에서 텍스트 추출 (태그 제거, 테이블 제외)
-  const extractTextFromHtml = (htmlString: string): string => {
+  const sanitizeHumanReadableText = (text: string): string => {
+    if (!text) return ''
+    return (
+      text
+        // HTML 태그처럼 보이는 문자열 제거 (예: "<div class=...>")
+        .replace(/<\s*\/?\s*[a-zA-Z][^>]*>/g, '')
+        // 엔티티로 들어온 태그 텍스트도 제거될 수 있게 한 번 더 정리
+        .replace(/\s+/g, ' ')
+        .replace(/\n\s+\n/g, '\n\n')
+        .trim()
+    )
+  }
+
+  const htmlToPlainText = (htmlFragment: string): string => {
     if (typeof window === 'undefined') return ''
+    const temp = document.createElement('div')
+    temp.innerHTML = htmlFragment || ''
+    // 테이블/코드/스크립트/스타일 제거
+    temp.querySelectorAll('table, .manse-ryeok-table, style, script, pre, code').forEach((el) => el.remove())
+    return sanitizeHumanReadableText(temp.innerText || temp.textContent || '')
+  }
+
+  const extractTextFromParsedMenus = (): string => {
+    if (!parsedMenus || parsedMenus.length === 0) return ''
+    const lines: string[] = []
+    parsedMenus.forEach((menu) => {
+      const menuTitle = sanitizeHumanReadableText(menu.title || '')
+      if (menuTitle) lines.push(menuTitle)
+      menu.subtitles.forEach((sub) => {
+        const subTitle = sanitizeHumanReadableText(sub.title || '')
+        if (subTitle) lines.push(subTitle)
+        const body = htmlToPlainText(sub.contentHtml || '')
+        if (body) lines.push(body)
+      })
+    })
+    return lines.join('\n\n').trim()
+  }
+
+  // 사람이 눈으로 읽는 텍스트만 추출 (렌더된 DOM 우선)
+  const extractHumanReadableText = (htmlString?: string): string => {
+    if (typeof window === 'undefined') return ''
+
+    const pickFromContainer = (container: HTMLElement): string => {
+      // clone해서 조작(원본 DOM 영향 없음)
+      const clone = container.cloneNode(true) as HTMLElement
+
+      // 테이블/만세력/목차/코드/스크립트/스타일 제거
+      clone.querySelectorAll('table, .manse-ryeok-table, #table-of-contents, .toc-container, style, script, pre, code').forEach((el) => el.remove())
+
+      // 읽을 요소만 있으면 그 순서대로, 없으면 전체 innerText
+      const nodes = Array.from(
+        clone.querySelectorAll('.menu-title, .subtitle-title, .detail-menu-title, .subtitle-content, .detail-menu-content')
+      )
+      if (nodes.length > 0) {
+        const lines = nodes
+          .map((el) => (el as HTMLElement).innerText || el.textContent || '')
+          .map((s) => s.replace(/\s+/g, ' ').trim())
+          .filter(Boolean)
+        return sanitizeHumanReadableText(lines.join('\n\n'))
+      }
+
+      return sanitizeHumanReadableText((clone as HTMLElement).innerText || clone.textContent || '')
+    }
+
+    // 1) 실제 화면에 렌더된 결과(사용자가 보는 텍스트) 우선
+    const live =
+      (document.querySelector('.jeminai-results') as HTMLElement | null) ||
+      (document.getElementById('contentHtml') as HTMLElement | null)
+    if (live) return pickFromContainer(live)
+
+    // 2) fallback: HTML 문자열 파싱
     const tempDiv = document.createElement('div')
-    tempDiv.innerHTML = htmlString
-    
-    // 테이블 요소 제거 (manse-ryeok-table 클래스를 가진 테이블 및 모든 table 요소)
-    const tables = tempDiv.querySelectorAll('table, .manse-ryeok-table')
-    tables.forEach(table => table.remove())
-    
-    return tempDiv.textContent || tempDiv.innerText || ''
+    tempDiv.innerHTML = htmlString || ''
+    return pickFromContainer(tempDiv)
   }
 
   // 텍스트를 청크로 분할하는 함수
@@ -2109,8 +2172,8 @@ ${fontFace ? fontFace : ''}
       shouldStopRef.current = false // ref 초기화
       setShouldStop(false) // state 초기화
       
-      // HTML에서 텍스트 추출
-      const textContent = extractTextFromHtml(html)
+      // 1) parsedMenus 기반(사람이 보는 구조) 우선, 2) fallback DOM/HTML 파싱
+      const textContent = extractTextFromParsedMenus() || extractHumanReadableText(html)
       
       if (!textContent.trim()) {
         alert('읽을 내용이 없습니다.')
@@ -2344,8 +2407,7 @@ ${fontFace ? fontFace : ''}
     try {
       setPlayingResultId(savedResult.id)
       
-      // HTML에서 텍스트 추출
-      const textContent = extractTextFromHtml(savedResult.html)
+      const textContent = extractHumanReadableText(savedResult.html)
       
       if (!textContent.trim()) {
         alert('읽을 내용이 없습니다.')
@@ -3173,18 +3235,43 @@ ${fontFace ? fontFace : ''}
                   stopAndResetAudio();
                 });
 
-                // HTML에서 텍스트 추출 (테이블 제외)
-                function extractTextFromHtml(htmlString) {
+                function sanitizeHumanReadableText(text) {
+                  if (!text) return '';
+                  return String(text)
+                    .replace(/<\\s*\\/?\\s*[a-zA-Z][^>]*>/g, '')
+                    .replace(/\\s+/g, ' ')
+                    .replace(/\\n\\s+\\n/g, '\\n\\n')
+                    .trim();
+                }
+
+                // 사람이 눈으로 읽는 텍스트만 추출 (렌더된 DOM 우선)
+                function extractHumanReadableText(htmlString) {
+                  function pickFromContainer(container) {
+                    const clone = container.cloneNode(true);
+                    clone.querySelectorAll('table, .manse-ryeok-table, #table-of-contents, .toc-container, style, script, pre, code').forEach(function(el) {
+                      el.remove();
+                    });
+
+                    const nodes = Array.prototype.slice.call(
+                      clone.querySelectorAll('.menu-title, .subtitle-title, .detail-menu-title, .subtitle-content, .detail-menu-content')
+                    );
+                    if (nodes.length > 0) {
+                      const lines = nodes
+                        .map(function(el) {
+                          return (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+                        })
+                        .filter(function(s) { return !!s; });
+                      return sanitizeHumanReadableText(lines.join('\\n\\n'));
+                    }
+                    return sanitizeHumanReadableText(clone.innerText || clone.textContent || '');
+                  }
+
+                  const live = document.getElementById('contentHtml');
+                  if (live) return pickFromContainer(live);
+
                   const tempDiv = document.createElement('div');
-                  tempDiv.innerHTML = htmlString;
-                  
-                  // 테이블 요소 제거 (manse-ryeok-table 클래스를 가진 테이블 및 모든 table 요소)
-                  const tables = tempDiv.querySelectorAll('table, .manse-ryeok-table');
-                  tables.forEach(function(table) {
-                    table.remove();
-                  });
-                  
-                  return tempDiv.textContent || tempDiv.innerText || '';
+                  tempDiv.innerHTML = htmlString || '';
+                  return pickFromContainer(tempDiv);
                 }
 
                 // 텍스트를 청크로 분할하는 함수
@@ -3249,7 +3336,7 @@ ${fontFace ? fontFace : ''}
                     
                     const contentHtml = contentHtmlEl.innerHTML;
                     
-                    const textContent = extractTextFromHtml(contentHtml);
+                    const textContent = extractHumanReadableText(contentHtml);
 
                     if (!textContent.trim()) {
                       alert('읽을 내용이 없습니다.');
