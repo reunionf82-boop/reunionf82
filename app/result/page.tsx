@@ -445,12 +445,22 @@ function ResultContent() {
       let accumulatedHtml = ''
       const manseRyeokTable: string | undefined = payload?.requestData?.manse_ryeok_table
       let hasReceivedPartialDone = false
+      // ✅ 보장: 완료 이후(또는 에러 이후) 늦게 도착한 이벤트는 무시
+      let streamLocked = false
+      // ✅ 보장: 화면에 표시되는 HTML은 길이가 줄어들지 않게 단조 증가
+      let lastRenderedLength = 0
 
       await callJeminaiAPIStream(requestData, async (data) => {
           if (cancelled) return
+          if (streamLocked) return
+          if (cancelled) return
 
           if (data.type === 'start') {
-            accumulatedHtml = ''
+            // lib/jeminai.ts에서 MAX_TOKENS 재요청 시에도 'start'가 한 번 더 전달될 수 있음.
+            // 이때 accumulatedHtml을 비우면 이미 받은 HTML이 사라져 "첫 대제목이 다시 보이거나 재점사"처럼 보일 수 있다.
+            if (!accumulatedHtml || accumulatedHtml.trim().length === 0) {
+              accumulatedHtml = ''
+            }
           } else if (data.type === 'partial_done') {
             hasReceivedPartialDone = true
             
@@ -481,9 +491,17 @@ function ResultContent() {
             setStreamingProgress(100)
             setLoading(false)
             setShowRealtimePopup(false)
+            // 완료 처리 후 추가 이벤트 무시
+            streamLocked = true
           } else if (data.type === 'chunk') {
             const chunkText = data.text || ''
-            accumulatedHtml += chunkText
+            // lib/jeminai.ts 재요청(2차)에서는 chunk 이벤트에 병합된 전체 HTML(data.html)이 포함될 수 있다.
+            // 가능한 경우 data.html을 기준으로 누적하여 중복/리셋으로 인한 화면 흔들림을 막는다.
+            if (data.html && data.html.length >= accumulatedHtml.length) {
+              accumulatedHtml = data.html
+            } else {
+              accumulatedHtml += chunkText
+            }
 
             // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
             let cleanedChunkHtml = accumulatedHtml
@@ -523,7 +541,11 @@ function ResultContent() {
             }
 
             // 직렬점사: 청크는 실시간으로 표시 (accumulatedHtml만 사용)
-            setStreamingHtml(cleanedChunkHtml)
+            // ✅ 단조 증가 보장: 길이가 줄어드는 렌더는 무시
+            if (cleanedChunkHtml.length >= lastRenderedLength) {
+              lastRenderedLength = cleanedChunkHtml.length
+              setStreamingHtml(cleanedChunkHtml)
+            }
             
           } else if (data.type === 'done') {
             // 직렬점사: partial_done을 받았으면 done 무시 (중복 방지)
@@ -572,7 +594,10 @@ function ResultContent() {
             }
 
             // 직렬점사: finalHtml만 표시 (allAccumulatedHtml 사용 안 함)
-            setStreamingHtml(finalHtml)
+            if (finalHtml.length >= lastRenderedLength) {
+              lastRenderedLength = finalHtml.length
+              setStreamingHtml(finalHtml)
+            }
 
             const finalResult: ResultData = {
               content,
@@ -588,14 +613,18 @@ function ResultContent() {
             setStreamingProgress(100)
             setLoading(false)
             setShowRealtimePopup(false)
+            // 완료 처리 후 추가 이벤트 무시
+            streamLocked = true
           } else if (data.type === 'error') {
             if (data.error && (data.error.includes('429') || data.error.includes('Rate Limit'))) {
               setIsStreamingActive(false)
               setStreamingFinished(true)
+              streamLocked = true
             } else {
               setError(data.error || '점사를 진행하는 중 일시적인 문제가 발생했습니다.')
               setIsStreamingActive(false)
               setStreamingFinished(true)
+              streamLocked = true
             }
           }
         })
@@ -618,6 +647,8 @@ function ResultContent() {
       // 각 대메뉴별 완료된 HTML 저장 (화면 떨림 방지)
       const completedMenuHtmls: string[] = []
       let allAccumulatedHtml = ''
+      // ✅ 보장: 화면에 표시되는 HTML은 길이가 줄어들지 않게 단조 증가
+      let lastRenderedLength = 0
       
       // 중복 요청 방지: 각 대메뉴별로 요청 중/완료 상태 추적
       const menuProcessingState: { [key: number]: 'idle' | 'processing' | 'done' } = {}
@@ -673,15 +704,27 @@ function ResultContent() {
         try {
           await callJeminaiAPIStream(nextRequestData, async (nextData) => {
             if (cancelled) return
+            // 이미 완료된 메뉴에 대한 늦은 이벤트는 무시 (재연결/재요청 등)
+            if (menuProcessingState[menuIdx] === 'done') return
             
             if (nextData.type === 'start') {
-              menuAccumulated = ''
+              // lib/jeminai.ts에서 MAX_TOKENS 재요청 시에도 'start'가 한 번 더 전달될 수 있음.
+              // 이미 받은 HTML이 있다면 초기화하지 않는다(재점사/중복처럼 보이는 현상 방지).
+              if (!menuAccumulated || menuAccumulated.trim().length === 0) {
+                menuAccumulated = ''
+              }
             } 
             else if (nextData.type === 'chunk') {
               // 룰 2: 청크가 오는 즉시 화면에 표시
               const newChunk = nextData.text || ''
               if (newChunk) {
-                menuAccumulated += newChunk
+                // 재요청(2차)에서는 chunk 이벤트에 병합된 전체 HTML(nextData.html)이 포함될 수 있다.
+                // 가능한 경우 nextData.html을 기준으로 누적하여 중복/리셋으로 인한 화면 흔들림을 막는다.
+                if (nextData.html && nextData.html.length >= menuAccumulated.length) {
+                  menuAccumulated = nextData.html
+                } else {
+                  menuAccumulated += newChunk
+                }
                 
                 // HTML 정리 (테이블 중첩 방지 포함)
                 let cleanedMenuHtml = menuAccumulated
@@ -724,7 +767,11 @@ function ResultContent() {
                 // 룰 2: 청크 오는데로 즉시 표시 (이전 대메뉴 완료 HTML + 현재 대메뉴 누적 HTML)
                 // 이전 대메뉴 HTML은 절대 변경되지 않음 (화면 떨림 방지)
                 const displayHtml = allAccumulatedHtml + cleanedMenuHtml
-                setStreamingHtml(displayHtml)
+                // ✅ 단조 증가 보장: 길이가 줄어드는 렌더는 무시
+                if (displayHtml.length >= lastRenderedLength) {
+                  lastRenderedLength = displayHtml.length
+                  setStreamingHtml(displayHtml)
+                }
               }
             } 
             else if (nextData.type === 'partial_done') {
@@ -755,7 +802,10 @@ function ResultContent() {
               menuAccumulated = ''
               
               // 완료된 부분 표시 (done 이벤트 대기)
-              setStreamingHtml(allAccumulatedHtml)
+              if (allAccumulatedHtml.length >= lastRenderedLength) {
+                lastRenderedLength = allAccumulatedHtml.length
+                setStreamingHtml(allAccumulatedHtml)
+              }
               
               // partial_done을 받은 경우, done 이벤트에서 다음 대메뉴를 요청하지 않도록 플래그 설정
               // (마지막 대메뉴가 아닌 경우에만)
@@ -819,7 +869,10 @@ function ResultContent() {
               }
               
               // 완료된 대메뉴 표시 (한 번에)
-              setStreamingHtml(allAccumulatedHtml)
+              if (allAccumulatedHtml.length >= lastRenderedLength) {
+                lastRenderedLength = allAccumulatedHtml.length
+                setStreamingHtml(allAccumulatedHtml)
+              }
               
               // 현재 대메뉴 완료 표시
               menuProcessingState[menuIdx] = 'done'
@@ -844,7 +897,10 @@ function ResultContent() {
             } 
             else if (nextData.type === 'error') {
               // 에러 발생해도 현재까지의 내용은 표시
-              setStreamingHtml(allAccumulatedHtml)
+              if (allAccumulatedHtml.length >= lastRenderedLength) {
+                lastRenderedLength = allAccumulatedHtml.length
+                setStreamingHtml(allAccumulatedHtml)
+              }
               setIsStreamingActive(false)
               setStreamingFinished(true)
               setLoading(false)
@@ -853,7 +909,10 @@ function ResultContent() {
           })
         } catch (error) {
           // 에러 발생해도 현재까지의 내용은 표시
-          setStreamingHtml(allAccumulatedHtml)
+          if (allAccumulatedHtml.length >= lastRenderedLength) {
+            lastRenderedLength = allAccumulatedHtml.length
+            setStreamingHtml(allAccumulatedHtml)
+          }
           setIsStreamingActive(false)
           setStreamingFinished(true)
           setLoading(false)

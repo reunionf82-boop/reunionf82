@@ -339,8 +339,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         summary: formData.summary || '',
         introduction: formData.introduction || '',
         recommendation: formData.recommendation || '',
-        menu_subtitle: allSubtitles.join('\n'),
-        interpretation_tool: allInterpretationTools.join('\n'),
+        menu_subtitle: allSubtitles.join('\n').trim(),
+        interpretation_tool: allInterpretationTools.join('\n').trim(),
         subtitle_char_count: parseInt(formData.subtitleCharCount) || 500,
         detail_menu_char_count: parseInt(formData.detailMenuCharCount) || 500,
         menu_font_size: parseInt(formData.menuFontSize) || 16,
@@ -389,11 +389,27 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         ending_book_cover_thumbnail_video: formData.endingBookCoverThumbnailVideoUrl || '',
       }
       
+      const normalizePreviewThumbnails = (raw: any): string[] => {
+        let arr: any = raw
+        if (typeof arr === 'string') {
+          try {
+            arr = JSON.parse(arr)
+          } catch (e) {
+            arr = []
+          }
+        }
+        if (!Array.isArray(arr)) arr = []
+        const out = arr.map((x: any) => (typeof x === 'string' ? x : '')).slice(0, 3)
+        while (out.length < 3) out.push('')
+        return out
+      }
+
       // initialData도 정규화 (menu_items 배열 처리)
       const normalizedInitial = {
         role_prompt: initialData.role_prompt || '',
         restrictions: initialData.restrictions || '',
-        content_type: initialData.content_type || '',
+        // content_type이 비어있다면 폼 기본값(gonghap)과 맞춰 false positive 방지
+        content_type: initialData.content_type || 'gonghap',
         content_name: initialData.content_name || '',
         thumbnail_url: initialData.thumbnail_url || '',
         thumbnail_video_url: initialData.thumbnail_video_url || '',
@@ -401,8 +417,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         summary: initialData.summary || '',
         introduction: initialData.introduction || '',
         recommendation: initialData.recommendation || '',
-        menu_subtitle: initialData.menu_subtitle || '',
-        interpretation_tool: initialData.interpretation_tool || '',
+        menu_subtitle: (initialData.menu_subtitle || '').trim(),
+        interpretation_tool: (initialData.interpretation_tool || '').trim(),
         subtitle_char_count: initialData.subtitle_char_count || 500,
         detail_menu_char_count: initialData.detail_menu_char_count || 500,
         menu_font_size: initialData.menu_font_size || 16,
@@ -414,10 +430,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         body_font_size: initialData.body_font_size || 11,
         body_font_bold: initialData.body_font_bold || false,
         font_face: initialData.font_face || '',
-        menu_font_face: initialData.menu_font_face || '',
-        subtitle_font_face: initialData.subtitle_font_face || '',
-        detail_menu_font_face: initialData.detail_menu_font_face || '',
-        body_font_face: initialData.body_font_face || '',
+        // loadContent에서 섹션별 폰트가 비어있으면 font_face로 채워서 formData에 넣으므로, 비교도 동일 규칙으로 정규화
+        menu_font_face: initialData.menu_font_face || initialData.font_face || '',
+        subtitle_font_face: initialData.subtitle_font_face || initialData.font_face || '',
+        detail_menu_font_face: initialData.detail_menu_font_face || initialData.font_face || '',
+        body_font_face: initialData.body_font_face || initialData.font_face || '',
         menu_color: initialData.menu_color || '',
         subtitle_color: initialData.subtitle_color || '',
         detail_menu_color: initialData.detail_menu_color || '',
@@ -425,9 +442,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_items: initialData.menu_items || [],
         is_new: initialData.is_new || false,
         tts_speaker: initialData.tts_speaker || 'nara',
-        preview_thumbnails: initialData.preview_thumbnails || ['', '', ''],
+        preview_thumbnails: normalizePreviewThumbnails(initialData.preview_thumbnails),
         book_cover_thumbnail: initialData.book_cover_thumbnail || '',
+        book_cover_thumbnail_video: initialData.book_cover_thumbnail_video || '',
         ending_book_cover_thumbnail: initialData.ending_book_cover_thumbnail || '',
+        ending_book_cover_thumbnail_video: initialData.ending_book_cover_thumbnail_video || '',
       }
       
       // menu_items 배열 정규화 (id 제거하고 value, thumbnail, subtitles 비교)
