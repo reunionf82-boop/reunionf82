@@ -3679,6 +3679,7 @@ ${fontFace ? fontFace : ''}
                 thumbnailImageUrl={content.book_cover_thumbnail}
                 videoBaseName={content.book_cover_thumbnail_video}
                 className="w-full h-full rounded-lg"
+                objectFit="contain"
               />
             ) : content?.book_cover_thumbnail ? (
               <img 
@@ -3891,6 +3892,7 @@ ${fontFace ? fontFace : ''}
                           thumbnailImageUrl={content.ending_book_cover_thumbnail}
                           videoBaseName={content.ending_book_cover_thumbnail_video}
                           className="w-full h-full rounded-lg"
+                          objectFit="contain"
                         />
                       ) : content?.ending_book_cover_thumbnail ? (
                         <img 
