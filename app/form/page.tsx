@@ -4516,6 +4516,8 @@ function FormContent() {
                                   src={review.image_url}
                                   alt="리뷰 사진"
                                   className="w-full max-w-md h-auto rounded-lg border border-pink-200 cursor-pointer hover:opacity-90 transition-opacity"
+                                  loading="lazy"
+                                  style={{ display: 'block', maxWidth: '100%', height: 'auto' }}
                                   onClick={() => {
                                     const newWindow = window.open('', '_blank')
                                     if (newWindow) {
@@ -4530,7 +4532,16 @@ function FormContent() {
                                     }
                                   }}
                                   onError={(e) => {
-                                    ;(e.target as HTMLImageElement).style.display = 'none'
+                                    const img = e.target as HTMLImageElement
+                                    // 이미지 로드 실패 시 숨기지 않고 대체 이미지 표시
+                                    img.style.display = 'none'
+                                    const parent = img.parentElement
+                                    if (parent && !parent.querySelector('.image-error')) {
+                                      const errorDiv = document.createElement('div')
+                                      errorDiv.className = 'image-error text-xs text-gray-400 text-center py-2'
+                                      errorDiv.textContent = '이미지를 불러올 수 없습니다'
+                                      parent.appendChild(errorDiv)
+                                    }
                                   }}
                                 />
                               </div>
@@ -4624,6 +4635,8 @@ function FormContent() {
                                   src={review.image_url}
                                   alt="리뷰 사진"
                                   className="w-full max-w-md h-auto rounded-lg border border-yellow-200 cursor-pointer hover:opacity-90 transition-opacity"
+                                  loading="lazy"
+                                  style={{ display: 'block', maxWidth: '100%', height: 'auto' }}
                                   onClick={() => {
                                     const newWindow = window.open('', '_blank')
                                     if (newWindow) {
@@ -4638,7 +4651,16 @@ function FormContent() {
                                     }
                                   }}
                                   onError={(e) => {
-                                    ;(e.target as HTMLImageElement).style.display = 'none'
+                                    const img = e.target as HTMLImageElement
+                                    // 이미지 로드 실패 시 숨기지 않고 대체 이미지 표시
+                                    img.style.display = 'none'
+                                    const parent = img.parentElement
+                                    if (parent && !parent.querySelector('.image-error')) {
+                                      const errorDiv = document.createElement('div')
+                                      errorDiv.className = 'image-error text-xs text-gray-400 text-center py-2'
+                                      errorDiv.textContent = '이미지를 불러올 수 없습니다'
+                                      parent.appendChild(errorDiv)
+                                    }
                                   }}
                                 />
                               </div>
