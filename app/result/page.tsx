@@ -4676,11 +4676,6 @@ ${fontFace ? fontFace : ''}
                       <div key={`toc-menu-${mIndex}`} className="space-y-1">
                         <button
                           onClick={(e) => {
-                            if (!streamingFinished) {
-                              e.preventDefault()
-                              alert('점사중이니 완료될때까지 기다려주세요')
-                              return
-                            }
                             const element = document.getElementById(`menu-${mIndex}`)
                             if (element) {
                               element.scrollIntoView({ behavior: 'smooth', block: 'start' })
