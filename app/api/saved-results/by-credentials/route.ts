@@ -42,23 +42,45 @@ export async function POST(request: NextRequest) {
     }
 
     // 복호화하여 일치하는 항목 찾기
-    const matchingSavedIds: number[] = []
-    const seenSavedIds = new Set<number>() // 중복 제거용
+    // saved_id별로 그룹화하여 각 saved_id가 해당 전화번호/비밀번호와 정확히 연결되었는지 확인
+    const savedIdToCredentials = new Map<number, Array<{ encrypted_phone: string; encrypted_password: string }>>()
     
+    // saved_id별로 credentials 그룹화
     for (const cred of credentials || []) {
-      if (!cred.saved_id || seenSavedIds.has(cred.saved_id)) continue
+      if (!cred.saved_id) continue
       
-      try {
-        const decryptedPhone = decrypt(cred.encrypted_phone)
-        const decryptedPassword = decrypt(cred.encrypted_password)
-        
-        if (decryptedPhone === phone && decryptedPassword === password) {
-          matchingSavedIds.push(cred.saved_id)
-          seenSavedIds.add(cred.saved_id)
+      if (!savedIdToCredentials.has(cred.saved_id)) {
+        savedIdToCredentials.set(cred.saved_id, [])
+      }
+      savedIdToCredentials.get(cred.saved_id)!.push({
+        encrypted_phone: cred.encrypted_phone,
+        encrypted_password: cred.encrypted_password
+      })
+    }
+    
+    // 각 saved_id에 대해 해당 전화번호/비밀번호와 일치하는 credential이 있는지 확인
+    const matchingSavedIds: number[] = []
+    
+    for (const [savedId, creds] of savedIdToCredentials.entries()) {
+      let isMatch = false
+      
+      for (const cred of creds) {
+        try {
+          const decryptedPhone = decrypt(cred.encrypted_phone)
+          const decryptedPassword = decrypt(cred.encrypted_password)
+          
+          if (decryptedPhone === phone && decryptedPassword === password) {
+            isMatch = true
+            break
+          }
+        } catch (decryptError) {
+          // 복호화 실패 시 건너뛰기
+          continue
         }
-      } catch (decryptError) {
-        // 복호화 실패 시 건너뛰기
-        continue
+      }
+      
+      if (isMatch) {
+        matchingSavedIds.push(savedId)
       }
     }
 
@@ -87,6 +109,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // matchingSavedIds는 이미 검증된 saved_id들이므로 추가 필터링 불필요
     return NextResponse.json({
       success: true,
       data: savedResults || []
