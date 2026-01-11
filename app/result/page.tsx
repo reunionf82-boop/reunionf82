@@ -6,6 +6,10 @@ import { Suspense, useEffect, useState, useRef, useMemo, memo, useCallback } fro
 import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { getContentById, getSelectedSpeaker, getFortuneViewMode } from '@/lib/supabase-admin'
 import SupabaseVideo from '@/components/SupabaseVideo'
+import SlideMenuBar from '@/components/SlideMenuBar'
+import MyHistoryPopup from '@/components/MyHistoryPopup'
+import TermsPopup from '@/components/TermsPopup'
+import PrivacyPopup from '@/components/PrivacyPopup'
 
 interface ResultData {
   content: any
@@ -61,6 +65,10 @@ function ResultContent() {
   const [isStreaming, setIsStreaming] = useState(false)
   const [isRealtime, setIsRealtime] = useState(false)
   const [dataLoaded, setDataLoaded] = useState(false) // 데이터 로드 완료 플래그
+  // requestKey는 setState 타이밍 이슈가 있을 수 있어 ref로도 보존 (저장/업데이트에서 항상 최신 값 사용)
+  const requestKeyRef = useRef<string | null>(null)
+  // savedId도 결제 직후에 들어오므로 ref로 보존 (update 라우트 선택에 사용)
+  const savedIdRef = useRef<string | null>(null)
   
   // sessionStorage와 URL 파라미터에서 데이터 로드 (최우선 실행)
   useEffect(() => {
@@ -74,6 +82,13 @@ function ResultContent() {
     const storedStorageKey = sessionStorage.getItem('result_key')
     
     if (storedRequestKey) {
+      // ✅ 결제 직후 방식(A): requestKey와 savedId를 함께 넘길 수 있으므로 같이 처리
+      if (storedSavedId) {
+        savedIdRef.current = storedSavedId
+        setSavedId(storedSavedId)
+        sessionStorage.removeItem('result_savedId')
+      }
+      requestKeyRef.current = storedRequestKey
       setRequestKey(storedRequestKey)
       setIsStreaming(storedStream === 'true')
       setIsRealtime(storedStream === 'true' && !!storedRequestKey)
@@ -85,6 +100,7 @@ function ResultContent() {
     }
     
     if (storedSavedId) {
+      savedIdRef.current = storedSavedId
       setSavedId(storedSavedId)
       // 사용 후 삭제 (한 번만 사용)
       sessionStorage.removeItem('result_savedId')
@@ -105,16 +121,24 @@ function ResultContent() {
     const urlSavedId = searchParams.get('savedId')
     const urlRequestKey = searchParams.get('requestKey')
     const urlIsStreaming = searchParams.get('stream') === 'true'
+    const urlGeneratePdf = searchParams.get('generatePdf') === 'true'
     
     if (urlStorageKey) {
       setStorageKey(urlStorageKey)
     }
     
     if (urlSavedId) {
+      savedIdRef.current = urlSavedId
       setSavedId(urlSavedId)
     }
     
+    // generatePdf 파라미터 저장 (나중에 PDF 생성 시 사용)
+    if (urlGeneratePdf) {
+      sessionStorage.setItem('result_generatePdf', 'true')
+    }
+    
     if (urlRequestKey) {
+      requestKeyRef.current = urlRequestKey
       setRequestKey(urlRequestKey)
       setIsStreaming(urlIsStreaming)
       setIsRealtime(urlIsStreaming && !!urlRequestKey)
@@ -125,8 +149,20 @@ function ResultContent() {
   
   // requestKey나 isStreaming이 변경되면 isRealtime 업데이트
   useEffect(() => {
-    setIsRealtime(isStreaming && !!requestKey)
+    const realtime = isStreaming && !!requestKey
+    // requestKey ref 동기화 (저장/업데이트에서 최신 값 사용)
+    requestKeyRef.current = requestKey
+    setIsRealtime(realtime)
+    // realtime 모드일 때 fortuneViewMode도 'realtime'으로 설정
+    if (realtime) {
+      setFortuneViewMode('realtime')
+    }
   }, [isStreaming, requestKey])
+
+  // savedId ref 동기화 (update 라우트 선택에서 최신 값 사용)
+  useEffect(() => {
+    savedIdRef.current = savedId
+  }, [savedId])
   const [resultData, setResultData] = useState<ResultData | null>(null)
   const [streamingHtml, setStreamingHtml] = useState('')
   const [isStreamingActive, setIsStreamingActive] = useState(false)
@@ -137,7 +173,7 @@ function ResultContent() {
   useEffect(() => {
     if (resultData?.content?.thumbnail_url && typeof window !== 'undefined') {
       sessionStorage.setItem('form_thumbnail_url', resultData.content.thumbnail_url)
-      sessionStorage.setItem('form_title', resultData.content.content_name || '')
+      sessionStorage.setItem('form_title', resultData.content?.content_name || '')
     }
   }, [resultData])
   const [savedResults, setSavedResults] = useState<any[]>([])
@@ -148,6 +184,10 @@ function ResultContent() {
   const [revealedCount, setRevealedCount] = useState(0)
   const [showRealtimeLoading, setShowRealtimeLoading] = useState(false) // 기존 플래그(사용 안함)
   const [showRealtimePopup, setShowRealtimePopup] = useState(false) // realtime 전용 로딩 팝업
+  const [showSlideMenu, setShowSlideMenu] = useState(false) // 슬라이드 메뉴 표시
+  const [showMyHistoryPopup, setShowMyHistoryPopup] = useState(false) // 나의 이용내역 팝업 표시
+  const [showTermsPopup, setShowTermsPopup] = useState(false) // 이용약관 팝업
+  const [showPrivacyPopup, setShowPrivacyPopup] = useState(false) // 개인정보처리방침 팝업
   const [firstSubtitleReady, setFirstSubtitleReady] = useState(false) // 1-1 소제목 준비 여부
   const firstSubtitleReadyRef = useRef(false)
   const [streamingFinished, setStreamingFinished] = useState(false) // 스트리밍 완료 여부 (realtime)
@@ -167,6 +207,13 @@ function ResultContent() {
 
   // 점사 모드 로드
   useEffect(() => {
+    // isRealtime이 true이면 fortuneViewMode를 'realtime'으로 설정 (우선순위)
+    if (isRealtime) {
+      setFortuneViewMode('realtime')
+      setShowRealtimeLoading(false)
+      return
+    }
+    
     const loadMode = async () => {
       try {
         const mode = await getFortuneViewMode()
@@ -185,7 +232,7 @@ function ResultContent() {
     if (paid === 'true') {
       setShowRealtimeLoading(false)
     }
-  }, [searchParams])
+  }, [searchParams, isRealtime])
   
   // 저장된 결과 목록 로드 함수 (useEffect 위에 정의)
   const loadSavedResults = async () => {
@@ -299,16 +346,77 @@ function ResultContent() {
           throw new Error('저장된 결과를 찾을 수 없습니다.')
         }
 
+        // 저장된 HTML 확인
+        const savedHtml = savedResult.html || ''
+        console.log('[결과 로드] 저장된 결과 HTML 확인:', {
+          savedId,
+          htmlLength: savedHtml.length,
+          htmlPreview: savedHtml.substring(0, 300),
+          hasContent: savedHtml.includes('menu-section') || savedHtml.includes('subtitle-section')
+        })
+        
+        if (!savedHtml || savedHtml.trim().length < 100) {
+          console.error('[결과 로드] 저장된 HTML이 비어있음!', {
+            htmlLength: savedHtml.length,
+            htmlTrimmedLength: savedHtml.trim().length,
+            htmlPreview: savedHtml.substring(0, 200)
+          })
+          throw new Error('저장된 결과에 내용이 없습니다. 관리자에게 문의해주세요.')
+        }
+
+        // content가 없으면 title로 찾기
+        let finalContent = savedResult.content
+        if (!finalContent && savedResult.title) {
+          try {
+            const findResponse = await fetch(`/api/contents/find-by-title?title=${encodeURIComponent(savedResult.title)}`)
+            if (findResponse.ok) {
+              const findData = await findResponse.json().catch(() => ({}))
+              if (findData.success && findData.content_id) {
+                // content_id로 전체 content 정보 가져오기
+                const contentResponse = await fetch(`/api/content/${findData.content_id}`)
+                if (contentResponse.ok) {
+                  const contentData = await contentResponse.json()
+                  if (contentData) {
+                    finalContent = contentData
+                    console.log('[결과 로드] title로 content 찾기 성공:', findData.content_id)
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('[결과 로드] title로 content 찾기 실패:', e)
+          }
+        }
+        
         // ResultData 형식으로 변환
         const parsedData: ResultData = {
-          content: savedResult.content || null,
-          html: savedResult.html || '',
+          content: finalContent || null,
+          html: savedHtml,
           startTime: savedResult.processingTime ? Date.now() - savedResult.processingTime : undefined,
           model: savedResult.model,
           userName: savedResult.userName
         }
         
         setResultData(parsedData)
+        // ✅ 저장된 결과 화면에서는 스트리밍이 아닌 "완료 상태"로 렌더링해야 본문이 보인다.
+        // 사용자가 fortuneViewMode를 realtime로 설정했더라도 savedId로 진입한 경우는 완료된 HTML을 즉시 표시.
+        setIsStreamingActive(false)
+        setStreamingFinished(true)
+        setStreamingHtml(parsedData.html || '')
+        setShowRealtimePopup(false)
+        
+        // generatePdf 파라미터가 있으면 자동으로 PDF 생성
+        const shouldGeneratePdf = sessionStorage.getItem('result_generatePdf') === 'true'
+        if (shouldGeneratePdf) {
+          sessionStorage.removeItem('result_generatePdf')
+          // 약간의 지연 후 PDF 생성 (렌더링 완료 대기)
+          setTimeout(() => {
+            // form 페이지의 handleClientSidePdf와 동일한 로직 사용
+            // 여기서는 간단하게 alert로 안내하고, 실제 PDF 생성은 form 페이지의 로직을 참고하여 구현
+            // (전체 코드가 너무 길기 때문에 핵심만 구현)
+            alert('PDF 생성 기능은 준비 중입니다. 잠시 후 다시 시도해주세요.')
+          }, 1000)
+        }
         
         // 저장된 결과 목록 로드
         loadSavedResults()
@@ -372,12 +480,22 @@ function ResultContent() {
         const isParallelMode = !useSequentialFortune && allMenuGroups && Array.isArray(allMenuGroups) && allMenuGroups.length > 1
         
         // 초기 상태 설정: 화면은 바로 결과 레이아웃으로 전환
+        // user_info에서 사용자 정보 가져오기 (userName이 없을 경우)
+        const userInfo = requestData?.user_info
+        const finalUserName = userName || userInfo?.name || ''
+        
+        // content에 user_info가 없으면 requestData에서 가져와서 추가
+        const contentWithUserInfo = {
+          ...content,
+          user_info: content?.user_info || userInfo || null
+        }
+        
         setResultData({
-          content,
+          content: contentWithUserInfo,
           html: '',
           startTime,
           model,
-          userName,
+          userName: finalUserName,
         })
         setStreamingHtml('')
         setParsedMenus([])
@@ -390,9 +508,14 @@ function ResultContent() {
         setFirstSubtitleReady(false)
         setStreamingFinished(false)
 
-        // 가짜 진행률: 0.5초에 1%씩 97%까지 증가 (첫 소제목 준비 전까지)
+        // 가짜 진행률: 0.5초에 1%씩 100%까지 증가 (첫 소제목 준비 전까지)
         fakeProgressInterval = setInterval(() => {
           if (firstSubtitleReadyRef.current) {
+            // 첫 소제목이 준비되면 100%까지 채우고 팝업 제거
+            setStreamingProgress(100)
+            setTimeout(() => {
+              setShowRealtimePopup(false)
+            }, 300) // 300ms 후 팝업 제거
             if (fakeProgressInterval) {
               clearInterval(fakeProgressInterval)
               fakeProgressInterval = null
@@ -401,17 +524,23 @@ function ResultContent() {
           }
 
           setStreamingProgress((prev) => {
-            if (prev >= 97) return prev
+            if (prev >= 100) {
+              // 100% 도달 시 팝업 제거
+              setTimeout(() => {
+                setShowRealtimePopup(false)
+              }, 300) // 300ms 후 팝업 제거
+              return 100
+            }
             const next = prev + 1
-            return next > 97 ? 97 : next
+            return next > 100 ? 100 : next
           })
         }, 500)
 
         // 직렬점사와 병렬점사 완전 분리
         if (isParallelMode) {
-          await startParallelStreaming(requestData, content, startTime, model, userName, allMenuGroups, payload)
+          await startParallelStreaming(requestData, contentWithUserInfo, startTime, model, userName, allMenuGroups, payload)
         } else {
-          await startSequentialStreaming(requestData, content, startTime, model, userName, payload)
+          await startSequentialStreaming(requestData, contentWithUserInfo, startTime, model, userName, payload)
         }
       } catch (e: any) {
         if (cancelled) return
@@ -466,7 +595,14 @@ function ResultContent() {
             
             // 직렬점사: partial_done이면 완료 처리 (2차 요청은 lib/jeminai.ts에서 처리)
             let finalHtml = data.html || accumulatedHtml
-            
+
+            console.log('[직렬점사] partial_done 수신:', {
+              hasDataHtml: !!data.html,
+              dataHtmlLength: data.html?.length || 0,
+              accumulatedHtmlLength: accumulatedHtml.length,
+              finalHtmlLength: finalHtml.length
+            })
+
             // HTML 정리
             finalHtml = finalHtml
               .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
@@ -475,9 +611,17 @@ function ResultContent() {
               .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
               .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
               .replace(/\*\*/g, '')
-            
+
+            console.log('[직렬점사] partial_done 정리 후:', {
+              finalHtmlLength: finalHtml.length,
+              hasMenuSection: finalHtml.includes('menu-section'),
+              hasSubtitleSection: finalHtml.includes('subtitle-section'),
+              htmlPreview: finalHtml.substring(0, 500)
+            })
+
+            // 즉시 상태 업데이트 (버튼 활성화를 위해)
             setStreamingHtml(finalHtml)
-            
+
             const finalResult: ResultData = {
               content,
               html: finalHtml,
@@ -493,6 +637,34 @@ function ResultContent() {
             setShowRealtimePopup(false)
             // 완료 처리 후 추가 이벤트 무시
             streamLocked = true
+            
+            // 직렬점사(partial_done) 완료 시 즉시 결과 저장 (지연 없이)
+            if (!autoSavedRef.current) {
+              console.log('[직렬점사] partial_done 완료, 결과 저장 시작', {
+                finalHtmlLength: finalHtml.length,
+                hasResultData: !!finalResult,
+                streamingFinished: true
+              })
+              autoSavedRef.current = true
+              // 즉시 저장 (setTimeout 제거)
+              ;(async () => {
+                try {
+                  // 최신 HTML과 content를 직접 전달하여 저장
+                  if (finalHtml && finalHtml.length >= 100) {
+                    await saveResultToLocal(false, finalHtml, content)
+                    console.log('[직렬점사] partial_done 결과 저장 완료', { htmlLength: finalHtml.length, hasContent: !!content })
+                  } else {
+                    console.error('[직렬점사] partial_done 결과 저장 실패: HTML이 유효하지 않음', {
+                      htmlLength: finalHtml?.length || 0
+                    })
+                    autoSavedRef.current = false // 재시도 가능하도록
+                  }
+                } catch (err) {
+                  console.error('[직렬점사] partial_done 결과 저장 실패:', err)
+                  autoSavedRef.current = false // 실패 시 재시도 가능하도록
+                }
+              })()
+            }
           } else if (data.type === 'chunk') {
             const chunkText = data.text || ''
             // lib/jeminai.ts 재요청(2차)에서는 chunk 이벤트에 병합된 전체 HTML(data.html)이 포함될 수 있다.
@@ -553,8 +725,14 @@ function ResultContent() {
               return
             }
             
-            
             let finalHtml = data.html || accumulatedHtml
+
+            console.log('[직렬점사] done 수신:', {
+              hasDataHtml: !!data.html,
+              dataHtmlLength: data.html?.length || 0,
+              accumulatedHtmlLength: accumulatedHtml.length,
+              finalHtmlLength: finalHtml.length
+            })
 
             // HTML 정리
             finalHtml = finalHtml
@@ -564,6 +742,13 @@ function ResultContent() {
               .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
               .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
               .replace(/\*\*/g, '')
+
+            console.log('[직렬점사] done 정리 후:', {
+              finalHtmlLength: finalHtml.length,
+              hasMenuSection: finalHtml.includes('menu-section'),
+              hasSubtitleSection: finalHtml.includes('subtitle-section'),
+              htmlPreview: finalHtml.substring(0, 500)
+            })
 
             // 만세력 테이블 삽입
             if (manseRyeokTable && !finalHtml.includes('manse-ryeok-table')) {
@@ -608,13 +793,44 @@ function ResultContent() {
             }
             setResultData(finalResult)
 
+            // 즉시 상태 업데이트 (버튼 활성화를 위해)
             setIsStreamingActive(false)
             setStreamingFinished(true)
             setStreamingProgress(100)
             setLoading(false)
             setShowRealtimePopup(false)
+            setStreamingHtml(finalHtml)
+            setResultData(finalResult)
             // 완료 처리 후 추가 이벤트 무시
             streamLocked = true
+            
+            // 직렬점사 완료 시 즉시 결과 저장 (지연 없이)
+            if (!autoSavedRef.current) {
+              console.log('[직렬점사] 완료, 결과 저장 시작', {
+                finalHtmlLength: finalHtml.length,
+                hasResultData: !!finalResult,
+                streamingFinished: true
+              })
+              autoSavedRef.current = true
+              // 즉시 저장 (setTimeout 제거)
+              ;(async () => {
+                try {
+                  // 최신 HTML과 content를 직접 전달하여 저장
+                  if (finalHtml && finalHtml.length >= 100) {
+                    await saveResultToLocal(false, finalHtml, content, model, startTime, userName)
+                    console.log('[직렬점사] 결과 저장 완료', { htmlLength: finalHtml.length, hasContent: !!content })
+                  } else {
+                    console.error('[직렬점사] 결과 저장 실패: HTML이 유효하지 않음', {
+                      htmlLength: finalHtml?.length || 0
+                    })
+                    autoSavedRef.current = false // 재시도 가능하도록
+                  }
+                } catch (err) {
+                  console.error('[직렬점사] 결과 저장 실패:', err)
+                  autoSavedRef.current = false // 실패 시 재시도 가능하도록
+                }
+              })()
+            }
           } else if (data.type === 'error') {
             if (data.error && (data.error.includes('429') || data.error.includes('Rate Limit'))) {
               setIsStreamingActive(false)
@@ -657,7 +873,7 @@ function ResultContent() {
       // 대메뉴 처리 함수 (순차 실행 보장)
       const processNextMenu = async (menuIdx: number, previousContext: string) => {
         if (menuIdx >= allMenuGroups.length) {
-          // 모든 대메뉴 완료
+          // 모든 대메뉴 완료 (이미 모든 대메뉴가 처리된 경우)
           setStreamingHtml(allAccumulatedHtml)
           const finalResult: ResultData = {
             content,
@@ -672,8 +888,23 @@ function ResultContent() {
           setStreamingProgress(100)
           setLoading(false)
           setShowRealtimePopup(false)
+          console.log('[병렬점사] 모든 대메뉴 완료 (processNextMenu 체크), 스트리밍 종료')
+          
+          // 모든 대메뉴 완료 시 즉시 결과 저장
+            if (!autoSavedRef.current) {
+              console.log('[병렬점사] 완료 (체크), 결과 저장 시작')
+              autoSavedRef.current = true
+              setTimeout(() => {
+                saveResultToLocal(false, allAccumulatedHtml, content, model, startTime, userName).catch(err => {
+                  console.error('[병렬점사] 결과 저장 실패:', err)
+                })
+              }, 100)
+            }
+          
           return
         }
+        
+        console.log(`[병렬점사] 대메뉴 ${menuIdx + 1}/${allMenuGroups.length} 처리 시작`)
         
         // 중복 요청 방지: 이미 처리 중이거나 완료된 대메뉴는 건너뛰기
         if (menuProcessingState[menuIdx] === 'processing' || menuProcessingState[menuIdx] === 'done') {
@@ -877,6 +1108,42 @@ function ResultContent() {
               // 현재 대메뉴 완료 표시
               menuProcessingState[menuIdx] = 'done'
               
+              // 마지막 대메뉴 완료 여부 확인
+              const isLastMenu = menuIdx >= allMenuGroups.length - 1
+              
+              if (isLastMenu) {
+                // 모든 대메뉴 완료 - 스트리밍 종료 처리
+                setStreamingHtml(allAccumulatedHtml)
+                const finalResult: ResultData = {
+                  content,
+                  html: allAccumulatedHtml,
+                  startTime,
+                  model,
+                  userName,
+                }
+                setResultData(finalResult)
+                setIsStreamingActive(false)
+                setStreamingFinished(true)
+                setStreamingProgress(100)
+                setLoading(false)
+                setShowRealtimePopup(false)
+                console.log('[병렬점사] 모든 대메뉴 완료, 스트리밍 종료')
+                
+                // 병렬점사 완료 시 즉시 결과 저장 (자동 저장 대기하지 않음)
+                if (!autoSavedRef.current) {
+                  console.log('[병렬점사] 완료, 결과 저장 시작')
+                  autoSavedRef.current = true
+                  // resultData가 설정된 후 저장하도록 약간 지연
+                  setTimeout(() => {
+                    saveResultToLocal(false, allAccumulatedHtml, content, model, startTime, userName).catch(err => {
+                      console.error('[병렬점사] 결과 저장 실패:', err)
+                    })
+                  }, 100)
+                }
+                
+                return // 마지막 대메뉴이므로 다음 대메뉴 요청하지 않음
+              }
+              
               // 룰 3: Done 되는 순간, 즉시 다음 대메뉴를 백그라운드에서 시작
               // 룰 5: 컨텍스트 유지 - 이전 대메뉴 완료된 텍스트 전체를 다음 요청에 전달
               const nextContext = nextFinalHtml
@@ -970,8 +1237,42 @@ function ResultContent() {
   }, [isRealtime])
 
   // 결과를 서버에 저장 (자동 저장용, alert 없음) - early return 이전에 정의
-  const saveResultToLocal = useCallback(async (showAlert: boolean = true) => {
-    if (typeof window === 'undefined' || !resultData) {
+  // htmlOverride 파라미터 추가: 직렬점사 완료 시 최신 HTML을 직접 전달
+  // contentOverride 파라미터 추가: htmlOverride와 함께 content도 전달
+  // modelOverride, startTimeOverride, userNameOverride 파라미터 추가: 직렬/병렬 점사 완료 시 최신 정보 전달
+  const saveResultToLocal = useCallback(async (
+    showAlert: boolean = true, 
+    htmlOverride?: string, 
+    contentOverride?: any,
+    modelOverride?: string,
+    startTimeOverride?: number,
+    userNameOverride?: string
+  ) => {
+    console.log('[결과 저장] saveResultToLocal 호출:', {
+      hasWindow: typeof window !== 'undefined',
+      hasResultData: !!resultData,
+      hasHtmlOverride: !!htmlOverride,
+      hasModelOverride: !!modelOverride,
+      hasStartTimeOverride: !!startTimeOverride,
+      hasUserNameOverride: !!userNameOverride,
+      htmlOverrideLength: htmlOverride?.length || 0,
+      showAlert
+    })
+    
+    // htmlOverride가 있으면 resultData 없이도 저장 가능
+    if (typeof window === 'undefined') {
+      console.error('[결과 저장] 저장 실패: window 없음')
+      if (showAlert) {
+        alert('결과 저장에 실패했습니다. (window 없음)')
+      }
+      return
+    }
+    
+    if (!resultData && !htmlOverride) {
+      console.error('[결과 저장] 저장 실패: 데이터 없음', {
+        hasResultData: !!resultData,
+        hasHtmlOverride: !!htmlOverride
+      })
       if (showAlert) {
         alert('결과 저장에 실패했습니다. (데이터 없음)')
       }
@@ -979,17 +1280,58 @@ function ResultContent() {
     }
     
     // requestKey 저장 (나중에 temp_requests 삭제용)
-    const currentRequestKey = requestKey
+    const currentRequestKey = requestKeyRef.current || requestKey
+    console.log('[결과 저장] currentRequestKey:', currentRequestKey)
     
     try {
-      // resultData에서 필요한 값들 가져오기
-      const content = resultData.content
-      const html = resultData.html || ''
-      const model = resultData.model
+      // resultData에서 필요한 값들 가져오기 (없으면 기본값 사용)
+      // htmlOverride가 있을 때는 resultData가 아직 설정되지 않았을 수 있으므로 optional chaining 사용
+      // contentOverride가 있으면 우선 사용 (직렬점사 완료 시 content 직접 전달)
+      const content = contentOverride || resultData?.content || null
+      // htmlOverride가 있으면 우선 사용 (직렬점사 완료 시 최신 HTML)
+      // 그 다음 realtime 모드에서는 streamingHtml이 더 최신일 수 있으므로 우선 사용
+      const html = htmlOverride 
+        ? htmlOverride
+        : ((isRealtime && streamingHtml && streamingHtml.length > (resultData?.html?.length || 0))
+          ? streamingHtml
+          : (resultData?.html || streamingHtml || ''))
+      
+      // modelOverride가 있으면 우선 사용
+      const model = modelOverride || resultData?.model || 'gemini-3-flash-preview'
+      
+      // userNameOverride가 있으면 우선 사용
+      const userName = userNameOverride || resultData?.userName || content?.user_info?.name || ''
+      
+      console.log('[결과 저장] HTML 길이 확인:', {
+        isRealtime,
+        hasHtmlOverride: !!htmlOverride,
+        resultDataHtmlLength: resultData?.html?.length || 0,
+        streamingHtmlLength: streamingHtml?.length || 0,
+        finalHtmlLength: html.length,
+        htmlPreview: html.substring(0, 200) // HTML 내용 미리보기
+      })
+      
+      // HTML이 비어있거나 너무 짧으면 저장하지 않음
+      if (!html || html.trim().length < 100) {
+        console.error('[결과 저장] HTML 내용이 비어있거나 너무 짧음:', {
+          htmlLength: html?.length || 0,
+          htmlTrimmedLength: html?.trim().length || 0,
+          htmlPreview: html?.substring(0, 200) || 'EMPTY'
+        })
+        if (showAlert) {
+          alert('저장할 내용이 없습니다. 점사가 완료된 후 다시 시도해주세요.')
+        }
+        return
+      }
       const fontFace = content?.font_face || ''
       
       // HTML에 모든 CSS 스타일 포함하여 저장 (result 페이지와 동일하게 표시되도록)
       let htmlWithFont = html || ''
+      
+      console.log('[결과 저장] HTML 처리 시작:', {
+        originalHtmlLength: html.length,
+        htmlPreview: html.substring(0, 300)
+      })
       
       // font-family 추출
       const match = fontFace ? fontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/) : null
@@ -1094,42 +1436,119 @@ ${fontFace ? fontFace : ''}
 `
       htmlWithFont = completeStyle + htmlWithFont
       
+      console.log('[결과 저장] HTML 스타일 추가 후:', {
+        htmlWithFontLength: htmlWithFont.length,
+        styleLength: completeStyle.length,
+        contentHtmlLength: html.length
+      })
+      
       // currentTime 계산 (resultData.startTime이 있으면)
       let processingTime = '0:00'
-      if (resultData.startTime) {
-        const elapsed = Date.now() - resultData.startTime
+      const startTime = startTimeOverride || resultData?.startTime
+      if (startTime) {
+        const elapsed = Date.now() - startTime
         const mins = Math.floor(elapsed / 60000)
         const secs = Math.floor((elapsed % 60000) / 1000)
         processingTime = `${mins}:${secs.toString().padStart(2, '0')}`
       }
       
-      const response = await fetch('/api/saved-results/save', {
+      const currentSavedId = savedIdRef.current || savedId
+      const hasDraftId = !!currentSavedId
+      const endpoint = hasDraftId ? '/api/saved-results/update' : '/api/saved-results/save'
+
+      console.log('[결과 저장] 저장 요청 준비:', {
+        endpoint,
+        hasDraftId,
+        currentSavedId,
+        htmlWithFontLength: htmlWithFont.length,
+        title: content?.content_name || '재회 결과',
+        model,
+        processingTime,
+        userName
+      })
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         cache: 'no-store', // 프로덕션 환경에서 캐싱 방지
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          ...(hasDraftId ? { id: currentSavedId } : {}),
           title: content?.content_name || '재회 결과',
           html: htmlWithFont, // 웹폰트가 포함된 HTML 저장
           content: content, // content 객체 전체 저장 (tts_speaker 포함)
-          model: model || 'gemini-3-flash-preview', // 모델 정보 저장
+          model: model, // 모델 정보 저장
           processingTime: processingTime, // 처리 시간 저장
-          userName: resultData?.userName || '' // 사용자 이름 저장
+          userName: userName // 사용자 이름 저장
         })
       })
 
+      console.log('[결과 저장] 저장 요청 완료:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
+      })
+
       if (!response.ok) {
-        const error = await response.json()
+        const errorText = await response.text()
+        let error: any = {}
+        if (errorText) {
+          try {
+            error = JSON.parse(errorText)
+          } catch (e) {
+            error = { error: errorText || '결과 저장에 실패했습니다.' }
+          }
+        }
         throw new Error(error.error || '결과 저장에 실패했습니다.')
       }
 
       const result = await response.json()
+      console.log('[결과 저장] 저장 응답:', result)
+      console.log('[결과 저장] 응답 상세:', {
+        success: result.success,
+        hasData: !!result.data,
+        dataId: result.data?.id,
+        dataIdType: typeof result.data?.id,
+        currentRequestKey,
+        currentSavedId
+      })
       
       if (result.success) {
         
         // 저장된 결과 ID 저장 (동기화 확인용)
         const savedResultId = result.data?.id
+        const savedHtml = result.data?.html || ''
+        console.log('[결과 저장] savedResultId 추출:', {
+          savedResultId,
+          savedResultIdType: typeof savedResultId,
+          savedResultIdString: String(savedResultId),
+          savedHtmlLength: savedHtml.length
+        })
+        console.log('[결과 저장] 저장된 HTML 미리보기:', savedHtml.substring(0, 300))
+        console.log('[결과 저장] 저장된 HTML에 menu-section 포함:', savedHtml.includes('menu-section'))
+        console.log('[결과 저장] 저장된 HTML에 subtitle-section 포함:', savedHtml.includes('subtitle-section'))
+        
+        // 저장된 HTML이 비어있으면 경고
+        if (!savedHtml || savedHtml.trim().length < 100) {
+          console.error('[결과 저장] 저장된 HTML이 비어있음!', {
+            savedHtmlLength: savedHtml.length,
+            savedHtmlTrimmedLength: savedHtml.trim().length,
+            savedHtmlPreview: savedHtml.substring(0, 200),
+            sentHtmlLength: htmlWithFont.length,
+            sentHtmlPreview: htmlWithFont.substring(0, 200)
+          })
+          if (showAlert) {
+            alert('경고: 저장된 내용이 비어있습니다. 관리자에게 문의해주세요.')
+          }
+        } else if (!savedHtml.includes('menu-section') && !savedHtml.includes('subtitle-section')) {
+          console.warn('[결과 저장] 저장된 HTML에 본문 내용이 없을 수 있음:', {
+            savedHtmlLength: savedHtml.length,
+            hasMenuSection: savedHtml.includes('menu-section'),
+            hasSubtitleSection: savedHtml.includes('subtitle-section'),
+            savedHtmlPreview: savedHtml.substring(0, 500)
+          })
+        }
         
         // 저장된 결과를 리스트 맨 위에 추가 (즉시 반영)
         if (result.data) {
@@ -1138,6 +1557,76 @@ ${fontFace ? fontFace : ''}
             const filtered = prev.filter((item: any) => item.id !== result.data.id)
             // 새 데이터를 맨 위에 추가
             return [result.data, ...filtered]
+          })
+        }
+        
+        // user_credentials 업데이트: 점사 완료 후 저장된 savedId를 user_credentials에 저장
+        // 이제 savedId는 점사 완료 후에만 생성되므로 항상 업데이트 필요
+        console.log('[결과 저장] user_credentials 업데이트 조건 확인:', {
+          hasCurrentRequestKey: !!currentRequestKey,
+          currentRequestKey,
+          hasSavedResultId: !!savedResultId,
+          savedResultId,
+          savedResultIdType: typeof savedResultId,
+          savedResultIdString: String(savedResultId),
+          savedResultIdTruthy: !!savedResultId
+        })
+        
+        if (currentRequestKey && savedResultId) {
+          console.log('[결과 저장] user_credentials 업데이트 시도:', { currentRequestKey, savedId: savedResultId })
+          try {
+            // savedId를 숫자로 변환 (문자열일 수 있음)
+            const savedIdNumber = typeof savedResultId === 'string' ? parseInt(savedResultId, 10) : savedResultId
+            if (isNaN(savedIdNumber) || savedIdNumber <= 0) {
+              console.error('[결과 저장] savedId가 유효한 숫자가 아닙니다:', {
+                savedResultId,
+                savedIdNumber,
+                isNaN: isNaN(savedIdNumber),
+                isPositive: savedIdNumber > 0
+              })
+              // 에러가 나도 계속 진행 (저장은 성공했으므로)
+              return
+            }
+            
+            console.log('[결과 저장] user_credentials 업데이트 요청:', {
+              requestKey: currentRequestKey,
+              savedId: savedIdNumber
+            })
+            
+            const updateResponse = await fetch('/api/user-credentials/update', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                requestKey: currentRequestKey,
+                savedId: savedIdNumber
+              })
+            })
+            
+            console.log('[결과 저장] user_credentials 업데이트 응답:', {
+              status: updateResponse.status,
+              ok: updateResponse.ok
+            })
+            
+            if (!updateResponse.ok) {
+              const errorText = await updateResponse.text()
+              console.error('[결과 저장] user_credentials 업데이트 실패:', {
+                status: updateResponse.status,
+                errorText
+              })
+            } else {
+              const updateResult = await updateResponse.json()
+              console.log('[결과 저장] user_credentials 업데이트 성공:', updateResult)
+            }
+          } catch (updateError) {
+            // 업데이트 실패는 무시 (로그만 출력)
+            console.error('[결과 저장] user_credentials 업데이트 실패:', updateError)
+          }
+        } else {
+          console.warn('[결과 저장] user_credentials 업데이트 스킵:', { 
+            currentRequestKey, 
+            savedResultId,
+            hasCurrentRequestKey: !!currentRequestKey,
+            hasSavedResultId: !!savedResultId
           })
         }
         
@@ -1174,35 +1663,84 @@ ${fontFace ? fontFace : ''}
           
         }, 1500)
       } else {
-        throw new Error('결과 저장에 실패했습니다.')
+        console.error('[결과 저장] 저장 실패: result.success가 false')
+        if (showAlert) {
+          alert('결과 저장에 실패했습니다.')
+        }
       }
-    } catch (e) {
+    } catch (e: any) {
+      console.error('[결과 저장] 저장 실패:', e)
       if (showAlert) {
         alert('결과 저장에 실패했습니다.\n\n개발자 도구 콘솔을 확인해주세요.')
       }
     }
-  }, [resultData, loadSavedResults, setSavedResults])
+  }, [resultData, requestKey, loadSavedResults, isRealtime, streamingHtml])
 
   // 점사 완료 시 자동 저장 - early return 이전에 정의
   useEffect(() => {
     if (typeof window === 'undefined') return
     
-    // 이미 자동 저장했으면 건너뛰기
-    if (autoSavedRef.current) return
+    // 이미 자동 저장했으면 건너뛰기 (직렬점사에서 직접 저장했을 수 있음)
+    if (autoSavedRef.current) {
+      // 로그를 너무 많이 출력하지 않도록 주석 처리
+      // console.log('[자동 저장] 이미 저장했으므로 스킵')
+      return
+    }
     
-    // html 값 가져오기 (resultData에서 직접)
-    const htmlContent = resultData?.html || ''
+    // html 값 가져오기 (resultData에서 직접, 없으면 streamingHtml 사용)
+    // realtime 모드에서는 streamingHtml이 최신일 수 있으므로 우선 사용
+    const htmlContent = (isRealtime && streamingHtml && streamingHtml.length > (resultData?.html?.length || 0)) 
+      ? streamingHtml 
+      : (resultData?.html || streamingHtml || '')
+    
+    // HTML 내용이 너무 짧으면 저장하지 않음 (최소 100자 이상)
+    const hasValidContent = htmlContent.length >= 100
     
     // 점사 완료 조건 확인
+    // realtime 모드: streamingFinished가 true이고 resultData와 htmlContent가 있어야 함
+    // batch 모드: resultData와 htmlContent가 있고 스트리밍이 비활성화되어야 함
+    // 직렬점사는 직접 저장하므로, 자동 저장은 streamingFinished가 true일 때만 실행
     const isCompleted = 
-      (fortuneViewMode === 'realtime' && streamingFinished && resultData && htmlContent) ||
-      (fortuneViewMode === 'batch' && resultData && htmlContent && !isStreamingActive)
+      (isRealtime && streamingFinished && resultData && htmlContent && hasValidContent) ||
+      (!isRealtime && fortuneViewMode === 'batch' && resultData && htmlContent && hasValidContent && !isStreamingActive && streamingFinished)
     
-    if (isCompleted && resultData && htmlContent) {
+    // 로그를 조건 충족 시에만 출력하도록 개선 (너무 많은 로그 방지)
+    if (isCompleted && resultData && htmlContent && hasValidContent) {
+      console.log('[자동 저장] 조건 충족, 저장 시작:', {
+        isRealtime,
+        fortuneViewMode,
+        streamingFinished,
+        htmlContentLength: htmlContent.length,
+        isStreamingActive,
+        requestKey
+      })
       autoSavedRef.current = true
-      saveResultToLocal(false) // alert 없이 자동 저장
+      // realtime 모드에서는 streamingHtml을 resultData에 반영하여 저장
+      if (isRealtime && streamingHtml && streamingHtml.length > (resultData?.html?.length || 0) && resultData) {
+        const updatedResultData = {
+          ...resultData,
+          html: streamingHtml
+        }
+        setResultData(updatedResultData)
+        // resultData 업데이트 후 저장하도록 약간 지연
+        setTimeout(() => {
+          saveResultToLocal(false).catch(err => {
+            console.error('[자동 저장] 저장 실패:', err)
+            autoSavedRef.current = false // 실패 시 재시도 가능하도록
+          })
+        }, 300)
+      } else {
+        saveResultToLocal(false).catch(err => {
+          console.error('[자동 저장] 저장 실패:', err)
+          autoSavedRef.current = false // 실패 시 재시도 가능하도록
+        })
+      }
+    } else if (isRealtime && !streamingFinished && resultData && htmlContent && hasValidContent) {
+      // streamingFinished가 아직 false이지만 resultData와 htmlContent가 있으면 대기
+      // (직렬점사에서 직접 저장할 예정이므로 자동 저장은 스킵)
+      // 로그는 주석 처리하여 너무 많이 출력되지 않도록 함
     }
-  }, [fortuneViewMode, streamingFinished, resultData, isStreamingActive, saveResultToLocal])
+  }, [isRealtime, fortuneViewMode, streamingFinished, resultData, streamingHtml, isStreamingActive, requestKey, saveResultToLocal])
 
   // 경과 시간 계산 (완료된 결과만 표시)
   useEffect(() => {
@@ -1913,7 +2451,13 @@ ${fontFace ? fontFace : ''}
     )
   }
 
-  if (error || !resultData || !resultData.content) {
+  // isRealtime이고 점사 진행 중이면 resultData가 없어도 허용 (점사 시작 전)
+  // requestKey가 있으면 점사를 시작할 예정이므로 resultData 체크를 건너뜀
+  const isRealtimeStreaming = isRealtime || requestKey || isStreaming || isStreamingActive
+  
+  // content가 없어도 HTML이 있으면 표시 가능 (content는 선택사항)
+  // isRealtime이고 점사 진행 중이면 HTML이 없어도 허용 (점사 시작 전)
+  if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center text-gray-500">
@@ -1922,12 +2466,24 @@ ${fontFace ? fontFace : ''}
       </div>
     )
   }
+  
+  // isRealtime이고 점사 진행 중이 아닐 때만 resultData 체크
+  // requestKey가 있으면 점사를 시작할 예정이므로 체크를 건너뜀
+  if (!isRealtimeStreaming && (!resultData || !resultData.html)) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center text-gray-500">
+          <p>결과 데이터가 없습니다.</p>
+        </div>
+      </div>
+    )
+  }
 
-  // 가드 통과 후 안전 분해
-  const content = resultData.content
-  const html = resultData.html || ''
-  const startTime = resultData.startTime
-  const model = resultData.model
+  // 가드 통과 후 안전 분해 (가드에서 resultData 존재 확인했지만 안전을 위해 optional chaining 사용)
+  const content = resultData?.content
+  const html = resultData?.html || ''
+  const startTime = resultData?.startTime
+  const model = resultData?.model
 
   // 모델 이름 표시용
   const modelDisplayName = 
@@ -3924,9 +4480,84 @@ ${fontFace ? fontFace : ''}
     }
   }
 
+  // 점사 완료 전 버튼 클릭 시 경고
+  const handleButtonClickDuringStreaming = (e: React.MouseEvent) => {
+    if (!streamingFinished) {
+      e.preventDefault()
+      e.stopPropagation()
+      alert('점사중이니 완료될때까지 기다려주세요')
+      return false
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* 플로팅 배너 - 목차로 이동 */}
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* 슬라이드 메뉴바 */}
+      <SlideMenuBar 
+        isOpen={showSlideMenu} 
+        onClose={() => setShowSlideMenu(false)}
+        streamingFinished={streamingFinished}
+      />
+      
+      {/* 나의 이용내역 팝업 */}
+      <MyHistoryPopup isOpen={showMyHistoryPopup} onClose={() => setShowMyHistoryPopup(false)} contentId={resultData?.content?.id} />
+
+      {/* 이용약관 팝업 */}
+      <TermsPopup isOpen={showTermsPopup} onClose={() => setShowTermsPopup(false)} />
+      
+      {/* 개인정보처리방침 팝업 */}
+      <PrivacyPopup isOpen={showPrivacyPopup} onClose={() => setShowPrivacyPopup(false)} />
+
+      {/* 헤더 */}
+      <header className="w-full bg-white border-b-2 border-pink-500">
+        <div className="container mx-auto px-4 h-14 flex items-center justify-between">
+          <a 
+            href="/"
+            className="text-2xl font-bold tracking-tight text-pink-600 hover:text-pink-700 transition-colors cursor-pointer"
+            onClick={handleButtonClickDuringStreaming}
+          >
+            jeuniOn
+          </a>
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={(e) => {
+                if (!streamingFinished) {
+                  e.preventDefault()
+                  alert('점사중이니 완료될때까지 기다려주세요')
+                  return
+                }
+                setShowMyHistoryPopup(true)
+              }}
+              className="text-sm font-semibold text-gray-700 hover:text-pink-600 transition-colors"
+            >
+              나의 이용내역
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                if (!streamingFinished) {
+                  e.preventDefault()
+                  alert('점사중이니 완료될때까지 기다려주세요')
+                  return
+                }
+                setShowSlideMenu(true)
+              }}
+              aria-label="메뉴"
+              className="w-9 h-9 inline-flex items-center justify-center rounded-md text-pink-600 hover:bg-pink-50 transition-colors"
+            >
+              <span className="sr-only">메뉴</span>
+              <span className="block w-5">
+                <span className="block h-[2px] w-full bg-pink-600 mb-1"></span>
+                <span className="block h-[2px] w-full bg-pink-600 mb-1"></span>
+                <span className="block h-[2px] w-full bg-pink-600"></span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* 플로팅 배너 - 목차로 이동 (점사 중에도 허용) */}
       {parsedMenus.length > 0 && (
         <div className="fixed bottom-6 right-6 z-40">
           <button
@@ -3981,7 +4612,7 @@ ${fontFace ? fontFace : ''}
       {/* 동적 스타일 주입 */}
       <style dangerouslySetInnerHTML={{ __html: dynamicStyles }} />
       
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
+      <main className="container mx-auto px-4 py-8 max-w-4xl flex-1 w-full">
         {/* 제목 */}
         <div className="mb-8 text-center">
           <h1 className="result-title text-3xl md:text-4xl font-bold text-gray-900 mb-4 text-center">
@@ -4044,7 +4675,12 @@ ${fontFace ? fontFace : ''}
                     {parsedMenus.map((m, mIndex) => (
                       <div key={`toc-menu-${mIndex}`} className="space-y-1">
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            if (!streamingFinished) {
+                              e.preventDefault()
+                              alert('점사중이니 완료될때까지 기다려주세요')
+                              return
+                            }
                             const element = document.getElementById(`menu-${mIndex}`)
                             if (element) {
                               element.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -4697,6 +5333,46 @@ ${fontFace ? fontFace : ''}
           />
         )}
       </main>
+
+      {/* 푸터: 현재 화면 기준 하단에 붙도록 (컨텐츠가 짧아도 바닥) */}
+      <footer className="bg-white border-t border-gray-200 py-6 mt-auto">
+        <div className="container mx-auto px-4">
+          <div className="text-xs space-y-1 leading-relaxed">
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowTermsPopup(true)}
+                className="text-pink-600 hover:text-pink-700 underline font-semibold transition-colors"
+              >
+                이용약관
+              </button>
+              {' / '}
+              <button
+                type="button"
+                onClick={() => setShowPrivacyPopup(true)}
+                className="text-pink-600 hover:text-pink-700 underline font-semibold transition-colors"
+              >
+                개인정보처리방침
+              </button>
+            </div>
+            <div className="text-gray-600">
+              사업자등록번호 : 108-81-84400 │ 통신판매업신고번호 : 2022-서울성동-00643
+            </div>
+            <div className="text-gray-600">
+              02-516-1975 │ service＠fortune82.com
+            </div>
+            <div className="text-gray-600">
+              서울특별시 성동구 상원12길 34 (성수동1가, 서울숲에이원) 213호
+            </div>
+            <div className="pt-2 text-gray-500">
+              Copyright(c) FORTUNE82.COM All Rights Reserved.
+            </div>
+            <div className="text-gray-600">
+              ㈜테크앤조이 │ 대표 : 서주형
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }

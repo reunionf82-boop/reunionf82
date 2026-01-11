@@ -78,7 +78,19 @@ export default function ServiceCard({ service }: ServiceCardProps) {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm hover:shadow-sm transition-shadow duration-300 overflow-hidden border border-gray-200 flex flex-col">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handleReunionClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          handleReunionClick()
+        }
+      }}
+      className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden border-2 border-pink-500 flex flex-col cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500"
+      aria-label={`${service.title} 폼으로 이동`}
+    >
       {/* 일러스트레이션 영역 */}
       <div className="relative h-48 bg-gradient-to-br from-yellow-50 via-pink-50 to-orange-50 flex items-center justify-center overflow-hidden">
         {/* 19금 로고 */}
@@ -167,12 +179,9 @@ export default function ServiceCard({ service }: ServiceCardProps) {
               {formatPrice(service.price)}원
             </span>
           )}
-          <button 
-            onClick={handleReunionClick}
-            className="bg-pink-500 hover:bg-pink-600 text-white font-semibold py-2.5 px-6 rounded-lg transition-all duration-300 shadow-sm hover:shadow-md whitespace-nowrap"
-          >
+          <span className="bg-pink-500 text-white font-semibold py-2.5 px-6 rounded-lg shadow-sm whitespace-nowrap">
             재회보기
-          </button>
+          </span>
         </div>
       </div>
     </div>

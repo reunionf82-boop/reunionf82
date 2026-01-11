@@ -1,0 +1,108 @@
+-- Supabase Security Advisor 경고 해결: count_estimate 함수 search_path 설정
+-- 
+-- pg_temp_72.count_estimate는 임시 스키마의 함수입니다.
+-- 하지만 실제로 public 스키마에 count_estimate 함수가 있을 수 있으므로 확인 후 수정합니다.
+
+-- ============================================
+-- 1단계: count_estimate 함수 확인 및 수정
+-- ============================================
+-- 이 스크립트는 public 스키마에 count_estimate 함수가 있는지 확인하고,
+-- 있다면 search_path를 설정하여 재생성합니다.
+
+DO $$
+DECLARE
+  func_record RECORD;
+  func_def TEXT;
+  new_func_def TEXT;
+BEGIN
+  -- public 스키마에 count_estimate 함수 찾기
+  FOR func_record IN
+    SELECT 
+      p.oid,
+      p.proname,
+      pg_get_function_arguments(p.oid) as args,
+      pg_get_function_result(p.oid) as return_type,
+      pg_get_functiondef(p.oid) as definition,
+      CASE 
+        WHEN p.proconfig IS NULL OR NOT EXISTS (
+          SELECT 1 FROM unnest(p.proconfig) AS config 
+          WHERE config LIKE 'search_path=%'
+        ) THEN true
+        ELSE false
+      END as needs_fix
+    FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'public'
+      AND p.proname = 'count_estimate'
+  LOOP
+    IF func_record.needs_fix THEN
+      -- 함수 정의에서 search_path 추가
+      func_def := func_record.definition;
+      
+      -- SECURITY DEFINER 다음에 SET search_path = public 추가
+      IF func_def LIKE '%SECURITY DEFINER%' THEN
+        new_func_def := regexp_replace(
+          func_def,
+          '(SECURITY DEFINER)',
+          E'\\1\nSET search_path = public',
+          'g'
+        );
+      ELSIF func_def LIKE '%LANGUAGE%' THEN
+        -- SECURITY DEFINER가 없으면 LANGUAGE 다음에 추가
+        new_func_def := regexp_replace(
+          func_def,
+          '(LANGUAGE [a-z]+)',
+          E'\\1\nSET search_path = public',
+          'g'
+        );
+      ELSE
+        -- 함수 정의를 직접 수정
+        new_func_def := func_def;
+      END IF;
+      
+      -- 함수 재생성
+      EXECUTE new_func_def;
+      
+      RAISE NOTICE 'Function count_estimate(%) has been updated with search_path = public', func_record.args;
+    ELSE
+      RAISE NOTICE 'Function count_estimate(%) already has search_path set', func_record.args;
+    END IF;
+  END LOOP;
+  
+  -- 함수가 없으면 알림
+  IF NOT FOUND THEN
+    RAISE NOTICE 'No count_estimate function found in public schema. The warning may be from a temporary schema (pg_temp_72) which cannot be modified.';
+  END IF;
+END $$;
+
+-- ============================================
+-- 2단계: 수동 확인 및 수정 (위 스크립트가 작동하지 않는 경우)
+-- ============================================
+-- 다음 쿼리를 실행하여 함수 정의를 확인하세요:
+/*
+SELECT 
+  n.nspname as schema_name,
+  p.proname as function_name,
+  pg_get_function_arguments(p.oid) as arguments,
+  pg_get_function_result(p.oid) as return_type,
+  pg_get_functiondef(p.oid) as definition
+FROM pg_proc p
+JOIN pg_namespace n ON p.pronamespace = n.oid
+WHERE n.nspname = 'public'
+  AND p.proname = 'count_estimate';
+*/
+
+-- 함수 정의를 확인한 후, 아래와 같이 수정하세요:
+-- 1. 함수 정의를 복사
+-- 2. SECURITY DEFINER 다음에 "SET search_path = public" 추가
+-- 3. DROP FUNCTION 후 CREATE OR REPLACE FUNCTION으로 재생성
+
+-- ============================================
+-- 참고사항
+-- ============================================
+-- 1. pg_temp_72는 임시 스키마이므로 직접 수정할 수 없습니다.
+-- 2. 임시 스키마의 함수는 세션 종료 시 자동으로 삭제됩니다.
+-- 3. 만약 public 스키마에 count_estimate 함수가 없다면,
+--    이 경고는 Supabase 내부 시스템에서 생성한 임시 함수일 수 있습니다.
+-- 4. 임시 함수는 보안 위험이 거의 없지만, 경고를 제거하려면
+--    Supabase Support에 문의하거나 경고를 무시할 수 있습니다.

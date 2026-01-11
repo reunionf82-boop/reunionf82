@@ -1859,18 +1859,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               }}
               className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
             >
-              {formData.thumbnailImageUrl ? (
-                <img 
-                  src={formData.thumbnailImageUrl} 
-                  alt="이미지 썸네일" 
-                  className="absolute inset-0 w-full h-full object-contain"
-                />
-              ) : (
-                <span className="text-xs leading-tight text-center">
-                  <div>이미지</div>
-                  <div>썸네일</div>
-                </span>
-              )}
+              {(() => {
+                const imageUrl = formData.thumbnailImageUrl || (formData.thumbnailVideoUrl ? getThumbnailUrl(`${formData.thumbnailVideoUrl}.jpg`) : '')
+                return imageUrl ? (
+                  <img 
+                    src={imageUrl} 
+                    alt="이미지 썸네일" 
+                    className="absolute inset-0 w-full h-full object-contain"
+                    onError={(e) => {
+                      ;(e.target as HTMLImageElement).style.display = 'none'
+                    }}
+                  />
+                ) : (
+                  <span className="text-xs leading-tight text-center">
+                    <div>이미지</div>
+                    <div>썸네일</div>
+                  </span>
+                )
+              })()}
             </button>
             <button
               type="button"
@@ -1882,35 +1888,47 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 formData.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
               }`}
             >
-              {formData.thumbnailVideoUrl && formData.thumbnailImageUrl ? (
-                <>
-                  <img 
-                    src={formData.thumbnailImageUrl} 
-                    alt="동영상 썸네일" 
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                  {/* 반투명 동영상 플레이 아이콘 */}
-                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
-                    <svg 
-                      className="w-8 h-8 text-white opacity-80" 
-                      fill="currentColor" 
-                      viewBox="0 0 24 24"
-                    >
-                      <path d="M8 5v14l11-7z"/>
-                    </svg>
-                  </div>
-                </>
-              ) : formData.thumbnailVideoUrl ? (
-                <span className="text-xs text-green-400 leading-tight text-center">
-                  <div>동영상</div>
-                  <div>썸네일</div>
-                </span>
-              ) : (
-                <span className="text-xs leading-tight text-center">
-                  <div>동영상</div>
-                  <div>썸네일</div>
-                </span>
-              )}
+              {(() => {
+                const imageUrl = formData.thumbnailImageUrl || (formData.thumbnailVideoUrl ? getThumbnailUrl(`${formData.thumbnailVideoUrl}.jpg`) : '')
+                if (formData.thumbnailVideoUrl && imageUrl) {
+                  return (
+                    <>
+                      <img 
+                        src={imageUrl} 
+                        alt="동영상 썸네일" 
+                        className="absolute inset-0 w-full h-full object-cover"
+                        onError={(e) => {
+                          ;(e.target as HTMLImageElement).style.display = 'none'
+                        }}
+                      />
+                      {/* 반투명 동영상 플레이 아이콘 */}
+                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                        <svg 
+                          className="w-8 h-8 text-white opacity-80" 
+                          fill="currentColor" 
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M8 5v14l11-7z"/>
+                        </svg>
+                      </div>
+                    </>
+                  )
+                } else if (formData.thumbnailVideoUrl) {
+                  return (
+                    <span className="text-xs text-green-400 leading-tight text-center">
+                      <div>동영상</div>
+                      <div>썸네일</div>
+                    </span>
+                  )
+                } else {
+                  return (
+                    <span className="text-xs leading-tight text-center">
+                      <div>동영상</div>
+                      <div>썸네일</div>
+                    </span>
+                  )
+                }
+              })()}
             </button>
           </div>
           <div className="mt-3 text-sm text-gray-400 space-y-1">
@@ -2011,18 +2029,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center"
                 style={{ aspectRatio: '9/16' }}
               >
-                {formData.bookCoverThumbnailImageUrl ? (
-                  <img 
-                    src={formData.bookCoverThumbnailImageUrl} 
-                    alt="북커버 이미지 썸네일" 
-                    className="absolute inset-0 w-full h-full object-contain"
-                  />
-                ) : (
-                  <span className="text-xs leading-tight text-center">
-                    <div>북커버</div>
-                    <div>이미지</div>
-                  </span>
-                )}
+                {(() => {
+                  const imageUrl = formData.bookCoverThumbnailImageUrl || (formData.bookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.bookCoverThumbnailVideoUrl}.jpg`) : '')
+                  return imageUrl ? (
+                    <img 
+                      src={imageUrl} 
+                      alt="북커버 이미지 썸네일" 
+                      className="absolute inset-0 w-full h-full object-contain"
+                      onError={(e) => {
+                        ;(e.target as HTMLImageElement).style.display = 'none'
+                      }}
+                    />
+                  ) : (
+                    <span className="text-xs leading-tight text-center">
+                      <div>북커버</div>
+                      <div>이미지</div>
+                    </span>
+                  )
+                })()}
               </button>
               <button
                 type="button"
@@ -2035,34 +2059,46 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 }`}
                 style={{ aspectRatio: '9/16' }}
               >
-                {formData.bookCoverThumbnailVideoUrl && formData.bookCoverThumbnailImageUrl ? (
-                  <>
-                    <img 
-                      src={formData.bookCoverThumbnailImageUrl} 
-                      alt="북커버 동영상 썸네일" 
-                      className="absolute inset-0 w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
-                      <svg 
-                        className="w-8 h-8 text-white opacity-80" 
-                        fill="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M8 5v14l11-7z"/>
-                      </svg>
-                    </div>
-                  </>
-                ) : formData.bookCoverThumbnailVideoUrl ? (
-                  <span className="text-xs text-green-400 leading-tight text-center">
-                    <div>북커버</div>
-                    <div>동영상</div>
-                  </span>
-                ) : (
-                  <span className="text-xs leading-tight text-center">
-                    <div>북커버</div>
-                    <div>동영상</div>
-                  </span>
-                )}
+                {(() => {
+                  const imageUrl = formData.bookCoverThumbnailImageUrl || (formData.bookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.bookCoverThumbnailVideoUrl}.jpg`) : '')
+                  if (formData.bookCoverThumbnailVideoUrl && imageUrl) {
+                    return (
+                      <>
+                        <img 
+                          src={imageUrl} 
+                          alt="북커버 동영상 썸네일" 
+                          className="absolute inset-0 w-full h-full object-cover"
+                          onError={(e) => {
+                            ;(e.target as HTMLImageElement).style.display = 'none'
+                          }}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                          <svg 
+                            className="w-8 h-8 text-white opacity-80" 
+                            fill="currentColor" 
+                            viewBox="0 0 24 24"
+                          >
+                            <path d="M8 5v14l11-7z"/>
+                          </svg>
+                        </div>
+                      </>
+                    )
+                  } else if (formData.bookCoverThumbnailVideoUrl) {
+                    return (
+                      <span className="text-xs text-green-400 leading-tight text-center">
+                        <div>북커버</div>
+                        <div>동영상</div>
+                      </span>
+                    )
+                  } else {
+                    return (
+                      <span className="text-xs leading-tight text-center">
+                        <div>북커버</div>
+                        <div>동영상</div>
+                      </span>
+                    )
+                  }
+                })()}
               </button>
             </div>
           </div>
@@ -2862,18 +2898,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center"
                 style={{ aspectRatio: '9/16' }}
               >
-                {formData.endingBookCoverThumbnailImageUrl ? (
-                  <img 
-                    src={formData.endingBookCoverThumbnailImageUrl} 
-                    alt="엔딩북커버 이미지 썸네일" 
-                    className="absolute inset-0 w-full h-full object-contain"
-                  />
-                ) : (
-                  <span className="text-xs leading-tight text-center">
-                    <div>엔딩북커버</div>
-                    <div>이미지</div>
-                  </span>
-                )}
+                {(() => {
+                  const imageUrl = formData.endingBookCoverThumbnailImageUrl || (formData.endingBookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.endingBookCoverThumbnailVideoUrl}.jpg`) : '')
+                  return imageUrl ? (
+                    <img 
+                      src={imageUrl} 
+                      alt="엔딩북커버 이미지 썸네일" 
+                      className="absolute inset-0 w-full h-full object-contain"
+                      onError={(e) => {
+                        ;(e.target as HTMLImageElement).style.display = 'none'
+                      }}
+                    />
+                  ) : (
+                    <span className="text-xs leading-tight text-center">
+                      <div>엔딩북커버</div>
+                      <div>이미지</div>
+                    </span>
+                  )
+                })()}
               </button>
               <button
                 type="button"
@@ -2886,34 +2928,46 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 }`}
                 style={{ aspectRatio: '9/16' }}
               >
-                {formData.endingBookCoverThumbnailVideoUrl && formData.endingBookCoverThumbnailImageUrl ? (
-                  <>
-                    <img 
-                      src={formData.endingBookCoverThumbnailImageUrl} 
-                      alt="엔딩북커버 동영상 썸네일" 
-                      className="absolute inset-0 w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
-                      <svg 
-                        className="w-8 h-8 text-white opacity-80" 
-                        fill="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M8 5v14l11-7z"/>
-                      </svg>
-                    </div>
-                  </>
-                ) : formData.endingBookCoverThumbnailVideoUrl ? (
-                  <span className="text-xs text-green-400 leading-tight text-center">
-                    <div>엔딩북커버</div>
-                    <div>동영상</div>
-                  </span>
-                ) : (
-                  <span className="text-xs leading-tight text-center">
-                    <div>엔딩북커버</div>
-                    <div>동영상</div>
-                  </span>
-                )}
+                {(() => {
+                  const imageUrl = formData.endingBookCoverThumbnailImageUrl || (formData.endingBookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.endingBookCoverThumbnailVideoUrl}.jpg`) : '')
+                  if (formData.endingBookCoverThumbnailVideoUrl && imageUrl) {
+                    return (
+                      <>
+                        <img 
+                          src={imageUrl} 
+                          alt="엔딩북커버 동영상 썸네일" 
+                          className="absolute inset-0 w-full h-full object-cover"
+                          onError={(e) => {
+                            ;(e.target as HTMLImageElement).style.display = 'none'
+                          }}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                          <svg 
+                            className="w-8 h-8 text-white opacity-80" 
+                            fill="currentColor" 
+                            viewBox="0 0 24 24"
+                          >
+                            <path d="M8 5v14l11-7z"/>
+                          </svg>
+                        </div>
+                      </>
+                    )
+                  } else if (formData.endingBookCoverThumbnailVideoUrl) {
+                    return (
+                      <span className="text-xs text-green-400 leading-tight text-center">
+                        <div>엔딩북커버</div>
+                        <div>동영상</div>
+                      </span>
+                    )
+                  } else {
+                    return (
+                      <span className="text-xs leading-tight text-center">
+                        <div>엔딩북커버</div>
+                        <div>동영상</div>
+                      </span>
+                    )
+                  }
+                })()}
               </button>
             </div>
             {/* 무결성 체크 버튼 */}

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@supabase/supabase-js'
 
+export const runtime = 'nodejs'
+
 // 서버 사이드에서만 서비스 롤 키 사용
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
@@ -34,6 +36,16 @@ export async function POST(req: NextRequest) {
 
     const formData = await req.formData()
     const file = formData.get('file') as File
+    const folderRaw = formData.get('folder')
+    const folder =
+      typeof folderRaw === 'string'
+        ? folderRaw
+            .trim()
+            .replace(/^\/*/, '') // leading /
+            .replace(/\.\./g, '') // block ..
+            .replace(/[^a-zA-Z0-9/_-]/g, '') // safe chars
+            .replace(/\/{2,}/g, '/') // collapse //
+        : ''
 
     if (!file) {
       return NextResponse.json(
@@ -42,14 +54,16 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 파일 확장자 확인
+    // 파일 확장자/MIME 확인
     const fileExt = file.name.split('.').pop()?.toLowerCase() || ''
     const fileNameLower = file.name.toLowerCase()
+    const mimeType = (file.type || '').toLowerCase()
     
     // 파일 타입 확인 (MIME 타입과 확장자 모두 확인)
-    const isImageByType = file.type.startsWith('image/')
-    const isVideoByType = file.type === 'video/webm'
-    const isImageByExt = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExt)
+    const isImageByType = mimeType.startsWith('image/')
+    const isVideoByType = mimeType === 'video/webm'
+    // iPhone/카톡 등에서 자주 오는 확장자까지 허용
+    const isImageByExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'jfif', 'bmp', 'heic', 'heif', 'svg'].includes(fileExt)
     const isVideoByExt = ['webm'].includes(fileExt)
     
     const isImage = isImageByType || isImageByExt
@@ -71,27 +85,26 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 파일 확장자와 MIME 타입 일치 확인
+    // 동영상은 확장자 엄격 체크 (WebM만 지원)
     if (isVideo && !isVideoByExt) {
       return NextResponse.json(
         { error: '동영상 파일의 확장자가 올바르지 않습니다. (WebM만 지원)' },
         { status: 400 }
       )
     }
-    if (isImage && !isImageByExt) {
-      return NextResponse.json(
-        { error: '이미지 파일의 확장자가 올바르지 않습니다.' },
-        { status: 400 }
-      )
-    }
+    // 이미지는 MIME으로 충분히 판단 가능하므로 확장자 불일치로 막지 않음
 
-    const finalFileExt = fileExt || (isVideo ? 'webm' : 'jpg')
+    const mimeExtRaw = isImageByType ? mimeType.split('/')[1] : ''
+    const mimeExt = mimeExtRaw
+      ? (mimeExtRaw.includes('+xml') ? 'svg' : mimeExtRaw).replace('jpeg', 'jpg')
+      : ''
+    const finalFileExt = fileExt || (isVideo ? 'webm' : (mimeExt || 'jpg'))
     const baseFileName = `${Date.now()}-${Math.random().toString(36).substring(7)}`
     
     // 동영상인 경우 확장자를 포함한 파일명 사용 (WebM과 MP4를 구분하기 위해)
     // 이미지인 경우 확장자 포함
     const fileName = `${baseFileName}.${finalFileExt}`
-    const filePath = fileName
+    const filePath = folder ? `${folder}/${fileName}` : fileName
     
     // 동영상인 경우, 파일명에서 확장자를 제거한 기본 이름도 반환 (WebM/MP4 공통 이름)
     const videoBaseName = isVideo ? baseFileName : null
@@ -99,21 +112,60 @@ export async function POST(req: NextRequest) {
 
     // 서비스 롤 키로 업로드 (RLS 우회)
     const supabase = getSupabaseClient()
+    const supabaseHost = supabaseUrl ? (() => { try { return new URL(supabaseUrl).host } catch { return supabaseUrl } })() : ''
     
     // 파일을 ArrayBuffer로 변환하여 업로드 (MP4 파일 호환성 개선)
     const arrayBuffer = await file.arrayBuffer()
+    const body = Buffer.from(arrayBuffer)
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('thumbnails')
-      .upload(filePath, arrayBuffer, {
+      .upload(filePath, body, {
         cacheControl: '3600',
         upsert: false,
-        contentType: file.type || (isVideo ? (fileExt === 'webm' ? 'video/webm' : 'video/mp4') : `image/${finalFileExt}`)
+        contentType: mimeType || (isVideo ? 'video/webm' : `image/${finalFileExt}`)
       })
 
     if (uploadError) {
       console.error('Upload error:', uploadError)
       return NextResponse.json(
-        { error: uploadError.message || '파일 업로드에 실패했습니다.', details: uploadError },
+        {
+          error: uploadError.message || '파일 업로드에 실패했습니다.',
+          details: uploadError,
+          _debug: {
+            supabaseHost,
+            bucket: 'thumbnails',
+            filePath,
+            folder: folder || null,
+            fileName: file.name,
+            fileExt,
+            mimeType,
+            size: file.size,
+            isImage,
+            isVideo,
+          },
+        },
+        { status: 500 }
+      )
+    }
+
+    // 업로드 직후 실제 존재 여부 검증(대시보드에서 안 보이는 이슈 진단용)
+    const verifyExists = await supabase.storage
+      .from('thumbnails')
+      .download(filePath)
+      .then(() => true)
+      .catch(() => false)
+
+    if (!verifyExists) {
+      return NextResponse.json(
+        {
+          error: '업로드는 완료되었지만, 파일 존재 검증에 실패했습니다. (Storage에서 파일을 확인할 수 없음)',
+          _debug: {
+            supabaseHost,
+            bucket: 'thumbnails',
+            filePath,
+            folder: folder || null,
+          },
+        },
         { status: 500 }
       )
     }
@@ -130,7 +182,15 @@ export async function POST(req: NextRequest) {
       url: urlData.publicUrl,
       path: filePath,
       videoBaseName: videoBaseName, // 동영상인 경우 확장자 제외 파일명
-      fileType: isVideo ? 'video' : 'image'
+      fileType: isVideo ? 'video' : 'image',
+      _debug: {
+        supabaseHost,
+        bucket: 'thumbnails',
+        filePath,
+        folder: folder || null,
+        contentType: mimeType || (isVideo ? 'video/webm' : `image/${finalFileExt}`),
+        verified: true,
+      },
     })
   } catch (error: any) {
     return NextResponse.json(

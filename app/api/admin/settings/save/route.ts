@@ -16,12 +16,12 @@ export async function POST(req: NextRequest) {
     
     const supabase = getAdminSupabaseClient()
     const body = await req.json()
-    const { model, speaker, fortune_view_mode, use_sequential_fortune, tts_provider, typecast_voice_id } = body
+    const { model, speaker, fortune_view_mode, use_sequential_fortune, tts_provider, typecast_voice_id, home_html } = body
 
     // 기존 레코드 조회
     const { data: existing, error: existingError } = await supabase
       .from('app_settings')
-      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id')
+      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html')
       .eq('id', 1)
       .maybeSingle()
 
@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
       use_sequential_fortune?: boolean
       selected_tts_provider?: string
       selected_typecast_voice_id?: string
+      home_html?: string
     } = {
       updated_at: new Date().toISOString()
     }
@@ -100,6 +101,15 @@ export async function POST(req: NextRequest) {
       updateData.selected_typecast_voice_id = ''
     }
 
+    // home_html 업데이트 (빈값 허용)
+    if (home_html !== undefined && home_html !== null) {
+      updateData.home_html = String(home_html)
+    } else if (existing) {
+      updateData.home_html = String((existing as any).home_html || '')
+    } else {
+      updateData.home_html = ''
+    }
+
     let savedData: any = null
 
     if (existing) {
@@ -108,9 +118,10 @@ export async function POST(req: NextRequest) {
         .from('app_settings')
         .update(updateData)
         .eq('id', 1)
-        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id')
+        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html')
       
       if (updateError) {
+        console.error('[admin/settings/save] updateError:', updateError)
         throw updateError
       }
       
@@ -127,9 +138,10 @@ export async function POST(req: NextRequest) {
           id: 1,
           ...updateData
         })
-        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id')
+        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html')
       
       if (insertError) {
+        console.error('[admin/settings/save] insertError:', insertError)
         throw insertError
       }
       
@@ -148,10 +160,16 @@ export async function POST(req: NextRequest) {
       use_sequential_fortune: (savedData as any).use_sequential_fortune ?? updateData.use_sequential_fortune ?? false,
       tts_provider: (savedData as any).selected_tts_provider || updateData.selected_tts_provider || 'naver',
       typecast_voice_id: (savedData as any).selected_typecast_voice_id || updateData.selected_typecast_voice_id || '',
+      home_html: String((savedData as any).home_html || updateData.home_html || ''),
     })
   } catch (error: any) {
+    console.error('[admin/settings/save] error:', error)
+    const errorMessage = error?.message || error?.code || '설정을 저장하는데 실패했습니다.'
+    const errorHint = error?.code === '42703' || error?.message?.includes('column')
+      ? ' (DB 컬럼이 없을 수 있습니다. supabase-add-home-html.sql을 실행해주세요.)'
+      : ''
     return NextResponse.json(
-      { error: error.message || '설정을 저장하는데 실패했습니다.' },
+      { error: errorMessage + errorHint },
       { status: 500 }
     )
   }

@@ -8,6 +8,9 @@ import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { calculateManseRyeok, generateManseRyeokTable, generateManseRyeokText, getDayGanji, type ManseRyeokCaptionInfo, convertSolarToLunarAccurate, convertLunarToSolarAccurate } from '@/lib/manse-ryeok'
 import TermsPopup from '@/components/TermsPopup'
 import PrivacyPopup from '@/components/PrivacyPopup'
+import MyHistoryPopup from '@/components/MyHistoryPopup'
+import AlertPopup from '@/components/AlertPopup'
+import SlideMenuBar from '@/components/SlideMenuBar'
 import SupabaseVideo from '@/components/SupabaseVideo'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
@@ -123,28 +126,70 @@ function FormContent() {
   const [partnerDay, setPartnerDay] = useState('')
   const [partnerBirthHour, setPartnerBirthHour] = useState('')
   
-  const [agreeTerms, setAgreeTerms] = useState(false)
-  const [agreePrivacy, setAgreePrivacy] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [savedResults, setSavedResults] = useState<any[]>([])
   const [pdfExistsMap, setPdfExistsMap] = useState<Record<string, boolean>>({})
+  
+  // 리뷰 관련 상태
+  const [clickCount, setClickCount] = useState<number>(0)
+  const [reviews, setReviews] = useState<any[]>([])
+  const [bestReviews, setBestReviews] = useState<any[]>([])
+  const [activeReviewTab, setActiveReviewTab] = useState<'reviews' | 'best'>('reviews')
+  const [expandedReviews, setExpandedReviews] = useState<Set<number>>(new Set()) // 확장된 리뷰 ID
   const [pdfGeneratedMap, setPdfGeneratedMap] = useState<Record<string, boolean>>({}) // PDF 생성 여부 추적
   const [showPdfConfirmPopup, setShowPdfConfirmPopup] = useState(false) // PDF 생성 확인 팝업
   const [selectedPdfResult, setSelectedPdfResult] = useState<any>(null) // PDF 생성할 결과
   
-  // 스트리밍 로딩 팝업 상태
+  // 결제 팝업 상태
+  const [showPaymentPopup, setShowPaymentPopup] = useState(false)
+  const [phoneNumber1, setPhoneNumber1] = useState('010')
+  const [phoneNumber2, setPhoneNumber2] = useState('')
+  const [phoneNumber3, setPhoneNumber3] = useState('')
+  const [password, setPassword] = useState('')
+  
+  // 약관 동의 상태
+  const [agreeTerms, setAgreeTerms] = useState(false)
+  const [agreePrivacy, setAgreePrivacy] = useState(false)
+  
+  // 알림 팝업 상태
+  const [showAlert, setShowAlert] = useState(false)
+  const [alertMessage, setAlertMessage] = useState('')
+  
+  // 로딩 팝업 상태 (PDF 생성 등)
   const [showLoadingPopup, setShowLoadingPopup] = useState(false)
   const [streamingProgress, setStreamingProgress] = useState(0)
-  const [currentSubtitle, setCurrentSubtitle] = useState<string>('')
+  const [currentSubtitle, setCurrentSubtitle] = useState('')
   
-  // 이용약관 팝업 상태
-  const [showTermsPopup, setShowTermsPopup] = useState(false)
+  // window 객체에 showAlertMessage 함수 등록 (inline script에서 사용)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).showAlertMessage = (message: string) => {
+        setAlertMessage(message)
+        setShowAlert(true)
+      }
+    }
+    
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).showAlertMessage
+      }
+    }
+  }, [])
   
   // 개인정보 수집 및 이용 팝업 상태
   const [showPrivacyPopup, setShowPrivacyPopup] = useState(false)
   
+  // 나의 이용내역 팝업 상태
+  const [showMyHistoryPopup, setShowMyHistoryPopup] = useState(false)
+  
+  // 슬라이드 메뉴바 상태
+  const [showSlideMenu, setShowSlideMenu] = useState(false)
+  
   // 동의 안내 팝업 상태
   const [showAgreementAlert, setShowAgreementAlert] = useState(false)
+  
+  // 이용약관 팝업 상태
+  const [showTermsPopup, setShowTermsPopup] = useState(false)
   
   // 필수 정보 필드별 에러 상태
   const [fieldErrors, setFieldErrors] = useState<{
@@ -248,12 +293,12 @@ function FormContent() {
             setFormLocked(true)
             setIsLoadingFromStorage(false)
           } else {
-            alert('유효하지 않은 접근입니다.')
+            showAlertMessage('유효하지 않은 접근입니다.')
             setIsLoadingFromStorage(false)
           }
         })
         .catch((error) => {
-          alert('사용자 정보를 불러오는 중 오류가 발생했습니다.')
+          showAlertMessage('사용자 정보를 불러오는 중 오류가 발생했습니다.')
           setIsLoadingFromStorage(false)
         })
     } else {
@@ -261,7 +306,7 @@ function FormContent() {
       if (typeof window !== 'undefined') {
         try {
           const savedUserInfo = localStorage.getItem('userInfo')
-          if (savedUserInfo) {
+          if (savedUserInfo && savedUserInfo.trim()) {
             const userInfo = JSON.parse(savedUserInfo)
             
             // 본인 정보
@@ -424,7 +469,7 @@ function FormContent() {
         throw new Error(result.error || '저장된 결과 삭제에 실패했습니다.')
       }
     } catch (e: any) {
-      alert(e?.message || '저장된 결과 삭제에 실패했습니다.')
+      showAlertMessage(e?.message || '저장된 결과 삭제에 실패했습니다.')
     }
   }
 
@@ -508,7 +553,7 @@ function FormContent() {
       const textContent = extractTextFromHtml(savedResult.html)
       
       if (!textContent.trim()) {
-        alert('읽을 내용이 없습니다.')
+        showAlertMessage('읽을 내용이 없습니다.')
         setPlayingResultId(null)
         return
       }
@@ -620,7 +665,7 @@ function FormContent() {
       setPlayingResultId(null)
       setCurrentAudio(null)
     } catch (error: any) {
-      alert(error?.message || '음성 변환에 실패했습니다.')
+      showAlertMessage(error?.message || '음성 변환에 실패했습니다.')
       setPlayingResultId(null)
       setCurrentAudio(null)
     }
@@ -720,7 +765,7 @@ function FormContent() {
     
     // 이미 생성된 경우 중복 생성 방지
     if (pdfGeneratedMap[saved.id]) {
-      alert('이미 PDF가 생성되었습니다. 소장용으로 1회만 생성이 가능합니다.')
+      showAlertMessage('이미 PDF가 생성되었습니다. 소장용으로 1회만 생성이 가능합니다.')
       return
     }
     
@@ -1739,7 +1784,7 @@ function FormContent() {
       }
 
     } catch (error) {
-      alert(`PDF 생성 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`);
+      showAlertMessage(`PDF 생성 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`);
       // 컨테이너 제거
       if (container && container.parentNode) {
         container.parentNode.removeChild(container);
@@ -1791,6 +1836,34 @@ function FormContent() {
       }
       
       setContent(foundContent || null)
+      
+      // 클릭 수 증가 및 리뷰 로드
+      if (foundContent?.id) {
+        // 클릭 수 조회 (증가 전 값)
+        setClickCount(foundContent.click_count || 0)
+        
+        // 클릭 수 증가
+        try {
+          const clickRes = await fetch('/api/content/click', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content_id: foundContent.id }),
+          })
+          if (clickRes.ok) {
+            const clickData = await clickRes.json()
+            console.log('[클릭 수 증가 성공]', clickData)
+            setClickCount(clickData.click_count || foundContent.click_count || 0)
+          } else {
+            const errorData = await clickRes.json().catch(() => ({}))
+            console.error('[클릭 수 증가 실패]', clickRes.status, errorData)
+          }
+        } catch (e) {
+          console.error('[클릭 수 증가 에러]', e)
+        }
+        
+        // 리뷰 로드
+        loadReviews(foundContent.id)
+      }
     } catch (error) {
       setContent(null)
     } finally {
@@ -1798,81 +1871,102 @@ function FormContent() {
     }
   }
 
+  // 리뷰 로드 함수
+  const loadReviews = async (contentId: number) => {
+    try {
+      // 일반 리뷰
+      const reviewsRes = await fetch(`/api/reviews/list?content_id=${contentId}&only_best=false`, { 
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        }
+      })
+      if (reviewsRes.ok) {
+        const reviewsData = await reviewsRes.json()
+        console.log('[리뷰 로드] 일반 리뷰:', reviewsData)
+        setReviews(reviewsData.reviews || [])
+      } else {
+        const errorData = await reviewsRes.json().catch(() => ({}))
+        console.error('[리뷰 로드 실패] 일반 리뷰:', reviewsRes.status, errorData)
+      }
+      
+      // 베스트 리뷰
+      const bestRes = await fetch(`/api/reviews/list?content_id=${contentId}&only_best=true`, { 
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        }
+      })
+      if (bestRes.ok) {
+        const bestData = await bestRes.json()
+        console.log('[리뷰 로드] 베스트 리뷰:', bestData)
+        setBestReviews(bestData.reviews || [])
+      } else {
+        const errorData = await bestRes.json().catch(() => ({}))
+        console.error('[리뷰 로드 실패] 베스트 리뷰:', bestRes.status, errorData)
+      }
+    } catch (error) {
+      console.error('[리뷰 로드 에러]', error)
+    }
+  }
+
+  // 알림 표시 함수
+  const showAlertMessage = (message: string) => {
+    setAlertMessage(message)
+    setShowAlert(true)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // 에러 상태 초기화
-    const errors: typeof fieldErrors = {}
-    let hasError = false
-    
-    // 본인 정보 필수 체크
-    if (!name || !name.trim()) {
-      errors.name = '이름을 입력해주세요.'
-      hasError = true
-    }
-    
-    if (!gender) {
-      errors.gender = '성별을 선택해주세요.'
-      hasError = true
-    }
-    
-    if (!year || !month || !day) {
-      errors.birthDate = '생년월일을 모두 선택해주세요.'
-      hasError = true
-    }
-    
-    // 궁합형인 경우 이성 정보 필수 체크
-    if (isGonghapType) {
-      if (!partnerName || !partnerName.trim()) {
-        errors.partnerName = '이름을 입력해주세요.'
-        hasError = true
-      }
-      
-      if (!partnerGender) {
-        errors.partnerGender = '성별을 선택해주세요.'
-        hasError = true
-      }
-      
-      if (!partnerYear || !partnerMonth || !partnerDay) {
-        errors.partnerBirthDate = '생년월일을 모두 선택해주세요.'
-        hasError = true
-      }
-    }
-    
-    if (hasError) {
-      setFieldErrors(errors)
-      // 첫 번째 에러 필드로 스크롤
-      const firstErrorField = document.querySelector('[data-field-error]')
-      if (firstErrorField) {
-        firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      }
-      return
-    }
-    
-    // 에러가 없으면 에러 상태 초기화
-    setFieldErrors({})
-    
-    if (!agreeTerms || !agreePrivacy) {
-      setShowAgreementAlert(true)
-      return
-    }
-    
+    // 로딩 중 확인
     if (loading) {
-      alert('컨텐츠 정보를 불러오는 중입니다. 잠시만 기다려주세요.')
+      showAlertMessage('로딩 중입니다. 잠시만 기다려주세요.')
       return
     }
     
-    if (!title) {
-      alert('상품 정보가 없습니다. 메인 페이지에서 다시 선택해주세요.')
+    // 처리 중 확인
+    if (submitting) {
+      showAlertMessage('처리 중입니다. 잠시만 기다려주세요.')
       return
     }
     
+    // 서비스 선택 확인
     if (!content) {
-      alert(`컨텐츠 정보를 불러올 수 없습니다.\n\n상품명: ${title}\n\n메인 페이지에서 다시 선택해주세요.`)
+      showAlertMessage('서비스를 선택해주세요.')
+      return
+    }
+    
+    // 약관 동의 확인
+    if (!agreeTerms) {
+      showAlertMessage('서비스 이용 약관에 동의해주세요.')
+      return
+    }
+    
+    if (!agreePrivacy) {
+      showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
+      return
+    }
+    
+    // 결제 팝업 표시
+    setShowPaymentPopup(true)
+  }
+
+  // 결제 처리 함수
+  const handlePaymentSubmit = async (paymentMethod: 'card' | 'mobile') => {
+    // 휴대폰 번호와 비밀번호 검증
+    if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
+      showAlertMessage('휴대폰 번호를 모두 입력해주세요.')
+      return
+    }
+    
+    if (!password || password.length < 4) {
+      showAlertMessage('비밀번호를 4자리 이상 입력해주세요.')
       return
     }
 
     setSubmitting(true)
+    setShowPaymentPopup(false)
 
     // 시작 시간 기록
     const startTime = Date.now()
@@ -1885,7 +1979,7 @@ function FormContent() {
       const detailMenuCharCount = parseInt(content.detail_menu_char_count) || 500
 
       if (menuSubtitles.length === 0) {
-        alert('상품 메뉴 소제목이 설정되지 않았습니다.')
+        showAlertMessage('상품 메뉴 소제목이 설정되지 않았습니다.')
         setSubmitting(false)
         return
       }
@@ -2033,7 +2127,7 @@ function FormContent() {
       // 만세력 생성 검증
       const manseRyeokJsonString = manseRyeokData ? JSON.stringify(manseRyeokData, null, 2) : ''
       if (!manseRyeokText || !manseRyeokText.trim() || !manseRyeokData) {
-        alert('만세력 데이터 생성에 실패했습니다. 생년월일/태어난 시를 다시 확인해주세요.')
+        showAlertMessage('만세력 데이터 생성에 실패했습니다. 생년월일/태어난 시를 다시 확인해주세요.')
         setSubmitting(false)
         setShowLoadingPopup(false)
         return
@@ -2171,11 +2265,27 @@ function FormContent() {
           })
 
           if (!saveResponse.ok) {
-            const errorData = await saveResponse.json()
+            const text = await saveResponse.text()
+            let errorData: any = {}
+            if (text) {
+              try {
+                errorData = JSON.parse(text)
+              } catch (e) {
+                errorData = { error: text || '임시 요청 데이터 저장 실패' }
+              }
+            }
             throw new Error(errorData.error || '임시 요청 데이터 저장 실패')
           }
 
-          const saveResult = await saveResponse.json()
+          const text = await saveResponse.text()
+          let saveResult: any = {}
+          if (text) {
+            try {
+              saveResult = JSON.parse(text)
+            } catch (e) {
+              console.error('응답 파싱 실패:', e)
+            }
+          }
         } catch (e: any) {
           // 저장 실패해도 페이지 이동은 진행 (에러는 result 페이지에서 처리)
         }
@@ -2184,8 +2294,42 @@ function FormContent() {
         // 저장 작업 완료를 기다리지 않고 즉시 이동하여 지연 최소화
         // sessionStorage에 데이터 저장 (URL 파라미터 대신)
         if (typeof window !== 'undefined') {
+          // ✅ 변경: 초안 생성 제거 - 점사 완료 후 저장 시점에 saved_id 생성
+          // 초안을 미리 생성하면 빈 HTML로 저장되어 이후 업데이트가 제대로 안 될 수 있음
           sessionStorage.setItem('result_requestKey', requestKey)
           sessionStorage.setItem('result_stream', 'true')
+          // 휴대폰 번호와 비밀번호를 DB에 저장 (savedId 없이)
+          const fullPhoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+          console.log('[결제 처리] user_credentials 저장 시도 (savedId 없음):', { requestKey, phone: fullPhoneNumber })
+          try {
+            const response = await fetch('/api/user-credentials/save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                requestKey: requestKey,
+                // savedId는 점사 완료 후 저장 시점에 생성됨
+                phone: fullPhoneNumber,
+                password: password
+              })
+            })
+            if (response.ok) {
+              const text = await response.text()
+              if (text) {
+                try {
+                  const result = JSON.parse(text)
+                  console.log('[결제 처리] user_credentials 저장 성공:', result)
+                } catch (e) {
+                  console.error('[결제 처리] 인증 정보 응답 파싱 실패:', e)
+                }
+              }
+            } else {
+              const errorText = await response.text()
+              console.error('[결제 처리] user_credentials 저장 실패:', errorText)
+            }
+          } catch (e) {
+            // 저장 실패해도 페이지 이동은 진행
+            console.error('[결제 처리] 인증 정보 저장 실패:', e)
+          }
         }
         setSubmitting(false)
         router.push('/result')
@@ -2251,7 +2395,7 @@ function FormContent() {
         
         
         if (menuGroups.length === 0) {
-          alert('대메뉴 정보를 찾을 수 없습니다.')
+          showAlertMessage('대메뉴 정보를 찾을 수 없습니다.')
           setSubmitting(false)
           setShowLoadingPopup(false)
           return
@@ -2492,8 +2636,46 @@ function FormContent() {
               })
               
               if (saveResponse.ok) {
-                const saved = await saveResponse.json()
-                setSavedResults(prev => [saved, ...prev])
+                const text = await saveResponse.text()
+                if (text) {
+                  try {
+                    const saved = JSON.parse(text)
+                    if (saved.data?.id) {
+                      setSavedResults(prev => [saved.data, ...prev])
+                      
+                      // 휴대폰 번호와 비밀번호를 DB에 저장 (savedId 포함)
+                      const fullPhoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+                      try {
+                        const credResponse = await fetch('/api/user-credentials/save', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            savedId: saved.data.id,
+                            phone: fullPhoneNumber,
+                            password: password
+                          })
+                        })
+                        if (!credResponse.ok) {
+                          const errorText = await credResponse.text()
+                          console.error('인증 정보 저장 실패:', errorText)
+                        } else {
+                          console.log('인증 정보 저장 성공:', saved.data.id)
+                        }
+                      } catch (e) {
+                        console.error('인증 정보 저장 실패:', e)
+                      }
+                    } else {
+                      console.error('결과 저장 응답에 id가 없습니다:', saved)
+                    }
+                  } catch (e) {
+                    console.error('결과 저장 응답 파싱 실패:', e)
+                  }
+                } else {
+                  console.error('결과 저장 응답이 비어있습니다')
+                }
+              } else {
+                const errorText = await saveResponse.text()
+                console.error('결과 저장 실패:', errorText)
               }
             } catch (error) {
             }
@@ -2509,7 +2691,7 @@ function FormContent() {
           }
           router.push('/result')
         } catch (error: any) {
-          alert('점사 처리 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'))
+          showAlertMessage('점사 처리 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'))
           setSubmitting(false)
           setShowLoadingPopup(false)
         }
@@ -2757,23 +2939,74 @@ function FormContent() {
                 })
 
                 if (!saveResponse.ok) {
-                  const errorData = await saveResponse.json()
+                  const text = await saveResponse.text()
+                  let errorData: any = {}
+                  if (text) {
+                    try {
+                      errorData = JSON.parse(text)
+                    } catch (e) {
+                      errorData = { error: text || '결과 저장 실패' }
+                    }
+                  }
                   throw new Error(errorData.error || '결과 저장 실패')
                 }
 
-                const saveResult = await saveResponse.json()
+                const text = await saveResponse.text()
+                let saveResult: any = {}
+                if (text) {
+                  try {
+                    saveResult = JSON.parse(text)
+                  } catch (e) {
+                    console.error('결과 저장 응답 파싱 실패:', e)
+                    throw new Error('결과 저장 응답 파싱 실패')
+                  }
+                }
                 const savedId = saveResult.data?.id
+                
+                if (!savedId) {
+                  console.error('결과 저장 응답에 id가 없습니다:', saveResult)
+                  throw new Error('결과 저장 응답에 id가 없습니다')
+                }
                 
                 // 결과 페이지로 이동 (저장된 ID 사용)
                 // sessionStorage에 데이터 저장 (URL 파라미터 대신)
                 if (typeof window !== 'undefined') {
                   sessionStorage.setItem('result_savedId', String(savedId))
+                  // 휴대폰 번호와 비밀번호를 DB에 저장
+                  const fullPhoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+                  try {
+                    const response = await fetch('/api/user-credentials/save', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        savedId: savedId,
+                        phone: fullPhoneNumber,
+                        password: password
+                      })
+                    })
+                    if (response.ok) {
+                      const text = await response.text()
+                      if (text) {
+                        try {
+                          const result = JSON.parse(text)
+                          console.log('인증 정보 저장 성공:', savedId)
+                        } catch (e) {
+                          console.error('인증 정보 응답 파싱 실패:', e)
+                        }
+                      }
+                    } else {
+                      const errorText = await response.text()
+                      console.error('인증 정보 저장 실패:', errorText)
+                    }
+                  } catch (e) {
+                    console.error('인증 정보 저장 실패:', e)
+                  }
                 }
                 setShowLoadingPopup(false)
                 setSubmitting(false)
                 router.push('/result')
               } catch (e: any) {
-                alert('결과 저장에 실패했습니다. 다시 시도해주세요.')
+                showAlertMessage('결과 저장에 실패했습니다. 다시 시도해주세요.')
                 setShowLoadingPopup(false)
                 setSubmitting(false)
               }
@@ -2788,7 +3021,7 @@ function FormContent() {
             
             setShowLoadingPopup(false)
             setSubmitting(false)
-            alert(data.error || '스트리밍 중 오류가 발생했습니다.')
+            showAlertMessage(data.error || '스트리밍 중 오류가 발생했습니다.')
           }
         })
         
@@ -2802,11 +3035,11 @@ function FormContent() {
         
         setShowLoadingPopup(false)
         setSubmitting(false)
-        alert(streamError?.message || '결제 처리 중 오류가 발생했습니다.\n\n개발자 도구 콘솔을 확인해주세요.')
+        showAlertMessage(streamError?.message || '결제 처리 중 오류가 발생했습니다.\n\n개발자 도구 콘솔을 확인해주세요.')
       }
     } catch (error: any) {
       const errorMessage = error?.message || '결제 처리 중 오류가 발생했습니다.'
-      alert(`${errorMessage}\n\n개발자 도구 콘솔을 확인해주세요.`)
+      showAlertMessage(`${errorMessage}\n\n개발자 도구 콘솔을 확인해주세요.`)
       setSubmitting(false)
     }
   }
@@ -2885,12 +3118,214 @@ function FormContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex flex-col">
+      {/* 헤더 */}
+      <header className="w-full bg-white border-b-2 border-pink-500 relative z-[1]">
+        <div className="container mx-auto px-4 h-14 flex items-center justify-between">
+          <a 
+            href="/"
+            className="text-2xl font-bold tracking-tight text-pink-600 hover:text-pink-700 transition-colors cursor-pointer"
+          >
+            jeuniOn
+          </a>
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setShowMyHistoryPopup(true)}
+              className="text-sm font-semibold text-gray-700 hover:text-pink-600 transition-colors"
+            >
+              나의 이용내역
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSlideMenu(true)}
+              aria-label="메뉴"
+              className="w-9 h-9 inline-flex items-center justify-center rounded-md text-pink-600 hover:bg-pink-50 transition-colors"
+            >
+              <span className="sr-only">메뉴</span>
+              <span className="block w-5">
+                <span className="block h-[2px] w-full bg-pink-600 mb-1"></span>
+                <span className="block h-[2px] w-full bg-pink-600 mb-1"></span>
+                <span className="block h-[2px] w-full bg-pink-600"></span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* 슬라이드 메뉴바 */}
+      <SlideMenuBar isOpen={showSlideMenu} onClose={() => setShowSlideMenu(false)} />
+
       {/* 이용약관 팝업 */}
       <TermsPopup isOpen={showTermsPopup} onClose={() => setShowTermsPopup(false)} />
       
       {/* 개인정보 수집 및 이용 팝업 */}
       <PrivacyPopup isOpen={showPrivacyPopup} onClose={() => setShowPrivacyPopup(false)} />
+      
+      {/* 나의 이용내역 팝업 */}
+      <MyHistoryPopup isOpen={showMyHistoryPopup} onClose={() => setShowMyHistoryPopup(false)} contentId={content?.id} />
+
+      {/* 알림 팝업 */}
+      <AlertPopup 
+        isOpen={showAlert} 
+        message={alertMessage}
+        onClose={() => setShowAlert(false)} 
+      />
+
+      {/* 결제 팝업 - 최상위 레벨로 이동하여 헤더 포함 전체 화면 덮기 */}
+      {showPaymentPopup && (
+        <div 
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+          onClick={(e) => {
+            // 오버레이 클릭 시 팝업 닫기 (팝업 내용 클릭 시에는 닫지 않음)
+            if (e.target === e.currentTarget) {
+              setShowPaymentPopup(false)
+              setPhoneNumber1('010')
+              setPhoneNumber2('')
+              setPhoneNumber3('')
+              setPassword('')
+            }
+          }}
+        >
+          {/* 전체 화면 오버레이 - 헤더 포함 */}
+          <div 
+            className="absolute top-0 left-0 right-0 bottom-0 bg-black/60"
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          ></div>
+          {/* 팝업 컨테이너 */}
+          <div 
+            className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
+              <h2 className="text-xl font-bold text-white">결제 정보</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPaymentPopup(false)
+                  setPhoneNumber1('010')
+                  setPhoneNumber2('')
+                  setPhoneNumber3('')
+                  setPassword('')
+                }}
+                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* 결제 정보 섹션 */}
+              <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-sm font-medium text-gray-700 flex-shrink-0 pt-0.5">서비스명</span>
+                    <span className="text-base font-bold text-pink-600 flex-1 text-right break-words">{content?.content_name || title || '서비스'}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-2 border-t border-pink-300">
+                    <span className="text-sm font-medium text-gray-700">이용금액</span>
+                    <span className="text-xl font-bold text-pink-600">
+                      {content?.price ? `${parseInt(content.price).toLocaleString()}원` : '금액 정보 없음'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+
+              {/* 휴대폰 번호 입력 */}
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">휴대폰 번호</label>
+                <input
+                  type="text"
+                  value={
+                    !phoneNumber2 
+                      ? `${phoneNumber1}-` 
+                      : `${phoneNumber1}-${phoneNumber2}${phoneNumber3 ? '-' + phoneNumber3 : ''}`
+                  }
+                  onChange={(e) => {
+                    let value = e.target.value.replace(/[^0-9]/g, '')
+                    
+                    // 010 접두사가 없으면 강제로 추가 (삭제 방지)
+                    if (!value.startsWith('010')) {
+                      // 010이 아닌 다른 숫자로 시작하면 010을 앞에 붙임
+                      if (value.length < 3) {
+                        value = '010'
+                      } else {
+                        value = '010' + value
+                      }
+                    }
+
+                    // 길이 제한 (010 + 8자리 = 11자리)
+                    if (value.length > 11) {
+                      value = value.slice(0, 11)
+                    }
+
+                    setPhoneNumber1('010')
+                    if (value.length <= 3) {
+                      setPhoneNumber2('')
+                      setPhoneNumber3('')
+                    } else if (value.length <= 7) {
+                      setPhoneNumber2(value.slice(3))
+                      setPhoneNumber3('')
+                    } else {
+                      setPhoneNumber2(value.slice(3, 7))
+                      setPhoneNumber3(value.slice(7))
+                    }
+                  }}
+                  className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
+                  placeholder="010-0000-0000"
+                  maxLength={13}
+                />
+              </div>
+
+              {/* 비밀번호 입력 */}
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">비밀번호</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
+                  placeholder="비밀번호를 입력하세요 (4자리 이상)"
+                />
+              </div>
+
+              {/* 안내 메시지 */}
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-6">
+                <p className="text-xs text-red-600 flex items-start">
+                  <span className="font-bold mr-1">*</span>
+                  <span>다시보기 시, 입력한 휴대폰/비밀번호가 필요합니다.</span>
+                </p>
+              </div>
+
+              {/* 결제 버튼 */}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => handlePaymentSubmit('card')}
+                  disabled={submitting}
+                  className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  카드결제
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePaymentSubmit('mobile')}
+                  disabled={submitting}
+                  className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  휴대폰 결제
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       
       {/* 동의 안내 팝업 */}
       {showAgreementAlert && (
@@ -3413,6 +3848,23 @@ function FormContent() {
 
           {/* 본인 정보 및 이성 정보 입력 폼 */}
           <div className="pt-6 mt-6">
+          {/* 금액 섹션 */}
+          {content?.price && (
+            <div className="mb-6 pb-6 border-b border-gray-200">
+              <div className="text-2xl font-bold text-pink-600 mb-3">
+                {(() => {
+                  // 숫자만 추출하여 세자리마다 콤마 추가
+                  const priceStr = String(content.price).replace(/[^0-9]/g, '')
+                  const formattedPrice = priceStr.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+                  return formattedPrice ? `${formattedPrice}원` : content.price
+                })()}
+              </div>
+              <p className="text-sm text-gray-700 leading-relaxed">
+                포춘82 코인 결제 불가, 만약 재회사주 솔루션이 만족스럽지 않으신 경우 연락주시면 100% 환불해 드립니다.
+              </p>
+            </div>
+          )}
+          
           <h2 className="text-2xl font-bold text-gray-900 mb-6">본인 정보</h2>
           
           <div className="space-y-6">
@@ -3639,6 +4091,11 @@ function FormContent() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* 연령 제한 안내 */}
+            <div className="text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-pink-500 font-bold text-sm mb-4 text-left">
+              ※ 19세 이하는 이용하실 수 없습니다.
             </div>
 
             {/* 이성 정보 입력 폼 (궁합형인 경우) */}
@@ -3928,11 +4385,11 @@ function FormContent() {
             </div>
 
             {/* 버튼 영역 */}
-            <div className="flex flex-col sm:flex-row gap-3 pt-6">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting || loading || !content}
+                disabled={submitting || loading}
                 className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {submitting ? (
@@ -3952,20 +4409,336 @@ function FormContent() {
                 이전으로
               </button>
             </div>
+
           </div>
           </div>
         </div>
+
+        {/* 클릭 수 표시 */}
+        {content?.id && (
+          <div className="mb-4 text-center">
+            <p className="text-sm text-gray-600">
+              <span className="font-semibold text-pink-600">{clickCount.toLocaleString()}</span>명이 이용하셨습니다.
+            </p>
+          </div>
+        )}
+
+        {/* 리뷰 섹션 */}
+        {content?.id && (
+          <div className="bg-gradient-to-br from-white to-pink-50/30 rounded-2xl p-0 mb-8 border border-pink-100 overflow-hidden" style={{ boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)' }}>
+            {/* 세련된 탭 디자인 */}
+            <div className="flex items-center bg-white/60 backdrop-blur-sm border-b border-pink-200 px-1">
+              <button
+                type="button"
+                onClick={() => setActiveReviewTab('reviews')}
+                className={`relative px-6 py-3.5 font-semibold text-sm transition-all duration-300 rounded-t-xl ${
+                  activeReviewTab === 'reviews'
+                    ? 'text-pink-600 bg-white'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+                style={activeReviewTab === 'reviews' ? { boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03)' } : {}}
+              >
+                리뷰
+                {activeReviewTab === 'reviews' && (
+                  <span className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-gradient-to-r from-pink-500 to-pink-600 rounded-full"></span>
+                )}
+              </button>
+              <div className="w-px h-6 bg-pink-200"></div>
+              <button
+                type="button"
+                onClick={() => setActiveReviewTab('best')}
+                className={`relative px-6 py-3.5 font-semibold text-sm transition-all duration-300 rounded-t-xl ${
+                  activeReviewTab === 'best'
+                    ? 'text-pink-600 bg-white'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+                style={activeReviewTab === 'best' ? { boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03)' } : {}}
+              >
+                Best 리뷰
+                {activeReviewTab === 'best' && (
+                  <span className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-gradient-to-r from-pink-500 to-pink-600 rounded-full"></span>
+                )}
+              </button>
+            </div>
+
+            {/* 리뷰 목록 */}
+            <div className="p-6 min-h-[200px] bg-white/40">
+              {activeReviewTab === 'reviews' ? (
+                <div className="space-y-4">
+                  {reviews.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-pink-100 mb-4">
+                        <svg className="w-8 h-8 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                      </div>
+                      <p className="text-gray-500 text-sm">등록된 리뷰가 없습니다.</p>
+                    </div>
+                  ) : (
+                    reviews.map((review: any) => {
+                      const isExpanded = expandedReviews.has(review.id)
+                      const reviewLines = review.review_text.split('\n')
+                      const shouldShowMore = reviewLines.length > 5 || review.review_text.length > 300
+                      
+                      return (
+                        <div key={review.id} className="bg-white border border-pink-200 rounded-xl p-5 transition-all duration-200" style={{ boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.04)' }} onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 2px 4px 0 rgba(0, 0, 0, 0.06)'} onMouseLeave={(e) => e.currentTarget.style.boxShadow = '0 1px 2px 0 rgba(0, 0, 0, 0.04)'}>
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="text-xs text-gray-500 flex items-center gap-2">
+                              <svg className="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              {(() => {
+                                const date = new Date(review.created_at)
+                                return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일`
+                              })()}
+                            </div>
+                            {review.is_best && (
+                              <span className="bg-gradient-to-r from-yellow-400 to-yellow-500 text-white text-xs font-bold px-3 py-1 rounded-full" style={{ boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03)' }}>
+                                ⭐ 베스트
+                              </span>
+                            )}
+                          </div>
+                          <div className="relative">
+                            <p 
+                              className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${
+                                !isExpanded && shouldShowMore ? 'line-clamp-5' : ''
+                              }`}
+                              style={{
+                                maxHeight: !isExpanded && shouldShowMore ? '7.5rem' : 'none',
+                                overflow: !isExpanded && shouldShowMore ? 'hidden' : 'visible',
+                              }}
+                            >
+                              {review.review_text}
+                            </p>
+                            {review.image_url && (
+                              <div className="mt-3">
+                                <img
+                                  src={review.image_url}
+                                  alt="리뷰 사진"
+                                  className="w-full max-w-md h-auto rounded-lg border border-pink-200 cursor-pointer hover:opacity-90 transition-opacity"
+                                  onClick={() => {
+                                    const newWindow = window.open('', '_blank')
+                                    if (newWindow) {
+                                      newWindow.document.write(`
+                                        <html>
+                                          <head><title>리뷰 사진</title></head>
+                                          <body style="margin:0;padding:20px;background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                                            <img src="${review.image_url}" style="max-width:100%;max-height:100vh;object-fit:contain;" />
+                                          </body>
+                                        </html>
+                                      `)
+                                    }
+                                  }}
+                                  onError={(e) => {
+                                    ;(e.target as HTMLImageElement).style.display = 'none'
+                                  }}
+                                />
+                              </div>
+                            )}
+                            {shouldShowMore && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newExpanded = new Set(expandedReviews)
+                                  if (isExpanded) {
+                                    newExpanded.delete(review.id)
+                                  } else {
+                                    newExpanded.add(review.id)
+                                  }
+                                  setExpandedReviews(newExpanded)
+                                }}
+                                className="mt-3 text-xs text-pink-600 hover:text-pink-700 font-semibold transition-colors flex items-center gap-1"
+                              >
+                                {isExpanded ? (
+                                  <>
+                                    <span>접기</span>
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                    </svg>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>더보기</span>
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {bestReviews.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-pink-100 mb-4">
+                        <svg className="w-8 h-8 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                        </svg>
+                      </div>
+                      <p className="text-gray-500 text-sm">베스트 리뷰가 없습니다.</p>
+                    </div>
+                  ) : (
+                    bestReviews.map((review: any) => {
+                      const isExpanded = expandedReviews.has(review.id)
+                      const reviewLines = review.review_text.split('\n')
+                      const shouldShowMore = reviewLines.length > 5 || review.review_text.length > 300
+                      
+                      return (
+                        <div key={review.id} className="bg-gradient-to-br from-yellow-50 to-white border-2 border-yellow-200 rounded-xl p-5 transition-all duration-200" style={{ boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.04)' }} onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 2px 4px 0 rgba(0, 0, 0, 0.06)'} onMouseLeave={(e) => e.currentTarget.style.boxShadow = '0 1px 2px 0 rgba(0, 0, 0, 0.04)'}>
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="text-xs text-gray-500 flex items-center gap-2">
+                              <svg className="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              {(() => {
+                                const date = new Date(review.created_at)
+                                return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일`
+                              })()}
+                            </div>
+                            <span className="bg-gradient-to-r from-yellow-400 to-yellow-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1" style={{ boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03)' }}>
+                              <span>⭐</span>
+                              <span>베스트</span>
+                            </span>
+                          </div>
+                          <div className="relative">
+                            <p 
+                              className={`text-sm text-gray-700 leading-relaxed whitespace-pre-wrap ${
+                                !isExpanded && shouldShowMore ? 'line-clamp-5' : ''
+                              }`}
+                              style={{
+                                maxHeight: !isExpanded && shouldShowMore ? '7.5rem' : 'none',
+                                overflow: !isExpanded && shouldShowMore ? 'hidden' : 'visible',
+                              }}
+                            >
+                              {review.review_text}
+                            </p>
+                            {review.image_url && (
+                              <div className="mt-3">
+                                <img
+                                  src={review.image_url}
+                                  alt="리뷰 사진"
+                                  className="w-full max-w-md h-auto rounded-lg border border-yellow-200 cursor-pointer hover:opacity-90 transition-opacity"
+                                  onClick={() => {
+                                    const newWindow = window.open('', '_blank')
+                                    if (newWindow) {
+                                      newWindow.document.write(`
+                                        <html>
+                                          <head><title>리뷰 사진</title></head>
+                                          <body style="margin:0;padding:20px;background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                                            <img src="${review.image_url}" style="max-width:100%;max-height:100vh;object-fit:contain;" />
+                                          </body>
+                                        </html>
+                                      `)
+                                    }
+                                  }}
+                                  onError={(e) => {
+                                    ;(e.target as HTMLImageElement).style.display = 'none'
+                                  }}
+                                />
+                              </div>
+                            )}
+                            {shouldShowMore && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newExpanded = new Set(expandedReviews)
+                                  if (isExpanded) {
+                                    newExpanded.delete(review.id)
+                                  } else {
+                                    newExpanded.add(review.id)
+                                  }
+                                  setExpandedReviews(newExpanded)
+                                }}
+                                className="mt-3 text-xs text-pink-600 hover:text-pink-700 font-semibold transition-colors flex items-center gap-1"
+                              >
+                                {isExpanded ? (
+                                  <>
+                                    <span>접기</span>
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                    </svg>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>더보기</span>
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              )}
+
+            </div>
+          </div>
+        )}
 
         {/* 이용안내 */}
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-8">
           <h3 className="text-lg font-bold text-gray-900 mb-4">이용안내</h3>
           <div className="space-y-2 text-sm text-gray-700">
+            <p>※ 본 상품은 포춘82에 재유니온이 샵인샵 형태로 별도로 운영되는 콘텐츠 입니다.</p>
+            <p>※ 재유니온 상품은 포춘82 코인 결제가 불가능하며 별도로 운영됩니다.</p>
+            <p>※ 다시보기는 재유니온 → 나의 이용내역에서 결제일로부터 60일간 확인이 가능합니다.</p>
             <p>※ 회원님의 실수로 인하여 결제된 서비스에 대해서는 교환 및 환불이 안됩니다.</p>
-            <p>※ 재회 결과는 60일간 메인→하단 비회원 다시보기에서 이용하실 수 있습니다.</p>
           </div>
         </div>
 
-        {/* 서버에 저장된 결과 목록 */}
+        {/* 푸터 */}
+        <footer className="bg-white border-t border-gray-200 py-6 mt-8">
+          <div className="container mx-auto px-4">
+            <div className="text-xs space-y-1 leading-relaxed">
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowTermsPopup(true)}
+                  className="text-pink-600 hover:text-pink-700 underline font-semibold transition-colors"
+                >
+                  이용약관
+                </button>
+                {' / '}
+                <button
+                  type="button"
+                  onClick={() => setShowPrivacyPopup(true)}
+                  className="text-pink-600 hover:text-pink-700 underline font-semibold transition-colors"
+                >
+                  개인정보처리방침
+                </button>
+              </div>
+              <div className="text-gray-600">
+                사업자등록번호 : 108-81-84400 │ 통신판매업신고번호 : 2022-서울성동-00643
+              </div>
+              <div className="text-gray-600">
+                02-516-1975 │ service＠fortune82.com
+              </div>
+              <div className="text-gray-600">
+                서울특별시 성동구 상원12길 34 (성수동1가, 서울숲에이원) 213호
+              </div>
+              <div className="pt-2 text-gray-500">
+                Copyright(c) FORTUNE82.COM All Rights Reserved.
+              </div>
+              <div className="text-gray-600">
+                ㈜테크앤조이 │ 대표 : 서주형
+              </div>
+            </div>
+          </div>
+        </footer>
+
+        {/* 서버에 저장된 결과 목록 (요청에 따라 비노출 처리) */}
+        {false && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
           <h3 className="text-lg font-bold text-gray-900 mb-4">서버에 저장된 결과</h3>
           <div className="space-y-3">
@@ -4031,10 +4804,10 @@ function FormContent() {
                                 document.body.removeChild(a)
                                 window.URL.revokeObjectURL(url)
                               } else {
-                                alert('PDF 파일을 찾을 수 없습니다.')
+                                showAlertMessage('PDF 파일을 찾을 수 없습니다.')
                               }
                             } catch (error) {
-                              alert('PDF 다운로드에 실패했습니다.')
+                              showAlertMessage('PDF 다운로드에 실패했습니다.')
                             }
                           }}
                           className="bg-green-400 hover:bg-green-500 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors duration-200 flex items-center gap-1"
@@ -5642,7 +6415,9 @@ function FormContent() {
                                         
                                         if (!button || !icon || !text) {
                                           isPlaying = false;
-                                          alert('버튼을 찾을 수 없습니다.');
+                                          if (typeof window !== 'undefined' && (window as any).showAlertMessage) {
+                                            (window as any).showAlertMessage('버튼을 찾을 수 없습니다.');
+                                          }
                                           return;
                                         }
                                         
@@ -5657,7 +6432,9 @@ function FormContent() {
                                             button.disabled = false;
                                             icon.textContent = '🔊';
                                             text.textContent = '점사 듣기';
-                                            alert('내용을 찾을 수 없습니다.');
+                                            if (typeof window !== 'undefined' && (window as any).showAlertMessage) {
+                                              (window as any).showAlertMessage('내용을 찾을 수 없습니다.');
+                                            }
                                             return;
                                           }
                                           
@@ -5668,7 +6445,9 @@ function FormContent() {
                                             button.disabled = false;
                                             icon.textContent = '🔊';
                                             text.textContent = '점사 듣기';
-                                            alert('읽을 내용이 없습니다.');
+                                            if (typeof window !== 'undefined' && (window as any).showAlertMessage) {
+                                              (window as any).showAlertMessage('읽을 내용이 없습니다.');
+                                            }
                                             return;
                                           }
                                           
@@ -5992,7 +6771,9 @@ function FormContent() {
                                           text.textContent = '점사 듣기';
                                         } catch (error) {
                                           
-                                          alert(error?.message || '음성 변환에 실패했습니다.');
+                                          if (typeof window !== 'undefined' && (window as any).showAlertMessage) {
+                                            (window as any).showAlertMessage(error?.message || '음성 변환에 실패했습니다.');
+                                          }
                                           
                                           const button = document.getElementById('ttsButton');
                                           const icon = document.getElementById('ttsIcon');
@@ -6045,7 +6826,9 @@ function FormContent() {
                                             } else if (typeof window.handleTextToSpeech === 'function') {
                                               window.handleTextToSpeech();
                                             } else {
-                                              alert('음성 재생 기능을 초기화하는 중 오류가 발생했습니다.');
+                                              if (typeof window !== 'undefined' && (window as any).showAlertMessage) {
+                                                (window as any).showAlertMessage('음성 재생 기능을 초기화하는 중 오류가 발생했습니다.');
+                                              }
                                             }
                                           };
                                           
@@ -6583,7 +7366,7 @@ function FormContent() {
                                 }, 500)
                               }
                             } catch (e) {
-                              alert('저장된 결과를 불러오는데 실패했습니다.')
+                              showAlertMessage('저장된 결과를 불러오는데 실패했습니다.')
                             }
                           }}
                           className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
@@ -6607,6 +7390,7 @@ function FormContent() {
             )}
           </div>
         </div>
+        )}
       </main>
     </div>
   )

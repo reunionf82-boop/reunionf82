@@ -61,16 +61,29 @@ export async function GET(request: NextRequest) {
 
     // 데이터 형식 변환
     const results = (data || []).map((item: any) => {
-      // DB에 저장된 한국 시간을 포맷팅하여 표시
-      const savedDateKST = new Date(item.saved_at)
+      // DB에 저장된 UTC 시간을 한국 시간(KST, UTC+9)으로 변환하여 포맷팅
+      const savedDateUTC = new Date(item.saved_at)
       
-      // 한국 시간을 포맷팅 (서버 환경과 무관하게 일관된 형식)
-      const year = savedDateKST.getUTCFullYear()
-      const month = String(savedDateKST.getUTCMonth() + 1).padStart(2, '0')
-      const day = String(savedDateKST.getUTCDate()).padStart(2, '0')
-      const hour = String(savedDateKST.getUTCHours()).padStart(2, '0')
-      const minute = String(savedDateKST.getUTCMinutes()).padStart(2, '0')
-      const second = String(savedDateKST.getUTCSeconds()).padStart(2, '0')
+      // 한국 시간으로 변환
+      const kstOptions: Intl.DateTimeFormatOptions = {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }
+      const formatter = new Intl.DateTimeFormat('en-US', kstOptions)
+      const parts = formatter.formatToParts(savedDateUTC)
+      
+      const year = parts.find(p => p.type === 'year')?.value || ''
+      const month = parts.find(p => p.type === 'month')?.value || ''
+      const day = parts.find(p => p.type === 'day')?.value || ''
+      const hour = parts.find(p => p.type === 'hour')?.value || ''
+      const minute = parts.find(p => p.type === 'minute')?.value || ''
+      const second = parts.find(p => p.type === 'second')?.value || ''
       const savedAtKST = `${year}. ${month}. ${day}. ${hour}:${minute}:${second}`
       
       const result = {
@@ -78,7 +91,7 @@ export async function GET(request: NextRequest) {
         title: item.title,
         html: item.html,
         savedAt: savedAtKST,
-        savedAtISO: item.saved_at, // 한국 시간으로 저장된 원본 날짜 (12시간/60일 경과 여부 확인용)
+        savedAtISO: item.saved_at, // UTC로 저장된 원본 날짜 (12시간/60일 경과 여부 확인용)
         content: item.content,
         model: item.model,
         processingTime: item.processing_time,
