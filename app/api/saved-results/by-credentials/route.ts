@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     // 각 saved_id에 대해 해당 전화번호/비밀번호와 일치하는 credential이 있는지 확인
     const matchingSavedIds: number[] = []
     
-    for (const [savedId, creds] of savedIdToCredentials.entries()) {
+    savedIdToCredentials.forEach((creds, savedId) => {
       let isMatch = false
       
       for (const cred of creds) {
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       if (isMatch) {
         matchingSavedIds.push(savedId)
       }
-    }
+    })
 
     if (matchingSavedIds.length === 0) {
       return NextResponse.json(
