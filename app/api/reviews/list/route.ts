@@ -7,12 +7,23 @@ export const dynamic = 'force-dynamic'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
-  }
-})
+// Supabase 클라이언트 생성 함수 (매번 새로 생성하여 캐시 문제 방지)
+const getSupabaseClient = () => {
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    },
+    db: {
+      schema: 'public'
+    },
+    global: {
+      headers: {
+        'x-client-info': 'reviews-list-api'
+      }
+    }
+  })
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -69,18 +80,19 @@ export async function GET(req: NextRequest) {
       supabaseUrl: supabaseUrl.substring(0, 30) + '...'
     })
 
-    // 먼저 전체 개수 확인 (디버깅용)
-    const { count: totalCount } = await supabase
+    // 매번 새로운 클라이언트 생성 (캐시 문제 방지)
+    const supabase = getSupabaseClient()
+
+    // 먼저 전체 개수 확인 (디버깅용) - 캐시 우회를 위해 직접 쿼리
+    const { count: visibleCount, error: countError } = await supabase
       .from('reviews')
       .select('*', { count: 'exact', head: true })
       .eq('content_id', parseInt(contentId))
       .eq('is_visible', true)
 
-    const { count: visibleCount } = await supabase
-      .from('reviews')
-      .select('*', { count: 'exact', head: true })
-      .eq('content_id', parseInt(contentId))
-      .eq('is_visible', true)
+    if (countError) {
+      console.error('[reviews/list] 개수 조회 에러:', countError)
+    }
 
     console.log('[reviews/list] 리뷰 개수 확인:', {
       contentId,
@@ -88,20 +100,24 @@ export async function GET(req: NextRequest) {
       onlyBest
     })
 
-    let query = supabase
+    // 실제 데이터 조회 - 새로운 클라이언트로 쿼리 (캐시 우회)
+    const queryClient = getSupabaseClient()
+    
+    let query = queryClient
       .from('reviews')
-      .select('id, review_text, user_name, is_best, created_at, image_url')
+      .select('id, review_text, user_name, is_best, created_at, image_url', { count: 'exact' })
       .eq('content_id', parseInt(contentId))
       .eq('is_visible', true) // 노출 승인된 리뷰만
       .order('created_at', { ascending: false })
+      .limit(10000) // 명시적으로 큰 limit 설정 (Supabase 기본 limit은 1000)
 
     // 베스트 리뷰만 조회
     if (onlyBest) {
       query = query.eq('is_best', true)
     }
 
-    // limit 제거 (모든 리뷰 조회)
-    const { data, error } = await query
+    // 쿼리 실행 (새로운 클라이언트로 캐시 우회)
+    const { data, error, count: actualCount } = await query
 
     if (error) {
       console.error('[reviews/list] 쿼리 에러:', {
@@ -124,7 +140,8 @@ export async function GET(req: NextRequest) {
       contentId,
       onlyBest,
       expectedCount: visibleCount,
-      actualCount: data?.length || 0,
+      actualCount: actualCount || data?.length || 0,
+      returnedDataLength: data?.length || 0,
       reviewIds: data?.map((r: any) => r.id) || [],
       reviews: data?.map((r: any) => ({ 
         id: r.id, 
@@ -134,12 +151,19 @@ export async function GET(req: NextRequest) {
     })
 
     // 개수 불일치 시 경고
-    if (visibleCount !== null && data && visibleCount !== data.length) {
-      console.warn('[reviews/list] ⚠️ 리뷰 개수 불일치:', {
-        expected: visibleCount,
-        actual: data.length,
-        difference: visibleCount - data.length
-      })
+    if (visibleCount !== null && data) {
+      const returnedCount = data.length
+      const queryCount = actualCount || returnedCount
+      
+      if (visibleCount !== queryCount || visibleCount !== returnedCount) {
+        console.warn('[reviews/list] ⚠️ 리뷰 개수 불일치:', {
+          expectedFromCount: visibleCount,
+          queryCount: queryCount,
+          returnedDataLength: returnedCount,
+          difference: visibleCount - returnedCount,
+          possibleCachingIssue: visibleCount > returnedCount
+        })
+      }
     }
 
     return NextResponse.json({
