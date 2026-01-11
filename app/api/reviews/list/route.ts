@@ -1,68 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-
-// Supabase 클라이언트 생성 함수 (매번 새로 생성하여 캐시 문제 방지)
-const getSupabaseClient = () => {
-  return createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    },
-    db: {
-      schema: 'public'
-    },
-    global: {
-      headers: {
-        'x-client-info': 'reviews-list-api'
-      }
-    }
-  })
-}
-
 export async function GET(req: NextRequest) {
   try {
-    // 환경 변수 확인 및 디버깅 (프로덕션 환경 진단용)
-    const hasSupabaseUrl = !!supabaseUrl
-    const hasServiceKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY
-    const hasAnonKey = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    const serviceKeyLength = process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0
-    const anonKeyLength = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.length || 0
-
-    console.log('[reviews/list] 환경 변수 확인:', {
-      hasSupabaseUrl,
-      hasServiceKey,
-      hasAnonKey,
-      serviceKeyLength,
-      anonKeyLength,
-      supabaseUrlPrefix: supabaseUrl ? supabaseUrl.substring(0, 20) + '...' : '없음'
-    })
-
-    if (!supabaseUrl) {
-      console.error('[reviews/list] NEXT_PUBLIC_SUPABASE_URL이 설정되지 않았습니다.')
-      return NextResponse.json(
-        { error: '서버 설정 오류: Supabase URL이 설정되지 않았습니다.' },
-        { status: 500 }
-      )
-    }
-
-    if (!supabaseServiceKey) {
-      console.error('[reviews/list] Supabase 서비스 키가 설정되지 않았습니다.', {
-        hasServiceKey,
-        hasAnonKey,
-        fallbackUsed: !hasServiceKey && hasAnonKey
-      })
-      return NextResponse.json(
-        { error: '서버 설정 오류: Supabase 서비스 키가 설정되지 않았습니다.' },
-        { status: 500 }
-      )
-    }
-
     const searchParams = req.nextUrl.searchParams
     const contentId = searchParams.get('content_id')
     const onlyBest = searchParams.get('only_best') === 'true'
@@ -74,16 +17,19 @@ export async function GET(req: NextRequest) {
       )
     }
 
+    // 관리자 클라이언트 사용 (다른 API와 동일한 방식)
+    const supabase = getAdminSupabaseClient()
+    
+    // 프로덕션 vs 개발서버 비교를 위한 Supabase URL 확인
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     console.log('[reviews/list] 쿼리 시작:', {
       contentId,
       onlyBest,
-      supabaseUrl: supabaseUrl.substring(0, 30) + '...'
+      supabaseUrlPrefix: supabaseUrl ? supabaseUrl.substring(0, 30) + '...' : '없음',
+      environment: process.env.NODE_ENV || 'unknown'
     })
 
-    // 매번 새로운 클라이언트 생성 (캐시 문제 방지)
-    const supabase = getSupabaseClient()
-
-    // 먼저 전체 개수 확인 (디버깅용) - 캐시 우회를 위해 직접 쿼리
+    // 먼저 전체 개수 확인 (디버깅용)
     const { count: visibleCount, error: countError } = await supabase
       .from('reviews')
       .select('*', { count: 'exact', head: true })
@@ -100,10 +46,8 @@ export async function GET(req: NextRequest) {
       onlyBest
     })
 
-    // 실제 데이터 조회 - 새로운 클라이언트로 쿼리 (캐시 우회)
-    const queryClient = getSupabaseClient()
-    
-    let query = queryClient
+    // 실제 데이터 조회
+    let query = supabase
       .from('reviews')
       .select('id, review_text, user_name, is_best, created_at, image_url', { count: 'exact' })
       .eq('content_id', parseInt(contentId))
@@ -116,7 +60,7 @@ export async function GET(req: NextRequest) {
       query = query.eq('is_best', true)
     }
 
-    // 쿼리 실행 (새로운 클라이언트로 캐시 우회)
+    // 쿼리 실행
     const { data, error, count: actualCount } = await query
 
     if (error) {
@@ -135,20 +79,39 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    // 실제 조회된 데이터 상세 로그
+    // 실제 조회된 데이터 상세 로그 (프로덕션 vs 개발서버 비교용)
+    const reviewIds = data?.map((r: any) => r.id) || []
+    const reviewDetails = data?.map((r: any) => ({ 
+      id: r.id, 
+      is_best: r.is_best,
+      created_at: r.created_at,
+      has_image: !!r.image_url
+    })) || []
+    
     console.log('[reviews/list] 조회 성공:', {
       contentId,
       onlyBest,
       expectedCount: visibleCount,
       actualCount: actualCount || data?.length || 0,
       returnedDataLength: data?.length || 0,
-      reviewIds: data?.map((r: any) => r.id) || [],
-      reviews: data?.map((r: any) => ({ 
-        id: r.id, 
-        is_best: r.is_best,
-        created_at: r.created_at 
-      })) || []
+      reviewIds: reviewIds,
+      reviewIdsString: reviewIds.join(','), // 쉼표로 구분된 ID 목록 (비교 용이)
+      reviews: reviewDetails
     })
+    
+    // 프로덕션 vs 개발서버 비교를 위한 상세 로그
+    if (visibleCount !== null && visibleCount > 0) {
+      console.log('[reviews/list] 상세 비교 정보:', {
+        contentId,
+        onlyBest,
+        dbCount: visibleCount,
+        returnedCount: data?.length || 0,
+        missingCount: visibleCount - (data?.length || 0),
+        allReviewIds: reviewIds,
+        firstReviewId: reviewIds[0] || null,
+        lastReviewId: reviewIds[reviewIds.length - 1] || null
+      })
+    }
 
     // 개수 불일치 시 경고
     if (visibleCount !== null && data) {
