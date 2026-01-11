@@ -16,6 +16,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [showSuccessMessage, setShowSuccessMessage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -30,6 +31,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
       setReviewText('')
       setSelectedImage(null)
       setImagePreview(null)
+      setIsUploading(false)
       setShowConfirmDialog(false)
       setShowSuccessMessage(false)
     }
@@ -109,24 +111,29 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
       // 이미지가 있으면 먼저 업로드
       let imageUrl: string | null = null
       if (selectedImage) {
-        const formData = new FormData()
-        formData.append('file', selectedImage)
+        setIsUploading(true)
+        try {
+          const formData = new FormData()
+          formData.append('file', selectedImage)
 
-        const uploadResponse = await fetch('/api/reviews/upload-image', {
-          method: 'POST',
-          body: formData
-        })
+          const uploadResponse = await fetch('/api/reviews/upload-image', {
+            method: 'POST',
+            body: formData
+          })
 
-        if (!uploadResponse.ok) {
-          const errorData = await uploadResponse.json().catch(() => ({}))
-          throw new Error(errorData.error || '이미지 업로드에 실패했습니다.')
+          if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json().catch(() => ({}))
+            throw new Error(errorData.error || '이미지 업로드에 실패했습니다.')
+          }
+
+          const uploadData = await uploadResponse.json()
+          if (!uploadData.success || !uploadData.url) {
+            throw new Error('이미지 업로드에 실패했습니다.')
+          }
+          imageUrl = uploadData.url
+        } finally {
+          setIsUploading(false)
         }
-
-        const uploadData = await uploadResponse.json()
-        if (!uploadData.success || !uploadData.url) {
-          throw new Error('이미지 업로드에 실패했습니다.')
-        }
-        imageUrl = uploadData.url
       }
 
       // 리뷰 저장 (contentId와 함께 title도 전달 - contentId가 유효하지 않을 경우 대비)
@@ -230,20 +237,33 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
                 사진 (선택사항)
               </label>
               {imagePreview ? (
-                <div className="relative">
-                  <img
-                    src={imagePreview}
-                    alt="미리보기"
-                    className="w-full h-64 object-cover rounded-lg border border-gray-300"
-                  />
-                  <button
-                    onClick={handleRemoveImage}
-                    className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 transition-colors"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                <div className="relative bg-gray-50 rounded-lg border border-gray-300 overflow-hidden">
+                  <div className="w-full max-h-64 flex items-center justify-center">
+                    <img
+                      src={imagePreview}
+                      alt="미리보기"
+                      className="w-full h-auto max-h-64 object-contain"
+                    />
+                  </div>
+                  {/* 업로드 중 오버레이 */}
+                  {isUploading && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+                      <div className="bg-white rounded-lg p-4 flex flex-col items-center gap-2">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
+                        <span className="text-sm font-semibold text-gray-700">업로드 중...</span>
+                      </div>
+                    </div>
+                  )}
+                  {!isUploading && (
+                    <button
+                      onClick={handleRemoveImage}
+                      className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 transition-colors z-10"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="flex gap-3">
@@ -304,10 +324,10 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
             </button>
             <button
               onClick={handleSave}
-              disabled={isSubmitting || !reviewText.trim()}
+              disabled={isSubmitting || isUploading || !reviewText.trim()}
               className="flex-1 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
             >
-              {isSubmitting ? '저장 중...' : '저장'}
+              {isUploading ? '업로드 중...' : isSubmitting ? '저장 중...' : '저장'}
             </button>
           </div>
         </div>
