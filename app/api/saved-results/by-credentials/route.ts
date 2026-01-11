@@ -15,6 +15,11 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   }
 })
 
+// 전화번호 정규화 함수 (하이픈 제거하여 비교)
+function normalizePhone(phone: string): string {
+  return phone.replace(/[-\s]/g, '')
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -27,12 +32,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 전화번호와 비밀번호 정규화 (공백 제거, 앞뒤 공백 제거)
+    const normalizedPhone = normalizePhone(phone.trim())
+    const normalizedPassword = password.trim()
+
+    if (!normalizedPhone || !normalizedPassword) {
+      return NextResponse.json(
+        { success: false, error: '휴대폰 번호와 비밀번호는 필수입니다.' },
+        { status: 400 }
+      )
+    }
+
     // user_credentials에서 만료되지 않은 모든 레코드 조회
     const { data: credentials, error: credentialsError } = await supabase
       .from('user_credentials')
       .select('saved_id, encrypted_phone, encrypted_password')
       .gt('expires_at', new Date().toISOString()) // 만료되지 않은 것만
-      .order('created_at', { ascending: false })
+      .not('saved_id', 'is', null) // saved_id가 null이 아닌 것만
 
     if (credentialsError) {
       return NextResponse.json(
@@ -41,50 +57,68 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 복호화하여 일치하는 항목 찾기
-    // saved_id별로 그룹화하여 각 saved_id가 해당 전화번호/비밀번호와 정확히 연결되었는지 확인
-    const savedIdToCredentials = new Map<number, Array<{ encrypted_phone: string; encrypted_password: string }>>()
+    if (!credentials || credentials.length === 0) {
+      return NextResponse.json(
+        { success: false, error: '일치하는 이용내역을 찾을 수 없습니다.' },
+        { status: 404 }
+      )
+    }
+
+    // 1단계: 전화번호를 기준으로 먼저 필터링 (전화번호가 프라이머리 키 역할)
+    // 전화번호가 일치하는 credential만 찾기
+    const phoneMatchedCredentials: Array<{ saved_id: number; encrypted_phone: string; encrypted_password: string }> = []
     
-    // saved_id별로 credentials 그룹화
-    for (const cred of credentials || []) {
+    for (const cred of credentials) {
       if (!cred.saved_id) continue
       
-      if (!savedIdToCredentials.has(cred.saved_id)) {
-        savedIdToCredentials.set(cred.saved_id, [])
+      try {
+        const decryptedPhone = decrypt(cred.encrypted_phone)
+        const normalizedDecryptedPhone = normalizePhone(decryptedPhone.trim())
+        
+        // 전화번호가 일치하는 credential만 수집 (1단계 필터링)
+        if (normalizedDecryptedPhone === normalizedPhone) {
+          phoneMatchedCredentials.push({
+            saved_id: cred.saved_id,
+            encrypted_phone: cred.encrypted_phone,
+            encrypted_password: cred.encrypted_password
+          })
+        }
+      } catch (decryptError) {
+        // 복호화 실패 시 건너뛰기
+        continue
       }
-      savedIdToCredentials.get(cred.saved_id)!.push({
-        encrypted_phone: cred.encrypted_phone,
-        encrypted_password: cred.encrypted_password
-      })
     }
     
-    // 각 saved_id에 대해 해당 전화번호/비밀번호와 일치하는 credential이 있는지 확인
-    const matchingSavedIds: number[] = []
+    // 전화번호가 일치하는 credential이 없으면 종료
+    if (phoneMatchedCredentials.length === 0) {
+      return NextResponse.json(
+        { success: false, error: '일치하는 이용내역을 찾을 수 없습니다.' },
+        { status: 404 }
+      )
+    }
     
-    savedIdToCredentials.forEach((creds, savedId) => {
-      let isMatch = false
-      
-      for (const cred of creds) {
-        try {
-          const decryptedPhone = decrypt(cred.encrypted_phone)
-          const decryptedPassword = decrypt(cred.encrypted_password)
-          
-          if (decryptedPhone === phone && decryptedPassword === password) {
-            isMatch = true
-            break
-          }
-        } catch (decryptError) {
-          // 복호화 실패 시 건너뛰기
-          continue
+    // 2단계: 전화번호가 일치하는 credential 중에서 비밀번호도 일치하는 것만 선택
+    const matchingSavedIds = new Set<number>()
+    
+    for (const cred of phoneMatchedCredentials) {
+      try {
+        const decryptedPassword = decrypt(cred.encrypted_password)
+        const normalizedDecryptedPassword = decryptedPassword.trim()
+        
+        // 비밀번호가 정확히 일치하는 경우만 추가 (2단계 필터링)
+        if (normalizedDecryptedPassword === normalizedPassword) {
+          matchingSavedIds.add(cred.saved_id)
         }
+      } catch (decryptError) {
+        // 복호화 실패 시 건너뛰기
+        continue
       }
-      
-      if (isMatch) {
-        matchingSavedIds.push(savedId)
-      }
-    })
+    }
+    
+    // Set을 배열로 변환
+    const matchingSavedIdsArray = Array.from(matchingSavedIds)
 
-    if (matchingSavedIds.length === 0) {
+    if (matchingSavedIdsArray.length === 0) {
       return NextResponse.json(
         { success: false, error: '일치하는 이용내역을 찾을 수 없습니다.' },
         { status: 404 }
@@ -92,13 +126,14 @@ export async function POST(request: NextRequest) {
     }
 
     // saved_results에서 해당 saved_id들의 결과 조회 (최근 6개월)
+    // 전화번호와 비밀번호가 정확히 일치하는 credential의 saved_id만 사용
     const sixMonthsAgo = new Date()
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
 
     const { data: savedResults, error: resultsError } = await supabase
       .from('saved_results')
       .select('*')
-      .in('id', matchingSavedIds)
+      .in('id', matchingSavedIdsArray)
       .gte('saved_at', sixMonthsAgo.toISOString())
       .order('saved_at', { ascending: false })
 
@@ -109,10 +144,44 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // matchingSavedIds는 이미 검증된 saved_id들이므로 추가 필터링 불필요
+    // 최종 검증: 각 결과의 saved_id가 matchingSavedIdsArray에 포함되어 있는지 확인
+    // 그리고 해당 saved_id에 대한 credential이 전화번호와 비밀번호 모두 정확히 일치하는지 다시 확인
+    const verifiedResults: any[] = []
+    
+    for (const result of savedResults || []) {
+      // saved_id가 matchingSavedIdsArray에 포함되어 있는지 확인
+      if (!matchingSavedIdsArray.includes(result.id)) {
+        continue // 포함되지 않으면 건너뛰기
+      }
+      
+      // 해당 saved_id에 대한 credential이 전화번호와 비밀번호 모두 정확히 일치하는지 다시 확인
+      // phoneMatchedCredentials에서만 확인 (전화번호가 이미 일치하는 것들만)
+      let isValid = false
+      for (const cred of phoneMatchedCredentials) {
+        if (cred.saved_id !== result.id) continue
+        
+        try {
+          const decryptedPassword = decrypt(cred.encrypted_password)
+          const normalizedDecryptedPassword = decryptedPassword.trim()
+          
+          // 전화번호는 이미 일치하므로 비밀번호만 확인
+          if (normalizedDecryptedPassword === normalizedPassword) {
+            isValid = true
+            break
+          }
+        } catch (decryptError) {
+          continue
+        }
+      }
+      
+      if (isValid) {
+        verifiedResults.push(result)
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      data: savedResults || []
+      data: verifiedResults
     })
   } catch (error: any) {
     return NextResponse.json(

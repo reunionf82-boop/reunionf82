@@ -508,14 +508,14 @@ function ResultContent() {
         setFirstSubtitleReady(false)
         setStreamingFinished(false)
 
-        // 가짜 진행률: 0.5초에 1%씩 100%까지 증가 (첫 소제목 준비 전까지)
+        // 가짜 진행률: 0.5초에 1%씩 97%까지 증가 (첫 소제목 준비 전까지)
         fakeProgressInterval = setInterval(() => {
           if (firstSubtitleReadyRef.current) {
             // 첫 소제목이 준비되면 100%까지 채우고 팝업 제거
-            setStreamingProgress(100)
+            setStreamingProgress(100) // 애니메이션으로 100%까지 증가
             setTimeout(() => {
               setShowRealtimePopup(false)
-            }, 300) // 300ms 후 팝업 제거
+            }, 500) // 0.5초 후 팝업 제거 (애니메이션 완료 후)
             if (fakeProgressInterval) {
               clearInterval(fakeProgressInterval)
               fakeProgressInterval = null
@@ -524,15 +524,12 @@ function ResultContent() {
           }
 
           setStreamingProgress((prev) => {
-            if (prev >= 100) {
-              // 100% 도달 시 팝업 제거
-              setTimeout(() => {
-                setShowRealtimePopup(false)
-              }, 300) // 300ms 후 팝업 제거
-              return 100
+            if (prev >= 97) {
+              // 97% 도달 시 더 이상 증가하지 않음
+              return 97
             }
             const next = prev + 1
-            return next > 100 ? 100 : next
+            return next > 97 ? 97 : next
           })
         }, 500)
 
@@ -632,9 +629,12 @@ function ResultContent() {
             setResultData(finalResult)
             setIsStreamingActive(false)
             setStreamingFinished(true)
-            setStreamingProgress(100)
+            setStreamingProgress(100) // 애니메이션으로 100%까지 증가
             setLoading(false)
-            setShowRealtimePopup(false)
+            // 0.5초 딜레이 후 팝업 닫기 (애니메이션 완료 후)
+            setTimeout(() => {
+              setShowRealtimePopup(false)
+            }, 500)
             // 완료 처리 후 추가 이벤트 무시
             streamLocked = true
             
@@ -796,9 +796,12 @@ function ResultContent() {
             // 즉시 상태 업데이트 (버튼 활성화를 위해)
             setIsStreamingActive(false)
             setStreamingFinished(true)
-            setStreamingProgress(100)
+            setStreamingProgress(100) // 애니메이션으로 100%까지 증가
             setLoading(false)
-            setShowRealtimePopup(false)
+            // 0.5초 딜레이 후 팝업 닫기 (애니메이션 완료 후)
+            setTimeout(() => {
+              setShowRealtimePopup(false)
+            }, 500)
             setStreamingHtml(finalHtml)
             setResultData(finalResult)
             // 완료 처리 후 추가 이벤트 무시
@@ -885,9 +888,12 @@ function ResultContent() {
           setResultData(finalResult)
           setIsStreamingActive(false)
           setStreamingFinished(true)
-          setStreamingProgress(100)
+          setStreamingProgress(100) // 애니메이션으로 100%까지 증가
           setLoading(false)
-          setShowRealtimePopup(false)
+          // 0.5초 딜레이 후 팝업 닫기 (애니메이션 완료 후)
+          setTimeout(() => {
+            setShowRealtimePopup(false)
+          }, 500)
           console.log('[병렬점사] 모든 대메뉴 완료 (processNextMenu 체크), 스트리밍 종료')
           
           // 모든 대메뉴 완료 시 즉시 결과 저장
@@ -1124,9 +1130,12 @@ function ResultContent() {
                 setResultData(finalResult)
                 setIsStreamingActive(false)
                 setStreamingFinished(true)
-                setStreamingProgress(100)
+                setStreamingProgress(100) // 애니메이션으로 100%까지 증가
                 setLoading(false)
-                setShowRealtimePopup(false)
+                // 0.5초 딜레이 후 팝업 닫기 (애니메이션 완료 후)
+                setTimeout(() => {
+                  setShowRealtimePopup(false)
+                }, 500)
                 console.log('[병렬점사] 모든 대메뉴 완료, 스트리밍 종료')
                 
                 // 병렬점사 완료 시 즉시 결과 저장 (자동 저장 대기하지 않음)
@@ -1170,8 +1179,12 @@ function ResultContent() {
               }
               setIsStreamingActive(false)
               setStreamingFinished(true)
+              setStreamingProgress(100) // 애니메이션으로 100%까지 증가
               setLoading(false)
-              setShowRealtimePopup(false)
+              // 0.5초 딜레이 후 팝업 닫기 (애니메이션 완료 후)
+              setTimeout(() => {
+                setShowRealtimePopup(false)
+              }, 500)
             }
           })
         } catch (error) {
@@ -1182,8 +1195,12 @@ function ResultContent() {
           }
           setIsStreamingActive(false)
           setStreamingFinished(true)
+          setStreamingProgress(100) // 애니메이션으로 100%까지 증가
           setLoading(false)
-          setShowRealtimePopup(false)
+          // 0.5초 딜레이 후 팝업 닫기 (애니메이션 완료 후)
+          setTimeout(() => {
+            setShowRealtimePopup(false)
+          }, 500)
         }
       }
       
@@ -2382,20 +2399,23 @@ ${fontFace ? fontFace : ''}
     setRevealedCount(revealed)
 
     // 첫 번째 소제목이 "점사를 준비중입니다." 상태로라도 화면에 표시되는 순간(=cursor > 0)에
-    // 진행률을 100%로 설정하고 500ms 후 팝업 닫기
+    // 진행률을 100%로 설정하고 0.5초 후 팝업 닫기
     if (!firstSubtitleReadyRef.current && cursor > 0) {
       setFirstSubtitleReady(true)
-      setStreamingProgress(100)
-      // 500ms 후 팝업 닫기
+      setStreamingProgress(100) // 애니메이션으로 100%까지 증가
+      // 0.5초 후 팝업 닫기 (애니메이션 완료 후)
       setTimeout(() => {
         setShowRealtimePopup(false)
       }, 500)
     }
     
-    // 두 번째 소제목이 진행될 때 (cursor >= 2) 진행률을 100%로 설정하고 팝업 닫기
+    // 두 번째 소제목이 진행될 때 (cursor >= 2) 진행률을 100%로 설정하고 0.2초 후 팝업 닫기
     if (cursor >= 2 && showRealtimePopup) {
-      setStreamingProgress(100)
-      setShowRealtimePopup(false)
+      setStreamingProgress(100) // 애니메이션으로 100%까지 증가
+      // 0.5초 딜레이 후 팝업 닫기 (애니메이션 완료 후)
+      setTimeout(() => {
+        setShowRealtimePopup(false)
+      }, 500)
     }
 
     if (cursor > 0) {
@@ -4585,7 +4605,7 @@ ${fontFace ? fontFace : ''}
               <div className="mb-6">
                 <div className="w-full bg-gray-200 rounded-full h-3 mb-3">
                   <div 
-                    className="bg-gradient-to-r from-pink-500 to-pink-600 h-3 rounded-full transition-all duration-300"
+                    className="bg-gradient-to-r from-pink-500 to-pink-600 h-3 rounded-full transition-all duration-500 ease-out"
                     style={{ width: `${streamingProgress}%` }}
                   ></div>
                 </div>
