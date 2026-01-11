@@ -47,6 +47,28 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
     }
   }, [isOpen])
 
+  // 브라우저 뒤로가기로 메뉴 닫기
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!isOpen) return
+
+    // 메뉴가 열릴 때 히스토리 엔트리 추가
+    window.history.pushState({ slideMenuBar: true }, '', window.location.href)
+
+    const handlePopState = (e: PopStateEvent) => {
+      // 뒤로가기 이벤트 발생 시 메뉴 닫기
+      if (isOpen) {
+        onClose()
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [isOpen, onClose])
+
   const loadPaidContents = async () => {
     try {
       setLoadingContents(true)
