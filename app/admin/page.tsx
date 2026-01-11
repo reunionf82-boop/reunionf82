@@ -1186,17 +1186,47 @@ export default function AdminPage() {
           <div className="w-full max-w-4xl bg-gray-900 border border-gray-700 rounded-xl overflow-hidden shadow-2xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
               <h2 className="text-xl font-bold text-white">리뷰 관리</h2>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowReviewModal(false)
-                  setSelectedContentId(null)
-                  setReviews([])
-                }}
-                className="text-gray-300 hover:text-white text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-700 transition-colors"
-              >
-                ×
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (selectedContentId) {
+                      await loadReviewsForContent(selectedContentId)
+                    }
+                  }}
+                  disabled={!selectedContentId || loadingReviews}
+                  className="text-gray-300 hover:text-white disabled:text-gray-600 disabled:hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-700 transition-colors"
+                  title="리뷰 새로고침"
+                  aria-label="리뷰 새로고침"
+                >
+                  <svg
+                    className={`w-5 h-5 ${loadingReviews ? 'animate-spin' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 4v6h6M20 20v-6h-6M20 9a8 8 0 00-14.9-3M4 15a8 8 0 0014.9 3"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReviewModal(false)
+                    setSelectedContentId(null)
+                    setReviews([])
+                  }}
+                  className="text-gray-300 hover:text-white text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-700 transition-colors"
+                  title="닫기"
+                  aria-label="닫기"
+                >
+                  ×
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6">

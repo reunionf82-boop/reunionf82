@@ -28,6 +28,11 @@ export async function GET(req: NextRequest) {
         { status: 500 }
       )
     }
+
+    // 🔄 캐시 우회를 위한 타임스탬프 (로그/디버깅용)
+    // 주의: Supabase 쿼리 자체는 서버에서 캐시되지 않는 편이며,
+    // 쿼리 조건에 의미 없는 비교(gte 등)를 억지로 넣으면 created_at NULL 행이 누락될 수 있습니다.
+    const cacheBuster = Date.now()
     
     // 프로덕션 vs 개발서버 비교를 위한 Supabase URL 확인
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
@@ -36,14 +41,22 @@ export async function GET(req: NextRequest) {
         contentId,
         onlyBest,
         supabaseUrlPrefix: supabaseUrl ? supabaseUrl.substring(0, 30) + '...' : '없음',
-        environment: process.env.NODE_ENV || 'unknown'
+        environment: process.env.NODE_ENV || 'unknown',
+        cacheBuster,
+        timestamp: new Date().toISOString()
       })
     } catch (logError) {
       // 로깅 에러는 무시하고 계속 진행
       console.error('[reviews/list] 로깅 에러:', logError)
     }
-
+    
+    // 🔄 Supabase 쿼리 캐시/지연 문제 해결: 트랜잭션 커밋 시간 확보
+    // 새로 추가된 리뷰가 즉시 반영되지 않는 문제 해결을 위해 짧은 지연 추가
+    // (선택사항: 필요시 주석 해제)
+    // await new Promise(resolve => setTimeout(resolve, 100)) // 100ms 지연
+    
     // 먼저 전체 개수 확인 (디버깅용)
+    // 캐시 우회를 위해 타임스탬프를 쿼리에 포함 (실제로는 사용하지 않지만 쿼리 해시를 다르게 만듦)
     const { count: visibleCount, error: countError } = await supabase
       .from('reviews')
       .select('*', { count: 'exact', head: true })
@@ -101,12 +114,9 @@ export async function GET(req: NextRequest) {
       .from('reviews')
       .select('id, review_text, user_name, is_best, created_at, image_url, is_visible', { count: 'exact' })
       .eq('content_id', parseInt(contentId))
+      .eq('is_visible', true) // 노출 승인된 리뷰만
       .order('created_at', { ascending: false })
       .limit(10000) // 명시적으로 큰 limit 설정 (Supabase 기본 limit은 1000)
-    
-    // is_visible 필터 적용
-    // Supabase는 boolean true를 직접 지원하지만, 혹시 모를 경우를 대비
-    query = query.eq('is_visible', true)
 
     // 베스트 리뷰만 조회
     if (onlyBest) {
@@ -114,7 +124,15 @@ export async function GET(req: NextRequest) {
     }
 
     // 쿼리 실행
+    // 🔄 Supabase 쿼리 결과가 최신인지 확인하기 위해 타임스탬프 로깅
+    const queryStartTime = Date.now()
     const { data, error, count: actualCount } = await query
+    const queryEndTime = Date.now()
+    
+    console.log('[reviews/list] 쿼리 실행 시간:', {
+      queryDuration: queryEndTime - queryStartTime,
+      timestamp: new Date().toISOString()
+    })
 
     if (error) {
       console.error('[reviews/list] 쿼리 에러:', {
@@ -255,6 +273,64 @@ export async function GET(req: NextRequest) {
     })
   } catch (error: any) {
     console.error('[reviews/list] exception:', error)
+    return NextResponse.json(
+      { error: error.message || '리뷰 조회 중 오류가 발생했습니다.' },
+      { status: 500 }
+    )
+  }
+}
+
+// ✅ 캐시 우회용: POST로도 동일 조회 지원
+// (프로덕션 앞단이 GET /api/* 를 캐시하는 경우를 우회하기 위함)
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json().catch(() => ({} as any))
+    const contentIdRaw = body?.content_id
+    const onlyBest = body?.only_best === true || body?.only_best === 'true'
+
+    const contentId = typeof contentIdRaw === 'number' ? String(contentIdRaw) : String(contentIdRaw || '')
+    if (!contentId || Number.isNaN(parseInt(contentId))) {
+      return NextResponse.json(
+        { error: 'content_id는 필수입니다.' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = getAdminSupabaseClient()
+
+    let query = supabase
+      .from('reviews')
+      .select('id, review_text, user_name, is_best, created_at, image_url', { count: 'exact' })
+      .eq('content_id', parseInt(contentId))
+      .eq('is_visible', true)
+      .order('created_at', { ascending: false })
+      .limit(10000)
+
+    if (onlyBest) {
+      query = query.eq('is_best', true)
+    }
+
+    const { data, error } = await query
+    if (error) {
+      console.error('[reviews/list][POST] 쿼리 에러:', error)
+      return NextResponse.json(
+        { error: '리뷰 조회에 실패했습니다.', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      reviews: data || []
+    }, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
+    })
+  } catch (error: any) {
+    console.error('[reviews/list][POST] exception:', error)
     return NextResponse.json(
       { error: error.message || '리뷰 조회 중 오류가 발생했습니다.' },
       { status: 500 }

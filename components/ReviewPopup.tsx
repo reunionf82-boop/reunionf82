@@ -204,6 +204,10 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
 
   if (!isOpen) return null
 
+  const successTitle = selectedImage
+    ? '베스트리뷰 후보가 되셨습니다'
+    : '리뷰가 저장되었습니다'
+
   return (
     <>
       {/* 메인 팝업 */}
@@ -393,7 +397,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-gray-800 mb-2">베스트리뷰 후보가 되셨습니다</h3>
+            <h3 className="text-xl font-bold text-gray-800 mb-2">{successTitle}</h3>
           </div>
         </div>
       )}

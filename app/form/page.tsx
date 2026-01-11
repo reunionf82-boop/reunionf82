@@ -1874,13 +1874,13 @@ function FormContent() {
   // 리뷰 로드 함수
   const loadReviews = async (contentId: number) => {
     try {
-      // 캐시 무효화를 위한 타임스탬프 추가
-      const timestamp = Date.now()
-      
       // 일반 리뷰
-      const reviewsRes = await fetch(`/api/reviews/list?content_id=${contentId}&only_best=false&_t=${timestamp}`, { 
+      const reviewsRes = await fetch(`/api/reviews/list`, { 
+        method: 'POST',
+        body: JSON.stringify({ content_id: contentId, only_best: false }),
         cache: 'no-store',
         headers: {
+          'Content-Type': 'application/json',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
         }
@@ -1895,9 +1895,12 @@ function FormContent() {
       }
       
       // 베스트 리뷰
-      const bestRes = await fetch(`/api/reviews/list?content_id=${contentId}&only_best=true&_t=${timestamp}`, { 
+      const bestRes = await fetch(`/api/reviews/list`, { 
+        method: 'POST',
+        body: JSON.stringify({ content_id: contentId, only_best: true }),
         cache: 'no-store',
         headers: {
+          'Content-Type': 'application/json',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
         }
