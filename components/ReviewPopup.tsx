@@ -2,6 +2,69 @@
 
 import { useState, useRef, useEffect } from 'react'
 
+const MAX_IMAGE_WIDTH = 1024
+
+async function resizeImageIfNeeded(file: File): Promise<File> {
+  // GIF/SVG 등은 캔버스 변환 시 손실/문제 가능성이 있어 원본 유지
+  if (!file.type.startsWith('image/')) return file
+  if (file.type === 'image/gif' || file.type === 'image/svg+xml') return file
+
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const img = new Image()
+    img.decoding = 'async'
+    img.src = objectUrl
+
+    if (typeof (img as any).decode === 'function') {
+      await (img as any).decode()
+    } else {
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve()
+        img.onerror = () => reject(new Error('이미지 로드에 실패했습니다.'))
+      })
+    }
+
+    const width = img.naturalWidth || img.width
+    const height = img.naturalHeight || img.height
+
+    if (!width || width <= MAX_IMAGE_WIDTH) return file
+
+    const targetWidth = MAX_IMAGE_WIDTH
+    const targetHeight = Math.round((height * targetWidth) / width)
+
+    const canvas = document.createElement('canvas')
+    canvas.width = targetWidth
+    canvas.height = targetHeight
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return file
+
+    ctx.drawImage(img, 0, 0, targetWidth, targetHeight)
+
+    // PNG는 투명도 유지, 그 외는 JPEG로 압축(용량 절감)
+    const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg'
+    const jpegQuality = 1.0
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('이미지 변환에 실패했습니다.'))),
+        outputType,
+        outputType === 'image/jpeg' ? jpegQuality : undefined
+      )
+    })
+
+    const baseName = (file.name || 'image').replace(/\.[^.]+$/, '')
+    const ext = outputType === 'image/png' ? 'png' : 'jpg'
+    return new File([blob], `${baseName}-${targetWidth}.${ext}`, { type: outputType })
+  } catch (e) {
+    // HEIC 등 브라우저가 디코딩 못하는 포맷이면 원본 전송
+    console.warn('[ReviewPopup] 이미지 리사이즈 실패(원본 전송):', e)
+    return file
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
 interface ReviewPopupProps {
   isOpen: boolean
   onClose: () => void
@@ -40,7 +103,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
   }, [isOpen])
 
   // 이미지 선택 핸들러
-  const handleImageSelect = (file: File | null) => {
+  const handleImageSelect = async (file: File | null) => {
     if (!file) return
 
     // 이미지 파일인지 확인
@@ -49,14 +112,17 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
       return
     }
 
-    // 파일 크기 제한 (10MB)
-    const maxSize = 10 * 1024 * 1024
-    if (file.size > maxSize) {
-      alert('이미지 파일 크기는 10MB를 초과할 수 없습니다.')
+    // 너무 큰 파일은 브라우저 메모리/성능 문제로 제한 (리사이즈 전)
+    const hardMaxSize = 25 * 1024 * 1024
+    if (file.size > hardMaxSize) {
+      alert('이미지 파일 크기가 너무 큽니다. (최대 25MB)')
       return
     }
 
-    setSelectedImage(file)
+    // 가로 해상도 1024 초과 시 로컬에서 리사이즈 후 업로드
+    const processedFile = await resizeImageIfNeeded(file)
+
+    setSelectedImage(processedFile)
     setImageLoaded(false)
     const reader = new FileReader()
     reader.onloadend = () => {
@@ -66,7 +132,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
         setImageLoaded(true)
       }, 50)
     }
-    reader.readAsDataURL(file)
+    reader.readAsDataURL(processedFile)
   }
 
   // 앨범에서 선택
@@ -330,7 +396,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => handleImageSelect(e.target.files?.[0] || null)}
+                onChange={(e) => { void handleImageSelect(e.target.files?.[0] || null) }}
               />
               <input
                 ref={cameraInputRef}
@@ -338,7 +404,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
                 accept="image/*"
                 capture="environment"
                 className="hidden"
-                onChange={(e) => handleImageSelect(e.target.files?.[0] || null)}
+                onChange={(e) => { void handleImageSelect(e.target.files?.[0] || null) }}
               />
             </div>
           </div>

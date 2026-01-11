@@ -4,100 +4,133 @@ import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest) {
-  try {
-    const contentIdRaw = req.nextUrl.searchParams.get('content_id')
-    const contentId = contentIdRaw ? parseInt(contentIdRaw, 10) : NaN
-    const supabase = getAdminSupabaseClient()
+async function handleRequest(contentIdRaw: string | null | undefined) {
+  const contentId = contentIdRaw ? parseInt(contentIdRaw, 10) : NaN
+  const supabase = getAdminSupabaseClient()
 
-    console.log(`[ReviewEvent Public] 요청: contentId=${contentIdRaw}, parsed=${contentId}`)
+  console.log(`[ReviewEvent Public] 요청: contentId=${contentIdRaw}, parsed=${contentId}`)
 
-    // content_id가 없으면 모든 contents에서 배너가 있는 첫 번째 컨텐츠의 배너 반환
-    if (!contentIdRaw || Number.isNaN(contentId)) {
-      // 전체 컬럼 선택 (JSONB 파싱 문제 회피)
-      const { data: allContents, error: contentsError } = await supabase
-        .from('contents')
-        .select('*')
-        .order('id', { ascending: true })
-      
-      if (contentsError) {
-        console.error(`[ReviewEvent Public] DB 에러:`, contentsError)
-        return NextResponse.json({ review_event_banners: { basic: '', details: [] } })
-      }
+  // content_id가 없으면 모든 contents에서 배너가 있는 첫 번째 컨텐츠의 배너 반환
+  if (!contentIdRaw || Number.isNaN(contentId)) {
+    // 전체 컬럼 선택 (JSONB 파싱 문제 회피)
+    const { data: allContents, error: contentsError } = await supabase
+      .from('contents')
+      .select('*')
+      .order('id', { ascending: true })
+    
+    if (contentsError) {
+      console.error(`[ReviewEvent Public] DB 에러:`, contentsError)
+      return { review_event_banners: { basic: '', details: [] } }
+    }
 
-      console.log(`[ReviewEvent Public] 전체 contents 조회 결과: ${allContents?.length || 0}개`)
-      
-      // 실제로 배너 데이터가 있는 첫 번째 컨텐츠 찾기
-      let contentsData: any = null
-      if (allContents && Array.isArray(allContents)) {
-        for (const content of allContents) {
-          const banners = (content as any)?.review_event_banners
-          if (banners && banners !== null) {
-            // 빈 객체나 빈 배열이 아닌지 확인
-            let hasData = false
-            
-            // 문자열인 경우 파싱 시도
-            let parsedBanners = banners
-            if (typeof banners === 'string') {
-              try {
-                parsedBanners = JSON.parse(banners)
-              } catch (e) {
-                // 파싱 실패 시 원본 사용 혹은 무시
-              }
+    console.log(`[ReviewEvent Public] 전체 contents 조회 결과: ${allContents?.length || 0}개`)
+    
+    // 실제로 배너 데이터가 있는 첫 번째 컨텐츠 찾기
+    let contentsData: any = null
+    if (allContents && Array.isArray(allContents)) {
+      for (const content of allContents) {
+        const banners = (content as any)?.review_event_banners
+        if (banners && banners !== null) {
+          // 빈 객체나 빈 배열이 아닌지 확인
+          let hasData = false
+          
+          // 문자열인 경우 파싱 시도
+          let parsedBanners = banners
+          if (typeof banners === 'string') {
+            try {
+              parsedBanners = JSON.parse(banners)
+            } catch (e) {
+              // 파싱 실패 시 원본 사용 혹은 무시
             }
+          }
 
-            if (typeof parsedBanners === 'object') {
-              if (Array.isArray(parsedBanners)) {
-                hasData = parsedBanners.length > 0
-              } else {
-                hasData = !!(parsedBanners.basic || (Array.isArray(parsedBanners.details) && parsedBanners.details.length > 0))
-              }
+          if (typeof parsedBanners === 'object') {
+            if (Array.isArray(parsedBanners)) {
+              hasData = parsedBanners.length > 0
+            } else {
+              hasData = !!(parsedBanners.basic || (Array.isArray(parsedBanners.details) && parsedBanners.details.length > 0))
             }
+          }
 
-            if (hasData) {
-              contentsData = content
-              console.log(`[ReviewEvent Public] 배너 데이터 발견 - content_id=${content.id}`)
-              break
-            }
+          if (hasData) {
+            contentsData = content
+            console.log(`[ReviewEvent Public] 배너 데이터 발견 - content_id=${content.id}`)
+            break
           }
         }
       }
-
-      if (!contentsData || !contentsData.review_event_banners) {
-        console.log(`[ReviewEvent Public] 배너 데이터가 있는 컨텐츠를 찾지 못함`)
-        return NextResponse.json({ review_event_banners: { basic: '', details: [] } })
-      }
-
-      const raw = contentsData.review_event_banners
-      const banners = parseBanners(raw)
-      
-      return NextResponse.json({ review_event_banners: banners })
     }
 
-    // content_id가 있으면 해당 컨텐츠의 리뷰 이벤트 배너 반환
-    const { data, error } = await supabase
-      .from('contents')
-      .select('*')
-      .eq('id', contentId)
-      .maybeSingle()
-
-    if (error) {
-      console.error(`[ReviewEvent Public] 단일 조회 DB 에러:`, error)
-      return NextResponse.json({ review_event_banners: { basic: '', details: [] } })
+    if (!contentsData || !contentsData.review_event_banners) {
+      console.log(`[ReviewEvent Public] 배너 데이터가 있는 컨텐츠를 찾지 못함`)
+      return { review_event_banners: { basic: '', details: [] } }
     }
 
-    if (!data) {
-      console.log(`[ReviewEvent Public] 컨텐츠를 찾을 수 없음: id=${contentId}`)
-      return NextResponse.json({ review_event_banners: { basic: '', details: [] } })
-    }
-
-    const raw = (data as any)?.review_event_banners
+    const raw = contentsData.review_event_banners
     const banners = parseBanners(raw)
+    
+    return { review_event_banners: banners }
+  }
 
-    return NextResponse.json({ review_event_banners: banners })
+  // content_id가 있으면 해당 컨텐츠의 리뷰 이벤트 배너 반환
+  const { data, error } = await supabase
+    .from('contents')
+    .select('*')
+    .eq('id', contentId)
+    .maybeSingle()
+
+  if (error) {
+    console.error(`[ReviewEvent Public] 단일 조회 DB 에러:`, error)
+    return { review_event_banners: { basic: '', details: [] } }
+  }
+
+  if (!data) {
+    console.log(`[ReviewEvent Public] 컨텐츠를 찾을 수 없음: id=${contentId}`)
+    return { review_event_banners: { basic: '', details: [] } }
+  }
+
+  const raw = (data as any)?.review_event_banners
+  const banners = parseBanners(raw)
+
+  return { review_event_banners: banners }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const contentIdRaw = req.nextUrl.searchParams.get('content_id')
+    const result = await handleRequest(contentIdRaw)
+    return NextResponse.json(result, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
+    })
 
   } catch (e: any) {
     console.error(`[ReviewEvent Public] 서버 내부 에러:`, e)
+    return NextResponse.json(
+      { review_event_banners: { basic: '', details: [] }, error: e.message },
+      { status: 500 }
+    )
+  }
+}
+
+// ✅ 캐시 우회용: POST로도 조회 지원 (관리툴에서 사용)
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json().catch(() => ({} as any))
+    const contentIdRaw = body?.content_id != null ? String(body.content_id) : null
+    const result = await handleRequest(contentIdRaw)
+    return NextResponse.json(result, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
+    })
+  } catch (e: any) {
+    console.error(`[ReviewEvent Public][POST] 서버 내부 에러:`, e)
     return NextResponse.json(
       { review_event_banners: { basic: '', details: [] }, error: e.message },
       { status: 500 }

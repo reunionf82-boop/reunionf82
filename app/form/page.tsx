@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
-import { getContents, getSelectedModel, getSelectedSpeaker, getFortuneViewMode, getUseSequentialFortune } from '@/lib/supabase-admin'
+import { getContents, getContentById, getSelectedModel, getSelectedSpeaker, getFortuneViewMode, getUseSequentialFortune } from '@/lib/supabase-admin'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { calculateManseRyeok, generateManseRyeokTable, generateManseRyeokText, getDayGanji, type ManseRyeokCaptionInfo, convertSolarToLunarAccurate, convertLunarToSolarAccurate } from '@/lib/manse-ryeok'
 import TermsPopup from '@/components/TermsPopup'
@@ -142,10 +142,18 @@ function FormContent() {
   
   // 결제 팝업 상태
   const [showPaymentPopup, setShowPaymentPopup] = useState(false)
+  const [paymentProcessingMethod, setPaymentProcessingMethod] = useState<null | 'card' | 'mobile'>(null)
   const [phoneNumber1, setPhoneNumber1] = useState('010')
   const [phoneNumber2, setPhoneNumber2] = useState('')
   const [phoneNumber3, setPhoneNumber3] = useState('')
   const [password, setPassword] = useState('')
+
+  // 제출이 끝나면(성공/실패 포함) 결제 버튼 로딩 상태 해제
+  useEffect(() => {
+    if (!submitting && paymentProcessingMethod !== null) {
+      setPaymentProcessingMethod(null)
+    }
+  }, [submitting, paymentProcessingMethod])
   
   // 약관 동의 상태
   const [agreeTerms, setAgreeTerms] = useState(false)
@@ -1813,7 +1821,23 @@ function FormContent() {
     
     try {
       setLoading(true)
-      const data = await getContents()
+      // ✅ 폼 진입 속도 최적화:
+      // home/메뉴에서 선택한 content_id가 있으면 전체 목록(getContents) 대신 단일 조회(getContentById) 사용
+      let foundContent: any = null
+      if (typeof window !== 'undefined') {
+        const storedContentId = sessionStorage.getItem('form_content_id')
+        if (storedContentId) {
+          const id = parseInt(storedContentId, 10)
+          if (!Number.isNaN(id)) {
+            try {
+              foundContent = await getContentById(id)
+            } catch (e) {
+              // 실패 시 기존 방식(getContents)으로 폴백
+            }
+          }
+        }
+      }
+
       let decodedTitle = title
       try {
         decodedTitle = decodeURIComponent(title)
@@ -1821,7 +1845,17 @@ function FormContent() {
         // 이미 디코딩되었거나 잘못된 형식인 경우 원본 사용
         decodedTitle = title
       }
-      const foundContent = data?.find((item: any) => item.content_name === decodedTitle)
+
+      if (!foundContent) {
+        const data = await getContents()
+        foundContent = data?.find((item: any) => item.content_name === decodedTitle) || null
+      } else {
+        // storedContentId로 가져온 컨텐츠가 title과 다르면(다른 카드 클릭 등) 폴백
+        if (foundContent?.content_name && foundContent.content_name !== decodedTitle) {
+          const data = await getContents()
+          foundContent = data?.find((item: any) => item.content_name === decodedTitle) || null
+        }
+      }
       
       if (!foundContent) {
       }
@@ -1836,37 +1870,39 @@ function FormContent() {
       }
       
       setContent(foundContent || null)
-      
-      // 클릭 수 증가 및 리뷰 로드
+
+      // ✅ UX 개선: 폼 본문을 빨리 보여주고(로딩 해제),
+      // 클릭 수 증가/리뷰 로드는 백그라운드에서 진행
+      setLoading(false)
+
       if (foundContent?.id) {
         // 클릭 수 조회 (증가 전 값)
         setClickCount(foundContent.click_count || 0)
-        
-        // 클릭 수 증가
-        try {
-          const clickRes = await fetch('/api/content/click', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content_id: foundContent.id }),
-          })
-          if (clickRes.ok) {
-            const clickData = await clickRes.json()
-            console.log('[클릭 수 증가 성공]', clickData)
-            setClickCount(clickData.click_count || foundContent.click_count || 0)
-          } else {
-            const errorData = await clickRes.json().catch(() => ({}))
-            console.error('[클릭 수 증가 실패]', clickRes.status, errorData)
+
+        // 클릭 수 증가 (백그라운드)
+        void (async () => {
+          try {
+            const clickRes = await fetch('/api/content/click', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content_id: foundContent.id }),
+            })
+            if (clickRes.ok) {
+              const clickData = await clickRes.json()
+              setClickCount(clickData.click_count || foundContent.click_count || 0)
+            }
+          } catch (e) {
+            // 무시 (UX 우선)
           }
-        } catch (e) {
-          console.error('[클릭 수 증가 에러]', e)
-        }
-        
-        // 리뷰 로드
-        loadReviews(foundContent.id)
+        })()
+
+        // 리뷰 로드 (백그라운드)
+        void loadReviews(foundContent.id)
       }
     } catch (error) {
       setContent(null)
     } finally {
+      // 위에서 setLoading(false)로 빠르게 해제하므로, 여기서는 안전망만 유지
       setLoading(false)
     }
   }
@@ -1974,7 +2010,7 @@ function FormContent() {
     }
 
     setSubmitting(true)
-    setShowPaymentPopup(false)
+    setPaymentProcessingMethod(paymentMethod)
 
     // 시작 시간 기록
     const startTime = Date.now()
@@ -3114,17 +3150,6 @@ function FormContent() {
     { value: '亥', label: '亥(해) 21:30 ~ 23:29' },
   ]
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex items-center justify-center">
-        <div className="text-center text-gray-400">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto mb-4"></div>
-          <p>로딩 중...</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex flex-col">
       {/* 헤더 */}
@@ -3161,6 +3186,16 @@ function FormContent() {
         </div>
       </header>
 
+      {/* ✅ 전체 화면 스피너 대신, 상단에 작은 로딩 안내만 표시 (체감 속도 개선) */}
+      {loading && (
+        <div className="w-full bg-white/80 backdrop-blur border-b border-pink-100">
+          <div className="container mx-auto px-4 py-2 flex items-center justify-center gap-2 text-sm text-gray-600">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-pink-500"></div>
+            <span>로딩 중...</span>
+          </div>
+        </div>
+      )}
+
       {/* 슬라이드 메뉴바 */}
       <SlideMenuBar isOpen={showSlideMenu} onClose={() => setShowSlideMenu(false)} />
 
@@ -3189,6 +3224,7 @@ function FormContent() {
             // 오버레이 클릭 시 팝업 닫기 (팝업 내용 클릭 시에는 닫지 않음)
             if (e.target === e.currentTarget) {
               setShowPaymentPopup(false)
+              setPaymentProcessingMethod(null)
               setPhoneNumber1('010')
               setPhoneNumber2('')
               setPhoneNumber3('')
@@ -3213,6 +3249,7 @@ function FormContent() {
                 type="button"
                 onClick={() => {
                   setShowPaymentPopup(false)
+                  setPaymentProcessingMethod(null)
                   setPhoneNumber1('010')
                   setPhoneNumber2('')
                   setPhoneNumber3('')
@@ -3315,18 +3352,32 @@ function FormContent() {
                 <button
                   type="button"
                   onClick={() => handlePaymentSubmit('card')}
-                  disabled={submitting}
-                  className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={submitting || paymentProcessingMethod !== null}
+                  className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  카드결제
+                  {paymentProcessingMethod === 'card' ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>처리 중...</span>
+                    </>
+                  ) : (
+                    '카드결제'
+                  )}
                 </button>
                 <button
                   type="button"
                   onClick={() => handlePaymentSubmit('mobile')}
-                  disabled={submitting}
-                  className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={submitting || paymentProcessingMethod !== null}
+                  className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  휴대폰 결제
+                  {paymentProcessingMethod === 'mobile' ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>처리 중...</span>
+                    </>
+                  ) : (
+                    '휴대폰 결제'
+                  )}
                 </button>
               </div>
             </div>
@@ -4400,14 +4451,7 @@ function FormContent() {
                 disabled={submitting || loading}
                 className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                {submitting ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    <span>처리 중...</span>
-                  </>
-                ) : (
-                  '결제하기'
-                )}
+                {submitting ? '처리 중...' : '결제하기'}
               </button>
               <button
                 type="button"

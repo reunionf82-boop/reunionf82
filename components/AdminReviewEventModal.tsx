@@ -43,7 +43,13 @@ export default function AdminReviewEventModal({
   const loadData = async () => {
     setLoading(true)
     try {
-      const response = await fetch(`/api/settings/review-events?content_id=${contentId}`)
+      // ✅ 프로덕션에서 GET 캐시 우회: POST로 조회
+      const response = await fetch(`/api/settings/review-events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ content_id: contentId })
+      })
       if (response.ok) {
         const data = await response.json()
         const banners = data.review_event_banners || {}
@@ -239,12 +245,14 @@ export default function AdminReviewEventModal({
                 </div>
                 
                 <div 
-                  className={`relative w-full min-h-[200px] max-h-[300px] rounded-xl border-2 transition-all duration-300 group overflow-hidden bg-gray-900 ${
-                    basicBanner 
-                      ? 'border-gray-700' 
-                      : dragOverBasic 
-                        ? 'border-pink-500 bg-gray-800/80 scale-[1.01]' 
-                        : 'border-dashed border-gray-600 bg-gray-800/30 hover:border-gray-500 hover:bg-gray-800/50'
+                  className={`relative w-full rounded-xl border-2 transition-all duration-300 group overflow-hidden bg-gray-900 ${
+                    basicBanner
+                      ? 'border-gray-700'
+                      : `min-h-[200px] ${
+                          dragOverBasic
+                            ? 'border-pink-500 bg-gray-800/80 scale-[1.01]'
+                            : 'border-dashed border-gray-600 bg-gray-800/30 hover:border-gray-500 hover:bg-gray-800/50'
+                        }`
                   }`}
                   onDragOver={(e) => { e.preventDefault(); setDragOverBasic(true); }}
                   onDragLeave={() => setDragOverBasic(false)}
@@ -255,7 +263,7 @@ export default function AdminReviewEventModal({
                       <img 
                         src={basicBanner} 
                         alt="기본 배너" 
-                        className="w-full h-full object-contain"
+                        className="w-full h-auto object-contain block"
                       />
                       <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                         <label className="cursor-pointer bg-white text-gray-900 font-bold px-6 py-2 rounded-full transform hover:scale-105 transition-transform flex items-center gap-2">

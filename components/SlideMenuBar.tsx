@@ -27,7 +27,7 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
   // 문의하기 폼 상태
   const [inquiryForm, setInquiryForm] = useState({
     name: '',
-    phone: '010',
+    phone: '010-',
     email: '',
     content: '',
     agreeTerms: false,
@@ -121,6 +121,7 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
       const content = paidContents.find(c => c.id === contentId) || contents.find(c => c.id === contentId)
       if (content) {
         sessionStorage.setItem('form_title', content.content_name || '')
+        sessionStorage.setItem('form_content_id', String(contentId))
         router.push('/form')
         onClose()
       }
@@ -129,22 +130,29 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
 
   // 전화번호 하이픈 자동 입력
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/[^0-9]/g, '') // 숫자만 추출
-    
+    // 숫자만 추출
+    let digits = e.target.value.replace(/[^0-9]/g, '')
+
     // 010은 고정
-    if (!value.startsWith('010')) {
-      value = '010' + value.replace(/^010/, '')
+    if (!digits.startsWith('010')) {
+      digits = '010' + digits.replace(/^010/, '')
     }
-    
-    // 하이픈 자동 입력: 010-1234-5678 형식
-    if (value.length > 3) {
-      value = value.slice(0, 3) + '-' + value.slice(3)
+
+    // 길이 제한: 010 + 8자리 = 11자리
+    digits = digits.slice(0, 11)
+
+    // 표시 포맷: 010- / 010-1234 / 010-1234-5678
+    let formatted = '010-'
+    if (digits.length > 3) {
+      const rest = digits.slice(3)
+      if (rest.length <= 4) {
+        formatted = `010-${rest}`
+      } else {
+        formatted = `010-${rest.slice(0, 4)}-${rest.slice(4, 8)}`
+      }
     }
-    if (value.length > 8) {
-      value = value.slice(0, 8) + '-' + value.slice(8, 12)
-    }
-    
-    setInquiryForm({ ...inquiryForm, phone: value })
+
+    setInquiryForm({ ...inquiryForm, phone: formatted })
   }
 
   // 문의하기 폼 제출
@@ -178,7 +186,7 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
       if (response.ok && data.success) {
         setInquiryForm({
           name: '',
-          phone: '010',
+          phone: '010-',
           email: '',
           content: '',
           agreeTerms: false,

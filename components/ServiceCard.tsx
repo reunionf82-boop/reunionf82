@@ -1,10 +1,12 @@
 'use client'
 
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getSelectedModel } from '@/lib/supabase-admin'
 import SupabaseVideo from '@/components/SupabaseVideo'
 
 interface Service {
+  id?: number
   title: string
   description: string
   price: string
@@ -35,6 +37,11 @@ export default function ServiceCard({ service }: ServiceCardProps) {
   // 동영상 썸네일이 있는지 확인
   const hasVideo = !!service.thumbnailVideoUrl
 
+  // 폼 페이지 미리 로드 (이동 체감 속도 개선)
+  useEffect(() => {
+    router.prefetch('/form')
+  }, [router])
+
   const handleReunionClick = async () => {
     // Supabase에서 선택된 모델 가져오기
     try {
@@ -44,6 +51,9 @@ export default function ServiceCard({ service }: ServiceCardProps) {
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('form_title', service.title)
         sessionStorage.setItem('form_model', selectedModel)
+        if (typeof service.id === 'number') {
+          sessionStorage.setItem('form_content_id', String(service.id))
+        }
         // ✅ 썸네일 캐시는 "컨텐츠별(title별)"로 분리해서 저장 (다른 폼에서 섞이는 버그 방지)
         const imageKey = `form_thumbnail_image_url:${service.title}`
         const videoKey = `form_thumbnail_video_url:${service.title}`
@@ -62,6 +72,9 @@ export default function ServiceCard({ service }: ServiceCardProps) {
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('form_title', service.title)
         sessionStorage.setItem('form_model', 'gemini-3-flash-preview')
+        if (typeof service.id === 'number') {
+          sessionStorage.setItem('form_content_id', String(service.id))
+        }
         // ✅ 썸네일 캐시는 "컨텐츠별(title별)"로 분리해서 저장 (다른 폼에서 섞이는 버그 방지)
         const imageKey = `form_thumbnail_image_url:${service.title}`
         const videoKey = `form_thumbnail_video_url:${service.title}`
