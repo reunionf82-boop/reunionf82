@@ -2016,6 +2016,23 @@ ${fontFace ? fontFace : ''}
 
     const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
 
+    // ✅ 방어 로직:
+    // 점사 HTML이 "완료"로 끝났더라도, 간헐적으로 마지막에
+    // <div class="menu-section"><h2 class="menu-title">...</h2></div>
+    // 처럼 "메뉴 제목만 있고 소제목/본문이 없는" 빈 섹션이 꼬리로 붙는 경우가 있음.
+    // 이 경우 UI에서 '첫번째 대제목만' 덩그러니 렌더링되는 문제가 발생하므로,
+    // 마지막에 붙은 "빈 menu-section"은 파싱 대상에서 제외한다. (중간 섹션은 건드리지 않음)
+    const cleanedMenuSections = [...menuSections]
+    while (cleanedMenuSections.length > 0) {
+      const last = cleanedMenuSections[cleanedMenuSections.length - 1]
+      const hasSubSections =
+        last.querySelectorAll('.subtitle-section, .detail-menu-section').length > 0
+      const hasBodyContent =
+        last.querySelectorAll('.subtitle-content, .detail-menu-content').length > 0
+      if (hasSubSections || hasBodyContent) break
+      cleanedMenuSections.pop()
+    }
+
     // 숫자 접두사 제거 함수 (예: "1. " → "", "1-1. " → "", "1-1-1. " → "")
     const removeNumberPrefix = (text: string): string => {
       if (!text) return text
@@ -2073,7 +2090,7 @@ ${fontFace ? fontFace : ''}
 
     // 썸네일/만세력은 ref 캐시에서 가져오거나 새로 추출 (깜빡임 완전 방지)
     let cursor = 0
-    const parsed: ParsedMenu[] = menuSections.map((section, index) => {
+    const parsed: ParsedMenu[] = cleanedMenuSections.map((section, index) => {
       const titleEl = section.querySelector('.menu-title')
       const titleText = titleEl?.textContent?.trim() || '메뉴'
 
