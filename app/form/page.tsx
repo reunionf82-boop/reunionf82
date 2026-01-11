@@ -1874,11 +1874,15 @@ function FormContent() {
   // 리뷰 로드 함수
   const loadReviews = async (contentId: number) => {
     try {
+      // 캐시 무효화를 위한 타임스탬프 추가
+      const timestamp = Date.now()
+      
       // 일반 리뷰
-      const reviewsRes = await fetch(`/api/reviews/list?content_id=${contentId}&only_best=false`, { 
+      const reviewsRes = await fetch(`/api/reviews/list?content_id=${contentId}&only_best=false&_t=${timestamp}`, { 
         cache: 'no-store',
         headers: {
-          'Cache-Control': 'no-cache',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
         }
       })
       if (reviewsRes.ok) {
@@ -1891,10 +1895,11 @@ function FormContent() {
       }
       
       // 베스트 리뷰
-      const bestRes = await fetch(`/api/reviews/list?content_id=${contentId}&only_best=true`, { 
+      const bestRes = await fetch(`/api/reviews/list?content_id=${contentId}&only_best=true&_t=${timestamp}`, { 
         cache: 'no-store',
         headers: {
-          'Cache-Control': 'no-cache',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
         }
       })
       if (bestRes.ok) {
@@ -4427,7 +4432,8 @@ function FormContent() {
         {content?.id && (
           <div className="bg-gradient-to-br from-white to-pink-50/30 rounded-2xl p-0 mb-8 border border-pink-100 overflow-hidden" style={{ boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)' }}>
             {/* 세련된 탭 디자인 */}
-            <div className="flex items-center bg-white/60 backdrop-blur-sm border-b border-pink-200 px-1">
+            <div className="flex items-center justify-between bg-white/60 backdrop-blur-sm border-b border-pink-200 px-1">
+              <div className="flex items-center">
               <button
                 type="button"
                 onClick={() => setActiveReviewTab('reviews')}
@@ -4458,6 +4464,22 @@ function FormContent() {
                 {activeReviewTab === 'best' && (
                   <span className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-gradient-to-r from-pink-500 to-pink-600 rounded-full"></span>
                 )}
+              </button>
+              </div>
+              {/* 새로고침 버튼 */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (content?.id) {
+                    loadReviews(content.id)
+                  }
+                }}
+                className="px-3 py-2 text-xs text-gray-600 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-colors duration-200 mr-2"
+                title="리뷰 새로고침"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
               </button>
             </div>
 
