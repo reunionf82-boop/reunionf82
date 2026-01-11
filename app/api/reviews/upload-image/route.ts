@@ -16,6 +16,23 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 
 export async function POST(req: NextRequest) {
   try {
+    // 환경 변수 확인 (프로덕션 환경에서 문제 진단용)
+    if (!supabaseUrl) {
+      console.error('[reviews/upload-image] NEXT_PUBLIC_SUPABASE_URL이 설정되지 않았습니다.')
+      return NextResponse.json(
+        { error: '서버 설정 오류: Supabase URL이 설정되지 않았습니다.' },
+        { status: 500 }
+      )
+    }
+
+    if (!supabaseServiceKey) {
+      console.error('[reviews/upload-image] Supabase 서비스 키가 설정되지 않았습니다.')
+      return NextResponse.json(
+        { error: '서버 설정 오류: Supabase 서비스 키가 설정되지 않았습니다.' },
+        { status: 500 }
+      )
+    }
+
     const formData = await req.formData()
     const file = formData.get('file') as File
 
@@ -49,36 +66,96 @@ export async function POST(req: NextRequest) {
     const filePath = `reviews/${fileName}`
 
     // Supabase Storage에 업로드
+    // 파일을 ArrayBuffer로 변환하여 업로드 (일관성 및 호환성 개선)
+    const arrayBuffer = await file.arrayBuffer()
+    const body = Buffer.from(arrayBuffer)
+    
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('thumbnails')
-      .upload(filePath, file, {
+      .upload(filePath, body, {
         cacheControl: '3600',
-        upsert: false
+        upsert: false,
+        contentType: file.type || `image/${fileExt}`
       })
 
     if (uploadError) {
       console.error('[reviews/upload-image] upload error:', uploadError)
+      console.error('[reviews/upload-image] upload error details:', JSON.stringify(uploadError, null, 2))
       return NextResponse.json(
-        { error: uploadError.message || '이미지 업로드에 실패했습니다.' },
+        { 
+          error: uploadError.message || '이미지 업로드에 실패했습니다.',
+          details: uploadError
+        },
         { status: 500 }
       )
     }
 
-    // 공개 URL 생성
+    // 업로드 직후 실제 존재 여부 검증 (프로덕션에서 파일이 안 보이는 이슈 진단용)
+    const verifyExists = await supabase.storage
+      .from('thumbnails')
+      .download(filePath)
+      .then(() => true)
+      .catch((err) => {
+        console.error('[reviews/upload-image] 파일 검증 실패:', err)
+        return false
+      })
+
+    if (!verifyExists) {
+      console.error('[reviews/upload-image] 업로드된 파일을 검증할 수 없습니다:', filePath)
+      return NextResponse.json(
+        { 
+          error: '업로드된 파일을 검증할 수 없습니다.',
+          details: '파일이 업로드되었지만 확인할 수 없습니다.'
+        },
+        { status: 500 }
+      )
+    }
+
+    // 공개 URL 생성 (더 안전한 방식)
     const { data: urlData } = supabase.storage
       .from('thumbnails')
       .getPublicUrl(filePath)
 
     if (!urlData?.publicUrl) {
+      console.error('[reviews/upload-image] URL 생성 실패:', {
+        filePath,
+        supabaseUrl,
+        uploadData
+      })
       return NextResponse.json(
-        { error: '이미지 URL을 생성할 수 없습니다.' },
+        { 
+          error: '이미지 URL을 생성할 수 없습니다.',
+          details: '파일은 업로드되었지만 공개 URL을 생성할 수 없습니다.'
+        },
         { status: 500 }
       )
     }
 
+    // URL 유효성 검증 (프로덕션 환경에서 URL 형식 확인)
+    const publicUrl = urlData.publicUrl
+    if (!publicUrl || !publicUrl.startsWith('http')) {
+      console.error('[reviews/upload-image] 잘못된 URL 형식:', publicUrl)
+      return NextResponse.json(
+        { 
+          error: '생성된 URL이 유효하지 않습니다.',
+          details: `URL 형식 오류: ${publicUrl}`
+        },
+        { status: 500 }
+      )
+    }
+
+    console.log('[reviews/upload-image] 업로드 성공:', {
+      filePath,
+      publicUrl,
+      fileSize: file.size,
+      fileType: file.type,
+      verified: verifyExists
+    })
+
     return NextResponse.json({
       success: true,
-      url: urlData.publicUrl
+      url: publicUrl,
+      path: filePath
     })
   } catch (error: any) {
     console.error('[reviews/upload-image] exception:', error)
