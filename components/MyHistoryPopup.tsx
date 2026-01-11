@@ -2372,10 +2372,22 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
             {/* 헤더 */}
             <div className="bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-white">리뷰 이벤트 상세</h3>
+              <div className="flex items-center gap-3">
+                {/* 모바일 이전 버튼 */}
+                <button
+                  onClick={() => setShowDetailBannersModal(null)}
+                  className="text-white hover:text-gray-200 transition-colors md:hidden"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <h3 className="text-lg font-bold text-white">리뷰 이벤트 상세</h3>
+              </div>
+              {/* 데스크톱 닫기 버튼 */}
               <button
                 onClick={() => setShowDetailBannersModal(null)}
-                className="text-white hover:text-gray-200 transition-colors"
+                className="text-white hover:text-gray-200 transition-colors hidden md:block"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

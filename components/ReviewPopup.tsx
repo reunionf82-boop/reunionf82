@@ -15,6 +15,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
   const [reviewText, setReviewText] = useState('')
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [imageLoaded, setImageLoaded] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
@@ -31,6 +32,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
       setReviewText('')
       setSelectedImage(null)
       setImagePreview(null)
+      setImageLoaded(false)
       setIsUploading(false)
       setShowConfirmDialog(false)
       setShowSuccessMessage(false)
@@ -55,9 +57,14 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
     }
 
     setSelectedImage(file)
+    setImageLoaded(false)
     const reader = new FileReader()
     reader.onloadend = () => {
       setImagePreview(reader.result as string)
+      // 이미지가 DOM에 로드될 때까지 약간의 지연
+      setTimeout(() => {
+        setImageLoaded(true)
+      }, 50)
     }
     reader.readAsDataURL(file)
   }
@@ -76,6 +83,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
   const handleRemoveImage = () => {
     setSelectedImage(null)
     setImagePreview(null)
+    setImageLoaded(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (cameraInputRef.current) cameraInputRef.current.value = ''
   }
@@ -111,7 +119,17 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
       // 이미지가 있으면 먼저 업로드
       let imageUrl: string | null = null
       if (selectedImage) {
+        // 이미지가 완전히 로드될 때까지 대기 (최대 1초)
+        let waitCount = 0
+        while (!imageLoaded && waitCount < 20) {
+          await new Promise(resolve => setTimeout(resolve, 50))
+          waitCount++
+        }
+        
         setIsUploading(true)
+        // 상태 업데이트가 DOM에 반영될 시간을 줌
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
         try {
           const formData = new FormData()
           formData.append('file', selectedImage)
@@ -237,24 +255,31 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
                 사진 (선택사항)
               </label>
               {imagePreview ? (
-                <div className="relative bg-gray-50 rounded-lg border border-gray-300 overflow-hidden">
-                  <div className="w-full max-h-64 flex items-center justify-center">
+                <div className="relative bg-gray-50 rounded-lg border border-gray-300 overflow-hidden" style={{ minHeight: '256px', height: '256px' }}>
+                  <div className="w-full h-full flex items-center justify-center">
+                    {!imageLoaded && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
+                      </div>
+                    )}
                     <img
                       src={imagePreview}
                       alt="미리보기"
-                      className="w-full h-auto max-h-64 object-contain"
+                      className={`w-full h-full object-contain transition-opacity duration-200 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                      onLoad={() => setImageLoaded(true)}
+                      onError={() => setImageLoaded(true)}
                     />
                   </div>
                   {/* 업로드 중 오버레이 */}
                   {isUploading && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20">
                       <div className="bg-white rounded-lg p-4 flex flex-col items-center gap-2">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
                         <span className="text-sm font-semibold text-gray-700">업로드 중...</span>
                       </div>
                     </div>
                   )}
-                  {!isUploading && (
+                  {!isUploading && imageLoaded && (
                     <button
                       onClick={handleRemoveImage}
                       className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 transition-colors z-10"
