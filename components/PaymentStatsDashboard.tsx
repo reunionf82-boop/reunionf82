@@ -8,9 +8,22 @@ interface PaymentStats {
     count: number
     cardCount: number
     mobileCount: number
+    maleCount?: number
+    femaleCount?: number
   }
   daily: Array<{
     date: string
+    amount: number
+    count: number
+  }>
+  hourly?: Array<{
+    hour: number
+    amount: number
+    count: number
+  }>
+  weekly?: Array<{
+    weekday: number
+    weekdayName: string
     amount: number
     count: number
   }>
@@ -24,10 +37,14 @@ interface PaymentStats {
     card: {
       count: number
       amount: number
+      maleCount?: number
+      femaleCount?: number
     }
     mobile: {
       count: number
       amount: number
+      maleCount?: number
+      femaleCount?: number
     }
   }
 }
