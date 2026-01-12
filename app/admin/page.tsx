@@ -1466,7 +1466,7 @@ export default function AdminPage() {
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-4 bg-white flex justify-center">
+            <div className={`flex-1 p-4 bg-white flex justify-center ${homeHtmlPreviewMode === 'mobile' ? 'overflow-y-auto' : 'overflow-auto'}`}>
               <div className={`${homeHtmlPreviewMode === 'mobile' ? 'w-full max-w-[375px]' : 'w-full'}`}>
                 <iframe
                   ref={homeHtmlPreviewIframeRef}
@@ -1474,6 +1474,7 @@ export default function AdminPage() {
                   className="w-full border-0"
                   style={{
                     border: 'none',
+                    overflow: 'hidden',
                   }}
                   title="홈HTML 미리보기"
                   sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
@@ -1488,6 +1489,10 @@ export default function AdminPage() {
                             200
                           )
                           iframe.style.height = `${height}px`
+                          iframe.style.overflow = 'hidden'
+                          // iframe 내부 body의 스크롤도 숨김
+                          iframe.contentWindow.document.body.style.overflow = 'hidden'
+                          iframe.contentWindow.document.documentElement.style.overflow = 'hidden'
                         }
                       } catch (err) {
                         // cross-origin 등으로 접근 불가 시 무시

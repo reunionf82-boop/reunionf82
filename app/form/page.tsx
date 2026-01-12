@@ -3623,7 +3623,7 @@ function FormContent() {
               <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">
                 소개
               </h2>
-              <div className="w-full p-0 m-0 border-0" style={{ height: 'auto', minHeight: '1px' }}>
+              <div className="w-full p-0 m-0 border-0 overflow-hidden" style={{ height: 'auto', minHeight: '1px' }}>
                 <iframe
                   ref={introductionIframeRef}
                   srcDoc={content.introduction}
@@ -3635,6 +3635,7 @@ function FormContent() {
                     border: 'none',
                     margin: 0,
                     padding: 0,
+                    overflow: 'hidden',
                   }}
                   title="소개 HTML 뷰"
                   sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
@@ -3649,6 +3650,10 @@ function FormContent() {
                             200
                           )
                           iframe.style.height = `${height}px`
+                          iframe.style.overflow = 'hidden'
+                          // iframe 내부 body의 스크롤도 숨김
+                          iframe.contentWindow.document.body.style.overflow = 'hidden'
+                          iframe.contentWindow.document.documentElement.style.overflow = 'hidden'
                         }
                       } catch (err) {
                         // cross-origin 등으로 접근 불가 시 무시
@@ -3666,7 +3671,7 @@ function FormContent() {
               <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">
                 이런 분께 추천해요
               </h2>
-              <div className="w-full p-0 m-0 border-0" style={{ height: 'auto', minHeight: '1px' }}>
+              <div className="w-full p-0 m-0 border-0 overflow-hidden" style={{ height: 'auto', minHeight: '1px' }}>
                 <iframe
                   ref={recommendationIframeRef}
                   srcDoc={content.recommendation}
@@ -3678,6 +3683,7 @@ function FormContent() {
                     border: 'none',
                     margin: 0,
                     padding: 0,
+                    overflow: 'hidden',
                   }}
                   title="추천 HTML 뷰"
                   sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
@@ -3692,6 +3698,10 @@ function FormContent() {
                             200
                           )
                           iframe.style.height = `${height}px`
+                          iframe.style.overflow = 'hidden'
+                          // iframe 내부 body의 스크롤도 숨김
+                          iframe.contentWindow.document.body.style.overflow = 'hidden'
+                          iframe.contentWindow.document.documentElement.style.overflow = 'hidden'
                         }
                       } catch (err) {
                         // cross-origin 등으로 접근 불가 시 무시
@@ -3707,7 +3717,7 @@ function FormContent() {
           {content?.menu_composition && content.menu_composition.trim() !== '' ? (
             <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
               <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">상품 메뉴 구성</h2>
-              <div className="w-full p-0 m-0 border-0" style={{ height: 'auto', minHeight: '1px' }}>
+              <div className="w-full p-0 m-0 border-0 overflow-hidden" style={{ height: 'auto', minHeight: '1px' }}>
                 <iframe
                   ref={menuItemsIframeRef}
                   srcDoc={content.menu_composition}
@@ -3719,6 +3729,7 @@ function FormContent() {
                     border: 'none',
                     margin: 0,
                     padding: 0,
+                    overflow: 'hidden',
                   }}
                   title="상품 메뉴 구성 HTML 뷰"
                   sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
@@ -3733,6 +3744,10 @@ function FormContent() {
                             200
                           )
                           iframe.style.height = `${height}px`
+                          iframe.style.overflow = 'hidden'
+                          // iframe 내부 body의 스크롤도 숨김
+                          iframe.contentWindow.document.body.style.overflow = 'hidden'
+                          iframe.contentWindow.document.documentElement.style.overflow = 'hidden'
                         }
                       } catch (err) {
                         // cross-origin 등으로 접근 불가 시 무시
@@ -3747,7 +3762,7 @@ function FormContent() {
             content?.menu_items && content.menu_items.length > 0 && (
               <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
                 <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">상품 메뉴 구성</h2>
-                <div className="w-full p-0 m-0 border-0" style={{ height: 'auto', minHeight: '1px' }}>
+                <div className="w-full p-0 m-0 border-0 overflow-hidden" style={{ height: 'auto', minHeight: '1px' }}>
                   <iframe
                     ref={menuItemsIframeRef}
                     srcDoc={content.menu_items.map((item: any) => {
@@ -3762,6 +3777,7 @@ function FormContent() {
                       border: 'none',
                       margin: 0,
                       padding: 0,
+                      overflow: 'hidden',
                     }}
                     title="상품 메뉴 구성 HTML 뷰"
                     sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
@@ -3776,6 +3792,10 @@ function FormContent() {
                               200
                             )
                             iframe.style.height = `${height}px`
+                            iframe.style.overflow = 'hidden'
+                            // iframe 내부 body의 스크롤도 숨김
+                            iframe.contentWindow.document.body.style.overflow = 'hidden'
+                            iframe.contentWindow.document.documentElement.style.overflow = 'hidden'
                           }
                         } catch (err) {
                           // cross-origin 등으로 접근 불가 시 무시

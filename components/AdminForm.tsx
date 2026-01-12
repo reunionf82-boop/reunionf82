@@ -2174,7 +2174,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="block text-sm font-medium text-gray-300">
-              상품 메뉴 편성
+              상품 메뉴 구성
             </label>
             <button
               type="button"
@@ -4718,7 +4718,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-4 bg-white flex justify-center">
+            <div className={`flex-1 p-4 bg-white flex justify-center ${htmlPreviewMode === 'mobile' ? 'overflow-y-auto' : 'overflow-auto'}`}>
               <div className={`${htmlPreviewMode === 'mobile' ? 'w-full max-w-[375px]' : 'w-full'}`}>
                 <iframe
                   ref={htmlPreviewIframeRef}
@@ -4726,6 +4726,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   className="w-full border-0"
                   style={{
                     border: 'none',
+                    overflow: 'hidden',
                   }}
                   title={htmlPreviewTitle}
                   sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
@@ -4740,6 +4741,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                             200
                           )
                           iframe.style.height = `${height}px`
+                          iframe.style.overflow = 'hidden'
+                          // iframe 내부 body의 스크롤도 숨김
+                          iframe.contentWindow.document.body.style.overflow = 'hidden'
+                          iframe.contentWindow.document.documentElement.style.overflow = 'hidden'
                         }
                       } catch (err) {
                         // cross-origin 등으로 접근 불가 시 무시
