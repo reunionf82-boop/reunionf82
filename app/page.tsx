@@ -29,7 +29,21 @@ export default function Home() {
 
   const loadServices = async () => {
     try {
-      const data = await getContents()
+      // POST 방식으로 컨텐츠 목록 가져오기 (캐시 우회)
+      const response = await fetch('/api/admin/content/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({})
+      })
+      
+      if (!response.ok) {
+        throw new Error('컨텐츠 목록을 가져오는데 실패했습니다.')
+      }
+      
+      const result = await response.json()
+      const data = result.success && result.data ? result.data : []
+      
       // Supabase 데이터를 ServiceCard 형식으로 변환
       const convertedServices = (data || []).map((content: any) => ({
         id: content.id,

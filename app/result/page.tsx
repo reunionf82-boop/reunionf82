@@ -268,6 +268,7 @@ function ResultContent() {
   const currentAudioRef = useRef<HTMLAudioElement | null>(null) // 현재 재생 중인 오디오 (ref로 관리하여 리렌더링 방지)
   const shouldStopRef = useRef(false) // 재생 중지 플래그 (ref로 관리하여 실시간 확인 가능)
   const [shouldStop, setShouldStop] = useState(false) // 재생 중지 플래그 (UI 업데이트용)
+  const [ttsStatus, setTtsStatus] = useState<string | null>(null) // TTS 상태 메시지 (음성 생성 중, 재생 시작 등)
 
   // 오디오 중지 함수 (여러 곳에서 재사용)
   const stopAndResetAudio = () => {
@@ -2807,6 +2808,7 @@ ${fontFace ? fontFace : ''}
   // 음성 재생 중지 함수
   const stopTextToSpeech = () => {
     stopAndResetAudio()
+    setTtsStatus(null) // 상태 메시지 제거
   }
 
   // 음성으로 듣기 기능 (현재 결과용) - 청크 단위로 나누어 재생
@@ -2823,6 +2825,7 @@ ${fontFace ? fontFace : ''}
       setIsPlaying(true)
       shouldStopRef.current = false // ref 초기화
       setShouldStop(false) // state 초기화
+      setTtsStatus('음성 생성 중... (약 30초 소요)') // 초기 상태 메시지
       
       // 1) parsedMenus 기반(사람이 보는 구조) 우선, 2) fallback DOM/HTML 파싱
       const textContent = extractTextFromParsedMenus() || extractHumanReadableText(html)
@@ -3025,6 +3028,7 @@ ${fontFace ? fontFace : ''}
           const audioBlob = await response.blob()
           currentUrl = URL.createObjectURL(audioBlob)
           currentAudio = new Audio(currentUrl)
+          
         }
 
         // 오디오 재생 (Promise로 대기, 타임아웃 및 에러 처리 개선)
@@ -3071,6 +3075,13 @@ ${fontFace ? fontFace : ''}
             }
           }
           
+          // 첫 번째 청크 재생 시작 시점에 "음성 생성 중..." 메시지 제거
+          if (i === 0) {
+            currentAudio.addEventListener('playing', () => {
+              setTtsStatus(null) // 음성이 시작되면 상태 메시지 제거
+            }, { once: true })
+          }
+          
           currentAudio.play().catch((err) => {
             cleanup()
             // play 실패해도 다음 청크로 계속 진행
@@ -3106,10 +3117,12 @@ ${fontFace ? fontFace : ''}
       currentAudioRef.current = null
       setShouldStop(false)
       shouldStopRef.current = false
+      setTtsStatus(null) // 상태 메시지 제거
     } catch (error: any) {
       alert(error?.message || '음성 변환에 실패했습니다.')
       setIsPlaying(false)
       currentAudioRef.current = null
+      setTtsStatus(null) // 상태 메시지 제거
       setShouldStop(false)
     }
   }
@@ -4657,7 +4670,7 @@ ${fontFace ? fontFace : ''}
           </h1>
           
           {html && (
-            <div className="mb-4 flex justify-center">
+            <div className="mb-4 flex flex-col items-center gap-2">
               <button
                 onClick={handleTextToSpeech}
                 className={`bg-gradient-to-r from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 text-gray-800 text-sm font-semibold px-3 py-1.5 rounded-lg border border-gray-300 hover:border-blue-400 transition-all duration-300 flex items-center gap-2 shadow-sm hover:shadow-md group ${
@@ -4676,6 +4689,12 @@ ${fontFace ? fontFace : ''}
                   </>
                 )}
               </button>
+              {ttsStatus && (
+                <div className="text-xs text-gray-600 flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-600"></div>
+                  <span>{ttsStatus}</span>
+                </div>
+              )}
             </div>
           )}
         </div>

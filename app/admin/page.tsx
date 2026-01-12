@@ -16,6 +16,9 @@ export default function AdminPage() {
   const [selectedTypecastVoiceId, setSelectedTypecastVoiceId] = useState<string | null>(null)
   const [homeHtml, setHomeHtml] = useState<string>('')
   const [showHomeHtmlModal, setShowHomeHtmlModal] = useState(false)
+  const [showHomeHtmlPreview, setShowHomeHtmlPreview] = useState(false)
+  const [homeHtmlPreviewMode, setHomeHtmlPreviewMode] = useState<'pc' | 'mobile'>('pc')
+  const homeHtmlPreviewIframeRef = useRef<HTMLIFrameElement>(null)
   const [homeHtmlDraft, setHomeHtmlDraft] = useState<string>('')
   const [homeHtmlImages, setHomeHtmlImages] = useState<string[]>(['']) // 최소 1개
   const [uploadingImageIndex, setUploadingImageIndex] = useState<number | null>(null)
@@ -29,11 +32,41 @@ export default function AdminPage() {
   const [selectedContentId, setSelectedContentId] = useState<number | null>(null)
   const [reviews, setReviews] = useState<any[]>([])
   const [loadingReviews, setLoadingReviews] = useState(false)
+  const [expandedReviewImage, setExpandedReviewImage] = useState<string | null>(null)
 
   // 문의 관리 상태
   const [showInquiryModal, setShowInquiryModal] = useState(false)
   const [inquiries, setInquiries] = useState<any[]>([])
   const [loadingInquiries, setLoadingInquiries] = useState(false)
+
+  // 홈html 조회 (리뷰이벤트와 동일한 방식 - POST로 캐시 우회)
+  const loadHomeHtml = async () => {
+    try {
+      const response = await fetch('/api/admin/home-html', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({})
+      })
+      if (response.ok) {
+        const data = await response.json()
+        const loadedHomeHtml = typeof data.home_html === 'string' ? data.home_html : ''
+        setHomeHtml(loadedHomeHtml)
+        setHomeHtmlDraft(loadedHomeHtml)
+        
+        // HTML에서 이미지 URL 추출 (기존 이미지가 있으면)
+        const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
+        const extractedImages: string[] = []
+        let match
+        while ((match = imgRegex.exec(loadedHomeHtml)) !== null) {
+          extractedImages.push(match[1])
+        }
+        setHomeHtmlImages(extractedImages.length > 0 ? extractedImages : [''])
+      }
+    } catch (error) {
+      console.error('[홈html 조회 에러]', error)
+    }
+  }
 
   // 이미지 업로드 핸들러 (공통 함수)
   const handleImageUpload = async (file: File, index: number) => {
@@ -79,6 +112,8 @@ export default function AdminPage() {
       loadContents()
       // 페이지 로드 시 항상 최신 설정을 DB에서 가져오도록 강제 로드
       loadSettings()
+      // 홈html은 별도 API로 조회 (리뷰이벤트와 동일한 방식)
+      loadHomeHtml()
     }
   }, [authenticated])
 
@@ -87,6 +122,7 @@ export default function AdminPage() {
     const handleFocus = () => {
       if (authenticated === true) {
         loadSettings()
+        loadHomeHtml()
       }
     }
     window.addEventListener('focus', handleFocus)
@@ -169,20 +205,8 @@ export default function AdminPage() {
         setSelectedTypecastVoiceId(loadedVoiceId)
       }
 
-      if (data.home_html !== undefined) {
-        const loadedHomeHtml = typeof data.home_html === 'string' ? data.home_html : ''
-        setHomeHtml(loadedHomeHtml)
-        setHomeHtmlDraft(loadedHomeHtml)
-        
-        // HTML에서 이미지 URL 추출 (기존 이미지가 있으면)
-        const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
-        const extractedImages: string[] = []
-        let match
-        while ((match = imgRegex.exec(loadedHomeHtml)) !== null) {
-          extractedImages.push(match[1])
-        }
-        setHomeHtmlImages(extractedImages.length > 0 ? extractedImages : [''])
-      }
+      // 홈html은 별도 API로 조회 (리뷰이벤트와 동일한 방식)
+      // loadHomeHtml() 함수에서 처리
 
       // 점사 모드 로드 (DB에서 가져온 값으로 무조건 업데이트)
       if (data.fortune_view_mode !== undefined && data.fortune_view_mode !== null) {
@@ -217,11 +241,29 @@ export default function AdminPage() {
 
   const loadContents = async () => {
     try {
-      const data = await getContents()
-      // id 내림차순으로 정렬 (최신순)
-      const sortedData = (data || []).sort((a, b) => (b.id || 0) - (a.id || 0))
-      setContents(sortedData)
+      // POST 방식으로 컨텐츠 목록 가져오기 (캐시 우회)
+      const response = await fetch('/api/admin/content/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({})
+      })
+      
+      if (!response.ok) {
+        throw new Error('컨텐츠 목록을 가져오는데 실패했습니다.')
+      }
+      
+      const result = await response.json()
+      if (result.success && result.data) {
+        // id 내림차순으로 정렬 (최신순)
+        const sortedData = (result.data || []).sort((a: any, b: any) => (b.id || 0) - (a.id || 0))
+        setContents(sortedData)
+      } else {
+        setContents([])
+      }
     } catch (error) {
+      console.error('[loadContents] Error:', error)
+      setContents([])
     } finally {
       setLoading(false)
     }
@@ -832,6 +874,7 @@ export default function AdminPage() {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation()
+                                  // 리뷰이벤트와 동일: 클라이언트에서만 제거, 저장 시 반영
                                   const newImages = homeHtmlImages.filter((_, i) => i !== index)
                                   // 최소 1개 유지
                                   if (newImages.length === 0) {
@@ -1008,6 +1051,15 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() => {
+                      setShowHomeHtmlPreview(true)
+                    }}
+                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                  >
+                    미리보기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
                       setHomeHtmlDraft('')
                       // 이미지도 초기화 (최소 1개 유지)
                       setHomeHtmlImages([''])
@@ -1020,11 +1072,11 @@ export default function AdminPage() {
                     type="button"
                     onClick={async () => {
                       try {
-                        // HTML 그대로 저장 (이미지는 사용자가 직접 HTML에 넣음)
-                        const response = await fetch('/api/admin/settings/save', {
+                        // 리뷰이벤트와 동일한 방식: POST로 저장 (캐시 우회)
+                        const response = await fetch('/api/admin/home-html', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ home_html: homeHtmlDraft }),
+                          body: JSON.stringify({ action: 'save', home_html: homeHtmlDraft }),
                         })
                         if (!response.ok) {
                           const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }))
@@ -1265,31 +1317,47 @@ export default function AdminPage() {
                             )}
                           </div>
                           <p className="text-sm text-gray-300 whitespace-pre-wrap mb-3">{review.review_text}</p>
-                          {review.image_url && (
-                            <div className="mt-3">
-                              <img
-                                src={review.image_url}
-                                alt="리뷰 사진"
-                                className="max-w-full h-auto rounded-lg border border-gray-600 cursor-pointer hover:opacity-90 transition-opacity"
-                                onClick={() => {
-                                  const newWindow = window.open('', '_blank')
-                                  if (newWindow) {
-                                    newWindow.document.write(`
-                                      <html>
-                                        <head><title>리뷰 사진</title></head>
-                                        <body style="margin:0;padding:20px;background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-                                          <img src="${review.image_url}" style="max-width:100%;max-height:100vh;object-fit:contain;" />
-                                        </body>
-                                      </html>
-                                    `)
-                                  }
-                                }}
-                                onError={(e) => {
-                                  ;(e.target as HTMLImageElement).style.display = 'none'
-                                }}
-                              />
-                            </div>
-                          )}
+                          {review.image_url && (() => {
+                            // image_url이 JSON 배열 문자열인지 확인
+                            let imageUrls: string[] = []
+                            try {
+                              const parsed = JSON.parse(review.image_url)
+                              if (Array.isArray(parsed)) {
+                                imageUrls = parsed
+                              } else {
+                                imageUrls = [review.image_url]
+                              }
+                            } catch {
+                              // JSON 파싱 실패 시 단일 URL로 처리
+                              imageUrls = [review.image_url]
+                            }
+                            
+                            return (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {imageUrls.map((url, idx) => (
+                                  <img
+                                    key={idx}
+                                    src={url}
+                                    alt={`리뷰 사진 ${idx + 1}`}
+                                    className="rounded-lg border border-gray-600 cursor-pointer hover:opacity-90 transition-opacity"
+                                    loading="lazy"
+                                    style={{ 
+                                      display: 'block', 
+                                      width: '100px', 
+                                      height: 'auto',
+                                      objectFit: 'contain'
+                                    }}
+                                    onClick={() => {
+                                      setExpandedReviewImage(url)
+                                    }}
+                                    onError={(e) => {
+                                      ;(e.target as HTMLImageElement).style.display = 'none'
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            )
+                          })()}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-700">
@@ -1320,6 +1388,114 @@ export default function AdminPage() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 리뷰 이미지 확대 모달 */}
+      {expandedReviewImage && (
+        <div 
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-[10001] p-4"
+          onClick={() => setExpandedReviewImage(null)}
+        >
+          <div className="relative max-w-[90vw] max-h-[90vh]">
+            <button
+              onClick={() => setExpandedReviewImage(null)}
+              className="absolute -top-10 right-0 text-white hover:text-gray-300 transition-colors"
+              aria-label="닫기"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <img
+              src={expandedReviewImage}
+              alt="리뷰 사진 확대"
+              className="max-w-full max-h-[90vh] object-contain rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+              onError={(e) => {
+                const img = e.target as HTMLImageElement
+                img.style.display = 'none'
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 홈HTML 미리보기 팝업 */}
+      {showHomeHtmlPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className={`bg-gray-900 border border-gray-700 rounded-xl overflow-hidden shadow-2xl max-h-[90vh] flex flex-col ${
+            homeHtmlPreviewMode === 'mobile' ? 'w-full max-w-sm' : 'w-full max-w-4xl'
+          }`}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+              <h2 className="text-lg font-bold text-white">홈HTML 미리보기</h2>
+              <div className="flex items-center gap-2">
+                {/* PC/모바일 모드 전환 버튼 */}
+                <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-1">
+                  <button
+                    type="button"
+                    onClick={() => setHomeHtmlPreviewMode('pc')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+                      homeHtmlPreviewMode === 'pc'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    PC
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHomeHtmlPreviewMode('mobile')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+                      homeHtmlPreviewMode === 'mobile'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    모바일
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowHomeHtmlPreview(false)}
+                  className="text-gray-300 hover:text-white text-sm font-semibold px-3 py-1 rounded-md"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4 bg-white flex justify-center">
+              <div className={`${homeHtmlPreviewMode === 'mobile' ? 'w-full max-w-[375px]' : 'w-full'}`}>
+                <iframe
+                  ref={homeHtmlPreviewIframeRef}
+                  srcDoc={homeHtmlDraft}
+                  className="w-full border-0"
+                  style={{
+                    border: 'none',
+                  }}
+                  title="홈HTML 미리보기"
+                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+                  onLoad={() => {
+                    setTimeout(() => {
+                      try {
+                        const iframe = homeHtmlPreviewIframeRef.current
+                        if (iframe?.contentWindow?.document?.body) {
+                          const height = Math.max(
+                            iframe.contentWindow.document.body.scrollHeight,
+                            iframe.contentWindow.document.documentElement.scrollHeight,
+                            200
+                          )
+                          iframe.style.height = `${height}px`
+                        }
+                      } catch (err) {
+                        // cross-origin 등으로 접근 불가 시 무시
+                      }
+                    }, 100)
+                  }}
+                />
+              </div>
             </div>
           </div>
         </div>

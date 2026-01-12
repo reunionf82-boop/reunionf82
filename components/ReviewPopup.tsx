@@ -76,15 +76,17 @@ interface ReviewPopupProps {
 
 export default function ReviewPopup({ isOpen, onClose, contentId, userName, title, onSuccess }: ReviewPopupProps) {
   const [reviewText, setReviewText] = useState('')
-  const [selectedImage, setSelectedImage] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [imageLoaded, setImageLoaded] = useState(false)
+  const [selectedImages, setSelectedImages] = useState<File[]>([])
+  const [imagePreviews, setImagePreviews] = useState<string[]>([])
+  const [imageLoadedStates, setImageLoadedStates] = useState<boolean[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [showSuccessMessage, setShowSuccessMessage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  
+  const MAX_IMAGES = 4
 
   const maxLength = 3000
   const currentLength = reviewText.length
@@ -93,9 +95,9 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
   useEffect(() => {
     if (!isOpen) {
       setReviewText('')
-      setSelectedImage(null)
-      setImagePreview(null)
-      setImageLoaded(false)
+      setSelectedImages([])
+      setImagePreviews([])
+      setImageLoadedStates([])
       setIsUploading(false)
       setShowConfirmDialog(false)
       setShowSuccessMessage(false)
@@ -103,36 +105,65 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
   }, [isOpen])
 
   // 이미지 선택 핸들러
-  const handleImageSelect = async (file: File | null) => {
-    if (!file) return
+  const handleImageSelect = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
 
-    // 이미지 파일인지 확인
-    if (!file.type.startsWith('image/')) {
-      alert('이미지 파일만 선택할 수 있습니다.')
+    const newFiles: File[] = []
+    const newPreviews: string[] = []
+    const newLoadedStates: boolean[] = []
+
+    // 최대 개수 확인
+    if (selectedImages.length + files.length > MAX_IMAGES) {
+      alert(`최대 ${MAX_IMAGES}개까지 등록할 수 있습니다.`)
       return
     }
 
-    // 너무 큰 파일은 브라우저 메모리/성능 문제로 제한 (리사이즈 전)
-    const hardMaxSize = 25 * 1024 * 1024
-    if (file.size > hardMaxSize) {
-      alert('이미지 파일 크기가 너무 큽니다. (최대 25MB)')
-      return
+    for (let i = 0; i < files.length && selectedImages.length + newFiles.length < MAX_IMAGES; i++) {
+      const file = files[i]
+
+      // 이미지 파일인지 확인
+      if (!file.type.startsWith('image/')) {
+        alert(`${file.name}은(는) 이미지 파일이 아닙니다.`)
+        continue
+      }
+
+      // 너무 큰 파일은 브라우저 메모리/성능 문제로 제한 (리사이즈 전)
+      const hardMaxSize = 25 * 1024 * 1024
+      if (file.size > hardMaxSize) {
+        alert(`${file.name}의 파일 크기가 너무 큽니다. (최대 25MB)`)
+        continue
+      }
+
+      // 가로 해상도 1024 초과 시 로컬에서 리사이즈 후 업로드
+      const processedFile = await resizeImageIfNeeded(file)
+      newFiles.push(processedFile)
+      newLoadedStates.push(false)
+
+      // 미리보기 생성
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const previewIndex = newFiles.length - 1
+        setImagePreviews(prev => {
+          const updated = [...prev]
+          updated[selectedImages.length + previewIndex] = reader.result as string
+          return updated
+        })
+        // 이미지가 DOM에 로드될 때까지 약간의 지연
+        setTimeout(() => {
+          setImageLoadedStates(prev => {
+            const updated = [...prev]
+            updated[selectedImages.length + previewIndex] = true
+            return updated
+          })
+        }, 50)
+      }
+      reader.readAsDataURL(processedFile)
     }
 
-    // 가로 해상도 1024 초과 시 로컬에서 리사이즈 후 업로드
-    const processedFile = await resizeImageIfNeeded(file)
-
-    setSelectedImage(processedFile)
-    setImageLoaded(false)
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string)
-      // 이미지가 DOM에 로드될 때까지 약간의 지연
-      setTimeout(() => {
-        setImageLoaded(true)
-      }, 50)
+    if (newFiles.length > 0) {
+      setSelectedImages(prev => [...prev, ...newFiles])
+      setImageLoadedStates(prev => [...prev, ...newLoadedStates])
     }
-    reader.readAsDataURL(processedFile)
   }
 
   // 앨범에서 선택
@@ -146,10 +177,10 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
   }
 
   // 이미지 제거
-  const handleRemoveImage = () => {
-    setSelectedImage(null)
-    setImagePreview(null)
-    setImageLoaded(false)
+  const handleRemoveImage = (index: number) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index))
+    setImagePreviews(prev => prev.filter((_, i) => i !== index))
+    setImageLoadedStates(prev => prev.filter((_, i) => i !== index))
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (cameraInputRef.current) cameraInputRef.current.value = ''
   }
@@ -162,7 +193,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
     }
 
     // 텍스트만 있고 이미지가 없으면 확인 다이얼로그 표시
-    if (!selectedImage) {
+    if (selectedImages.length === 0) {
       setShowConfirmDialog(true)
       return
     }
@@ -183,11 +214,11 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
 
     try {
       // 이미지가 있으면 먼저 업로드
-      let imageUrl: string | null = null
-      if (selectedImage) {
-        // 이미지가 완전히 로드될 때까지 대기 (최대 1초)
+      let imageUrls: string[] = []
+      if (selectedImages.length > 0) {
+        // 모든 이미지가 완전히 로드될 때까지 대기 (최대 1초)
         let waitCount = 0
-        while (!imageLoaded && waitCount < 20) {
+        while (imageLoadedStates.length < selectedImages.length || imageLoadedStates.some(loaded => !loaded) && waitCount < 20) {
           await new Promise(resolve => setTimeout(resolve, 50))
           waitCount++
         }
@@ -197,30 +228,36 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
         await new Promise(resolve => setTimeout(resolve, 100))
         
         try {
-          const formData = new FormData()
-          formData.append('file', selectedImage)
+          // 모든 이미지를 순차적으로 업로드
+          for (const imageFile of selectedImages) {
+            const formData = new FormData()
+            formData.append('file', imageFile)
 
-          const uploadResponse = await fetch('/api/reviews/upload-image', {
-            method: 'POST',
-            body: formData
-          })
+            const uploadResponse = await fetch('/api/reviews/upload-image', {
+              method: 'POST',
+              body: formData
+            })
 
-          if (!uploadResponse.ok) {
-            const errorData = await uploadResponse.json().catch(() => ({}))
-            throw new Error(errorData.error || '이미지 업로드에 실패했습니다.')
+            if (!uploadResponse.ok) {
+              const errorData = await uploadResponse.json().catch(() => ({}))
+              throw new Error(errorData.error || '이미지 업로드에 실패했습니다.')
+            }
+
+            const uploadData = await uploadResponse.json()
+            if (!uploadData.success || !uploadData.url) {
+              throw new Error('이미지 업로드에 실패했습니다.')
+            }
+            imageUrls.push(uploadData.url)
           }
-
-          const uploadData = await uploadResponse.json()
-          if (!uploadData.success || !uploadData.url) {
-            throw new Error('이미지 업로드에 실패했습니다.')
-          }
-          imageUrl = uploadData.url
         } finally {
           setIsUploading(false)
         }
       }
 
       // 리뷰 저장 (contentId와 함께 title도 전달 - contentId가 유효하지 않을 경우 대비)
+      // 여러 이미지 URL을 JSON 배열 문자열로 전달
+      const imageUrl = imageUrls.length > 0 ? JSON.stringify(imageUrls) : null
+      
       const response = await fetch('/api/reviews/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -270,7 +307,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
 
   if (!isOpen) return null
 
-  const successTitle = selectedImage
+  const successTitle = selectedImages.length > 0
     ? '베스트리뷰 후보가 되셨습니다'
     : '리뷰가 저장되었습니다'
 
@@ -322,42 +359,93 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
             {/* 이미지 선택 영역 */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
-                사진 (선택사항)
+                사진 (선택사항, 최대 {MAX_IMAGES}개)
               </label>
-              {imagePreview ? (
-                <div className="relative bg-gray-50 rounded-lg border border-gray-300 overflow-hidden" style={{ minHeight: '256px', height: '256px' }}>
-                  <div className="w-full h-full flex items-center justify-center">
-                    {!imageLoaded && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
+              {imagePreviews.length > 0 ? (
+                <div className="space-y-3">
+                  {/* 이미지 그리드 */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {imagePreviews.map((preview, index) => (
+                      <div key={index} className="relative bg-gray-50 rounded-lg border border-gray-300 overflow-hidden" style={{ minHeight: '200px', height: '200px' }}>
+                        <div className="w-full h-full flex items-center justify-center">
+                          {!imageLoadedStates[index] && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
+                            </div>
+                          )}
+                          <img
+                            src={preview}
+                            alt={`미리보기 ${index + 1}`}
+                            className={`w-full h-full object-contain transition-opacity duration-200 ${imageLoadedStates[index] ? 'opacity-100' : 'opacity-0'}`}
+                            onLoad={() => {
+                              setImageLoadedStates(prev => {
+                                const updated = [...prev]
+                                updated[index] = true
+                                return updated
+                              })
+                            }}
+                            onError={() => {
+                              setImageLoadedStates(prev => {
+                                const updated = [...prev]
+                                updated[index] = true
+                                return updated
+                              })
+                            }}
+                          />
+                        </div>
+                        {!isUploading && imageLoadedStates[index] && (
+                          <button
+                            onClick={() => handleRemoveImage(index)}
+                            className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 transition-colors z-10"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
-                    )}
-                    <img
-                      src={imagePreview}
-                      alt="미리보기"
-                      className={`w-full h-full object-contain transition-opacity duration-200 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
-                      onLoad={() => setImageLoaded(true)}
-                      onError={() => setImageLoaded(true)}
-                    />
+                    ))}
                   </div>
+                  
                   {/* 업로드 중 오버레이 */}
                   {isUploading && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20">
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10001]">
                       <div className="bg-white rounded-lg p-4 flex flex-col items-center gap-2">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
                         <span className="text-sm font-semibold text-gray-700">업로드 중...</span>
                       </div>
                     </div>
                   )}
-                  {!isUploading && imageLoaded && (
-                    <button
-                      onClick={handleRemoveImage}
-                      className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 transition-colors z-10"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
+                  
+                  {/* 추가 이미지 선택 버튼 (최대 개수 미만일 때만 표시) */}
+                  {imagePreviews.length < MAX_IMAGES && (
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={handleAlbumSelect}
+                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <span>앨범에서 추가</span>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCameraCapture}
+                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          <span>사진 촬영</span>
+                        </div>
+                      </button>
+                    </div>
                   )}
                 </div>
               ) : (
@@ -390,13 +478,14 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
                 </div>
               )}
 
-              {/* 숨겨진 파일 입력 */}
+              {/* 숨겨진 파일 입력 (multiple 속성 추가) */}
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
+                multiple
                 className="hidden"
-                onChange={(e) => { void handleImageSelect(e.target.files?.[0] || null) }}
+                onChange={(e) => { void handleImageSelect(e.target.files) }}
               />
               <input
                 ref={cameraInputRef}
@@ -404,7 +493,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
                 accept="image/*"
                 capture="environment"
                 className="hidden"
-                onChange={(e) => { void handleImageSelect(e.target.files?.[0] || null) }}
+                onChange={(e) => { void handleImageSelect(e.target.files) }}
               />
             </div>
           </div>
@@ -422,7 +511,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
               disabled={isSubmitting || isUploading || !reviewText.trim()}
               className="flex-1 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
             >
-              {isUploading ? '업로드 중...' : isSubmitting ? '저장 중...' : '저장'}
+              {isUploading ? `업로드 중... (${selectedImages.length}개)` : isSubmitting ? '저장 중...' : '저장'}
             </button>
           </div>
         </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { getContents, getContentById, getSelectedModel, getSelectedSpeaker, getFortuneViewMode, getUseSequentialFortune } from '@/lib/supabase-admin'
@@ -99,6 +99,50 @@ function FormContent() {
   
   const [content, setContent] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const introductionIframeRef = useRef<HTMLIFrameElement>(null)
+  const recommendationIframeRef = useRef<HTMLIFrameElement>(null)
+  const menuItemsIframeRef = useRef<HTMLIFrameElement>(null)
+  const [expandedReviewImage, setExpandedReviewImage] = useState<string | null>(null)
+
+  // iframe 높이 자동 조정 (프론트홈과 동일한 방식)
+  useEffect(() => {
+    if (!content?.introduction && !content?.recommendation && !content?.menu_composition && !content?.menu_items) return
+
+    const adjustIframeHeight = (iframeRef: React.RefObject<HTMLIFrameElement>) => {
+      try {
+        const iframe = iframeRef.current
+        if (!iframe?.contentWindow?.document?.body) return
+
+        const height = Math.max(
+          iframe.contentWindow.document.body.scrollHeight,
+          iframe.contentWindow.document.documentElement.scrollHeight,
+          200
+        )
+        iframe.style.height = `${height}px`
+      } catch (err) {
+        // cross-origin 등으로 접근 불가 시 무시
+      }
+    }
+
+    // iframe 로드 후 높이 조정
+    const timer = setTimeout(() => {
+      if (content?.introduction) adjustIframeHeight(introductionIframeRef)
+      if (content?.recommendation) adjustIframeHeight(recommendationIframeRef)
+      if (content?.menu_composition) adjustIframeHeight(menuItemsIframeRef)
+      else if (content?.menu_items && content.menu_items.length > 0) adjustIframeHeight(menuItemsIframeRef)
+    }, 100)
+    const interval = setInterval(() => {
+      if (content?.introduction) adjustIframeHeight(introductionIframeRef)
+      if (content?.recommendation) adjustIframeHeight(recommendationIframeRef)
+      if (content?.menu_composition) adjustIframeHeight(menuItemsIframeRef)
+      else if (content?.menu_items && content.menu_items.length > 0) adjustIframeHeight(menuItemsIframeRef)
+    }, 500) // 주기적으로 높이 확인
+
+    return () => {
+      clearTimeout(timer)
+      clearInterval(interval)
+    }
+  }, [content?.introduction, content?.recommendation, content?.menu_composition, content?.menu_items])
   
   // 재회상품 미리보기 모달 상태
   const [showPreviewModal, setShowPreviewModal] = useState(false)
@@ -3273,7 +3317,7 @@ function FormContent() {
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-pink-300">
                     <span className="text-sm font-medium text-gray-700">이용금액</span>
-                    <span className="text-xl font-bold text-pink-600">
+                    <span className="text-xl font-bold text-pink-500 text-right">
                       {content?.price ? `${parseInt(content.price).toLocaleString()}원` : '금액 정보 없음'}
                     </span>
                   </div>
@@ -3576,44 +3620,172 @@ function FormContent() {
           {/* 소개 섹션 */}
           {content?.introduction && (
             <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">소개</h2>
-              <div 
-                className="text-gray-700 leading-relaxed whitespace-pre-line"
-                dangerouslySetInnerHTML={{ __html: content.introduction }}
-              />
+              <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">
+                소개
+              </h2>
+              <div className="w-full p-0 m-0 border-0" style={{ height: 'auto', minHeight: '1px' }}>
+                <iframe
+                  ref={introductionIframeRef}
+                  srcDoc={content.introduction}
+                  className="w-full border-0"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    minHeight: '200px',
+                    border: 'none',
+                    margin: 0,
+                    padding: 0,
+                  }}
+                  title="소개 HTML 뷰"
+                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+                  onLoad={() => {
+                    setTimeout(() => {
+                      try {
+                        const iframe = introductionIframeRef.current
+                        if (iframe?.contentWindow?.document?.body) {
+                          const height = Math.max(
+                            iframe.contentWindow.document.body.scrollHeight,
+                            iframe.contentWindow.document.documentElement.scrollHeight,
+                            200
+                          )
+                          iframe.style.height = `${height}px`
+                        }
+                      } catch (err) {
+                        // cross-origin 등으로 접근 불가 시 무시
+                      }
+                    }, 100)
+                  }}
+                />
+              </div>
             </div>
           )}
 
           {/* 추천 섹션 */}
           {content?.recommendation && (
             <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">
-                이런 분께 추천해요 ✨
+              <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">
+                이런 분께 추천해요
               </h2>
-              <div 
-                className="text-gray-700 leading-loose whitespace-pre-line"
-                dangerouslySetInnerHTML={{ __html: content.recommendation }}
-              />
+              <div className="w-full p-0 m-0 border-0" style={{ height: 'auto', minHeight: '1px' }}>
+                <iframe
+                  ref={recommendationIframeRef}
+                  srcDoc={content.recommendation}
+                  className="w-full border-0"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    minHeight: '200px',
+                    border: 'none',
+                    margin: 0,
+                    padding: 0,
+                  }}
+                  title="추천 HTML 뷰"
+                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+                  onLoad={() => {
+                    setTimeout(() => {
+                      try {
+                        const iframe = recommendationIframeRef.current
+                        if (iframe?.contentWindow?.document?.body) {
+                          const height = Math.max(
+                            iframe.contentWindow.document.body.scrollHeight,
+                            iframe.contentWindow.document.documentElement.scrollHeight,
+                            200
+                          )
+                          iframe.style.height = `${height}px`
+                        }
+                      } catch (err) {
+                        // cross-origin 등으로 접근 불가 시 무시
+                      }
+                    }, 100)
+                  }}
+                />
+              </div>
             </div>
           )}
 
           {/* 상품 메뉴 구성 */}
-          {content?.menu_items && content.menu_items.length > 0 && (
+          {content?.menu_composition && content.menu_composition.trim() !== '' ? (
             <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">상품 메뉴 구성</h2>
-              <div className="space-y-3">
-                {content.menu_items.map((item: any, index: number) => {
-                  const itemValue = typeof item === 'string' ? item : (item.value || item)
-                  return (
-                    <div 
-                      key={index} 
-                      className="text-gray-700"
-                      dangerouslySetInnerHTML={{ __html: itemValue }}
-                    />
-                  )
-                })}
+              <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">상품 메뉴 구성</h2>
+              <div className="w-full p-0 m-0 border-0" style={{ height: 'auto', minHeight: '1px' }}>
+                <iframe
+                  ref={menuItemsIframeRef}
+                  srcDoc={content.menu_composition}
+                  className="w-full border-0"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    minHeight: '200px',
+                    border: 'none',
+                    margin: 0,
+                    padding: 0,
+                  }}
+                  title="상품 메뉴 구성 HTML 뷰"
+                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+                  onLoad={() => {
+                    setTimeout(() => {
+                      try {
+                        const iframe = menuItemsIframeRef.current
+                        if (iframe?.contentWindow?.document?.body) {
+                          const height = Math.max(
+                            iframe.contentWindow.document.body.scrollHeight,
+                            iframe.contentWindow.document.documentElement.scrollHeight,
+                            200
+                          )
+                          iframe.style.height = `${height}px`
+                        }
+                      } catch (err) {
+                        // cross-origin 등으로 접근 불가 시 무시
+                      }
+                    }, 100)
+                  }}
+                />
               </div>
             </div>
+          ) : (
+            // 하위 호환성: menu_composition이 없으면 기존 menu_items 방식 사용
+            content?.menu_items && content.menu_items.length > 0 && (
+              <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
+                <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">상품 메뉴 구성</h2>
+                <div className="w-full p-0 m-0 border-0" style={{ height: 'auto', minHeight: '1px' }}>
+                  <iframe
+                    ref={menuItemsIframeRef}
+                    srcDoc={content.menu_items.map((item: any) => {
+                      const itemValue = typeof item === 'string' ? item : (item.value || item)
+                      return itemValue
+                    }).join('')}
+                    className="w-full border-0"
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      minHeight: '200px',
+                      border: 'none',
+                      margin: 0,
+                      padding: 0,
+                    }}
+                    title="상품 메뉴 구성 HTML 뷰"
+                    sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+                    onLoad={() => {
+                      setTimeout(() => {
+                        try {
+                          const iframe = menuItemsIframeRef.current
+                          if (iframe?.contentWindow?.document?.body) {
+                            const height = Math.max(
+                              iframe.contentWindow.document.body.scrollHeight,
+                              iframe.contentWindow.document.documentElement.scrollHeight,
+                              200
+                            )
+                            iframe.style.height = `${height}px`
+                          }
+                        } catch (err) {
+                          // cross-origin 등으로 접근 불가 시 무시
+                        }
+                      }, 100)
+                    }}
+                  />
+                </div>
+              </div>
+            )
           )}
 
           {/* 재회상품 미리보기 섹션 */}
@@ -3745,7 +3917,7 @@ function FormContent() {
             return (
               <>
                 <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
-                  <h2 className="text-xl font-bold text-gray-900 mb-4">재회상품 미리보기</h2>
+                  <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">재회상품 미리보기</h2>
                   <div className="flex gap-4 flex-wrap">
                     {[0, 1, 2].map((index: number) => {
                       const thumbnailImageUrl = validThumbnails[index] || ''
@@ -3910,7 +4082,8 @@ function FormContent() {
           {/* 금액 섹션 */}
           {content?.price && (
             <div className="mb-6 pb-6 border-b border-gray-200">
-              <div className="text-2xl font-bold text-pink-600 mb-3">
+              <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">가격</h2>
+              <div className="text-2xl font-bold text-pink-500 mb-3 text-right">
                 {(() => {
                   // 숫자만 추출하여 세자리마다 콤마 추가
                   const priceStr = String(content.price).replace(/[^0-9]/g, '')
@@ -3924,7 +4097,7 @@ function FormContent() {
             </div>
           )}
           
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">본인 정보</h2>
+          <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">본인 정보</h2>
           
           <div className="space-y-6">
             {/* 이름 */}
@@ -4579,42 +4752,56 @@ function FormContent() {
                             >
                               {review.review_text}
                             </p>
-                            {review.image_url && (
-                              <div className="mt-3">
-                                <img
-                                  src={review.image_url}
-                                  alt="리뷰 사진"
-                                  className="w-full max-w-md h-auto rounded-lg border border-pink-200 cursor-pointer hover:opacity-90 transition-opacity"
-                                  loading="lazy"
-                                  style={{ display: 'block', maxWidth: '100%', height: 'auto' }}
-                                  onClick={() => {
-                                    const newWindow = window.open('', '_blank')
-                                    if (newWindow) {
-                                      newWindow.document.write(`
-                                        <html>
-                                          <head><title>리뷰 사진</title></head>
-                                          <body style="margin:0;padding:20px;background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-                                            <img src="${review.image_url}" style="max-width:100%;max-height:100vh;object-fit:contain;" />
-                                          </body>
-                                        </html>
-                                      `)
-                                    }
-                                  }}
-                                  onError={(e) => {
-                                    const img = e.target as HTMLImageElement
-                                    // 이미지 로드 실패 시 숨기지 않고 대체 이미지 표시
-                                    img.style.display = 'none'
-                                    const parent = img.parentElement
-                                    if (parent && !parent.querySelector('.image-error')) {
-                                      const errorDiv = document.createElement('div')
-                                      errorDiv.className = 'image-error text-xs text-gray-400 text-center py-2'
-                                      errorDiv.textContent = '이미지를 불러올 수 없습니다'
-                                      parent.appendChild(errorDiv)
-                                    }
-                                  }}
-                                />
-                              </div>
-                            )}
+                            {review.image_url && (() => {
+                              // image_url이 JSON 배열 문자열인지 확인
+                              let imageUrls: string[] = []
+                              try {
+                                const parsed = JSON.parse(review.image_url)
+                                if (Array.isArray(parsed)) {
+                                  imageUrls = parsed
+                                } else {
+                                  imageUrls = [review.image_url]
+                                }
+                              } catch {
+                                // JSON 파싱 실패 시 단일 URL로 처리
+                                imageUrls = [review.image_url]
+                              }
+                              
+                              return (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {imageUrls.map((url, idx) => (
+                                    <img
+                                      key={idx}
+                                      src={url}
+                                      alt={`리뷰 사진 ${idx + 1}`}
+                                      className="rounded-lg border border-pink-200 cursor-pointer hover:opacity-90 transition-opacity"
+                                      loading="lazy"
+                                      style={{ 
+                                        display: 'block', 
+                                        width: '100px', 
+                                        height: 'auto',
+                                        objectFit: 'contain'
+                                      }}
+                                      onClick={() => {
+                                        setExpandedReviewImage(url)
+                                      }}
+                                      onError={(e) => {
+                                        const img = e.target as HTMLImageElement
+                                        // 이미지 로드 실패 시 숨기지 않고 대체 이미지 표시
+                                        img.style.display = 'none'
+                                        const parent = img.parentElement
+                                        if (parent && !parent.querySelector('.image-error')) {
+                                          const errorDiv = document.createElement('div')
+                                          errorDiv.className = 'image-error text-xs text-gray-400 text-center py-2'
+                                          errorDiv.textContent = '이미지를 불러올 수 없습니다'
+                                          parent.appendChild(errorDiv)
+                                        }
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                              )
+                            })()}
                             {shouldShowMore && (
                               <button
                                 type="button"
@@ -4698,42 +4885,56 @@ function FormContent() {
                             >
                               {review.review_text}
                             </p>
-                            {review.image_url && (
-                              <div className="mt-3">
-                                <img
-                                  src={review.image_url}
-                                  alt="리뷰 사진"
-                                  className="w-full max-w-md h-auto rounded-lg border border-yellow-200 cursor-pointer hover:opacity-90 transition-opacity"
-                                  loading="lazy"
-                                  style={{ display: 'block', maxWidth: '100%', height: 'auto' }}
-                                  onClick={() => {
-                                    const newWindow = window.open('', '_blank')
-                                    if (newWindow) {
-                                      newWindow.document.write(`
-                                        <html>
-                                          <head><title>리뷰 사진</title></head>
-                                          <body style="margin:0;padding:20px;background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-                                            <img src="${review.image_url}" style="max-width:100%;max-height:100vh;object-fit:contain;" />
-                                          </body>
-                                        </html>
-                                      `)
-                                    }
-                                  }}
-                                  onError={(e) => {
-                                    const img = e.target as HTMLImageElement
-                                    // 이미지 로드 실패 시 숨기지 않고 대체 이미지 표시
-                                    img.style.display = 'none'
-                                    const parent = img.parentElement
-                                    if (parent && !parent.querySelector('.image-error')) {
-                                      const errorDiv = document.createElement('div')
-                                      errorDiv.className = 'image-error text-xs text-gray-400 text-center py-2'
-                                      errorDiv.textContent = '이미지를 불러올 수 없습니다'
-                                      parent.appendChild(errorDiv)
-                                    }
-                                  }}
-                                />
-                              </div>
-                            )}
+                            {review.image_url && (() => {
+                              // image_url이 JSON 배열 문자열인지 확인
+                              let imageUrls: string[] = []
+                              try {
+                                const parsed = JSON.parse(review.image_url)
+                                if (Array.isArray(parsed)) {
+                                  imageUrls = parsed
+                                } else {
+                                  imageUrls = [review.image_url]
+                                }
+                              } catch {
+                                // JSON 파싱 실패 시 단일 URL로 처리
+                                imageUrls = [review.image_url]
+                              }
+                              
+                              return (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {imageUrls.map((url, idx) => (
+                                    <img
+                                      key={idx}
+                                      src={url}
+                                      alt={`리뷰 사진 ${idx + 1}`}
+                                      className="rounded-lg border border-yellow-200 cursor-pointer hover:opacity-90 transition-opacity"
+                                      loading="lazy"
+                                      style={{ 
+                                        display: 'block', 
+                                        width: '100px', 
+                                        height: 'auto',
+                                        objectFit: 'contain'
+                                      }}
+                                      onClick={() => {
+                                        setExpandedReviewImage(url)
+                                      }}
+                                      onError={(e) => {
+                                        const img = e.target as HTMLImageElement
+                                        // 이미지 로드 실패 시 숨기지 않고 대체 이미지 표시
+                                        img.style.display = 'none'
+                                        const parent = img.parentElement
+                                        if (parent && !parent.querySelector('.image-error')) {
+                                          const errorDiv = document.createElement('div')
+                                          errorDiv.className = 'image-error text-xs text-gray-400 text-center py-2'
+                                          errorDiv.textContent = '이미지를 불러올 수 없습니다'
+                                          parent.appendChild(errorDiv)
+                                        }
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                              )
+                            })()}
                             {shouldShowMore && (
                               <button
                                 type="button"
@@ -4773,6 +4974,36 @@ function FormContent() {
                 </div>
               )}
 
+            </div>
+          </div>
+        )}
+
+        {/* 리뷰 이미지 확대 모달 */}
+        {expandedReviewImage && (
+          <div 
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-[10000] p-4"
+            onClick={() => setExpandedReviewImage(null)}
+          >
+            <div className="relative max-w-[90vw] max-h-[90vh]">
+              <button
+                onClick={() => setExpandedReviewImage(null)}
+                className="absolute -top-10 right-0 text-white hover:text-gray-300 transition-colors"
+                aria-label="닫기"
+              >
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <img
+                src={expandedReviewImage}
+                alt="리뷰 사진 확대"
+                className="max-w-full max-h-[90vh] object-contain rounded-lg"
+                onClick={(e) => e.stopPropagation()}
+                onError={(e) => {
+                  const img = e.target as HTMLImageElement
+                  img.style.display = 'none'
+                }}
+              />
             </div>
           </div>
         )}

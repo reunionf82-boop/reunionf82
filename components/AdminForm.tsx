@@ -1,10 +1,18 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getContentById, type ContentData, getThumbnailUrl } from '@/lib/supabase-admin'
 import ThumbnailModal from '@/components/ThumbnailModal'
 import SupabaseVideo from '@/components/SupabaseVideo'
+
+// 이미지 URL에 캐시 버스팅 파라미터 추가 (최신 이미지 표시를 위해)
+const addCacheBusting = (url: string | null | undefined): string => {
+  if (!url || !url.trim()) return ''
+  // 이미 타임스탬프가 있으면 제거하고 새로 추가
+  const cleanUrl = url.split('?')[0].split('&')[0]
+  return `${cleanUrl}?t=${Date.now()}`
+}
 
 interface AdminFormProps {
   onAdd?: (service: any) => void
@@ -32,6 +40,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     summary: '',
     introduction: '',
     recommendation: '',
+    menu_composition: '', // 상품 메뉴 구성 HTML
     subtitleCharCount: '500',
     detailMenuCharCount: '500',
     menuFontSize: '16',
@@ -108,6 +117,11 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const [initialData, setInitialData] = useState<any>(null)
   const [hasChanges, setHasChanges] = useState(false)
   const [showThumbnailModal, setShowThumbnailModal] = useState(false)
+  const [showHtmlPreview, setShowHtmlPreview] = useState(false)
+  const [htmlPreviewContent, setHtmlPreviewContent] = useState('')
+  const [htmlPreviewTitle, setHtmlPreviewTitle] = useState('')
+  const [htmlPreviewMode, setHtmlPreviewMode] = useState<'pc' | 'mobile'>('pc')
+  const htmlPreviewIframeRef = useRef<HTMLIFrameElement>(null)
   const [currentThumbnailField, setCurrentThumbnailField] = useState<
     | 'main-image'
     | 'main-video'
@@ -343,6 +357,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         summary: formData.summary || '',
         introduction: formData.introduction || '',
         recommendation: formData.recommendation || '',
+        menu_composition: formData.menu_composition || '',
         menu_subtitle: allSubtitles.join('\n').trim(),
         interpretation_tool: allInterpretationTools.join('\n').trim(),
         subtitle_char_count: parseInt(formData.subtitleCharCount) || 500,
@@ -423,6 +438,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         summary: initialData.summary || '',
         introduction: initialData.introduction || '',
         recommendation: initialData.recommendation || '',
+        menu_composition: initialData.menu_composition || '',
         menu_subtitle: (initialData.menu_subtitle || '').trim(),
         interpretation_tool: (initialData.interpretation_tool || '').trim(),
         subtitle_char_count: initialData.subtitle_char_count || 500,
@@ -497,6 +513,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         formData.summary ||
         formData.introduction ||
         formData.recommendation ||
+        formData.menu_composition ||
         formData.fontFace ||
         firstMenuField.value ||
         firstMenuField.thumbnailImageUrl ||
@@ -517,7 +534,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
 
   const loadContent = async (id: number) => {
     try {
-      const data = await getContentById(id)
+      // POST 방식으로 컨텐츠 가져오기 (캐시 우회)
+      const response = await fetch('/api/admin/content/get', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ id })
+      })
+      
+      if (!response.ok) {
+        throw new Error('컨텐츠를 가져오는데 실패했습니다.')
+      }
+      
+      const result = await response.json()
+      if (!result.success || !result.data) {
+        throw new Error('컨텐츠를 찾을 수 없습니다.')
+      }
+      
+      const data = result.data
       setInitialData(data)
       setFormData({
         title: data.role_prompt || '',
@@ -527,11 +561,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         isFree: data.content_type === 'gonghap',
         showNew: data.is_new || false,
         contentName: data.content_name || '',
-        thumbnailImageUrl: data.thumbnail_url || '',
-        thumbnailVideoUrl: data.thumbnail_video_url || '',
+        thumbnailImageUrl: (data.thumbnail_url && data.thumbnail_url.trim()) ? data.thumbnail_url.trim() : '',
+        thumbnailVideoUrl: (data.thumbnail_video_url && data.thumbnail_video_url.trim()) ? data.thumbnail_video_url.trim() : '',
         summary: data.summary || '',
         introduction: data.introduction || '',
         recommendation: data.recommendation || '',
+        menu_composition: data.menu_composition || '',
         subtitleCharCount: String(data.subtitle_char_count || '500'),
         detailMenuCharCount: String(data.detail_menu_char_count || '500'),
         menuFontSize: String(data.menu_font_size || '16'),
@@ -574,10 +609,22 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           }
           return thumbnails.slice(0, 3)
         })(),
-        bookCoverThumbnailImageUrl: data.book_cover_thumbnail || '',
-        bookCoverThumbnailVideoUrl: data.book_cover_thumbnail_video || '',
-        endingBookCoverThumbnailImageUrl: data.ending_book_cover_thumbnail || '',
-        endingBookCoverThumbnailVideoUrl: data.ending_book_cover_thumbnail_video || '',
+        bookCoverThumbnailImageUrl: (data.book_cover_thumbnail && data.book_cover_thumbnail.trim()) ? data.book_cover_thumbnail.trim() : '',
+        bookCoverThumbnailVideoUrl: (data.book_cover_thumbnail_video && data.book_cover_thumbnail_video.trim()) ? data.book_cover_thumbnail_video.trim() : '',
+        endingBookCoverThumbnailImageUrl: (data.ending_book_cover_thumbnail && data.ending_book_cover_thumbnail.trim()) ? data.ending_book_cover_thumbnail.trim() : '',
+        endingBookCoverThumbnailVideoUrl: (data.ending_book_cover_thumbnail_video && data.ending_book_cover_thumbnail_video.trim()) ? data.ending_book_cover_thumbnail_video.trim() : '',
+      })
+      
+      // 디버깅: 썸네일 URL 확인
+      console.log('[AdminForm] 로드된 썸네일 URL:', {
+        thumbnailImageUrl: data.thumbnail_url,
+        thumbnailVideoUrl: data.thumbnail_video_url,
+        bookCoverThumbnailImageUrl: data.book_cover_thumbnail,
+        bookCoverThumbnailVideoUrl: data.book_cover_thumbnail_video,
+        endingBookCoverThumbnailImageUrl: data.ending_book_cover_thumbnail,
+        endingBookCoverThumbnailVideoUrl: data.ending_book_cover_thumbnail_video,
+        previewThumbnails: data.preview_thumbnails,
+        firstMenuThumbnail: data.menu_items?.[0]?.thumbnail_image_url || data.menu_items?.[0]?.thumbnail
       })
       
       // 동영상 파일 상태 확인
@@ -743,7 +790,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   // 복제를 위한 컨텐츠 로드 (ID 제거하고 content_name에 "복사본" 추가)
   const loadContentForDuplicate = async (id: number) => {
     try {
-      const data = await getContentById(id)
+      // POST 방식으로 컨텐츠 가져오기 (캐시 우회)
+      const response = await fetch('/api/admin/content/get', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ id })
+      })
+      
+      if (!response.ok) {
+        throw new Error('컨텐츠를 가져오는데 실패했습니다.')
+      }
+      
+      const result = await response.json()
+      if (!result.success || !result.data) {
+        throw new Error('컨텐츠를 찾을 수 없습니다.')
+      }
+      
+      const data = result.data
       setInitialData(null) // 복제 모드이므로 initialData를 null로 설정 (새 컨텐츠로 인식)
       
       // content_name에 "복사본" 추가
@@ -762,6 +826,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         summary: data.summary || '',
         introduction: data.introduction || '',
         recommendation: data.recommendation || '',
+        menu_composition: data.menu_composition || '',
         subtitleCharCount: String(data.subtitle_char_count || '500'),
         detailMenuCharCount: String(data.detail_menu_char_count || '500'),
         menuFontSize: String(data.menu_font_size || '16'),
@@ -1022,6 +1087,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         summary: formData.summary,
         introduction: formData.introduction,
         recommendation: formData.recommendation,
+        menu_composition: formData.menu_composition,
         menu_subtitle: allSubtitles.join('\n'),
         interpretation_tool: allInterpretationTools.join('\n'),
         subtitle_char_count: parseInt(formData.subtitleCharCount) || 500,
@@ -1822,9 +1888,22 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 >
                   {formData.previewThumbnailImageUrls[index] ? (
                     <img 
-                      src={formData.previewThumbnailImageUrls[index]} 
+                      src={addCacheBusting(formData.previewThumbnailImageUrls[index])} 
                       alt={`미리보기 썸네일 ${index + 1}`} 
                       className="absolute inset-0 w-full h-full object-contain"
+                      onError={(e) => {
+                        const img = e.target as HTMLImageElement
+                        // 이미지 로드 실패 시 재시도
+                        const currentSrc = img.src
+                        const baseUrl = currentSrc.split('?')[0]
+                        const retryCount = parseInt(img.getAttribute('data-retry') || '0')
+                        if (retryCount < 2) {
+                          img.setAttribute('data-retry', String(retryCount + 1))
+                          img.src = `${baseUrl}?t=${Date.now()}`
+                        } else {
+                          img.style.display = 'none'
+                        }
+                      }}
                     />
                   ) : (
                     <span className="text-xs leading-tight text-center">
@@ -1861,20 +1940,70 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             >
               {(() => {
                 const imageUrl = formData.thumbnailImageUrl || (formData.thumbnailVideoUrl ? getThumbnailUrl(`${formData.thumbnailVideoUrl}.jpg`) : '')
-                return imageUrl ? (
-                  <img 
-                    src={imageUrl} 
-                    alt="이미지 썸네일" 
-                    className="absolute inset-0 w-full h-full object-contain"
-                    onError={(e) => {
-                      ;(e.target as HTMLImageElement).style.display = 'none'
-                    }}
-                  />
-                ) : (
-                  <span className="text-xs leading-tight text-center">
-                    <div>이미지</div>
-                    <div>썸네일</div>
-                  </span>
+                console.log('[AdminForm] 컨텐츠명 썸네일 버튼 - imageUrl:', imageUrl, 'formData.thumbnailImageUrl:', formData.thumbnailImageUrl, 'formData.thumbnailVideoUrl:', formData.thumbnailVideoUrl)
+                
+                if (!imageUrl) {
+                  return (
+                    <span className="text-xs leading-tight text-center">
+                      <div>이미지</div>
+                      <div>썸네일</div>
+                    </span>
+                  )
+                }
+                
+                // URL 정리 (공백 제거, 유효성 검사)
+                const cleanUrl = imageUrl.trim()
+                if (!cleanUrl || !cleanUrl.startsWith('http')) {
+                  console.error('[AdminForm] 유효하지 않은 이미지 URL:', imageUrl)
+                  return (
+                    <span className="text-xs leading-tight text-center text-red-400">
+                      <div>유효하지</div>
+                      <div>않은 URL</div>
+                    </span>
+                  )
+                }
+                
+                return (
+                  <>
+                    <img 
+                      src={cleanUrl}
+                      alt="이미지 썸네일" 
+                      className="absolute inset-0 w-full h-full object-contain"
+                      onError={(e) => {
+                        const img = e.target as HTMLImageElement
+                        const retryCount = parseInt(img.getAttribute('data-retry') || '0')
+                        
+                        if (retryCount < 3) {
+                          // 재시도: 캐시 버스팅 파라미터 추가
+                          img.setAttribute('data-retry', String(retryCount + 1))
+                          const baseUrl = cleanUrl.split('?')[0]
+                          img.src = `${baseUrl}?t=${Date.now()}&retry=${retryCount + 1}`
+                          console.log(`[AdminForm] 이미지 재시도 ${retryCount + 1}/3:`, img.src)
+                        } else {
+                          // 3번 재시도 후에도 실패하면 에러 표시
+                          console.error('[AdminForm] 이미지 로드 실패 (최종):', cleanUrl)
+                          img.style.opacity = '0.3'
+                          // 에러 메시지 표시
+                          if (!img.parentElement?.querySelector('.image-error-message')) {
+                            const errorDiv = document.createElement('div')
+                            errorDiv.className = 'image-error-message absolute inset-0 flex items-center justify-center text-xs text-red-400 bg-gray-800 bg-opacity-50 z-10'
+                            errorDiv.textContent = '로드 실패'
+                            img.parentElement?.appendChild(errorDiv)
+                          }
+                        }
+                      }}
+                      onLoad={(e) => {
+                        const img = e.target as HTMLImageElement
+                        console.log('[AdminForm] 컨텐츠명 썸네일 로드 성공:', cleanUrl)
+                        // 이미지 로드 성공 시 에러 메시지 제거 및 스타일 복원
+                        img.style.opacity = '1'
+                        const errorMessage = img.parentElement?.querySelector('.image-error-message')
+                        if (errorMessage) {
+                          errorMessage.remove()
+                        }
+                      }}
+                    />
+                  </>
                 )
               })()}
             </button>
@@ -1898,7 +2027,17 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         alt="동영상 썸네일" 
                         className="absolute inset-0 w-full h-full object-cover"
                         onError={(e) => {
-                          ;(e.target as HTMLImageElement).style.display = 'none'
+                          const img = e.target as HTMLImageElement
+                          // 이미지 로드 실패 시 재시도
+                          const currentSrc = img.src
+                          const baseUrl = currentSrc.split('?')[0]
+                          const retryCount = parseInt(img.getAttribute('data-retry') || '0')
+                          if (retryCount < 2) {
+                            img.setAttribute('data-retry', String(retryCount + 1))
+                            img.src = `${baseUrl}?t=${Date.now()}`
+                          } else {
+                            img.style.display = 'none'
+                          }
                         }}
                       />
                       {/* 반투명 동영상 플레이 아이콘 */}
@@ -1973,9 +2112,26 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
 
         {/* 추가 필드 섹션 */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            소개
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-gray-300">
+              소개
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setHtmlPreviewContent(formData.introduction)
+                setHtmlPreviewTitle('소개 미리보기')
+                setShowHtmlPreview(true)
+              }}
+              className="text-gray-400 hover:text-pink-500 transition-colors duration-200"
+              title="HTML 미리보기"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </button>
+          </div>
           <textarea
             name="introduction"
             value={formData.introduction}
@@ -1986,16 +2142,63 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            추천
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-gray-300">
+              추천
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setHtmlPreviewContent(formData.recommendation)
+                setHtmlPreviewTitle('추천 미리보기')
+                setShowHtmlPreview(true)
+              }}
+              className="text-gray-400 hover:text-pink-500 transition-colors duration-200"
+              title="HTML 미리보기"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </button>
+          </div>
           <textarea
             name="recommendation"
             value={formData.recommendation}
             onChange={handleChange}
-            rows={5}
+            rows={8}
             className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y"
             placeholder="추천을 입력하세요"
+          />
+        </div>
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-gray-300">
+              상품 메뉴 편성
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setHtmlPreviewContent(formData.menu_composition)
+                setHtmlPreviewTitle('상품 메뉴 편성 미리보기')
+                setShowHtmlPreview(true)
+              }}
+              className="text-gray-400 hover:text-pink-500 transition-colors duration-200"
+              title="HTML 미리보기"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </button>
+          </div>
+          <textarea
+            name="menu_composition"
+            value={formData.menu_composition}
+            onChange={handleChange}
+            rows={8}
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y"
+            placeholder="상품 메뉴 편성 HTML을 입력하세요"
           />
         </div>
 
@@ -2003,7 +2206,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="block text-sm font-medium text-gray-300">
-            상품 메뉴 구성
+            상품 메뉴 편성
           </label>
             <button
               type="button"
@@ -2033,11 +2236,21 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   const imageUrl = formData.bookCoverThumbnailImageUrl || (formData.bookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.bookCoverThumbnailVideoUrl}.jpg`) : '')
                   return imageUrl ? (
                     <img 
-                      src={imageUrl} 
+                      src={addCacheBusting(imageUrl)} 
                       alt="북커버 이미지 썸네일" 
                       className="absolute inset-0 w-full h-full object-contain"
                       onError={(e) => {
-                        ;(e.target as HTMLImageElement).style.display = 'none'
+                        const img = e.target as HTMLImageElement
+                        // 이미지 로드 실패 시 재시도
+                        const currentSrc = img.src
+                        const baseUrl = currentSrc.split('?')[0]
+                        const retryCount = parseInt(img.getAttribute('data-retry') || '0')
+                        if (retryCount < 2) {
+                          img.setAttribute('data-retry', String(retryCount + 1))
+                          img.src = `${baseUrl}?t=${Date.now()}`
+                        } else {
+                          img.style.display = 'none'
+                        }
                       }}
                     />
                   ) : (
@@ -2065,7 +2278,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     return (
                       <>
                         <img 
-                          src={imageUrl} 
+                          src={addCacheBusting(imageUrl)} 
                           alt="북커버 동영상 썸네일" 
                           className="absolute inset-0 w-full h-full object-cover"
                           onError={(e) => {
@@ -2136,7 +2349,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             >
               {firstMenuField.thumbnailImageUrl ? (
                 <img 
-                  src={firstMenuField.thumbnailImageUrl} 
+                  src={addCacheBusting(firstMenuField.thumbnailImageUrl)} 
                   alt="첫 메뉴 이미지 썸네일" 
                   className="absolute inset-0 w-full h-full object-contain"
                 />
@@ -2160,7 +2373,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               {firstMenuField.thumbnailVideoUrl && firstMenuField.thumbnailImageUrl ? (
                 <>
                   <img 
-                    src={firstMenuField.thumbnailImageUrl} 
+                    src={addCacheBusting(firstMenuField.thumbnailImageUrl)} 
                     alt="첫 메뉴 동영상 썸네일" 
                     className="absolute inset-0 w-full h-full object-cover"
                   />
@@ -2238,7 +2451,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   >
                       {subtitle.thumbnailImageUrl && subtitle.thumbnailImageUrl.trim() ? (
                       <img 
-                        src={subtitle.thumbnailImageUrl} 
+                        src={addCacheBusting(subtitle.thumbnailImageUrl)} 
                         alt="소제목 이미지 썸네일" 
                         className="absolute inset-0 w-full h-full object-contain"
                       />
@@ -2263,7 +2476,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       {subtitle.thumbnailVideoUrl && subtitle.thumbnailImageUrl ? (
                         <>
                           <img 
-                            src={subtitle.thumbnailImageUrl} 
+                            src={addCacheBusting(subtitle.thumbnailImageUrl)} 
                             alt="소제목 동영상 썸네일" 
                             className="absolute inset-0 w-full h-full object-cover"
                           />
@@ -2364,7 +2577,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         >
                           {detailMenu.thumbnailImageUrl && detailMenu.thumbnailImageUrl.trim() ? (
                             <img 
-                              src={detailMenu.thumbnailImageUrl} 
+                              src={addCacheBusting(detailMenu.thumbnailImageUrl)} 
                               alt="상세메뉴 이미지 썸네일" 
                               className="absolute inset-0 w-full h-full object-contain"
                             />
@@ -2389,7 +2602,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                           {detailMenu.thumbnailVideoUrl && detailMenu.thumbnailImageUrl ? (
                             <>
                               <img 
-                                src={detailMenu.thumbnailImageUrl} 
+                                src={addCacheBusting(detailMenu.thumbnailImageUrl)} 
                                 alt="상세메뉴 동영상 썸네일" 
                                 className="absolute inset-0 w-full h-full object-cover"
                               />
@@ -2512,7 +2725,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 >
                   {field.thumbnailImageUrl ? (
                     <img 
-                      src={field.thumbnailImageUrl} 
+                      src={addCacheBusting(field.thumbnailImageUrl)} 
                       alt="메뉴 이미지 썸네일" 
                       className="absolute inset-0 w-full h-full object-contain"
                     />
@@ -2536,7 +2749,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   {field.thumbnailVideoUrl && field.thumbnailImageUrl ? (
                     <>
                       <img 
-                        src={field.thumbnailImageUrl} 
+                        src={addCacheBusting(field.thumbnailImageUrl)} 
                         alt="메뉴 동영상 썸네일" 
                         className="absolute inset-0 w-full h-full object-cover"
                       />
@@ -2623,7 +2836,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       >
                         {subtitle.thumbnailImageUrl ? (
                           <img 
-                            src={subtitle.thumbnailImageUrl} 
+                            src={addCacheBusting(subtitle.thumbnailImageUrl)} 
                             alt="소제목 이미지 썸네일" 
                             className="absolute inset-0 w-full h-full object-contain"
                           />
@@ -2651,7 +2864,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         {subtitle.thumbnailVideoUrl && subtitle.thumbnailImageUrl ? (
                           <>
                             <img 
-                              src={subtitle.thumbnailImageUrl} 
+                              src={addCacheBusting(subtitle.thumbnailImageUrl)} 
                               alt="소제목 동영상 썸네일" 
                               className="absolute inset-0 w-full h-full object-cover"
                             />
@@ -2762,7 +2975,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                             >
                               {detailMenu.thumbnailImageUrl && detailMenu.thumbnailImageUrl.trim() ? (
                                 <img 
-                                  src={detailMenu.thumbnailImageUrl} 
+                                  src={addCacheBusting(detailMenu.thumbnailImageUrl)} 
                                   alt="상세메뉴 이미지 썸네일" 
                                   className="absolute inset-0 w-full h-full object-contain"
                                 />
@@ -2791,7 +3004,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                               {detailMenu.thumbnailVideoUrl && detailMenu.thumbnailImageUrl ? (
                                 <>
                                   <img 
-                                    src={detailMenu.thumbnailImageUrl} 
+                                    src={addCacheBusting(detailMenu.thumbnailImageUrl)} 
                                     alt="상세메뉴 동영상 썸네일" 
                                     className="absolute inset-0 w-full h-full object-cover"
                                   />
@@ -2902,11 +3115,21 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   const imageUrl = formData.endingBookCoverThumbnailImageUrl || (formData.endingBookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.endingBookCoverThumbnailVideoUrl}.jpg`) : '')
                   return imageUrl ? (
                     <img 
-                      src={imageUrl} 
+                      src={addCacheBusting(imageUrl)} 
                       alt="엔딩북커버 이미지 썸네일" 
                       className="absolute inset-0 w-full h-full object-contain"
                       onError={(e) => {
-                        ;(e.target as HTMLImageElement).style.display = 'none'
+                        const img = e.target as HTMLImageElement
+                        // 이미지 로드 실패 시 재시도
+                        const currentSrc = img.src
+                        const baseUrl = currentSrc.split('?')[0]
+                        const retryCount = parseInt(img.getAttribute('data-retry') || '0')
+                        if (retryCount < 2) {
+                          img.setAttribute('data-retry', String(retryCount + 1))
+                          img.src = `${baseUrl}?t=${Date.now()}`
+                        } else {
+                          img.style.display = 'none'
+                        }
                       }}
                     />
                   ) : (
@@ -2934,7 +3157,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     return (
                       <>
                         <img 
-                          src={imageUrl} 
+                          src={addCacheBusting(imageUrl)} 
                           alt="엔딩북커버 동영상 썸네일" 
                           className="absolute inset-0 w-full h-full object-cover"
                           onError={(e) => {
@@ -4451,6 +4674,84 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           onClose={() => setShowPreview(false)}
         />
       )}
+
+      {/* HTML 미리보기 팝업 */}
+      {showHtmlPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className={`bg-gray-900 border border-gray-700 rounded-xl overflow-hidden shadow-2xl max-h-[90vh] flex flex-col ${
+            htmlPreviewMode === 'mobile' ? 'w-full max-w-sm' : 'w-full max-w-4xl'
+          }`}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+              <h2 className="text-lg font-bold text-white">{htmlPreviewTitle}</h2>
+              <div className="flex items-center gap-2">
+                {/* PC/모바일 모드 전환 버튼 */}
+                <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-1">
+                  <button
+                    type="button"
+                    onClick={() => setHtmlPreviewMode('pc')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+                      htmlPreviewMode === 'pc'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    PC
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHtmlPreviewMode('mobile')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+                      htmlPreviewMode === 'mobile'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    모바일
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowHtmlPreview(false)}
+                  className="text-gray-300 hover:text-white text-sm font-semibold px-3 py-1 rounded-md"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4 bg-white flex justify-center">
+              <div className={`${htmlPreviewMode === 'mobile' ? 'w-full max-w-[375px]' : 'w-full'}`}>
+                <iframe
+                  ref={htmlPreviewIframeRef}
+                  srcDoc={htmlPreviewContent}
+                  className="w-full border-0"
+                  style={{
+                    border: 'none',
+                  }}
+                  title={htmlPreviewTitle}
+                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+                  onLoad={() => {
+                    setTimeout(() => {
+                      try {
+                        const iframe = htmlPreviewIframeRef.current
+                        if (iframe?.contentWindow?.document?.body) {
+                          const height = Math.max(
+                            iframe.contentWindow.document.body.scrollHeight,
+                            iframe.contentWindow.document.documentElement.scrollHeight,
+                            200
+                          )
+                          iframe.style.height = `${height}px`
+                        }
+                      } catch (err) {
+                        // cross-origin 등으로 접근 불가 시 무시
+                      }
+                    }, 100)
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -4743,7 +5044,7 @@ function PreviewModal({
                                               />
                                             ) : detailMenu.thumbnailImageUrl ? (
                                               <img
-                                                src={detailMenu.thumbnailImageUrl}
+                                                src={addCacheBusting(detailMenu.thumbnailImageUrl)}
                                                 alt="상세메뉴 썸네일"
                                                 className="w-full h-auto rounded-lg"
                                                 style={{ display: 'block', objectFit: 'contain' }}

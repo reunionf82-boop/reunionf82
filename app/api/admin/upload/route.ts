@@ -34,6 +34,22 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Content-Type 확인: JSON이면 삭제 요청, FormData면 업로드 요청
+    const contentType = req.headers.get('content-type') || ''
+    
+    if (contentType.includes('application/json')) {
+      // JSON 요청은 삭제 처리
+      const body = await req.json()
+      if (body.action === 'delete' || body.url) {
+        return await handleImageDelete(req)
+      }
+      return NextResponse.json(
+        { error: '잘못된 요청입니다.' },
+        { status: 400 }
+      )
+    }
+
+    // FormData 요청은 업로드 처리
     const formData = await req.formData()
     const file = formData.get('file') as File
     const folderRaw = formData.get('folder')
@@ -195,6 +211,99 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || '업로드 중 오류가 발생했습니다.' },
+      { status: 500 }
+    )
+  }
+}
+
+// 이미지 삭제 핸들러 (공통 함수)
+async function handleImageDelete(req: NextRequest) {
+  // 관리자 인증 확인
+  const cookieStore = await cookies()
+  const session = cookieStore.get('admin_session')
+
+  if (session?.value !== 'authenticated') {
+    return NextResponse.json(
+      { error: '관리자 권한이 필요합니다.' },
+      { status: 401 }
+    )
+  }
+
+  const body = await req.json()
+  const { url } = body
+
+  if (!url || typeof url !== 'string') {
+    return NextResponse.json(
+      { error: '이미지 URL이 제공되지 않았습니다.' },
+      { status: 400 }
+    )
+  }
+
+  // URL에서 파일 경로 추출
+  // 예: https://xxx.supabase.co/storage/v1/object/public/thumbnails/path/to/file.jpg
+  // -> path/to/file.jpg
+  let filePath = ''
+  try {
+    const urlObj = new URL(url)
+    const pathMatch = urlObj.pathname.match(/\/storage\/v1\/object\/public\/thumbnails\/(.+)$/)
+    if (pathMatch && pathMatch[1]) {
+      filePath = decodeURIComponent(pathMatch[1])
+    } else {
+      // 직접 경로가 제공된 경우 (예: "folder/file.jpg")
+      filePath = url.replace(/^\/+/, '').replace(/\.\./g, '')
+    }
+  } catch {
+    // URL 파싱 실패 시 전체를 경로로 간주 (보안상 위험하지만 fallback)
+    filePath = url.replace(/^\/+/, '').replace(/\.\./g, '')
+  }
+
+  if (!filePath) {
+    return NextResponse.json(
+      { error: '유효한 파일 경로를 추출할 수 없습니다.' },
+      { status: 400 }
+    )
+  }
+
+  // 서비스 롤 키로 삭제 (RLS 우회)
+  const supabase = getSupabaseClient()
+  const { error: deleteError } = await supabase.storage
+    .from('thumbnails')
+    .remove([filePath])
+
+  if (deleteError) {
+    console.error('Delete error:', deleteError)
+    return NextResponse.json(
+      {
+        error: deleteError.message || '파일 삭제에 실패했습니다.',
+        details: deleteError,
+      },
+      { status: 500 }
+    )
+  }
+
+  // 캐시 방지 헤더 설정
+  return NextResponse.json(
+    {
+      success: true,
+      message: '파일이 삭제되었습니다.',
+    },
+    {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      },
+    }
+  )
+}
+
+// 이미지 삭제 (DELETE 메서드 지원)
+export async function DELETE(req: NextRequest) {
+  try {
+    return await handleImageDelete(req)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || '삭제 중 오류가 발생했습니다.' },
       { status: 500 }
     )
   }

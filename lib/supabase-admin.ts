@@ -33,6 +33,7 @@ export interface ContentData {
   summary?: string
   introduction?: string
   recommendation?: string
+  menu_composition?: string // 상품 메뉴 구성 HTML
   menu_subtitle?: string
   interpretation_tool?: string
   subtitle_char_count?: number
