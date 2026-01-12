@@ -3298,7 +3298,47 @@ ${fontFace ? fontFace : ''}
     try {
       setPlayingResultId(savedResult.id)
       
-      let textContent = extractHumanReadableText(savedResult.html)
+      // 저장된 결과는 HTML 문자열을 직접 파싱하여 텍스트 추출
+      // (새 창에서 열린 경우 DOM이 완전히 렌더링되기 전에 실행될 수 있으므로)
+      let textContent = ''
+      
+      // HTML 문자열을 직접 파싱하여 텍스트 추출
+      if (typeof window !== 'undefined') {
+        const parser = new DOMParser()
+        const doc = parser.parseFromString(savedResult.html, 'text/html')
+        
+        // 테이블/만세력/목차/코드/스크립트/스타일 제거
+        doc.querySelectorAll('table, .manse-ryeok-table, #table-of-contents, .toc-container, style, script, pre, code').forEach((el) => el.remove())
+        
+        // 읽을 요소만 있으면 그 순서대로 추출
+        const nodes = Array.from(
+          doc.querySelectorAll('.menu-title, .subtitle-title, .detail-menu-title, .subtitle-content, .detail-menu-content')
+        )
+        
+        if (nodes.length > 0) {
+          const lines = nodes
+            .map((el) => {
+              const text = (el as HTMLElement).innerText || el.textContent || ''
+              const className = String((el as HTMLElement).className || '')
+              // 대제목(.menu-title)과 소제목(.subtitle-title, .detail-menu-title)은 한자 제거하지 않음
+              if (className.includes('menu-title') || className.includes('subtitle-title') || className.includes('detail-menu-title')) {
+                // HTML 태그만 제거하고 한자는 유지
+                return text.replace(/<\s*\/?\s*[a-zA-Z][^>]*>/g, '').replace(/\s+/g, ' ').trim()
+              }
+              // 본문 내용은 한자 제거 적용
+              return sanitizeHumanReadableText(text)
+            })
+            .filter(Boolean)
+          textContent = lines.join('\n\n')
+        } else {
+          // 요소를 찾지 못한 경우 전체 텍스트 추출
+          const body = doc.body || doc.documentElement
+          textContent = sanitizeHumanReadableText(body.innerText || body.textContent || '')
+        }
+      } else {
+        // window가 없는 경우 fallback
+        textContent = extractHumanReadableText(savedResult.html)
+      }
       
       // 내담자 이름 추가
       const userName = savedResult.userName || savedResult.content?.user_info?.name || ''
@@ -3674,9 +3714,13 @@ ${fontFace ? fontFace : ''}
                         
                         const imgEl = doc.createElement('img')
                         imgEl.src = thumbnailImageUrl
-                        imgEl.alt = '소제목 썸네일'
-                        imgEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;'
+                        imgEl.alt = '' // alt 텍스트 제거 (이미지 로드 전 텍스트 표시 방지)
+                        imgEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0;'
                         imgEl.id = `subtitle-thumbnail-img-result-${menuIndex}-${subIndex}`
+                        // 이미지 로드 완료 시 opacity 복원
+                        imgEl.onload = function() {
+                          imgEl.style.opacity = '1'
+                        }
                         
                         const videoEl = doc.createElement('video')
                         videoEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; display: none;'
@@ -3731,8 +3775,12 @@ ${fontFace ? fontFace : ''}
                       } else if (thumbnailImageUrl) {
                         const imgEl = doc.createElement('img')
                         imgEl.src = thumbnailImageUrl
-                        imgEl.alt = '소제목 썸네일'
-                        imgEl.style.cssText = 'width: 100%; height: 100%; display: block; object-fit: contain;'
+                        imgEl.alt = '' // alt 텍스트 제거 (이미지 로드 전 텍스트 표시 방지)
+                        imgEl.style.cssText = 'width: 100%; height: 100%; display: block; object-fit: contain; opacity: 0;'
+                        // 이미지 로드 완료 시 opacity 복원
+                        imgEl.onload = function() {
+                          imgEl.style.opacity = '1'
+                        }
                         thumbnailImg.appendChild(imgEl)
                       }
                       titleDiv.parentNode?.insertBefore(thumbnailImg, titleDiv.nextSibling)
@@ -3761,9 +3809,13 @@ ${fontFace ? fontFace : ''}
                               
                               const imgEl = doc.createElement('img')
                               imgEl.src = detailMenuThumbnailImageUrl
-                              imgEl.alt = '상세메뉴 썸네일'
-                              imgEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain;'
+                              imgEl.alt = '' // alt 텍스트 제거 (이미지 로드 전 텍스트 표시 방지)
+                              imgEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0;'
                               imgEl.id = `detail-menu-thumbnail-img-result-${menuIndex}-${subIndex}-${dmIndex}`
+                              // 이미지 로드 완료 시 opacity 복원
+                              imgEl.onload = function() {
+                                imgEl.style.opacity = '1'
+                              }
                               
                               const videoEl = doc.createElement('video')
                               videoEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; display: none;'
@@ -3818,8 +3870,12 @@ ${fontFace ? fontFace : ''}
                             } else if (detailMenuThumbnailImageUrl) {
                               const imgEl = doc.createElement('img')
                               imgEl.src = detailMenuThumbnailImageUrl
-                              imgEl.alt = '상세메뉴 썸네일'
-                              imgEl.style.cssText = 'width: 100%; height: 100%; display: block; object-fit: contain;'
+                              imgEl.alt = '' // alt 텍스트 제거 (이미지 로드 전 텍스트 표시 방지)
+                              imgEl.style.cssText = 'width: 100%; height: 100%; display: block; object-fit: contain; opacity: 0;'
+                              // 이미지 로드 완료 시 opacity 복원
+                              imgEl.onload = function() {
+                                imgEl.style.opacity = '1'
+                              }
                               thumbnailImg.appendChild(imgEl)
                             }
                             detailMenuTitle.parentNode?.insertBefore(thumbnailImg, detailMenuTitle.nextSibling)
