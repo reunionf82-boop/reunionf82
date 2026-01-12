@@ -3974,6 +3974,18 @@ ${fontFace ? fontFace : ''}
             const doc = parser.parseFromString(htmlContent, 'text/html')
             const bookCoverEl = doc.querySelector('.book-cover-thumbnail-container')
             if (bookCoverEl) {
+              // 북커버 이미지의 alt 태그 제거
+              const bookCoverImgs = bookCoverEl.querySelectorAll('img')
+              bookCoverImgs.forEach((img) => {
+                img.setAttribute('alt', '')
+                img.style.opacity = '0'
+                img.onload = function() {
+                  img.style.opacity = '1'
+                }
+                img.onerror = function() {
+                  img.style.display = 'none'
+                }
+              })
               bookCoverHtml = bookCoverEl.outerHTML
               bookCoverEl.remove()
               const bodyMatch = doc.documentElement.outerHTML.match(/<body[^>]*>([\s\S]*)<\/body>/i)
@@ -4107,6 +4119,13 @@ ${fontFace ? fontFace : ''}
                   border-radius: 8px;
                   margin-bottom: 24px;
                   display: block;
+                }
+                /* 액박 이미지 숨기기 (이미지 로드 실패 시 표시되는 깨진 이미지 아이콘) */
+                img[src=""], img:not([src]), img[alt=""]::before {
+                  display: none !important;
+                }
+                img::before {
+                  content: none !important;
                 }
                 .subtitle-section:not(:last-child) {
                   padding-top: 24px;
@@ -4976,8 +4995,15 @@ ${fontFace ? fontFace : ''}
             ) : content?.book_cover_thumbnail ? (
               <img 
                 src={content.book_cover_thumbnail} 
-                alt="북커버 썸네일"
+                alt=""
                 className="w-full h-full object-contain rounded-lg"
+                style={{ opacity: 0 }}
+                onLoad={(e) => {
+                  (e.target as HTMLImageElement).style.opacity = '1'
+                }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none'
+                }}
               />
             ) : null}
           </div>
@@ -5067,8 +5093,15 @@ ${fontFace ? fontFace : ''}
                           ) : menuThumbnailImageUrl ? (
                             <img 
                               src={menuThumbnailImageUrl} 
-                              alt="대메뉴 썸네일"
+                              alt=""
                               className="w-full h-auto object-contain rounded-lg"
+                              style={{ opacity: 0 }}
+                              onLoad={(e) => {
+                                (e.target as HTMLImageElement).style.opacity = '1'
+                              }}
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none'
+                              }}
                             />
                           ) : null}
                         </div>
@@ -5133,9 +5166,15 @@ ${fontFace ? fontFace : ''}
                                   ) : thumbnailImageUrl ? (
                                     <img
                                       src={thumbnailImageUrl}
-                                      alt={sub.isDetailMenu ? '상세메뉴 썸네일' : '소제목 썸네일'}
+                                      alt=""
                                       className="w-full h-full object-contain"
-                                      style={{ display: 'block' }}
+                                      style={{ display: 'block', opacity: 0 }}
+                                      onLoad={(e) => {
+                                        (e.target as HTMLImageElement).style.opacity = '1'
+                                      }}
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none'
+                                      }}
                                     />
                                   ) : null}
                                 </div>
@@ -5189,8 +5228,15 @@ ${fontFace ? fontFace : ''}
                       ) : content?.ending_book_cover_thumbnail ? (
                         <img 
                           src={content.ending_book_cover_thumbnail} 
-                          alt="엔딩북커버 썸네일"
+                          alt=""
                           className="w-full h-full object-contain rounded-lg"
+                          style={{ opacity: 0 }}
+                          onLoad={(e) => {
+                            (e.target as HTMLImageElement).style.opacity = '1'
+                          }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none'
+                          }}
                         />
                       ) : null}
                     </div>
@@ -5277,7 +5323,17 @@ ${fontFace ? fontFace : ''}
                         const bookCoverDiv = doc.createElement('div')
                         bookCoverDiv.className = 'book-cover-thumbnail-container'
                         bookCoverDiv.style.cssText = 'width: 100%; margin-bottom: 2.5rem; display: flex; justify-content: center;'
-                        bookCoverDiv.innerHTML = `<img src="${bookCoverThumbnail}" alt="북커버 썸네일" style="width: calc(100% - 48px); max-width: calc(100% - 48px); height: auto; object-fit: contain; display: block;" />`
+                        const bookCoverImg = doc.createElement('img')
+                        bookCoverImg.src = bookCoverThumbnail
+                        bookCoverImg.alt = ''
+                        bookCoverImg.style.cssText = 'width: calc(100% - 48px); max-width: calc(100% - 48px); height: auto; object-fit: contain; display: block; opacity: 0;'
+                        bookCoverImg.onload = function() {
+                          bookCoverImg.style.opacity = '1'
+                        }
+                        bookCoverImg.onerror = function() {
+                          bookCoverImg.style.display = 'none'
+                        }
+                        bookCoverDiv.appendChild(bookCoverImg)
                         // 첫 번째 자식 요소(menu-title) 앞에 삽입
                         if (firstSection.firstChild) {
                           firstSection.insertBefore(bookCoverDiv, firstSection.firstChild)
@@ -5388,7 +5444,17 @@ ${fontFace ? fontFace : ''}
                                   })
                                   videoEl.load()
                                 } else if (thumbnailImageUrl) {
-                                  thumbnailImg.innerHTML = `<img src="${thumbnailImageUrl}" alt="소제목 썸네일" style="width: 100%; height: 100%; display: block; object-fit: contain;" />`
+                                  const imgEl = doc.createElement('img')
+                                  imgEl.src = thumbnailImageUrl
+                                  imgEl.alt = ''
+                                  imgEl.style.cssText = 'width: 100%; height: 100%; display: block; object-fit: contain; opacity: 0;'
+                                  imgEl.onload = function() {
+                                    imgEl.style.opacity = '1'
+                                  }
+                                  imgEl.onerror = function() {
+                                    imgEl.style.display = 'none'
+                                  }
+                                  thumbnailImg.appendChild(imgEl)
                                 }
                                 subtitleTitle.parentNode?.insertBefore(thumbnailImg, subtitleTitle.nextSibling)
                               }
@@ -5605,29 +5671,58 @@ ${fontFace ? fontFace : ''}
                         if (endingBookCoverThumbnailVideoUrl && endingBookCoverThumbnailImageUrl) {
                           const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
                           const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''
-                          endingBookCoverDiv.innerHTML = `
-                            <div style="position: relative; width: 100%; height: 100%;">
-                              <img src="${endingBookCoverThumbnailImageUrl}" alt="엔딩북커버 썸네일" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 8px;" id="ending-thumbnail-img-batch" />
-                              <video style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 8px; display: none;" id="ending-thumbnail-video-batch" poster="${endingBookCoverThumbnailImageUrl}" autoPlay muted loop playsInline preload="auto">
-                                <source src="${bucketUrl}/${endingBookCoverThumbnailVideoUrl}.webm" type="video/webm" />
-                              </video>
-                            </div>
-                            <script>
-                              (function() {
-                                const video = document.getElementById('ending-thumbnail-video-batch');
-                                const img = document.getElementById('ending-thumbnail-img-batch');
-                                if (video) {
-                                  video.addEventListener('canplay', function() {
-                                    if (img) img.style.display = 'none';
-                                    if (video) video.style.display = 'block';
-                                  });
-                                  video.load();
-                                }
-                              })();
-                            </script>
-                          `
+                          const containerDiv = doc.createElement('div')
+                          containerDiv.style.cssText = 'position: relative; width: 100%; height: 100%;'
+                          
+                          const endingImg = doc.createElement('img')
+                          endingImg.src = endingBookCoverThumbnailImageUrl
+                          endingImg.alt = ''
+                          endingImg.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 8px; opacity: 0;'
+                          endingImg.id = 'ending-thumbnail-img-batch'
+                          endingImg.onload = function() {
+                            endingImg.style.opacity = '1'
+                          }
+                          endingImg.onerror = function() {
+                            endingImg.style.display = 'none'
+                          }
+                          
+                          const endingVideo = doc.createElement('video')
+                          endingVideo.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 8px; display: none;'
+                          endingVideo.id = 'ending-thumbnail-video-batch'
+                          endingVideo.poster = endingBookCoverThumbnailImageUrl
+                          endingVideo.setAttribute('autoPlay', '')
+                          endingVideo.setAttribute('muted', '')
+                          endingVideo.setAttribute('loop', '')
+                          endingVideo.setAttribute('playsInline', '')
+                          endingVideo.setAttribute('preload', 'auto')
+                          
+                          const sourceEl = doc.createElement('source')
+                          sourceEl.src = `${bucketUrl}/${endingBookCoverThumbnailVideoUrl}.webm`
+                          sourceEl.type = 'video/webm'
+                          endingVideo.appendChild(sourceEl)
+                          
+                          containerDiv.appendChild(endingImg)
+                          containerDiv.appendChild(endingVideo)
+                          endingBookCoverDiv.appendChild(containerDiv)
+                          
+                          // 동영상 로드 및 재생 설정
+                          endingVideo.addEventListener('canplay', function() {
+                            if (endingImg) endingImg.style.display = 'none'
+                            if (endingVideo) endingVideo.style.display = 'block'
+                          })
+                          endingVideo.load()
                         } else if (endingBookCoverThumbnailImageUrl) {
-                          endingBookCoverDiv.innerHTML = `<img src="${endingBookCoverThumbnailImageUrl}" alt="엔딩북커버 썸네일" style="width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 8px;" />`
+                          const endingImg = doc.createElement('img')
+                          endingImg.src = endingBookCoverThumbnailImageUrl
+                          endingImg.alt = ''
+                          endingImg.style.cssText = 'width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 8px; opacity: 0;'
+                          endingImg.onload = function() {
+                            endingImg.style.opacity = '1'
+                          }
+                          endingImg.onerror = function() {
+                            endingImg.style.display = 'none'
+                          }
+                          endingBookCoverDiv.appendChild(endingImg)
                         }
                         // 마지막 자식 요소 뒤에 추가
                         lastSection.appendChild(endingBookCoverDiv)
