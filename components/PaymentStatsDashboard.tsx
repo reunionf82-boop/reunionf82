@@ -155,7 +155,11 @@ export default function PaymentStatsDashboard({ isOpen, onClose }: PaymentStatsD
                     type="button"
                     onClick={() => {
                       if (startDateInputRef.current) {
-                        startDateInputRef.current.showPicker?.() || startDateInputRef.current.click()
+                        if (typeof startDateInputRef.current.showPicker === 'function') {
+                          startDateInputRef.current.showPicker()
+                        } else {
+                          startDateInputRef.current.click()
+                        }
                       }
                     }}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-white cursor-pointer pointer-events-auto z-10 text-lg"
@@ -177,7 +181,11 @@ export default function PaymentStatsDashboard({ isOpen, onClose }: PaymentStatsD
                     type="button"
                     onClick={() => {
                       if (endDateInputRef.current) {
-                        endDateInputRef.current.showPicker?.() || endDateInputRef.current.click()
+                        if (typeof endDateInputRef.current.showPicker === 'function') {
+                          endDateInputRef.current.showPicker()
+                        } else {
+                          endDateInputRef.current.click()
+                        }
                       }
                     }}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-white cursor-pointer pointer-events-auto z-10 text-lg"
