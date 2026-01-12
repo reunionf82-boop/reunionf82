@@ -4082,7 +4082,7 @@ function FormContent() {
           {/* 금액 섹션 */}
           {content?.price && (
             <div className="mb-6 pb-6 border-b border-gray-200">
-              <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">가격</h2>
+              <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">금액</h2>
               <div className="text-2xl font-bold text-pink-500 mb-3 text-right">
                 {(() => {
                   // 숫자만 추출하여 세자리마다 콤마 추가
