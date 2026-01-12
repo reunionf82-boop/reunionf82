@@ -2692,15 +2692,18 @@ ${fontFace ? fontFace : ''}
 
   const sanitizeHumanReadableText = (text: string): string => {
     if (!text) return ''
-    return (
-      text
-        // HTML 태그처럼 보이는 문자열 제거 (예: "<div class=...>")
-        .replace(/<\s*\/?\s*[a-zA-Z][^>]*>/g, '')
-        // 엔티티로 들어온 태그 텍스트도 제거될 수 있게 한 번 더 정리
-        .replace(/\s+/g, ' ')
-        .replace(/\n\s+\n/g, '\n\n')
-        .trim()
-    )
+    let result = text
+      // HTML 태그처럼 보이는 문자열 제거 (예: "<div class=...>")
+      .replace(/<\s*\/?\s*[a-zA-Z][^>]*>/g, '')
+      // 모든 한자 제거 (밑줄 유무 관계없이)
+      .replace(/[一-龯]/g, '')
+      // 엔티티로 들어온 태그 텍스트도 제거될 수 있게 한 번 더 정리
+      .replace(/\s+/g, ' ')
+      .replace(/\n\s+\n/g, '\n\n')
+      .trim()
+    
+    // 빈 문자열이 되지 않도록 보장 (첫 문장 보존)
+    return result || text.replace(/<\s*\/?\s*[a-zA-Z][^>]*>/g, '').trim()
   }
 
   const htmlToPlainText = (htmlFragment: string): string => {
@@ -2709,18 +2712,24 @@ ${fontFace ? fontFace : ''}
     temp.innerHTML = htmlFragment || ''
     // 테이블/코드/스크립트/스타일 제거
     temp.querySelectorAll('table, .manse-ryeok-table, style, script, pre, code').forEach((el) => el.remove())
-    return sanitizeHumanReadableText(temp.innerText || temp.textContent || '')
+    // innerText를 먼저 가져온 후 한자 제거 (첫 문장 보존)
+    const rawText = temp.innerText || temp.textContent || ''
+    // HTML 태그 제거 및 한자 제거
+    return sanitizeHumanReadableText(rawText)
   }
 
   const extractTextFromParsedMenus = (): string => {
     if (!parsedMenus || parsedMenus.length === 0) return ''
     const lines: string[] = []
     parsedMenus.forEach((menu) => {
-      const menuTitle = sanitizeHumanReadableText(menu.title || '')
+      // 대제목은 한자 제거하지 않고 그대로 사용 (HTML 태그만 제거)
+      const menuTitle = (menu.title || '').replace(/<\s*\/?\s*[a-zA-Z][^>]*>/g, '').trim()
       if (menuTitle) lines.push(menuTitle)
       menu.subtitles.forEach((sub) => {
-        const subTitle = sanitizeHumanReadableText(sub.title || '')
+        // 소제목도 한자 제거하지 않고 그대로 사용 (HTML 태그만 제거)
+        const subTitle = (sub.title || '').replace(/<\s*\/?\s*[a-zA-Z][^>]*>/g, '').trim()
         if (subTitle) lines.push(subTitle)
+        // 본문 내용은 한자 제거 적용
         const body = htmlToPlainText(sub.contentHtml || '')
         if (body) lines.push(body)
       })
@@ -2745,10 +2754,19 @@ ${fontFace ? fontFace : ''}
       )
       if (nodes.length > 0) {
         const lines = nodes
-          .map((el) => (el as HTMLElement).innerText || el.textContent || '')
-          .map((s) => s.replace(/\s+/g, ' ').trim())
+          .map((el) => {
+            const text = (el as HTMLElement).innerText || el.textContent || ''
+            const className = String((el as HTMLElement).className || '')
+            // 대제목(.menu-title)과 소제목(.subtitle-title, .detail-menu-title)은 한자 제거하지 않음
+            if (className.includes('menu-title') || className.includes('subtitle-title') || className.includes('detail-menu-title')) {
+              // HTML 태그만 제거하고 한자는 유지
+              return text.replace(/<\s*\/?\s*[a-zA-Z][^>]*>/g, '').replace(/\s+/g, ' ').trim()
+            }
+            // 본문 내용은 한자 제거 적용
+            return sanitizeHumanReadableText(text)
+          })
           .filter(Boolean)
-        return sanitizeHumanReadableText(lines.join('\n\n'))
+        return lines.join('\n\n')
       }
 
       return sanitizeHumanReadableText((clone as HTMLElement).innerText || clone.textContent || '')
@@ -2828,7 +2846,21 @@ ${fontFace ? fontFace : ''}
       setTtsStatus('음성 생성 중... (약 30초 소요)') // 초기 상태 메시지
       
       // 1) parsedMenus 기반(사람이 보는 구조) 우선, 2) fallback DOM/HTML 파싱
-      const textContent = extractTextFromParsedMenus() || extractHumanReadableText(html)
+      let textContent = extractTextFromParsedMenus()
+      // parsedMenus가 없거나 빈 경우에만 fallback 사용
+      if (!textContent || textContent.trim().length === 0) {
+        textContent = extractHumanReadableText(html)
+      }
+      
+      // 내담자 이름 추가 (resultData에서 가져오기)
+      const userName = resultData?.userName || ''
+      if (userName && textContent) {
+        // 이름을 맨 앞에 추가
+        textContent = `${userName}님의 점사 결과입니다.\n\n${textContent}`
+      }
+      
+      // extractTextFromParsedMenus에서 이미 한자 제거가 적용되었으므로 여기서는 제거하지 않음
+      // (대제목/소제목은 한자 유지, 본문만 한자 제거)
       
       if (!textContent.trim()) {
         alert('읽을 내용이 없습니다.')
@@ -2897,9 +2929,38 @@ ${fontFace ? fontFace : ''}
         // content.id가 없으면 app_settings의 화자 사용
       }
       
-      // 텍스트를 2000자 단위로 분할
-      const maxLength = 2000
-      const chunks = splitTextIntoChunks(textContent, maxLength)
+      // 타입캐스트일 때는 첫 번째 청크를 작게 나누어 빠르게 시작
+      // 타입캐스트는 생성 시간이 오래 걸리므로 첫 청크를 500자로 작게 나누고, 나머지는 2000자 유지
+      const firstChunkSize = ttsProvider === 'typecast' ? 500 : 2000
+      const restChunkSize = 2000
+      
+      // 첫 번째 청크와 나머지 청크를 분리
+      let firstChunk = ''
+      let restText = textContent
+      
+      if (ttsProvider === 'typecast' && textContent.length > firstChunkSize) {
+        // 첫 500자를 문장 단위로 자르기
+        const tempFirstChunk = textContent.substring(0, firstChunkSize)
+        const lastSpace = tempFirstChunk.lastIndexOf(' ')
+        const lastPeriod = tempFirstChunk.lastIndexOf('.')
+        const lastNewline = tempFirstChunk.lastIndexOf('\n')
+        const cutIndex = Math.max(lastPeriod, lastSpace, lastNewline)
+        
+        if (cutIndex > firstChunkSize * 0.3) { // 30% 이상이면 그 위치에서 자르기
+          firstChunk = textContent.substring(0, cutIndex + 1).trim()
+          restText = textContent.substring(cutIndex + 1).trim()
+        } else {
+          firstChunk = tempFirstChunk.trim()
+          restText = textContent.substring(firstChunkSize).trim()
+        }
+      } else {
+        firstChunk = textContent
+        restText = ''
+      }
+      
+      // 나머지 텍스트를 청크로 분할
+      const restChunks = restText ? splitTextIntoChunks(restText, restChunkSize) : []
+      const chunks = [firstChunk, ...restChunks].filter(chunk => chunk.trim().length > 0)
       
       // 다음 청크를 미리 로드하는 함수
       const preloadNextChunk = async (chunkIndex: number): Promise<{ url: string; audio: HTMLAudioElement } | null> => {
@@ -2916,7 +2977,7 @@ ${fontFace ? fontFace : ''}
             (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
           const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
           if (isLocalDebug) {
-            console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId })
+            console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId, chunkIndex })
           }
 
           const response = await fetch('/api/tts', {
@@ -2932,6 +2993,7 @@ ${fontFace ? fontFace : ''}
               status: response.status,
               usedProvider: response.headers.get('X-TTS-Provider'),
               usedVoiceId: response.headers.get('X-TTS-VoiceId'),
+              chunkIndex
             })
           }
 
@@ -2968,29 +3030,112 @@ ${fontFace ? fontFace : ''}
         }
       }
 
-      // 각 청크를 순차적으로 재생 (다음 청크는 미리 로드)
-      let preloadedChunk: { url: string; audio: HTMLAudioElement } | null = null
+      // 타입캐스트일 때: 첫 번째 청크 생성과 동시에 나머지 청크들도 병렬로 미리 생성 시작
+      let preloadedChunks: Map<number, { url: string; audio: HTMLAudioElement }> = new Map()
+      
+      if (ttsProvider === 'typecast' && chunks.length > 1) {
+        // 첫 번째 청크는 즉시 생성, 나머지는 병렬로 미리 생성
+        const preloadPromises = []
+        for (let i = 1; i < Math.min(chunks.length, 4); i++) { // 최대 3개까지 병렬 생성 (API 제한 고려)
+          preloadPromises.push(
+            preloadNextChunk(i).then(result => {
+              if (result) {
+                preloadedChunks.set(i, result)
+              }
+              return result
+            })
+          )
+        }
+        // 병렬 생성은 백그라운드에서 진행 (await 하지 않음)
+        Promise.all(preloadPromises).catch(() => {})
+      }
 
+      // 각 청크를 순차적으로 재생
+      let preloadedChunk: { url: string; audio: HTMLAudioElement } | null = null
+      
       for (let i = 0; i < chunks.length; i++) {
         // 중지 플래그 확인 (ref로 실시간 확인)
         if (shouldStopRef.current) {
           if (preloadedChunk) {
             URL.revokeObjectURL(preloadedChunk.url)
           }
+          // 미리 로드된 모든 청크 정리
+          preloadedChunks.forEach((chunk) => {
+            URL.revokeObjectURL(chunk.url)
+          })
+          preloadedChunks.clear()
           break
         }
 
         const chunk = chunks[i]
 
-        // 다음 청크를 미리 로드 (현재 청크 재생 중에)
-        const nextChunkPromise = i < chunks.length - 1 ? preloadNextChunk(i + 1) : Promise.resolve(null)
-
         // 현재 청크 재생
         let currentAudio: HTMLAudioElement
         let currentUrl: string
 
-        if (preloadedChunk) {
-          // 미리 로드된 청크 사용
+        // 타입캐스트일 때: 미리 로드된 청크가 있으면 사용
+        if (ttsProvider === 'typecast' && preloadedChunks.has(i)) {
+          const preloaded = preloadedChunks.get(i)!
+          currentAudio = preloaded.audio
+          currentUrl = preloaded.url
+          preloadedChunks.delete(i)
+        } else if (ttsProvider === 'typecast' && i > 0) {
+          // 타입캐스트이고 첫 청크가 아닌 경우: 미리 로드된 청크가 준비될 때까지 대기
+          let foundPreloaded = false
+          let waitCount = 0
+          const maxWait = 100 // 최대 10초 대기 (100 * 100ms)
+          
+          while (!preloadedChunks.has(i) && waitCount < maxWait && !shouldStopRef.current) {
+            await new Promise(resolve => setTimeout(resolve, 100))
+            waitCount++
+          }
+          
+          if (preloadedChunks.has(i)) {
+            const preloaded = preloadedChunks.get(i)!
+            currentAudio = preloaded.audio
+            currentUrl = preloaded.url
+            preloadedChunks.delete(i)
+            foundPreloaded = true
+          }
+          
+          if (!foundPreloaded) {
+            // 미리 로드 실패 시 즉시 요청
+            const isLocalDebug =
+              typeof window !== 'undefined' &&
+              (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+            const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
+            if (isLocalDebug) {
+              console.log('[tts] request (fallback)', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId, chunkIndex: i })
+            }
+
+            const response = await fetch('/api/tts', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
+            })
+            if (isLocalDebug) {
+              console.log('[tts] response (fallback)', {
+                ok: response.ok,
+                status: response.status,
+                usedProvider: response.headers.get('X-TTS-Provider'),
+                usedVoiceId: response.headers.get('X-TTS-VoiceId'),
+                chunkIndex: i
+              })
+            }
+
+            if (!response.ok) {
+              const error = await response.json()
+              throw new Error(error.error || `청크 ${i + 1} 음성 변환에 실패했습니다.`)
+            }
+
+            const audioBlob = await response.blob()
+            currentUrl = URL.createObjectURL(audioBlob)
+            currentAudio = new Audio(currentUrl)
+          }
+        } else if (preloadedChunk) {
+          // 기존 방식: 미리 로드된 청크 사용
           currentAudio = preloadedChunk.audio
           currentUrl = preloadedChunk.url
           preloadedChunk = null
@@ -3001,7 +3146,7 @@ ${fontFace ? fontFace : ''}
             (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
           const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
           if (isLocalDebug) {
-            console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId })
+            console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId, chunkIndex: i })
           }
 
           const response = await fetch('/api/tts', {
@@ -3017,6 +3162,7 @@ ${fontFace ? fontFace : ''}
               status: response.status,
               usedProvider: response.headers.get('X-TTS-Provider'),
               usedVoiceId: response.headers.get('X-TTS-VoiceId'),
+              chunkIndex: i
             })
           }
 
@@ -3089,15 +3235,28 @@ ${fontFace ? fontFace : ''}
           })
         })
 
-        // 다음 청크 미리 로드 완료 대기 및 저장
+        // 다음 청크 미리 로드
         if (i < chunks.length - 1) {
           try {
-            preloadedChunk = await nextChunkPromise
-            if (preloadedChunk) {
+            // 타입캐스트일 때: 이미 미리 로드된 청크가 있으면 스킵, 없으면 추가로 미리 로드
+            if (ttsProvider === 'typecast') {
+              if (!preloadedChunks.has(i + 1)) {
+                // 아직 미리 로드되지 않은 청크는 백그라운드에서 미리 로드
+                preloadNextChunk(i + 1).then(result => {
+                  if (result) {
+                    preloadedChunks.set(i + 1, result)
+                  }
+                }).catch(() => {})
+              }
             } else {
+              // 네이버 TTS: 기존 방식 유지 (다음 청크만 미리 로드)
+              const nextChunkPromise = preloadNextChunk(i + 1)
+              preloadedChunk = await nextChunkPromise
             }
           } catch (err) {
-            preloadedChunk = null
+            if (ttsProvider !== 'typecast') {
+              preloadedChunk = null
+            }
           }
         }
 
@@ -3106,6 +3265,11 @@ ${fontFace ? fontFace : ''}
           if (preloadedChunk) {
             URL.revokeObjectURL(preloadedChunk.url)
           }
+          // 미리 로드된 모든 청크 정리
+          preloadedChunks.forEach((chunk) => {
+            URL.revokeObjectURL(chunk.url)
+          })
+          preloadedChunks.clear()
           break
         }
       }
@@ -3134,8 +3298,18 @@ ${fontFace ? fontFace : ''}
     try {
       setPlayingResultId(savedResult.id)
       
-      const textContent = extractHumanReadableText(savedResult.html)
+      let textContent = extractHumanReadableText(savedResult.html)
       
+      // 내담자 이름 추가
+      const userName = savedResult.userName || savedResult.content?.user_info?.name || ''
+      if (userName && textContent) {
+        // 이름을 맨 앞에 추가
+        textContent = `${userName}님의 점사 결과입니다.\n\n${textContent}`
+      }
+      
+      // extractHumanReadableText에서 이미 한자 제거가 적용되었으므로 여기서는 제거하지 않음
+      // (대제목/소제목은 한자 유지, 본문만 한자 제거)
+
       if (!textContent.trim()) {
         alert('읽을 내용이 없습니다.')
         setPlayingResultId(null)
@@ -4040,6 +4214,8 @@ ${fontFace ? fontFace : ''}
                   if (!text) return '';
                   return String(text)
                     .replace(/<\\s*\\/?\\s*[a-zA-Z][^>]*>/g, '')
+                    // 모든 한자 제거 (밑줄 유무 관계없이)
+                    .replace(/[一-龯]/g, '')
                     .replace(/\\s+/g, ' ')
                     .replace(/\\n\\s+\\n/g, '\\n\\n')
                     .trim();
@@ -4059,10 +4235,18 @@ ${fontFace ? fontFace : ''}
                     if (nodes.length > 0) {
                       const lines = nodes
                         .map(function(el) {
-                          return (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+                          const text = (el.innerText || el.textContent || '');
+                          const className = String(el.className || '');
+                          // 대제목(.menu-title)과 소제목(.subtitle-title, .detail-menu-title)은 한자 제거하지 않음
+                          if (className.indexOf('menu-title') !== -1 || className.indexOf('subtitle-title') !== -1 || className.indexOf('detail-menu-title') !== -1) {
+                            // HTML 태그만 제거하고 한자는 유지
+                            return text.replace(/<\\s*\\/?\\s*[a-zA-Z][^>]*>/g, '').replace(/\\s+/g, ' ').trim();
+                          }
+                          // 본문 내용은 한자 제거 적용
+                          return sanitizeHumanReadableText(text);
                         })
                         .filter(function(s) { return !!s; });
-                      return sanitizeHumanReadableText(lines.join('\\n\\n'));
+                      return lines.join('\\n\\n');
                     }
                     return sanitizeHumanReadableText(clone.innerText || clone.textContent || '');
                   }
@@ -4137,7 +4321,31 @@ ${fontFace ? fontFace : ''}
                     
                     const contentHtml = contentHtmlEl.innerHTML;
                     
-                    const textContent = extractHumanReadableText(contentHtml);
+                    let textContent = extractHumanReadableText(contentHtml);
+                    
+                    // 내담자 이름 추출 (HTML에서 찾기)
+                    let userName = '';
+                    try {
+                      // HTML에서 이름 찾기 (예: "김철수님" 또는 "김철수" 패턴)
+                      const nameMatch = contentHtml.match(/([가-힣]+)(?:님|님의)/);
+                      if (nameMatch && nameMatch[1]) {
+                        userName = nameMatch[1];
+                      } else {
+                        // 다른 패턴 시도 (예: "본인 정보" 섹션에서)
+                        const nameEl = contentHtmlEl.querySelector('[data-user-name]');
+                        if (nameEl) {
+                          userName = nameEl.getAttribute('data-user-name') || '';
+                        }
+                      }
+                    } catch (e) {}
+                    
+                    if (userName && textContent) {
+                      // 이름을 맨 앞에 추가
+                      textContent = userName + '님의 점사 결과입니다.\\n\\n' + textContent;
+                    }
+                    
+                    // extractHumanReadableText에서 이미 한자 제거가 적용되었으므로 여기서는 제거하지 않음
+                    // (대제목/소제목은 한자 유지, 본문만 한자 제거)
 
                     if (!textContent.trim()) {
                       alert('읽을 내용이 없습니다.');
