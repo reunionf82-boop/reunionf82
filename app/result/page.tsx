@@ -231,6 +231,8 @@ function ResultContent() {
     const paid = searchParams.get('paid')
     if (paid === 'true') {
       setShowRealtimeLoading(false)
+      // 결제 성공 URL로 접근한 경우는 form 페이지에서 이미 결제 상태 확인을 완료했으므로
+      // 여기서는 추가 처리 없이 기존 로직대로 진행
     }
   }, [searchParams, isRealtime])
   

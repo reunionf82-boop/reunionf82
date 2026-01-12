@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { getContents, deleteContent } from '@/lib/supabase-admin'
 import AdminReviewEventModal from '@/components/AdminReviewEventModal'
+import PaymentStatsDashboard from '@/components/PaymentStatsDashboard'
 
 export default function AdminPage() {
   const router = useRouter()
@@ -38,6 +39,9 @@ export default function AdminPage() {
   const [showInquiryModal, setShowInquiryModal] = useState(false)
   const [inquiries, setInquiries] = useState<any[]>([])
   const [loadingInquiries, setLoadingInquiries] = useState(false)
+
+  // 결제 통계 대시보드 상태
+  const [showPaymentStats, setShowPaymentStats] = useState(false)
 
   // 홈html 조회 (리뷰이벤트와 동일한 방식 - POST로 캐시 우회)
   const loadHomeHtml = async () => {
@@ -488,8 +492,15 @@ export default function AdminPage() {
           
           {/* 모델/화자/점사모드/모델 선택 토글 */}
           <div className="flex flex-col items-end gap-2 ml-auto">
-            {/* 문의 관리 버튼 */}
-            <div className="mb-2">
+            {/* 결제 통계 및 문의 관리 버튼 (한 줄) */}
+            <div className="flex gap-2 mb-2">
+              <button
+                onClick={() => setShowPaymentStats(true)}
+                className="bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200 shadow-lg"
+                title="결제 통계 대시보드"
+              >
+                💰 결제 통계
+              </button>
               <button
                 onClick={handleOpenInquiryModal}
                 className="bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200"
@@ -1176,6 +1187,12 @@ export default function AdminPage() {
           contentName={selectedEventContent.content_name}
         />
       )}
+
+      {/* 결제 통계 대시보드 */}
+      <PaymentStatsDashboard
+        isOpen={showPaymentStats}
+        onClose={() => setShowPaymentStats(false)}
+      />
 
       {/* 문의 관리 모달 */}
       {showInquiryModal && (

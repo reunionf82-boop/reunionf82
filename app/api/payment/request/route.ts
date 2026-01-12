@@ -1,81 +1,68 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requestPayment, PaymentRequestData } from '@/lib/portal-integration';
+import { NextRequest, NextResponse } from 'next/server'
+import { generateOrderId } from '@/lib/payment-utils'
 
 /**
- * 포털에 결제 요청을 보내는 엔드포인트
- * 
+ * 결제 요청 API
  * POST /api/payment/request
  * 
  * 요청 본문:
- * {
- *   "userId": "portal_user_12345",
- *   "contentId": 1,
- *   "contentName": "재회 성공률 점사",
- *   "price": 9900,
- *   "userInfo": { ... },
- *   "partnerInfo": { ... },  // 궁합형인 경우만
- *   "callbackUrl": "https://subdomain.example.com/api/payment/callback",
- *   "returnUrl": "https://subdomain.example.com/form?payment=success",
- *   "cancelUrl": "https://subdomain.example.com/form?payment=cancel"
- * }
+ * - paymentMethod: 'card' | 'mobile'
+ * - contentId: number
+ * - paymentCode: string (4자리)
+ * - name: string
+ * - pay: number
+ * - userName: string
+ * - phoneNumber: string
  */
 export async function POST(request: NextRequest) {
   try {
-    const body: PaymentRequestData = await request.json();
+    const body = await request.json()
+    const { paymentMethod, contentId, paymentCode, name, pay, userName, phoneNumber } = body
 
-    // 필수 필드 검증
-    if (!body.userId || !body.contentId || !body.userInfo) {
+    // 필수 파라미터 검증
+    if (!paymentMethod || !contentId || !paymentCode || !name || !pay) {
       return NextResponse.json(
-        { error: '필수 필드가 누락되었습니다.' },
+        { success: false, error: '필수 파라미터가 누락되었습니다.' },
         { status: 400 }
-      );
+      )
     }
 
-    // 콜백 URL 설정 (환경 변수 또는 기본값)
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://subdomain.example.com';
-    body.callbackUrl = body.callbackUrl || `${baseUrl}/api/payment/callback`;
-    body.returnUrl = body.returnUrl || `${baseUrl}/form?payment=success`;
-    body.cancelUrl = body.cancelUrl || `${baseUrl}/form?payment=cancel`;
+    // 주문번호 생성
+    const oid = generateOrderId()
 
-    // 포털에 결제 요청
-    const result = await requestPayment(body);
+    // 결제 URL 결정
+    const paymentUrl = paymentMethod === 'card' 
+      ? 'https://www.fortune82.com/api/payment/reqcard.html'
+      : 'https://www.fortune82.com/api/payment/reqhp.html'
 
-    if (!result.success) {
-      return NextResponse.json(
-        { error: result.error || '결제 요청 실패' },
-        { status: 500 }
-      );
+    // 성공/실패 URL 생성 (현재 도메인 기준)
+    const baseUrl = request.headers.get('origin') || request.nextUrl.origin
+    const successUrl = `${baseUrl}/result?paid=true&oid=${encodeURIComponent(oid)}`
+    const failUrl = `${baseUrl}/form?code=T001&msg=close`
+
+    // 결제 요청 데이터 준비
+    const formData = {
+      code: paymentCode,
+      name: name.substring(0, 50), // 최대 50byte
+      pay: pay.toString(),
+      oid
     }
 
     return NextResponse.json({
       success: true,
-      paymentUrl: result.paymentUrl,
-    });
+      data: {
+        oid,
+        paymentUrl,
+        formData,
+        successUrl,
+        failUrl
+      }
+    })
   } catch (error: any) {
+    console.error('[결제 요청] 오류:', error)
     return NextResponse.json(
-      { error: '결제 요청 중 오류가 발생했습니다.' },
+      { success: false, error: error.message || '결제 요청 처리 중 오류가 발생했습니다.' },
       { status: 500 }
-    );
+    )
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

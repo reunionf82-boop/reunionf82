@@ -28,6 +28,26 @@ function FormContent() {
   // sessionStorage와 URL 파라미터에서 데이터 가져오기 (하위 호환성 유지)
   useEffect(() => {
     const loadData = async () => {
+      // 결제 실패 URL 처리 (code, msg 파라미터)
+      const code = searchParams.get('code')
+      const msg = searchParams.get('msg')
+      if (code || msg) {
+        // code와 msg는 콘솔에만 표시
+        console.log('[결제 실패]', { code, msg })
+        // 처리 중 상태 해제
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
+        // 자체 팝업으로 메시지 표시
+        showAlertMessage('결제 시스템의 일시적 문제가 있었습니다.\n결제를 다시 시도해 주세요!')
+        // URL에서 파라미터 제거
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href)
+          url.searchParams.delete('code')
+          url.searchParams.delete('msg')
+          window.history.replaceState({}, '', url.toString())
+        }
+      }
+
       // 1. sessionStorage 우선 확인 (새로운 방식)
       if (typeof window !== 'undefined') {
         const storedTitle = sessionStorage.getItem('form_title')
@@ -2053,12 +2073,264 @@ function FormContent() {
       return
     }
 
+    // 컨텐츠 정보 확인
+    if (!content || !content.id) {
+      showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
+      return
+    }
+
+    // payment_code 확인
+    if (!content.payment_code) {
+      showAlertMessage('결제 코드가 설정되지 않은 컨텐츠입니다. 관리자에게 문의해주세요.')
+      return
+    }
+
     setSubmitting(true)
     setPaymentProcessingMethod(paymentMethod)
 
-    // 시작 시간 기록
-    const startTime = Date.now()
+    try {
+      // 주문번호 생성
+      const { generateOrderId } = await import('@/lib/payment-utils')
+      const oid = generateOrderId()
 
+      // 주문번호를 sessionStorage에 저장
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('payment_oid', oid)
+        sessionStorage.setItem('payment_method', paymentMethod)
+        sessionStorage.setItem('payment_content_id', String(content.id))
+        sessionStorage.setItem('payment_user_name', name)
+        sessionStorage.setItem('payment_phone', `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`)
+      }
+
+      // 결제 요청
+      const paymentRequestResponse = await fetch('/api/payment/request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          paymentMethod,
+          contentId: content.id,
+          paymentCode: content.payment_code,
+          name: content.content_name || '',
+          pay: parseInt(content.price || '0'),
+          userName: name,
+          phoneNumber: `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+        })
+      })
+
+      if (!paymentRequestResponse.ok) {
+        const errorData = await paymentRequestResponse.json().catch(() => ({}))
+        throw new Error(errorData.error || '결제 요청에 실패했습니다.')
+      }
+
+      const paymentRequestData = await paymentRequestResponse.json()
+      if (!paymentRequestData.success) {
+        throw new Error(paymentRequestData.error || '결제 요청에 실패했습니다.')
+      }
+
+      const { paymentUrl, formData, successUrl, failUrl } = paymentRequestData.data
+
+      // 결제 URL로 새 창 열기 (form submit)
+      const form = document.createElement('form')
+      form.method = 'POST'
+      form.action = paymentUrl
+      form.target = '_blank'
+      form.style.display = 'none'
+
+      // formData를 input으로 추가
+      Object.entries(formData).forEach(([key, value]) => {
+        const input = document.createElement('input')
+        input.type = 'hidden'
+        input.name = key
+        input.value = String(value)
+        form.appendChild(input)
+      })
+
+      document.body.appendChild(form)
+      
+      // 팝업 차단 시 강제로 열기
+      const paymentWindow = window.open('', '_blank', 'width=800,height=600')
+      if (!paymentWindow) {
+        // 팝업이 차단된 경우
+        alert('팝업이 차단되었습니다. 브라우저 설정에서 팝업을 허용해주세요.')
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
+        return
+      }
+
+      // form submit (결제 창이 열린 후)
+      // form을 paymentWindow에 submit하기 위해 form의 target을 설정
+      form.target = '_blank'
+      form.submit()
+      
+      // form이 submit된 후 DOM에서 제거
+      setTimeout(() => {
+        if (document.body.contains(form)) {
+          document.body.removeChild(form)
+        }
+      }, 100)
+
+      // 새 창이 닫힌 후 결제 상태 확인 (폴링)
+      const checkPaymentStatus = async (): Promise<boolean> => {
+        const maxAttempts = 10 // 최대 10초
+        const interval = 1000 // 1초 간격
+
+        // 새 창이 닫힐 때까지 대기
+        const waitForWindowClose = (): Promise<void> => {
+          return new Promise((resolve) => {
+            const checkInterval = setInterval(() => {
+              if (paymentWindow.closed) {
+                clearInterval(checkInterval)
+                resolve()
+              }
+            }, 100) // 100ms마다 확인
+
+            // 최대 60초 대기 (결제 창이 오래 열려있을 수 있음)
+            setTimeout(() => {
+              clearInterval(checkInterval)
+              resolve()
+            }, 60000)
+          })
+        }
+
+        // 새 창이 닫힐 때까지 대기
+        await waitForWindowClose()
+
+        // 결제 창이 닫힌 시점 기록
+        const windowCloseTime = Date.now()
+
+        // 결제 상태 확인 (폴링) - 결제 창이 닫힌 직후부터 10초 동안 확인
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            const checkResponse = await fetch('/api/payment/check', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ oid })
+            })
+
+            if (!checkResponse.ok) {
+              // 다음 확인까지 대기 (정확히 10초가 되도록)
+              const elapsed = Date.now() - windowCloseTime
+              const waitTime = interval - (elapsed % interval)
+              if (attempt < maxAttempts - 1 && waitTime > 0) {
+                await new Promise(resolve => setTimeout(resolve, waitTime))
+                continue // 다음 시도
+              }
+              // 10초가 지났으면 타임아웃
+              if (elapsed >= maxAttempts * interval) {
+                return false
+              }
+              continue
+            }
+
+            const checkData = await checkResponse.json()
+            if (checkData.success && checkData.data.isPaid) {
+              // 결제 완료 - 결제 정보 저장
+              try {
+                const saveResponse = await fetch('/api/payment/save', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    oid,
+                    contentId: content.id,
+                    paymentCode: content.payment_code,
+                    name: content.content_name || '',
+                    pay: parseInt(content.price || '0'),
+                    paymentType: paymentMethod,
+                    userName: name,
+                    phoneNumber: `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+                  })
+                })
+
+                if (saveResponse.ok) {
+                  console.log('[결제] 결제 정보 저장 성공')
+                } else {
+                  console.error('[결제] 결제 정보 저장 실패')
+                }
+              } catch (error) {
+                console.error('[결제] 결제 정보 저장 오류:', error)
+              }
+
+              return true // 결제 완료
+            }
+
+            // 아직 결제 완료되지 않음 - 다음 확인까지 대기 (정확히 10초가 되도록)
+            const elapsed = Date.now() - windowCloseTime
+            if (elapsed >= maxAttempts * interval) {
+              // 10초가 지났으면 타임아웃
+              return false
+            }
+            const waitTime = interval - (elapsed % interval)
+            if (attempt < maxAttempts - 1 && waitTime > 0) {
+              await new Promise(resolve => setTimeout(resolve, waitTime))
+            }
+          } catch (error) {
+            console.error('[결제 상태 확인] 오류:', error)
+            // 다음 확인까지 대기 (정확히 10초가 되도록)
+            const elapsed = Date.now() - windowCloseTime
+            if (elapsed >= maxAttempts * interval) {
+              // 10초가 지났으면 타임아웃
+              return false
+            }
+            const waitTime = interval - (elapsed % interval)
+            if (attempt < maxAttempts - 1 && waitTime > 0) {
+              await new Promise(resolve => setTimeout(resolve, waitTime))
+            }
+          }
+        }
+
+        return false // 타임아웃 (10초 후)
+      }
+
+      // 결제 상태 확인 시작
+      const isPaid = await checkPaymentStatus()
+
+      if (!isPaid) {
+        // 타임아웃 또는 결제 실패
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
+        // 자체 팝업으로 메시지 표시
+        showAlertMessage('결제 시스템의 일시적 문제가 있었습니다.\n결제를 다시 시도해 주세요!')
+        // sessionStorage 정리
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('payment_oid')
+          sessionStorage.removeItem('payment_method')
+          sessionStorage.removeItem('payment_content_id')
+          sessionStorage.removeItem('payment_user_name')
+          sessionStorage.removeItem('payment_phone')
+        }
+        return
+      }
+
+      // 결제 완료 - 점사 시작
+      const startTime = Date.now()
+      
+      // sessionStorage 정리 (점사 시작 전)
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('payment_oid')
+        sessionStorage.removeItem('payment_method')
+        sessionStorage.removeItem('payment_content_id')
+        sessionStorage.removeItem('payment_user_name')
+        sessionStorage.removeItem('payment_phone')
+      }
+      
+      await startFortuneTelling(startTime)
+
+    } catch (error: any) {
+      console.error('[결제 처리] 오류:', error)
+      setSubmitting(false)
+      setPaymentProcessingMethod(null)
+      showAlertMessage(error?.message || '결제 처리 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 점사 시작 함수 (결제 완료 후 호출)
+  const startFortuneTelling = async (startTime: number) => {
     try {
       // 상품 메뉴 소제목 파싱
       const menuSubtitles = content.menu_subtitle ? content.menu_subtitle.split('\n').filter((s: string) => s.trim()) : []
@@ -3422,6 +3694,54 @@ function FormContent() {
                   ) : (
                     '휴대폰 결제'
                   )}
+                </button>
+              </div>
+
+              {/* 임시 결과 화면 이동 버튼 (개발용) */}
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    // 휴대폰 번호 검증
+                    const fullPhoneNumber = `${phoneNumber1}${phoneNumber2}${phoneNumber3}`
+                    if (fullPhoneNumber.length !== 11) {
+                      showAlertMessage('휴대폰 번호를 정확히 입력해주세요.')
+                      return
+                    }
+
+                    // 비밀번호 검증
+                    if (!password || password.length < 4) {
+                      showAlertMessage('비밀번호를 4자리 이상 입력해주세요.')
+                      return
+                    }
+
+                    // 인증 정보 저장
+                    try {
+                      const response = await fetch('/api/user-credentials/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          phone_number: fullPhoneNumber,
+                          password: password,
+                          content_id: content?.id || null
+                        })
+                      })
+                      if (response.ok) {
+                        console.log('[임시 이동] 인증 정보 저장 성공')
+                      } else {
+                        console.error('[임시 이동] 인증 정보 저장 실패')
+                      }
+                    } catch (e) {
+                      console.error('[임시 이동] 인증 정보 저장 오류:', e)
+                    }
+
+                    const startTime = Date.now()
+                    await startFortuneTelling(startTime)
+                  }}
+                  disabled={submitting}
+                  className="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  🧪 임시 결과 화면으로 이동 (개발용)
                 </button>
               </div>
             </div>

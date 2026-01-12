@@ -2080,19 +2080,39 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           </div>
         </div>
 
-        {/* 가격 섹션 (컨텐츠명 밑으로 이동) */}
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            가격
-          </label>
-          <input
-            type="text"
-            name="price"
-            value={formData.price}
-            onChange={handleChange}
-            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-            placeholder="예: 22,000원"
-          />
+        {/* 가격 및 결제 코드 섹션 (한 줄로 표시) */}
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              가격
+            </label>
+            <input
+              type="text"
+              name="price"
+              value={formData.price}
+              onChange={handleChange}
+              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              placeholder="예: 22,000원"
+            />
+          </div>
+          {initialData?.payment_code && (
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                결제 코드 (Payment Code)
+              </label>
+              <input
+                type="text"
+                value={initialData.payment_code}
+                readOnly
+                disabled
+                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-gray-400 cursor-not-allowed"
+                style={{ opacity: 0.7 }}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                결제 코드는 자동으로 부여되며 변경할 수 없습니다.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* 요약 섹션 */}

@@ -21,7 +21,7 @@ export default function AlertPopup({ isOpen, message, onClose }: AlertPopupProps
         {/* 내용 */}
         <div className="p-6">
           <div className="mb-4">
-            <p className="text-base text-gray-900 whitespace-pre-line leading-relaxed">
+            <p className="text-base text-gray-900 whitespace-pre-line leading-relaxed text-center">
               {message}
             </p>
           </div>

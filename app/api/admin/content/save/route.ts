@@ -33,6 +33,12 @@ export async function POST(req: NextRequest) {
 
     if (id) {
       // 업데이트
+      // payment_code는 변경 불가 (이미 설정된 경우 유지)
+      if (dataToSave.payment_code === undefined || dataToSave.payment_code === null) {
+        // payment_code가 전달되지 않은 경우 기존 값 유지
+        delete dataToSave.payment_code
+      }
+      
       const { data, error } = await supabase
         .from('contents')
         .update(dataToSave)
@@ -82,6 +88,27 @@ export async function POST(req: NextRequest) {
     } else {
       // 새로 생성 - id 필드 제거 (자동 생성되도록)
       const { id: _, ...dataWithoutId } = dataToSave
+      
+      // payment_code 자동 부여 (없는 경우에만)
+      if (!dataWithoutId.payment_code || dataWithoutId.payment_code === '') {
+        // 기존 컨텐츠 중 가장 큰 payment_code 찾기
+        const { data: existingCodes } = await supabase
+          .from('contents')
+          .select('payment_code')
+          .not('payment_code', 'is', null)
+          .order('payment_code', { ascending: false })
+          .limit(1)
+        
+        let nextCode = 1000 // 기본 시작 코드
+        if (existingCodes && existingCodes.length > 0 && existingCodes[0].payment_code) {
+          const maxCode = parseInt(existingCodes[0].payment_code) || 999
+          nextCode = maxCode + 1
+        }
+        
+        // 4자리로 포맷팅 (예: 1000, 1001, ...)
+        dataWithoutId.payment_code = String(nextCode).padStart(4, '0')
+      }
+      
       const { data, error } = await supabase
         .from('contents')
         .insert({
