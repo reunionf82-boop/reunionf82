@@ -2843,7 +2843,7 @@ ${fontFace ? fontFace : ''}
       setIsPlaying(true)
       shouldStopRef.current = false // ref 초기화
       setShouldStop(false) // state 초기화
-      setTtsStatus('음성 생성 중... (약 30초 소요)') // 초기 상태 메시지
+      setTtsStatus('음성 생성중...') // 초기 상태 메시지
       
       // 1) parsedMenus 기반(사람이 보는 구조) 우선, 2) fallback DOM/HTML 파싱
       let textContent = extractTextFromParsedMenus()
