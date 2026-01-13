@@ -2307,7 +2307,7 @@ function FormContent() {
         isProcessing = false
         setSubmitting(false)
         setPaymentProcessingMethod(null)
-        setShowRealtimePopup(false)
+        setShowPaymentPopup(false)
         showAlertMessage('결제 시스템에 일시적인 문제가 발생했습니다.\n잠시 후 다시 시도해 주세요.')
       }
     }
