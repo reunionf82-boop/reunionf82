@@ -2022,20 +2022,39 @@ function FormContent() {
       }
     }
     
-    // 결제 성공 처리 함수 (postMessage 또는 sessionStorage에서 호출)
+    // 결제 성공 처리 함수 (opener에서 직접 호출)
+    // 통화 내용: "함수에서 OID를 받아서 거기서 AGX로 쿼리해서 상태가 Y면 결제로 바로 넘기면 되거든요"
     const processPaymentSuccess = async (oid: string) => {
       console.log('[결제 성공] processPaymentSuccess 호출됨:', { oid, isProcessing, submitting })
       
       // 중복 처리 방지
-      // ⚠️ submitting=true 상태에서 성공 신호를 받는 것이 정상 플로우라서
-      // submitting을 조건으로 막아버리면 성공 처리가 영원히 실행되지 않음
       if (isProcessing) {
         console.log('[결제 성공] 이미 처리 중이므로 무시')
         return
       }
       
       isProcessing = true
-      console.log('[결제 성공] 결제 성공 처리 시작:', oid)
+      console.log('[결제 성공] 결제 성공 처리 시작, 서버 상태 확인:', oid)
+      
+      // OID로 서버 상태 확인 (한 번만 확인)
+      try {
+        const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
+        const statusData = await statusRes.json()
+        
+        if (!statusData.success || statusData.status !== 'success') {
+          console.error('[결제 성공] 서버 상태 확인 실패:', statusData)
+          isProcessing = false
+          showAlertMessage('결제 상태를 확인할 수 없습니다.')
+          return
+        }
+        
+        console.log('[결제 성공] 서버 상태 확인 성공, 결제 처리 진행')
+      } catch (error) {
+        console.error('[결제 성공] 서버 상태 확인 오류:', error)
+        isProcessing = false
+        showAlertMessage('결제 상태를 확인할 수 없습니다.')
+        return
+      }
       
       // sessionStorage에서 결제 정보 가져오기
       const paymentContentId = sessionStorage.getItem('payment_content_id')
@@ -2139,61 +2158,52 @@ function FormContent() {
       }
     }
     
-    const handleMessage = async (event: MessageEvent) => {
-      console.log('[결제 성공] 메시지 수신 시도:', event.data, event.origin)
-      
-      // 보안: 같은 origin에서 온 메시지만 처리
-      if (event.origin !== window.location.origin) {
-        console.log('[결제 성공] origin 불일치:', event.origin, 'vs', window.location.origin)
-        return
-      }
-      
-      // PAYMENT_SUCCESS 타입 메시지만 처리 (React DevTools 메시지 필터링)
-      if (event.data?.type !== 'PAYMENT_SUCCESS' || !event.data?.oid) {
-        console.log('[결제 성공] 메시지 타입 불일치 또는 oid 없음:', event.data)
-        return
-      }
-      
-      console.log('[결제 성공] 메시지 수신 성공:', event.data.oid)
-      await processPaymentSuccess(event.data.oid)
-    }
-    
-    // 전역 함수로 결제 성공 처리기 등록 (opener에서 직접 호출용)
-    // 통화 내용 기반: "본창에 함수 하나 만들어 놓고 오픈창에서 호출하면 된다"
+    // 전역 함수로 결제 성공 처리기 등록 (opener에서 직접 호출용 - 주 방식)
+    // 통화 내용: "본창에 함수 하나 만들어 놓고 오픈창에서 호출하면 된다"
+    // "오픈창에서 이 오픈어의 함수를 호출하면 돼요"
     if (typeof window !== 'undefined') {
       (window as any).handlePaymentSuccess = async (oid: string) => {
-        console.log('[결제 성공] window.handlePaymentSuccess 호출됨:', oid)
+        console.log('[결제 성공] window.handlePaymentSuccess 호출됨 (opener 직접 호출):', oid)
         await processPaymentSuccess(oid)
       }
     }
 
-    // storage 이벤트로 즉시 감지 (결제 성공 새창 → 기존 폼창)
+    // fallback: postMessage 리스너 (opener 호출 실패 시 대비)
+    const handleMessage = async (event: MessageEvent) => {
+      // 보안: 같은 origin에서 온 메시지만 처리
+      if (event.origin !== window.location.origin) {
+        return
+      }
+      
+      // PAYMENT_SUCCESS 타입 메시지만 처리
+      if (event.data?.type === 'PAYMENT_SUCCESS' && event.data?.oid) {
+        console.log('[결제 성공] postMessage 수신 (fallback):', event.data.oid)
+        await processPaymentSuccess(event.data.oid)
+      }
+    }
+    
+    // fallback: storage 이벤트 리스너 (opener 호출 실패 시 대비)
     const handleStorage = async (e: StorageEvent) => {
       if (!e.key) return
       if (e.key === 'payment_success_signal' || e.key === 'payment_success_oid') {
+        console.log('[결제 성공] storage 이벤트 수신 (fallback)')
         await checkLocalStorage()
       }
     }
 
-    // 초기 localStorage 확인
-    checkLocalStorage()
-    
-    // 주기적으로 localStorage 확인 (메시지가 놓쳤을 경우 대비)
-    const intervalId = setInterval(() => {
-      checkLocalStorage()
-    }, 500) // 0.5초마다 확인
-    
-    window.addEventListener('message', handleMessage)
-    window.addEventListener('storage', handleStorage)
-
-    // BroadcastChannel 수신 (가장 안정적인 창 간 메시지 전달)
+    // fallback: BroadcastChannel 리스너 (opener 호출 실패 시 대비)
     let bc: BroadcastChannel | null = null
     const handleBroadcast = async (event: MessageEvent) => {
       const data: any = (event as any).data
       if (data?.type === 'PAYMENT_SUCCESS' && data?.oid) {
+        console.log('[결제 성공] BroadcastChannel 수신 (fallback):', data.oid)
         await processPaymentSuccess(data.oid)
       }
     }
+    
+    // fallback 리스너 등록
+    window.addEventListener('message', handleMessage)
+    window.addEventListener('storage', handleStorage)
     try {
       bc = new BroadcastChannel('payment_success')
       bc.addEventListener('message', handleBroadcast)
@@ -2211,7 +2221,6 @@ function FormContent() {
         bc?.removeEventListener('message', handleBroadcast)
         bc?.close()
       } catch {}
-      clearInterval(intervalId)
     }
   }, [content, name, phoneNumber1, phoneNumber2, phoneNumber3, submitting])
 
@@ -2501,48 +2510,37 @@ function FormContent() {
         }
       }, 100)
 
-      // 결제 창이 닫혔는지 확인 및 서버 상태 폴링 (가장 확실한 방법)
+      // 결제 창이 닫혔는지 확인 (opener 호출 실패 시 대비용)
+      // 통화 내용: "오픈창에서 오픈어의 함수를 호출하면 돼요" - 주 방식은 opener 호출
       const checkWindowClosed = () => {
-        const checkInterval = setInterval(async () => {
+        const checkInterval = setInterval(() => {
           try {
-            // 1. 서버 상태 폴링 (DB가 success가 되면 무조건 이동)
-            try {
-              const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
-              const statusData = await statusRes.json()
-              if (statusData.success && statusData.status === 'success') {
-                clearInterval(checkInterval)
-                console.log('[결제 처리] 서버 상태 success 확인됨')
-                if (typeof window !== 'undefined' && (window as any).handlePaymentSuccess) {
-                  await (window as any).handlePaymentSuccess(oid)
-                }
-                return
-              }
-            } catch (e) {
-              // 폴링 에러 무시
-            }
-
-            // 2. 창 닫힘 체크
             if (paymentWindow.closed) {
-              // ... 기존 로직 ...
-
               clearInterval(checkInterval)
-              // 결제 창이 닫혔으면 결제정보 팝업도 닫기 (에러 페이지에서 창 닫기 시)
-              // 단, 결제 성공으로 인한 닫힘이 아닌 경우에만 (sessionStorage 확인)
-              // 성공 신호는 localStorage로 공유됨 (success 창 → opener)
+              console.log('[결제 처리] 결제 창이 닫힘 감지')
+              
+              // opener 호출이 실패했을 경우를 대비해 localStorage 확인 (fallback)
               const successOid = localStorage.getItem('payment_success_oid')
               if (!successOid) {
                 // 사용자가 결제창을 닫았거나 실패/취소로 닫힌 경우: 팝업은 유지하고 버튼만 다시 활성화
+                console.log('[결제 처리] 결제 창 닫힘, 성공 신호 없음 - 버튼만 활성화')
                 setSubmitting(false)
                 setPaymentProcessingMethod(null)
                 // 결제 재시도를 위해 결제정보 팝업은 닫지 않음
+              } else {
+                // localStorage에 성공 신호가 있으면 처리 (opener 호출이 실패했을 경우)
+                console.log('[결제 처리] 결제 창 닫힘, localStorage 성공 신호 발견 (fallback):', successOid)
+                if (typeof window !== 'undefined' && (window as any).handlePaymentSuccess) {
+                  (window as any).handlePaymentSuccess(successOid)
+                }
               }
             }
           } catch (e) {
             // cross-origin 오류는 무시 (결제 서버로 이동했을 수 있음)
           }
-        }, 500) // 0.5초마다 확인
+        }, 1000) // 1초마다 확인
         
-        // 최대 30초 후에는 체크 중단 (결제 성공 페이지에서 처리됨)
+        // 최대 30초 후에는 체크 중단
         setTimeout(() => {
           clearInterval(checkInterval)
         }, 30000)

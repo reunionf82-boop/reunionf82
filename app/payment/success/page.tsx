@@ -8,44 +8,24 @@ function PaymentSuccessContent() {
   const oid = searchParams.get('oid')
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !oid) return
-
-    // 0. 서버 DB 상태를 success로 업데이트 (가장 확실한 방법)
-    fetch('/api/payment/complete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ oid })
-    }).catch(e => console.error('DB update failed', e))
-
-    // ⚠️ sessionStorage는 창(탭) 단위라 opener가 읽을 수 없음
-    // fallback은 localStorage(동일 origin 공유)로 남기고, opener는 이를 폴링해서 처리
-    try {
-      localStorage.setItem('payment_success_oid', oid)
-      localStorage.setItem('payment_success_timestamp', Date.now().toString())
-      // storage 이벤트를 강제로 발생시키기 위한 신호(동일 oid라도 매번 값이 바뀌게)
-      localStorage.setItem('payment_success_signal', `${oid}:${Date.now()}:${Math.random().toString(16).slice(2)}`)
-    } catch {
-      // localStorage가 막혀도 postMessage로 최대한 처리
+    if (typeof window === 'undefined' || !oid) {
+      console.log('[결제 성공 페이지] 초기화 실패: window 또는 oid 없음')
+      return
     }
 
-    // BroadcastChannel로도 전달 (storage/postMessage 놓칠 경우 대비)
-    try {
-      const bc = new BroadcastChannel('payment_success')
-      bc.postMessage({ type: 'PAYMENT_SUCCESS', oid })
-      // 짧게 유지 후 닫기
-      setTimeout(() => bc.close(), 500)
-    } catch {
-      // 무시
-    }
+    console.log('[결제 성공 페이지] 초기화 시작:', { oid, hasOpener: !!window.opener, origin: window.location.origin })
 
-    // opener 함수 직접 호출 (가장 확실한 방법)
+    // 통화 내용 기반: "본창에 함수 하나 만들어 놓고 오픈창에서 호출하면 된다"
+    // "오픈창에서 이 오픈어의 함수를 호출하면 돼요"
+    
+    // opener 함수 직접 호출 (주 방식)
     const callOpenerFunction = async () => {
       if (window.opener && !window.opener.closed) {
         try {
           // 본창에 정의된 함수 직접 호출
           const opener = window.opener as any
           if (typeof opener.handlePaymentSuccess === 'function') {
-            console.log('[결제 성공 페이지] opener.handlePaymentSuccess 호출 시도')
+            console.log('[결제 성공 페이지] opener.handlePaymentSuccess 호출 시도:', oid)
             await opener.handlePaymentSuccess(oid)
             console.log('[결제 성공 페이지] opener.handlePaymentSuccess 호출 성공')
             return true
@@ -55,31 +35,22 @@ function PaymentSuccessContent() {
         } catch (error) {
           console.error('[결제 성공 페이지] opener 함수 호출 오류:', error)
         }
+      } else {
+        console.log('[결제 성공 페이지] opener 없음 또는 닫힘')
       }
       return false
     }
 
-    // postMessage로 원래 form 페이지에 결제 성공 알림
-    const sendMessage = () => {
-      if (window.opener && !window.opener.closed) {
-        try {
-          window.opener.postMessage(
-            {
-              type: 'PAYMENT_SUCCESS',
-              oid: oid
-            },
-            window.location.origin
-          )
-          return true
-        } catch (error) {
-          return false
-        }
-      }
-      return false
+    // fallback: localStorage 저장 (opener 호출 실패 시 대비)
+    try {
+      localStorage.setItem('payment_success_oid', oid)
+      localStorage.setItem('payment_success_timestamp', Date.now().toString())
+      localStorage.setItem('payment_success_signal', `${oid}:${Date.now()}:${Math.random().toString(16).slice(2)}`)
+    } catch {
+      // localStorage가 막혀도 무시
     }
 
-    // 즉시 메시지 전송 및 함수 호출 시도
-    let messageSent = sendMessage()
+    // 즉시 opener 함수 호출 시도
     let functionCalled = false
     callOpenerFunction().then(result => { functionCalled = result })
 
@@ -92,16 +63,16 @@ function PaymentSuccessContent() {
         if (!functionCalled) {
           callOpenerFunction().then(result => { functionCalled = result })
         }
-        if (!messageSent) {
-          messageSent = sendMessage()
-        }
       }
       
       // 최대 시도 횟수에 도달하거나 성공적으로 처리되면 창 닫기
-      if (attemptCount >= maxAttempts || functionCalled || messageSent) {
+      if (attemptCount >= maxAttempts || functionCalled) {
         clearInterval(messageInterval)
         // 너무 빨리 닫히면 전달이 씹히는 브라우저가 있어 약간 대기
-        setTimeout(() => window.close(), 400)
+        setTimeout(() => {
+          console.log('[결제 성공 페이지] 창 닫기')
+          window.close()
+        }, 400)
       }
     }, 100)
 
