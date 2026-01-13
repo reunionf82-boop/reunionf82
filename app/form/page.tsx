@@ -2040,9 +2040,8 @@ function FormContent() {
       const successOid = localStorage.getItem('payment_success_oid')
       const successTimestamp = localStorage.getItem('payment_success_timestamp')
       const timestampDiff = successTimestamp ? Date.now() - parseInt(successTimestamp) : null
-      // localStorage에 성공 신호가 있고, oid가 일치하거나 최근 30초 이내의 성공 신호가 있으면 처리
-      const hasLocalStorageSignal = (successOid === oid) || 
-        (successOid && successTimestamp && timestampDiff !== null && timestampDiff < 30000)
+      // localStorage에 성공 신호가 있고, oid가 정확히 일치해야만 처리
+      const hasLocalStorageSignal = successOid === oid
       
       console.log('[결제 성공] localStorage 사전 확인:', {
         successOid,
@@ -2050,8 +2049,7 @@ function FormContent() {
         exactMatch: successOid === oid,
         hasLocalStorageSignal,
         successTimestamp,
-        timestampDiff,
-        within30s: timestampDiff !== null && timestampDiff < 30000
+        timestampDiff
       })
       
       // OID로 서버 상태 확인 (한 번만 확인)
@@ -2597,13 +2595,14 @@ function FormContent() {
             
             // 서버 상태도 주기적으로 확인 (성공 페이지가 로드되었는지 확인)
             // 결제 서버가 successUrl로 리다이렉트하지 않았을 경우를 대비
-            if (checkCount % 3 === 0) { // 3초마다 확인 (1초 간격이므로)
+            if (checkCount % 2 === 0) { // 2초마다 확인 (1초 간격이므로)
               try {
                 const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
                 const statusData = await statusRes.json()
                 
-                if (checkCount % 9 === 0) { // 9초마다 로그 출력
-                  console.log(`[결제 처리] 주기적 서버 상태 확인 (${checkCount}회):`, statusData)
+                // 5초마다 로그 출력 (너무 많은 로그 방지)
+                if (checkCount % 5 === 0) {
+                  console.log(`[결제 처리] 주기적 서버 상태 확인 (${checkCount}회, ${checkCount * 1}초 경과):`, statusData)
                 }
                 
                 if (statusData.success && statusData.status === 'success') {
@@ -2615,9 +2614,27 @@ function FormContent() {
                   return
                 }
               } catch (e) {
-                if (checkCount % 9 === 0) {
+                if (checkCount % 5 === 0) {
                   console.error('[결제 처리] 서버 상태 확인 오류:', e)
                 }
+              }
+            }
+            
+            // localStorage도 주기적으로 확인 (성공 페이지가 opener 호출 실패했을 경우)
+            if (checkCount % 3 === 0) { // 3초마다 확인
+              try {
+                const successOid = localStorage.getItem('payment_success_oid')
+                // oid가 정확히 일치할 때만 처리
+                if (successOid === oid) {
+                  clearInterval(checkInterval)
+                  console.log(`[결제 처리] localStorage 성공 신호 확인 (${checkCount}회, ${checkCount * 1}초 경과), 처리 시작`)
+                  if (typeof window !== 'undefined' && (window as any).handlePaymentSuccess) {
+                    await (window as any).handlePaymentSuccess(oid)
+                  }
+                  return
+                }
+              } catch (e) {
+                // 무시
               }
             }
             
