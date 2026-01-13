@@ -2164,31 +2164,79 @@ function FormContent() {
         const contentData = await getContentById(parseInt(paymentContentId))
         if (contentData) {
           // 결제 정보 저장 (status: 'success'로 명시적으로 저장)
-          try {
-            const saveResponse = await fetch('/api/payment/save', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                oid,
-                contentId: contentData.id,
-                paymentCode: contentData.payment_code,
-                name: contentData.content_name || '',
-                pay: parseInt(contentData.price || '0'),
-                paymentType: (sessionStorage.getItem('payment_method') as 'card' | 'mobile') || 'card',
-                userName: paymentUserName,
-                phoneNumber: sessionStorage.getItem('payment_phone') || '',
-                gender: (paymentUserGender as 'male' | 'female' | '') || null,
-                status: 'success' // 결제 성공 상태로 명시적으로 저장
+          // 저장이 실패하면 재시도하고, 최종 실패 시 에러를 throw하여 사용자에게 알림
+          let paymentSaveSuccess = false
+          const maxRetries = 3
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              const saveResponse = await fetch('/api/payment/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  oid,
+                  contentId: contentData.id,
+                  paymentCode: contentData.payment_code,
+                  name: contentData.content_name || '',
+                  pay: parseInt(contentData.price || '0'),
+                  paymentType: (sessionStorage.getItem('payment_method') as 'card' | 'mobile') || 'card',
+                  userName: paymentUserName,
+                  phoneNumber: sessionStorage.getItem('payment_phone') || '',
+                  gender: (paymentUserGender as 'male' | 'female' | '') || null,
+                  status: 'success' // 결제 성공 상태로 명시적으로 저장
+                })
               })
-            })
-            
-            if (saveResponse.ok) {
-              console.log('[결제 성공] 결제 정보 저장 성공')
-            } else {
-              console.error('[결제 성공] 결제 정보 저장 실패:', await saveResponse.text())
+              
+              if (saveResponse.ok) {
+                const saveData = await saveResponse.json()
+                if (saveData.success) {
+                  console.log('[결제 성공] 결제 정보 저장 성공:', saveData)
+                  paymentSaveSuccess = true
+                  break
+                } else {
+                  console.error(`[결제 성공] 결제 정보 저장 실패 (${attempt}/${maxRetries}):`, saveData)
+                }
+              } else {
+                const errorText = await saveResponse.text()
+                console.error(`[결제 성공] 결제 정보 저장 HTTP 오류 (${attempt}/${maxRetries}):`, saveResponse.status, errorText)
+              }
+              
+              // 마지막 시도가 아니면 잠시 대기 후 재시도
+              if (attempt < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+              }
+            } catch (error) {
+              console.error(`[결제 성공] 결제 정보 저장 오류 (${attempt}/${maxRetries}):`, error)
+              // 마지막 시도가 아니면 잠시 대기 후 재시도
+              if (attempt < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+              }
             }
-          } catch (error) {
-            console.error('[결제 성공] 결제 정보 저장 오류:', error)
+          }
+          
+          // 모든 재시도 실패 시 최소한의 레코드라도 생성 시도
+          if (!paymentSaveSuccess) {
+            console.error('[결제 성공] 결제 정보 저장 최종 실패, 최소한의 레코드 생성 시도')
+            // 최소한의 정보로라도 레코드 생성 시도 (결제는 이미 완료되었으므로)
+            try {
+              const minimalSaveResponse = await fetch('/api/payment/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ oid })
+              })
+              if (minimalSaveResponse.ok) {
+                const minimalSaveData = await minimalSaveResponse.json()
+                if (minimalSaveData.success) {
+                  console.log('[결제 성공] 최소한의 레코드 생성 성공:', minimalSaveData)
+                } else {
+                  console.error('[결제 성공] 최소한의 레코드 생성 실패:', minimalSaveData)
+                }
+              } else {
+                console.error('[결제 성공] 최소한의 레코드 생성 HTTP 오류:', minimalSaveResponse.status)
+              }
+            } catch (e) {
+              console.error('[결제 성공] 최소한의 레코드 생성 오류:', e)
+            }
+            // 저장 실패해도 점사는 계속 진행 (결제는 이미 완료되었으므로)
           }
           
           // 점사 시작 (state 업데이트 없이 파라미터로만 전달)
@@ -2436,22 +2484,39 @@ function FormContent() {
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
 
       // 0. DB에 pending 상태로 미리 저장 (서버 폴링을 위해)
-      await fetch('/api/payment/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          oid,
-          contentId: content.id,
-          paymentCode: content.payment_code,
-          name: content.content_name || '',
-          pay: parseInt(content.price || '0'),
-          paymentType: paymentMethod,
-          userName: name,
-          phoneNumber: phoneNumber,
-          gender: (gender as 'male' | 'female' | '') || null,
-          status: 'pending'
+      try {
+        const pendingSaveResponse = await fetch('/api/payment/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            oid,
+            contentId: content.id,
+            paymentCode: content.payment_code,
+            name: content.content_name || '',
+            pay: parseInt(content.price || '0'),
+            paymentType: paymentMethod,
+            userName: name,
+            phoneNumber: phoneNumber,
+            gender: (gender as 'male' | 'female' | '') || null,
+            status: 'pending'
+          })
         })
-      })
+        
+        if (pendingSaveResponse.ok) {
+          const pendingSaveData = await pendingSaveResponse.json()
+          if (pendingSaveData.success) {
+            console.log('[결제 처리] pending 상태 저장 성공:', pendingSaveData)
+          } else {
+            console.error('[결제 처리] pending 상태 저장 실패:', pendingSaveData)
+          }
+        } else {
+          const errorText = await pendingSaveResponse.text()
+          console.error('[결제 처리] pending 상태 저장 HTTP 오류:', pendingSaveResponse.status, errorText)
+        }
+      } catch (error) {
+        console.error('[결제 처리] pending 상태 저장 오류:', error)
+        // pending 저장 실패해도 결제는 계속 진행
+      }
 
 
         // 주문번호 및 사용자 정보를 sessionStorage에 저장 (result 페이지에서 점사 시작 시 사용)
