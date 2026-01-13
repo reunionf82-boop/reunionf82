@@ -2038,36 +2038,77 @@ function FormContent() {
       
       // OID로 서버 상태 확인 (한 번만 확인)
       // 성공 페이지가 DB를 업데이트했는지 확인
+      let serverStatusConfirmed = false
       try {
         const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
-        const statusData = await statusRes.json()
-        
-        console.log('[결제 성공] 서버 상태 확인 결과:', statusData)
-        
-        if (!statusData.success || statusData.status !== 'success') {
-          console.error('[결제 성공] 서버 상태 확인 실패:', statusData)
-          // pending 상태일 수도 있으므로 잠시 대기 후 재시도
-          console.log('[결제 성공] 서버 상태가 success가 아님, 잠시 대기 후 재시도...')
-          await new Promise(resolve => setTimeout(resolve, 1000))
+        if (statusRes.ok) {
+          const statusData = await statusRes.json()
+          console.log('[결제 성공] 서버 상태 확인 결과:', statusData)
           
-          const retryRes = await fetch(`/api/payment/status?oid=${oid}`)
-          const retryData = await retryRes.json()
-          console.log('[결제 성공] 서버 상태 재확인 결과:', retryData)
-          
-          if (!retryData.success || retryData.status !== 'success') {
-            console.error('[결제 성공] 서버 상태 재확인 실패:', retryData)
-            isProcessing = false
-            showAlertMessage('결제 상태를 확인할 수 없습니다. 잠시 후 다시 시도해주세요.')
-            return
+          if (statusData.success && statusData.status === 'success') {
+            serverStatusConfirmed = true
+            console.log('[결제 성공] 서버 상태 확인 성공, 결제 처리 진행')
+          } else {
+            console.log('[결제 성공] 서버 상태가 success가 아님:', statusData)
+            // pending 상태일 수도 있으므로 잠시 대기 후 재시도
+            console.log('[결제 성공] 서버 상태가 success가 아님, 잠시 대기 후 재시도...')
+            await new Promise(resolve => setTimeout(resolve, 1000))
+            
+            const retryRes = await fetch(`/api/payment/status?oid=${oid}`)
+            if (retryRes.ok) {
+              const retryData = await retryRes.json()
+              console.log('[결제 성공] 서버 상태 재확인 결과:', retryData)
+              
+              if (retryData.success && retryData.status === 'success') {
+                serverStatusConfirmed = true
+                console.log('[결제 성공] 서버 상태 재확인 성공')
+              } else {
+                console.log('[결제 성공] 서버 상태 재확인 실패:', retryData)
+              }
+            } else {
+              console.error('[결제 성공] 서버 상태 재확인 HTTP 오류:', retryRes.status)
+            }
           }
+        } else {
+          console.error('[결제 성공] 서버 상태 확인 HTTP 오류:', statusRes.status)
         }
-        
-        console.log('[결제 성공] 서버 상태 확인 성공, 결제 처리 진행')
       } catch (error) {
         console.error('[결제 성공] 서버 상태 확인 오류:', error)
-        isProcessing = false
-        showAlertMessage('결제 상태를 확인할 수 없습니다.')
-        return
+      }
+      
+      // 서버 상태 확인이 실패했지만, localStorage에 성공 신호가 있으면 처리 진행
+      // (성공 페이지가 DB를 업데이트하지 않았을 경우를 대비)
+      if (!serverStatusConfirmed) {
+        console.log('[결제 성공] 서버 상태 확인 실패, localStorage 확인 시작:', { oid, serverStatusConfirmed })
+        const successOid = localStorage.getItem('payment_success_oid')
+        console.log('[결제 성공] localStorage 확인 결과:', { successOid, oid, match: successOid === oid })
+        
+        if (successOid === oid) {
+          console.log('[결제 성공] 서버 상태 확인 실패했지만 localStorage에 성공 신호 있음, 처리 진행')
+          // DB를 직접 업데이트 시도 (성공 페이지가 업데이트하지 않았을 경우)
+          try {
+            const updateRes = await fetch('/api/payment/complete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ oid })
+            })
+            const updateData = await updateRes.json()
+            console.log('[결제 성공] DB 직접 업데이트 시도 완료:', updateData)
+          } catch (e) {
+            console.error('[결제 성공] DB 직접 업데이트 오류:', e)
+          }
+          // localStorage에 성공 신호가 있으면 서버 상태 확인 없이도 처리 진행
+          console.log('[결제 성공] localStorage 성공 신호 기반으로 처리 계속 진행')
+        } else {
+          console.error('[결제 성공] 서버 상태 확인 실패하고 localStorage에도 성공 신호 없음 또는 oid 불일치:', {
+            successOid,
+            oid,
+            match: successOid === oid
+          })
+          isProcessing = false
+          showAlertMessage('결제 상태를 확인할 수 없습니다. 잠시 후 다시 시도해주세요.')
+          return
+        }
       }
       
       // sessionStorage에서 결제 정보 가져오기

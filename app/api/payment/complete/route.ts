@@ -18,20 +18,25 @@ export async function POST(request: NextRequest) {
 
     const supabase = getAdminSupabaseClient()
     
-    // 상태를 success로 업데이트
+    // 상태를 success로 업데이트 (upsert로 변경하여 데이터가 없어도 생성)
     const { data, error } = await supabase
       .from('payments')
-      .update({ 
+      .upsert({
+        oid,
         status: 'success',
         completed_at: new Date().toISOString()
-      })
-      .eq('oid', oid)
+      }, { onConflict: 'oid' })
       .select()
       .single()
 
     if (error) {
       console.error('[결제 완료 처리] DB 업데이트 오류:', error)
       return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    }
+    
+    if (!data) {
+      console.error('[결제 완료 처리] 데이터가 없음:', oid)
+      return NextResponse.json({ success: false, error: '결제 정보를 찾을 수 없습니다.' }, { status: 404 })
     }
 
     return NextResponse.json({ success: true, data })

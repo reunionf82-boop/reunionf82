@@ -55,21 +55,28 @@ export async function POST(request: NextRequest) {
     }
 
     // 결제 정보 저장 (Upsert로 변경하여 중복 방지 및 상태 업데이트)
+    const paymentStatus = status || 'pending' // 기본값을 pending으로 변경
+    const upsertData: any = {
+      oid,
+      content_id: contentId,
+      payment_code: paymentCode,
+      name: name?.substring(0, 200),
+      pay: pay ? parseInt(pay.toString()) : 0,
+      payment_type: paymentType,
+      user_name: encryptedUserName,
+      phone_number: encryptedPhoneNumber,
+      gender: gender === 'male' || gender === 'female' ? gender : null,
+      status: paymentStatus
+    }
+    
+    // success 상태일 때만 completed_at 설정
+    if (paymentStatus === 'success') {
+      upsertData.completed_at = new Date().toISOString()
+    }
+    
     const { data, error } = await supabase
       .from('payments')
-      .upsert({
-        oid,
-        content_id: contentId,
-        payment_code: paymentCode,
-        name: name?.substring(0, 200),
-        pay: pay ? parseInt(pay.toString()) : 0,
-        payment_type: paymentType,
-        user_name: encryptedUserName,
-        phone_number: encryptedPhoneNumber,
-        gender: gender === 'male' || gender === 'female' ? gender : null,
-        status: status || 'success',
-        completed_at: new Date().toISOString()
-      }, { onConflict: 'oid' }) // oid가 같으면 업데이트
+      .upsert(upsertData, { onConflict: 'oid' }) // oid가 같으면 업데이트
       .select()
       .single()
 
