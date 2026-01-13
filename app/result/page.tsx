@@ -2516,18 +2516,11 @@ ${fontFace ? fontFace : ''}
   // requestKey가 있으면 점사를 시작할 예정이므로 resultData 체크를 건너뜀
   const isRealtimeStreaming = isRealtime || requestKey || isStreaming || isStreamingActive
 
-  // 모바일 Pull-to-Refresh 방지 (점사 스트리밍 중)
+  // 모바일 Pull-to-Refresh 방지 (리절트 페이지에서는 항상 차단)
   useEffect(() => {
     if (typeof window === 'undefined') return
 
-    const shouldBlockPullToRefresh = isRealtimeStreaming && !streamingFinished
     const root = document.documentElement
-
-    if (!shouldBlockPullToRefresh) {
-      root.classList.remove('no-pull-to-refresh')
-      return
-    }
-
     root.classList.add('no-pull-to-refresh')
 
     // iOS Safari는 overscroll-behavior를 무시하는 경우가 있어,
@@ -2557,7 +2550,7 @@ ${fontFace ? fontFace : ''}
       window.removeEventListener('touchstart', onTouchStart as any)
       window.removeEventListener('touchmove', onTouchMove as any)
     }
-  }, [isRealtimeStreaming, streamingFinished])
+  }, [])
 
   // 점사 "완료" 시 엔딩북커버로 이동 + 완료 팝업 표시
   useEffect(() => {

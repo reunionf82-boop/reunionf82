@@ -4255,53 +4255,7 @@ function FormContent() {
                 </button>
               </div>
 
-              {/* 임시 결과 화면 이동 버튼 (개발용) */}
-              <div className="mt-3">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    // 휴대폰 번호 검증
-                    const fullPhoneNumber = `${phoneNumber1}${phoneNumber2}${phoneNumber3}`
-                    if (fullPhoneNumber.length !== 11) {
-                      showAlertMessage('휴대폰 번호를 정확히 입력해주세요.')
-                      return
-                    }
-
-                    // 비밀번호 검증
-                    if (!password || password.length < 4) {
-                      showAlertMessage('비밀번호를 4자리 이상 입력해주세요.')
-                      return
-                    }
-
-                    // 인증 정보 저장
-                    try {
-                      const response = await fetch('/api/user-credentials/save', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          phone_number: fullPhoneNumber,
-                          password: password,
-                          content_id: content?.id || null
-                        })
-                      })
-                      if (response.ok) {
-                        console.log('[임시 이동] 인증 정보 저장 성공')
-                      } else {
-                        console.error('[임시 이동] 인증 정보 저장 실패')
-                      }
-                    } catch (e) {
-                      console.error('[임시 이동] 인증 정보 저장 오류:', e)
-                    }
-
-                    const startTime = Date.now()
-                    await startFortuneTelling(startTime)
-                  }}
-                  disabled={submitting}
-                  className="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  🧪 임시 결과 화면으로 이동 (개발용)
-                </button>
-              </div>
+              {/* (삭제) 임시 결과 화면 이동 버튼 (개발용) */}
             </div>
           </div>
         </div>
