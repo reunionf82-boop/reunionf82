@@ -2102,6 +2102,8 @@ function FormContent() {
           oid
         })
         isProcessing = false
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
         showAlertMessage('결제 상태를 확인할 수 없습니다. 잠시 후 다시 시도해주세요.')
         return
       }
@@ -2129,6 +2131,8 @@ function FormContent() {
       if (!paymentContentId) {
         console.error('[결제 성공] 결제 정보를 찾을 수 없습니다.')
         isProcessing = false
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
         return
       }
       
@@ -2145,6 +2149,8 @@ function FormContent() {
       if (!paymentUserName || !paymentUserYear || !paymentUserMonth || !paymentUserDay) {
         console.error('[결제 성공] 사용자 정보를 찾을 수 없습니다.')
         isProcessing = false
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
         return
       }
       
@@ -2157,7 +2163,7 @@ function FormContent() {
       try {
         const contentData = await getContentById(parseInt(paymentContentId))
         if (contentData) {
-          // 결제 정보 저장
+          // 결제 정보 저장 (status: 'success'로 명시적으로 저장)
           try {
             const saveResponse = await fetch('/api/payment/save', {
               method: 'POST',
@@ -2172,6 +2178,7 @@ function FormContent() {
                 userName: paymentUserName,
                 phoneNumber: sessionStorage.getItem('payment_phone') || '',
                 gender: (paymentUserGender as 'male' | 'female' | '') || null,
+                status: 'success' // 결제 성공 상태로 명시적으로 저장
               })
             })
             
@@ -2213,16 +2220,27 @@ function FormContent() {
           } catch (error) {
             console.error('[결제 성공] startFortuneTellingWithContent 오류:', error)
             isProcessing = false
+            setSubmitting(false)
+            setPaymentProcessingMethod(null)
+            setShowPaymentPopup(false)
+            // 에러 메시지 표시
+            showAlertMessage(error instanceof Error ? error.message : '점사 시작 중 오류가 발생했습니다.')
           }
         } else {
           console.error('[결제 성공] 컨텐츠 정보를 찾을 수 없습니다.')
           showAlertMessage('컨텐츠 정보를 찾을 수 없습니다.')
           isProcessing = false
+          setSubmitting(false)
+          setPaymentProcessingMethod(null)
+          setShowPaymentPopup(false)
         }
       } catch (error) {
         console.error('[결제 성공] 컨텐츠 로드 오류:', error)
         showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
         isProcessing = false
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
+        setShowPaymentPopup(false)
       }
     }
     
@@ -2758,6 +2776,11 @@ function FormContent() {
       if (menuSubtitles.length === 0) {
         showAlertMessage('상품 메뉴 소제목이 설정되지 않았습니다.')
         setSubmitting(false)
+        setShowLoadingPopup(false)
+        // processPaymentSuccess에서 호출된 경우 isProcessing 해제를 위해 에러 throw
+        if (isPaymentSuccess) {
+          throw new Error('상품 메뉴 소제목이 설정되지 않았습니다.')
+        }
         return
       }
 
@@ -2908,6 +2931,10 @@ function FormContent() {
         showAlertMessage('만세력 데이터 생성에 실패했습니다. 생년월일/태어난 시를 다시 확인해주세요.')
         setSubmitting(false)
         setShowLoadingPopup(false)
+        // processPaymentSuccess에서 호출된 경우 isProcessing 해제를 위해 에러 throw
+        if (isPaymentSuccess) {
+          throw new Error('만세력 데이터 생성에 실패했습니다.')
+        }
         return
       }
 
@@ -3030,9 +3057,27 @@ function FormContent() {
           allMenuGroups: !useSequentialFortune ? (finalRequestData.allMenuGroups || menuGroups || []) : undefined // 병렬점사 모드일 때만 전달
         }
         
+        // result 페이지로 즉시 리다이렉트 (realtime 모드)
+        // 저장 작업 완료를 기다리지 않고 즉시 이동하여 지연 최소화
+        // sessionStorage에 데이터 저장 (URL 파라미터 대신)
         try {
-          // Supabase에 임시 요청 데이터 저장
-          const saveResponse = await fetch('/api/temp-request/save', {
+          if (typeof window !== 'undefined') {
+            // ✅ 변경: 초안 생성 제거 - 점사 완료 후 저장 시점에 saved_id 생성
+            // 초안을 미리 생성하면 빈 HTML로 저장되어 이후 업데이트가 제대로 안 될 수 있음
+            sessionStorage.setItem('result_requestKey', requestKey)
+            sessionStorage.setItem('result_stream', 'true')
+          }
+        } catch (e) {
+          console.error('[결제 처리] sessionStorage 저장 실패:', e)
+          // sessionStorage 실패해도 페이지 이동은 진행
+        }
+        
+        // 비동기 작업들은 Promise.allSettled로 병렬 처리하고, 실패해도 페이지 이동은 진행
+        const asyncTasks = []
+        
+        // Supabase에 임시 요청 데이터 저장
+        asyncTasks.push(
+          fetch('/api/temp-request/save', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -3041,53 +3086,44 @@ function FormContent() {
               requestKey,
               payload
             })
-          })
-
-          if (!saveResponse.ok) {
+          }).then(async (saveResponse) => {
+            if (!saveResponse.ok) {
+              const text = await saveResponse.text()
+              let errorData: any = {}
+              if (text) {
+                try {
+                  errorData = JSON.parse(text)
+                } catch (e) {
+                  errorData = { error: text || '임시 요청 데이터 저장 실패' }
+                }
+              }
+              throw new Error(errorData.error || '임시 요청 데이터 저장 실패')
+            }
             const text = await saveResponse.text()
-            let errorData: any = {}
             if (text) {
               try {
-                errorData = JSON.parse(text)
+                return JSON.parse(text)
               } catch (e) {
-                errorData = { error: text || '임시 요청 데이터 저장 실패' }
+                console.error('응답 파싱 실패:', e)
               }
             }
-            throw new Error(errorData.error || '임시 요청 데이터 저장 실패')
-          }
-
-          const text = await saveResponse.text()
-          let saveResult: any = {}
-          if (text) {
-            try {
-              saveResult = JSON.parse(text)
-            } catch (e) {
-              console.error('응답 파싱 실패:', e)
-            }
-          }
-        } catch (e: any) {
-          // 저장 실패해도 페이지 이동은 진행 (에러는 result 페이지에서 처리)
-        }
+          }).catch((e: any) => {
+            console.error('[결제 처리] 임시 요청 데이터 저장 실패:', e)
+            // 저장 실패해도 페이지 이동은 진행
+          })
+        )
         
-        // result 페이지로 즉시 리다이렉트 (realtime 모드)
-        // 저장 작업 완료를 기다리지 않고 즉시 이동하여 지연 최소화
-        // sessionStorage에 데이터 저장 (URL 파라미터 대신)
+        // 휴대폰 번호와 비밀번호를 DB에 저장 (savedId 없이)
+        // 결제 성공으로 인한 이동인 경우 sessionStorage에서 가져오기
         if (typeof window !== 'undefined') {
-          // ✅ 변경: 초안 생성 제거 - 점사 완료 후 저장 시점에 saved_id 생성
-          // 초안을 미리 생성하면 빈 HTML로 저장되어 이후 업데이트가 제대로 안 될 수 있음
-          sessionStorage.setItem('result_requestKey', requestKey)
-          sessionStorage.setItem('result_stream', 'true')
-          
-          // 휴대폰 번호와 비밀번호를 DB에 저장 (savedId 없이)
-          // 결제 성공으로 인한 이동인 경우 sessionStorage에서 가져오기
           const paymentPhone = sessionStorage.getItem('payment_phone') || ''
           const paymentPassword = sessionStorage.getItem('payment_password') || ''
           const fullPhoneNumber = paymentPhone || `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
           const userPassword = paymentPassword || password
           
           console.log('[결제 처리] user_credentials 저장 시도 (savedId 없음):', { requestKey, phone: fullPhoneNumber })
-          try {
-            const response = await fetch('/api/user-credentials/save', {
+          asyncTasks.push(
+            fetch('/api/user-credentials/save', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -3096,26 +3132,41 @@ function FormContent() {
                 phone: fullPhoneNumber,
                 password: userPassword
               })
-            })
-            if (response.ok) {
-              const text = await response.text()
-              if (text) {
-                try {
-                  const result = JSON.parse(text)
-                  console.log('[결제 처리] user_credentials 저장 성공:', result)
-                } catch (e) {
-                  console.error('[결제 처리] 인증 정보 응답 파싱 실패:', e)
+            }).then(async (response) => {
+              if (response.ok) {
+                const text = await response.text()
+                if (text) {
+                  try {
+                    const result = JSON.parse(text)
+                    console.log('[결제 처리] user_credentials 저장 성공:', result)
+                    return result
+                  } catch (e) {
+                    console.error('[결제 처리] 인증 정보 응답 파싱 실패:', e)
+                  }
                 }
+              } else {
+                const errorText = await response.text()
+                throw new Error(errorText || 'user_credentials 저장 실패')
               }
-            } else {
-              const errorText = await response.text()
-              console.error('[결제 처리] user_credentials 저장 실패:', errorText)
-            }
-          } catch (e) {
-            // 저장 실패해도 페이지 이동은 진행
-            console.error('[결제 처리] 인증 정보 저장 실패:', e)
-          }
+            }).catch((e) => {
+              // 저장 실패해도 페이지 이동은 진행
+              console.error('[결제 처리] 인증 정보 저장 실패:', e)
+            })
+          )
         }
+        
+        // 모든 비동기 작업을 최대 3초까지만 대기 (타임아웃)
+        try {
+          await Promise.race([
+            Promise.allSettled(asyncTasks),
+            new Promise((resolve) => setTimeout(resolve, 3000))
+          ])
+        } catch (e) {
+          console.error('[결제 처리] 비동기 작업 오류:', e)
+          // 오류가 발생해도 페이지 이동은 진행
+        }
+        
+        // 페이지 이동은 항상 실행 (비동기 작업 성공/실패와 무관)
         setSubmitting(false)
         router.push('/result')
         return
@@ -3826,6 +3877,12 @@ function FormContent() {
       const errorMessage = error?.message || '결제 처리 중 오류가 발생했습니다.'
       showAlertMessage(`${errorMessage}\n\n개발자 도구 콘솔을 확인해주세요.`)
       setSubmitting(false)
+      setShowLoadingPopup(false)
+      // processPaymentSuccess에서 호출된 경우 isProcessing 해제를 위해 에러를 다시 throw
+      // (processPaymentSuccess의 catch 블록에서 처리)
+      if (isPaymentSuccess) {
+        throw error // 에러를 다시 throw하여 processPaymentSuccess에서 처리하도록
+      }
     }
   }
 
