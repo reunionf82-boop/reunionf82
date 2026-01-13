@@ -2037,15 +2037,29 @@ function FormContent() {
       console.log('[결제 성공] 결제 성공 처리 시작, 서버 상태 확인:', oid)
       
       // OID로 서버 상태 확인 (한 번만 확인)
+      // 성공 페이지가 DB를 업데이트했는지 확인
       try {
         const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
         const statusData = await statusRes.json()
         
+        console.log('[결제 성공] 서버 상태 확인 결과:', statusData)
+        
         if (!statusData.success || statusData.status !== 'success') {
           console.error('[결제 성공] 서버 상태 확인 실패:', statusData)
-          isProcessing = false
-          showAlertMessage('결제 상태를 확인할 수 없습니다.')
-          return
+          // pending 상태일 수도 있으므로 잠시 대기 후 재시도
+          console.log('[결제 성공] 서버 상태가 success가 아님, 잠시 대기 후 재시도...')
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          
+          const retryRes = await fetch(`/api/payment/status?oid=${oid}`)
+          const retryData = await retryRes.json()
+          console.log('[결제 성공] 서버 상태 재확인 결과:', retryData)
+          
+          if (!retryData.success || retryData.status !== 'success') {
+            console.error('[결제 성공] 서버 상태 재확인 실패:', retryData)
+            isProcessing = false
+            showAlertMessage('결제 상태를 확인할 수 없습니다. 잠시 후 다시 시도해주세요.')
+            return
+          }
         }
         
         console.log('[결제 성공] 서버 상태 확인 성공, 결제 처리 진행')
@@ -2513,11 +2527,29 @@ function FormContent() {
       // 결제 창이 닫혔는지 확인 (opener 호출 실패 시 대비용)
       // 통화 내용: "오픈창에서 오픈어의 함수를 호출하면 돼요" - 주 방식은 opener 호출
       const checkWindowClosed = () => {
-        const checkInterval = setInterval(() => {
+        const checkInterval = setInterval(async () => {
           try {
             if (paymentWindow.closed) {
               clearInterval(checkInterval)
-              console.log('[결제 처리] 결제 창이 닫힘 감지')
+              console.log('[결제 처리] 결제 창이 닫힘 감지, 서버 상태 확인')
+              
+              // 창이 닫혔을 때 서버 상태를 확인 (성공 페이지가 DB를 업데이트했을 수 있음)
+              try {
+                const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
+                const statusData = await statusRes.json()
+                
+                if (statusData.success && statusData.status === 'success') {
+                  console.log('[결제 처리] 창 닫힘 후 서버 상태 success 확인, 처리 시작')
+                  if (typeof window !== 'undefined' && (window as any).handlePaymentSuccess) {
+                    await (window as any).handlePaymentSuccess(oid)
+                  }
+                  return
+                } else {
+                  console.log('[결제 처리] 창 닫힘 후 서버 상태:', statusData)
+                }
+              } catch (e) {
+                console.error('[결제 처리] 서버 상태 확인 오류:', e)
+              }
               
               // opener 호출이 실패했을 경우를 대비해 localStorage 확인 (fallback)
               const successOid = localStorage.getItem('payment_success_oid')
@@ -2531,7 +2563,7 @@ function FormContent() {
                 // localStorage에 성공 신호가 있으면 처리 (opener 호출이 실패했을 경우)
                 console.log('[결제 처리] 결제 창 닫힘, localStorage 성공 신호 발견 (fallback):', successOid)
                 if (typeof window !== 'undefined' && (window as any).handlePaymentSuccess) {
-                  (window as any).handlePaymentSuccess(successOid)
+                  await (window as any).handlePaymentSuccess(successOid)
                 }
               }
             }
