@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
+import { getKSTNow } from '@/lib/payment-utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
     const supabase = getAdminSupabaseClient()
     
     const updateData: any = {
-      updated_at: new Date().toISOString()
+      updated_at: getKSTNow() // KST 기준으로 저장
     }
 
     if (is_visible !== undefined) {

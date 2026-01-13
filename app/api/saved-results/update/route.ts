@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getKSTNow } from '@/lib/payment-utils'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
         model: model || 'gemini-3-flash-preview',
         processing_time: processingTime || null,
         user_name: userName || null,
+        updated_at: getKSTNow() // KST 기준으로 저장
       })
       .eq('id', idNum)
       .select()

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getKSTNow } from '@/lib/payment-utils'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
     // pdf_generated 필드가 없으면 추가해야 함 (마이그레이션 필요)
     const { data, error } = await supabase
       .from('saved_results')
-      .update({ pdf_generated: true, updated_at: new Date().toISOString() })
+      .update({ pdf_generated: true, updated_at: getKSTNow() }) // KST 기준으로 저장
       .eq('id', id)
       .select()
       .single()

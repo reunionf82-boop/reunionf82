@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
+import { getKSTNow } from '@/lib/payment-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
       .from('payments')
       .update({
         status: 'success',
-        completed_at: new Date().toISOString(),
+        completed_at: getKSTNow(), // KST 기준으로 저장
       })
       .eq('oid', oid)
       .select()

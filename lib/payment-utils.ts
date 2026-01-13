@@ -28,3 +28,115 @@ export function generateOrderId(): string {
 export function getPaymentTypeDisplayName(paymentType: 'card' | 'mobile'): string {
   return paymentType === 'card' ? '카드결제' : '휴대폰 결제'
 }
+
+/**
+ * 현재 시간을 KST(한국 표준시, UTC+9)로 변환하여 ISO 문자열로 반환
+ * payments 테이블의 created_at, completed_at 저장 시 사용
+ */
+export function getKSTNow(): string {
+  const now = new Date()
+  // KST는 UTC+9이므로, UTC 시간에 9시간을 더함
+  const kstOffset = 9 * 60 * 60 * 1000 // 9시간을 밀리초로
+  const kstTime = new Date(now.getTime() + kstOffset)
+  return kstTime.toISOString()
+}
+
+/**
+ * KST 기준으로 오늘의 시작 시간(00:00:00)을 ISO 문자열로 반환
+ */
+export function getKSTTodayStart(): string {
+  const now = new Date()
+  const kstOffset = 9 * 60 * 60 * 1000
+  const kstNow = new Date(now.getTime() + kstOffset)
+  
+  // KST 기준으로 오늘 00:00:00
+  const kstTodayStart = new Date(Date.UTC(
+    kstNow.getUTCFullYear(),
+    kstNow.getUTCMonth(),
+    kstNow.getUTCDate(),
+    0, 0, 0, 0
+  ))
+  // UTC로 변환 (KST에서 9시간 빼기)
+  const utcTodayStart = new Date(kstTodayStart.getTime() - kstOffset)
+  return utcTodayStart.toISOString()
+}
+
+/**
+ * KST 기준으로 오늘의 끝 시간(23:59:59.999)을 ISO 문자열로 반환
+ */
+export function getKSTTodayEnd(): string {
+  const now = new Date()
+  const kstOffset = 9 * 60 * 60 * 1000
+  const kstNow = new Date(now.getTime() + kstOffset)
+  
+  // KST 기준으로 오늘 23:59:59.999
+  const kstTodayEnd = new Date(Date.UTC(
+    kstNow.getUTCFullYear(),
+    kstNow.getUTCMonth(),
+    kstNow.getUTCDate(),
+    23, 59, 59, 999
+  ))
+  // UTC로 변환 (KST에서 9시간 빼기)
+  const utcTodayEnd = new Date(kstTodayEnd.getTime() - kstOffset)
+  return utcTodayEnd.toISOString()
+}
+
+/**
+ * KST 기준으로 특정 날짜의 시작 시간(00:00:00)을 ISO 문자열로 반환
+ * @param dateString YYYY-MM-DD 형식의 날짜 문자열 (KST 기준)
+ */
+export function getKSTDateStart(dateString: string): string {
+  const [year, month, day] = dateString.split('-').map(Number)
+  const kstOffset = 9 * 60 * 60 * 1000
+  
+  // KST 기준으로 해당 날짜 00:00:00
+  const kstDateStart = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0))
+  // UTC로 변환 (KST에서 9시간 빼기)
+  const utcDateStart = new Date(kstDateStart.getTime() - kstOffset)
+  return utcDateStart.toISOString()
+}
+
+/**
+ * KST 기준으로 특정 날짜의 끝 시간(23:59:59.999)을 ISO 문자열로 반환
+ * @param dateString YYYY-MM-DD 형식의 날짜 문자열 (KST 기준)
+ */
+export function getKSTDateEnd(dateString: string): string {
+  const [year, month, day] = dateString.split('-').map(Number)
+  const kstOffset = 9 * 60 * 60 * 1000
+  
+  // KST 기준으로 해당 날짜 23:59:59.999
+  const kstDateEnd = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999))
+  // UTC로 변환 (KST에서 9시간 빼기)
+  const utcDateEnd = new Date(kstDateEnd.getTime() - kstOffset)
+  return utcDateEnd.toISOString()
+}
+
+/**
+ * Date 객체를 KST 기준 날짜 문자열(YYYY-MM-DD)로 변환
+ */
+export function toKSTDateString(date: Date): string {
+  const kstOffset = 9 * 60 * 60 * 1000
+  const kstDate = new Date(date.getTime() + kstOffset)
+  const year = kstDate.getUTCFullYear()
+  const month = String(kstDate.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(kstDate.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Date 객체를 KST 기준 시간(0-23)으로 반환
+ */
+export function getKSTHour(date: Date): number {
+  const kstOffset = 9 * 60 * 60 * 1000
+  const kstDate = new Date(date.getTime() + kstOffset)
+  return kstDate.getUTCHours()
+}
+
+/**
+ * Date 객체를 KST 기준 요일(0=일요일, 6=토요일)로 반환
+ */
+export function getKSTDayOfWeek(date: Date): number {
+  const kstOffset = 9 * 60 * 60 * 1000
+  const kstDate = new Date(date.getTime() + kstOffset)
+  return kstDate.getUTCDay()
+}

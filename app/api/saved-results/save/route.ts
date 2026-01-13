@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getKSTNow } from '@/lib/payment-utils'
 
 // Next.js 캐싱 방지 설정 (프로덕션 환경에서 항상 최신 데이터 가져오기)
 export const dynamic = 'force-dynamic'
@@ -27,10 +28,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // UTC 시간으로 저장 (Supabase TIMESTAMPTZ는 UTC로 저장하는 것이 올바름)
-    const savedAtUTC = new Date().toISOString()
+    // KST 시간으로 저장
+    const savedAtKST = getKSTNow()
 
-    // 저장된 결과를 Supabase에 저장 (UTC 시간으로 저장)
+    // 저장된 결과를 Supabase에 저장 (KST 시간으로 저장)
     const { data, error } = await supabase
       .from('saved_results')
       .insert({
@@ -40,7 +41,8 @@ export async function POST(request: NextRequest) {
         model: model || 'gemini-3-flash-preview',
         processing_time: processingTime || null,
         user_name: userName || null,
-        saved_at: savedAtUTC
+        saved_at: savedAtKST,
+        created_at: savedAtKST // KST 기준으로 저장
       })
       .select()
       .single()

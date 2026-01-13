@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
+import {
+  getKSTTodayStart,
+  getKSTTodayEnd,
+  getKSTDateStart,
+  getKSTDateEnd,
+  toKSTDateString,
+  getKSTHour,
+  getKSTDayOfWeek
+} from '@/lib/payment-utils'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -29,35 +38,66 @@ export async function GET(request: NextRequest) {
       .select('*')
       .eq('status', 'success')
 
-    // 커스텀 기간 또는 startDate/endDate가 제공된 경우
+    // 커스텀 기간 또는 startDate/endDate가 제공된 경우 (KST 기준)
     if (startDate && endDate) {
+      const kstStart = getKSTDateStart(startDate)
+      const kstEnd = getKSTDateEnd(endDate)
       query = query
-        .gte('completed_at', startDate)
-        .lt('completed_at', new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+        .gte('completed_at', kstStart)
+        .lte('completed_at', kstEnd)
     } else if (period === 'day') {
-      // 오늘 날짜만
-      const today = new Date()
-      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString()
-      const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999).toISOString()
+      // 오늘 날짜만 (KST 기준)
+      const todayStart = getKSTTodayStart()
+      const todayEnd = getKSTTodayEnd()
       query = query.gte('completed_at', todayStart).lte('completed_at', todayEnd)
     } else if (period === 'week') {
-      // 오늘 기준 이전 7일 (오늘 포함)
-      const today = new Date()
-      const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999).toISOString()
-      const weekAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6).toISOString()
+      // 오늘 기준 이전 7일 (오늘 포함, KST 기준)
+      const todayEnd = getKSTTodayEnd()
+      const now = new Date()
+      const kstOffset = 9 * 60 * 60 * 1000
+      const kstNow = new Date(now.getTime() + kstOffset)
+      const weekAgoKST = new Date(Date.UTC(
+        kstNow.getUTCFullYear(),
+        kstNow.getUTCMonth(),
+        kstNow.getUTCDate() - 6,
+        0, 0, 0, 0
+      ))
+      const weekAgo = new Date(weekAgoKST.getTime() - kstOffset).toISOString()
       query = query.gte('completed_at', weekAgo).lte('completed_at', todayEnd)
     } else if (period === 'month') {
-      // 이번 달만
+      // 이번 달만 (KST 기준)
       const now = new Date()
-      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-      const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString()
-      query = query.gte('completed_at', firstDayOfMonth).lte('completed_at', lastDayOfMonth)
+      const kstOffset = 9 * 60 * 60 * 1000
+      const kstNow = new Date(now.getTime() + kstOffset)
+      const firstDayOfMonth = new Date(Date.UTC(
+        kstNow.getUTCFullYear(),
+        kstNow.getUTCMonth(),
+        1, 0, 0, 0, 0
+      ))
+      const lastDayOfMonth = new Date(Date.UTC(
+        kstNow.getUTCFullYear(),
+        kstNow.getUTCMonth() + 1,
+        0, 23, 59, 59, 999
+      ))
+      const firstDayUTC = new Date(firstDayOfMonth.getTime() - kstOffset).toISOString()
+      const lastDayUTC = new Date(lastDayOfMonth.getTime() - kstOffset).toISOString()
+      query = query.gte('completed_at', firstDayUTC).lte('completed_at', lastDayUTC)
     } else if (period === 'year') {
-      // 이번 해만
+      // 이번 해만 (KST 기준)
       const now = new Date()
-      const firstDayOfYear = new Date(now.getFullYear(), 0, 1).toISOString()
-      const lastDayOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999).toISOString()
-      query = query.gte('completed_at', firstDayOfYear).lte('completed_at', lastDayOfYear)
+      const kstOffset = 9 * 60 * 60 * 1000
+      const kstNow = new Date(now.getTime() + kstOffset)
+      const firstDayOfYear = new Date(Date.UTC(
+        kstNow.getUTCFullYear(),
+        0, 1, 0, 0, 0, 0
+      ))
+      const lastDayOfYear = new Date(Date.UTC(
+        kstNow.getUTCFullYear(),
+        11, 31, 23, 59, 59, 999
+      ))
+      const firstDayUTC = new Date(firstDayOfYear.getTime() - kstOffset).toISOString()
+      const lastDayUTC = new Date(lastDayOfYear.getTime() - kstOffset).toISOString()
+      query = query.gte('completed_at', firstDayUTC).lte('completed_at', lastDayUTC)
     }
 
     const { data: payments, error: paymentsError } = await query
@@ -75,11 +115,11 @@ export async function GET(request: NextRequest) {
       const maleCount = payments.filter(p => p.gender === 'male').length
       const femaleCount = payments.filter(p => p.gender === 'female').length
 
-      // 일별 통계
+      // 일별 통계 (KST 기준)
       const dailyStats: { [key: string]: { date: string; amount: number; count: number } } = {}
       payments.forEach(p => {
         if (p.completed_at) {
-          const date = new Date(p.completed_at).toISOString().split('T')[0]
+          const date = toKSTDateString(new Date(p.completed_at))
           if (!dailyStats[date]) {
             dailyStats[date] = { date, amount: 0, count: 0 }
           }
@@ -88,12 +128,12 @@ export async function GET(request: NextRequest) {
         }
       })
 
-      // 시간대별 통계
+      // 시간대별 통계 (KST 기준)
       const hourlyStats: { [key: number]: { hour: number; amount: number; count: number } } = {}
       payments.forEach(p => {
         if (p.completed_at) {
           const date = new Date(p.completed_at)
-          const hour = date.getHours()
+          const hour = getKSTHour(date)
           if (!hourlyStats[hour]) {
             hourlyStats[hour] = { hour, amount: 0, count: 0 }
           }
@@ -102,13 +142,13 @@ export async function GET(request: NextRequest) {
         }
       })
 
-      // 요일별 통계
+      // 요일별 통계 (KST 기준)
       const weeklyStats: { [key: number]: { weekday: number; weekdayName: string; amount: number; count: number } } = {}
       const weekdayNames = ['일', '월', '화', '수', '목', '금', '토']
       payments.forEach(p => {
         if (p.completed_at) {
           const date = new Date(p.completed_at)
-          const weekday = date.getDay()
+          const weekday = getKSTDayOfWeek(date)
           if (!weeklyStats[weekday]) {
             weeklyStats[weekday] = { weekday, weekdayName: weekdayNames[weekday], amount: 0, count: 0 }
           }

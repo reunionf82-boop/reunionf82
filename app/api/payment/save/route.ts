@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
+import { getKSTNow } from '@/lib/payment-utils'
 
 /**
  * 결제 정보 저장 API
@@ -54,9 +55,9 @@ export async function POST(request: NextRequest) {
       status: paymentStatus
     }
     
-    // success 상태일 때만 completed_at 설정
+    // success 상태일 때만 completed_at 설정 (KST 기준)
     if (paymentStatus === 'success') {
-      upsertData.completed_at = new Date().toISOString()
+      upsertData.completed_at = getKSTNow()
     }
     
     // 1) 우선 Upsert 시도 (oid UNIQUE 제약이 있을 때 가장 안정적/빠름)

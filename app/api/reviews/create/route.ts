@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
+import { getKSTNow } from '@/lib/payment-utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -79,7 +80,8 @@ export async function POST(req: NextRequest) {
       review_text: review_text.trim(),
       user_name: user_name || null,
       is_visible: false, // 기본값은 노출 안 함 (관리자 승인 필요)
-      is_best: false
+      is_best: false,
+      created_at: getKSTNow() // KST 기준으로 저장
     }
     
     // image_url이 있으면 추가
