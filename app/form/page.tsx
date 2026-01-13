@@ -28,17 +28,17 @@ function FormContent() {
   // sessionStorage와 URL 파라미터에서 데이터 가져오기 (하위 호환성 유지)
   useEffect(() => {
     const loadData = async () => {
-      // 결제 성공 sessionStorage 확인 (페이지 로드 시 즉시 확인)
+      // 결제 성공(localStorage) 확인 (페이지 로드 시 즉시 확인)
       if (typeof window !== 'undefined') {
-        const storedOid = sessionStorage.getItem('payment_success_oid')
-        const storedTimestamp = sessionStorage.getItem('payment_success_timestamp')
+        const storedOid = localStorage.getItem('payment_success_oid')
+        const storedTimestamp = localStorage.getItem('payment_success_timestamp')
         
         if (storedOid && storedTimestamp) {
           const timestamp = parseInt(storedTimestamp)
           const now = Date.now()
           // 10초 이내의 결제 성공 정보만 처리
           if (now - timestamp < 10000) {
-            console.log('[결제 성공] 페이지 로드 시 sessionStorage에서 결제 성공 정보 발견:', storedOid)
+            console.log('[결제 성공] 페이지 로드 시 localStorage에서 결제 성공 정보 발견:', storedOid)
             // content가 로드될 때까지 기다리지 않고 즉시 처리하려고 하면 안됨
             // content 로드 후 useEffect에서 처리됨
           }
@@ -1994,33 +1994,30 @@ function FormContent() {
     
     let isProcessing = false // 중복 처리 방지 플래그
     
-    // sessionStorage에서 결제 성공 정보 확인 (메시지가 놓쳤을 경우 대비)
-    const checkSessionStorage = async () => {
+    // localStorage에서 결제 성공 정보 확인 (메시지가 놓쳤을 경우 대비)
+    const checkLocalStorage = async () => {
       if (typeof window === 'undefined') return
       
-      const storedOid = sessionStorage.getItem('payment_success_oid')
-      const storedTimestamp = sessionStorage.getItem('payment_success_timestamp')
+      const storedOid = localStorage.getItem('payment_success_oid')
+      const storedTimestamp = localStorage.getItem('payment_success_timestamp')
       
-      console.log('[결제 성공] sessionStorage 확인:', { storedOid, storedTimestamp })
-      
+      // 로그 제거: sessionStorage에 값이 있을 때만 로그 출력
       if (storedOid && storedTimestamp) {
         const timestamp = parseInt(storedTimestamp)
         const now = Date.now()
         const timeDiff = now - timestamp
-        console.log('[결제 성공] 시간 차이:', timeDiff, 'ms')
         
         // 10초 이내의 결제 성공 정보만 처리 (오래된 정보는 무시)
         if (timeDiff < 10000) {
-          console.log('[결제 성공] sessionStorage에서 결제 성공 정보 발견:', storedOid)
+          console.log('[결제 성공] localStorage에서 결제 성공 정보 발견:', storedOid)
           await processPaymentSuccess(storedOid)
           // 처리 후 삭제
-          sessionStorage.removeItem('payment_success_oid')
-          sessionStorage.removeItem('payment_success_timestamp')
+          localStorage.removeItem('payment_success_oid')
+          localStorage.removeItem('payment_success_timestamp')
         } else {
-          console.log('[결제 성공] 오래된 정보 무시:', timeDiff, 'ms')
-          // 오래된 정보는 삭제
-          sessionStorage.removeItem('payment_success_oid')
-          sessionStorage.removeItem('payment_success_timestamp')
+          // 오래된 정보는 삭제 (로그 없이)
+          localStorage.removeItem('payment_success_oid')
+          localStorage.removeItem('payment_success_timestamp')
         }
       }
     }
@@ -2030,7 +2027,9 @@ function FormContent() {
       console.log('[결제 성공] processPaymentSuccess 호출됨:', { oid, isProcessing, submitting })
       
       // 중복 처리 방지
-      if (isProcessing || submitting) {
+      // ⚠️ submitting=true 상태에서 성공 신호를 받는 것이 정상 플로우라서
+      // submitting을 조건으로 막아버리면 성공 처리가 영원히 실행되지 않음
+      if (isProcessing) {
         console.log('[결제 성공] 이미 처리 중이므로 무시')
         return
       }
@@ -2082,9 +2081,10 @@ function FormContent() {
                 paymentCode: contentData.payment_code,
                 name: contentData.content_name || '',
                 pay: parseInt(contentData.price || '0'),
-                paymentType: 'card', // 기본값
+                paymentType: (sessionStorage.getItem('payment_method') as 'card' | 'mobile') || 'card',
                 userName: paymentUserName,
-                phoneNumber: sessionStorage.getItem('payment_phone') || ''
+                phoneNumber: sessionStorage.getItem('payment_phone') || '',
+                gender: (paymentUserGender as 'male' | 'female' | '') || null,
               })
             })
             
@@ -2158,18 +2158,59 @@ function FormContent() {
       await processPaymentSuccess(event.data.oid)
     }
     
-    // 초기 sessionStorage 확인
-    checkSessionStorage()
+    // 전역 함수로 결제 성공 처리기 등록 (opener에서 직접 호출용)
+    // 통화 내용 기반: "본창에 함수 하나 만들어 놓고 오픈창에서 호출하면 된다"
+    if (typeof window !== 'undefined') {
+      (window as any).handlePaymentSuccess = async (oid: string) => {
+        console.log('[결제 성공] window.handlePaymentSuccess 호출됨:', oid)
+        await processPaymentSuccess(oid)
+      }
+    }
+
+    // storage 이벤트로 즉시 감지 (결제 성공 새창 → 기존 폼창)
+    const handleStorage = async (e: StorageEvent) => {
+      if (!e.key) return
+      if (e.key === 'payment_success_signal' || e.key === 'payment_success_oid') {
+        await checkLocalStorage()
+      }
+    }
+
+    // 초기 localStorage 확인
+    checkLocalStorage()
     
-    // 주기적으로 sessionStorage 확인 (메시지가 놓쳤을 경우 대비)
+    // 주기적으로 localStorage 확인 (메시지가 놓쳤을 경우 대비)
     const intervalId = setInterval(() => {
-      checkSessionStorage()
+      checkLocalStorage()
     }, 500) // 0.5초마다 확인
     
     window.addEventListener('message', handleMessage)
+    window.addEventListener('storage', handleStorage)
+
+    // BroadcastChannel 수신 (가장 안정적인 창 간 메시지 전달)
+    let bc: BroadcastChannel | null = null
+    const handleBroadcast = async (event: MessageEvent) => {
+      const data: any = (event as any).data
+      if (data?.type === 'PAYMENT_SUCCESS' && data?.oid) {
+        await processPaymentSuccess(data.oid)
+      }
+    }
+    try {
+      bc = new BroadcastChannel('payment_success')
+      bc.addEventListener('message', handleBroadcast)
+    } catch {
+      bc = null
+    }
     
     return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).handlePaymentSuccess
+      }
       window.removeEventListener('message', handleMessage)
+      window.removeEventListener('storage', handleStorage)
+      try {
+        bc?.removeEventListener('message', handleBroadcast)
+        bc?.close()
+      } catch {}
       clearInterval(intervalId)
     }
   }, [content, name, phoneNumber1, phoneNumber2, phoneNumber3, submitting])
@@ -2292,9 +2333,31 @@ function FormContent() {
     setPaymentProcessingMethod(paymentMethod)
 
     try {
-      // 주문번호 생성
+      // 1. 주문번호 생성 (가장 먼저 수행)
       const { generateOrderId } = await import('@/lib/payment-utils')
       const oid = generateOrderId()
+      
+      // 전화번호 조합
+      const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+
+      // 0. DB에 pending 상태로 미리 저장 (서버 폴링을 위해)
+      await fetch('/api/payment/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          oid,
+          contentId: content.id,
+          paymentCode: content.payment_code,
+          name: content.content_name || '',
+          pay: parseInt(content.price || '0'),
+          paymentType: paymentMethod,
+          userName: name,
+          phoneNumber: phoneNumber,
+          gender: (gender as 'male' | 'female' | '') || null,
+          status: 'pending'
+        })
+      })
+
 
         // 주문번호 및 사용자 정보를 sessionStorage에 저장 (result 페이지에서 점사 시작 시 사용)
         if (typeof window !== 'undefined') {
@@ -2336,7 +2399,8 @@ function FormContent() {
           name: content.content_name || '',
           pay: parseInt(content.price || '0'),
           userName: name,
-          phoneNumber: `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+          phoneNumber: `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`,
+          oid
         })
       })
 
@@ -2352,88 +2416,55 @@ function FormContent() {
 
       const { paymentUrl, formData, successUrl, failUrl } = paymentRequestData.data
 
-      // 임시: 카드결제의 경우 실제 결제 창을 열지 않고 바로 처리 (개발 중)
-      if (paymentMethod === 'card') {
-        // 결제 정보 저장 (임시로 성공 처리)
-        try {
-          const fullPhoneNumber = `${phoneNumber1}${phoneNumber2}${phoneNumber3}`
-          const saveResponse = await fetch('/api/payment/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              oid,
-              contentId: content.id,
-              paymentCode: content.payment_code,
-              name: content.content_name || '',
-              pay: parseInt(content.price || '0'),
-              paymentType: 'card',
-              userName: name,
-              phoneNumber: fullPhoneNumber
-            })
-          })
+      console.log('[결제 처리] 결제 서버로 요청:', {
+        paymentUrl,
+        formData,
+        paymentMethod,
+        oid
+      })
 
-          if (saveResponse.ok) {
-            console.log('[임시 결제] 결제 정보 저장 성공')
-          } else {
-            console.error('[임시 결제] 결제 정보 저장 실패')
-          }
-        } catch (e) {
-          console.error('[임시 결제] 결제 정보 저장 오류:', e)
-        }
-
-        // 결제정보 팝업 닫기
-        setShowPaymentPopup(false)
-        setSubmitting(false)
-        setPaymentProcessingMethod(null)
-
-        // 바로 점사 시작 (결제 성공 페이지를 거치지 않고 직접 처리)
-        console.log('[임시 결제] 바로 점사 시작')
-        const startTime = Date.now()
-        await startFortuneTellingWithContent(
-          startTime,
-          content,
-          {
-            name: name,
-            gender: gender,
-            calendarType: calendarType,
-            year: year,
-            month: month,
-            day: day,
-            birthHour: birthHour,
-            partnerName: partnerName,
-            partnerGender: partnerGender,
-            partnerCalendarType: partnerCalendarType,
-            partnerYear: partnerYear,
-            partnerMonth: partnerMonth,
-            partnerDay: partnerDay,
-            partnerBirthHour: partnerBirthHour
-          },
-          true // 결제 성공으로 인한 이동 플래그
-        )
-        return
-      }
-
-      // 휴대폰 결제는 기존 로직 유지 (실제 결제 창 열기)
-      // 결제 URL로 새 창 열기 (form submit)
+      // 카드 결제와 휴대폰 결제 모두 실제 결제 서버로 요청 (form submit)
+      // 중요: window.open으로 연 "같은 창"에만 submit 해야 postMessage/close가 안정적으로 동작함
       const form = document.createElement('form')
       form.method = 'POST'
       form.action = paymentUrl
-      form.target = '_blank'
       form.style.display = 'none'
 
-      // formData를 input으로 추가
-      Object.entries(formData).forEach(([key, value]) => {
+      // 결제사 리다이렉트 URL도 함께 전달 (결제 성공/실패 시 우리 페이지로 돌아오게)
+      // 결제사 구현별 파라미터명이 다를 수 있어 호환 키를 모두 보낸다.
+      const redirectFields: Record<string, string> = {
+        successUrl,
+        failUrl,
+        success_url: successUrl,
+        fail_url: failUrl,
+        returnUrl: successUrl,
+        return_url: successUrl,
+        ret_url: successUrl,
+        nextUrl: successUrl,
+      }
+
+      const fullFormData: Record<string, string> = {
+        ...Object.fromEntries(Object.entries(formData).map(([k, v]) => [k, String(v)])),
+        ...redirectFields,
+      }
+
+      // fullFormData를 input으로 추가
+      Object.entries(fullFormData).forEach(([key, value]) => {
         const input = document.createElement('input')
         input.type = 'hidden'
         input.name = key
         input.value = String(value)
         form.appendChild(input)
+        console.log(`[결제 처리] form input 추가: ${key} = ${value}`)
       })
 
       document.body.appendChild(form)
+      console.log('[결제 처리] form 생성 완료, submit 준비')
       
-      // 팝업 차단 시 강제로 열기
-      const paymentWindow = window.open('', '_blank', 'width=800,height=600')
+      // 팝업 차단 방지: 사용자 클릭 이벤트 안에서 "이름 있는 창"을 먼저 연다
+      // 이후 form.target을 이 창 이름으로 지정하여 같은 창으로 POST submit
+      const paymentWindowName = `payment_${oid}`
+      const paymentWindow = window.open('about:blank', paymentWindowName, 'width=800,height=600')
       if (!paymentWindow) {
         // 팝업이 차단된 경우
         alert('팝업이 차단되었습니다. 브라우저 설정에서 팝업을 허용해주세요.')
@@ -2442,10 +2473,26 @@ function FormContent() {
         return
       }
 
-      // form submit (결제 창이 열린 후)
-      // form을 paymentWindow에 submit하기 위해 form의 target을 설정
-      form.target = '_blank'
-      form.submit()
+      console.log('[결제 처리] 결제 창 열림, form submit 시작')
+      
+      // form submit (결제 창이 열린 후) - 반드시 위에서 연 결제창으로 submit
+      form.target = paymentWindowName
+      paymentWindow.focus()
+      
+      // 약간의 딜레이를 주어 창이 완전히 열린 후 submit
+      setTimeout(() => {
+        try {
+          form.submit()
+          console.log('[결제 처리] form submit 완료, paymentUrl:', paymentUrl)
+        } catch (error) {
+          console.error('[결제 처리] form submit 오류:', error)
+          // POST 데이터가 포함되어야 하므로 location.href로 대체 이동은 정확한 fallback이 아님
+          // (결제창은 그대로 두고, 사용자에게 재시도를 유도)
+          try {
+            paymentWindow.focus()
+          } catch {}
+        }
+      }, 100)
       
       // form이 submit된 후 DOM에서 제거
       setTimeout(() => {
@@ -2454,25 +2501,51 @@ function FormContent() {
         }
       }, 100)
 
-      // 결제 창이 닫혔는지 확인 (에러 페이지에서 창을 닫으면 결제정보 팝업도 닫기)
+      // 결제 창이 닫혔는지 확인 및 서버 상태 폴링 (가장 확실한 방법)
       const checkWindowClosed = () => {
-        const checkInterval = setInterval(() => {
-          if (paymentWindow.closed) {
-            clearInterval(checkInterval)
-            // 결제 창이 닫혔으면 결제정보 팝업도 닫기 (에러 페이지에서 창 닫기 시)
-            setShowPaymentPopup(false)
-            setSubmitting(false)
-            setPaymentProcessingMethod(null)
-            // sessionStorage 정리
-            if (typeof window !== 'undefined') {
-              sessionStorage.removeItem('payment_oid')
-              sessionStorage.removeItem('payment_method')
-              sessionStorage.removeItem('payment_content_id')
-              sessionStorage.removeItem('payment_user_name')
-              sessionStorage.removeItem('payment_phone')
+        const checkInterval = setInterval(async () => {
+          try {
+            // 1. 서버 상태 폴링 (DB가 success가 되면 무조건 이동)
+            try {
+              const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
+              const statusData = await statusRes.json()
+              if (statusData.success && statusData.status === 'success') {
+                clearInterval(checkInterval)
+                console.log('[결제 처리] 서버 상태 success 확인됨')
+                if (typeof window !== 'undefined' && (window as any).handlePaymentSuccess) {
+                  await (window as any).handlePaymentSuccess(oid)
+                }
+                return
+              }
+            } catch (e) {
+              // 폴링 에러 무시
             }
+
+            // 2. 창 닫힘 체크
+            if (paymentWindow.closed) {
+              // ... 기존 로직 ...
+
+              clearInterval(checkInterval)
+              // 결제 창이 닫혔으면 결제정보 팝업도 닫기 (에러 페이지에서 창 닫기 시)
+              // 단, 결제 성공으로 인한 닫힘이 아닌 경우에만 (sessionStorage 확인)
+              // 성공 신호는 localStorage로 공유됨 (success 창 → opener)
+              const successOid = localStorage.getItem('payment_success_oid')
+              if (!successOid) {
+                // 사용자가 결제창을 닫았거나 실패/취소로 닫힌 경우: 팝업은 유지하고 버튼만 다시 활성화
+                setSubmitting(false)
+                setPaymentProcessingMethod(null)
+                // 결제 재시도를 위해 결제정보 팝업은 닫지 않음
+              }
+            }
+          } catch (e) {
+            // cross-origin 오류는 무시 (결제 서버로 이동했을 수 있음)
           }
         }, 500) // 0.5초마다 확인
+        
+        // 최대 30초 후에는 체크 중단 (결제 성공 페이지에서 처리됨)
+        setTimeout(() => {
+          clearInterval(checkInterval)
+        }, 30000)
       }
       
       checkWindowClosed()

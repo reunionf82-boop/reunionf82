@@ -14,13 +14,17 @@ import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
  * - paymentType: 'card' | 'mobile'
  * - userName: string
  * - phoneNumber: string
+ * - gender?: 'male' | 'female' | null
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { oid, contentId, paymentCode, name, pay, paymentType, userName, phoneNumber } = body
+    const { oid, contentId, paymentCode, name, pay, paymentType, userName, phoneNumber, gender, status } = body
 
-    // 필수 파라미터 검증
+    // 필수 파라미터 검증 (status가 update일 땐 일부 생략 가능하지만 일단 단순화)
+    // if (!oid || !contentId || !paymentCode || !name || !pay || !paymentType) {
+    // pending 저장 시에는 결제 정보가 다 있지만, update 시에는 oid만 있을 수도 있음.
+    // 여기서는 pending 저장용으로 다 받는다고 가정.
     if (!oid || !contentId || !paymentCode || !name || !pay || !paymentType) {
       return NextResponse.json(
         { success: false, error: '필수 파라미터가 누락되었습니다.' },
@@ -30,21 +34,22 @@ export async function POST(request: NextRequest) {
 
     const supabase = getAdminSupabaseClient()
 
-    // 결제 정보 저장
+    // 결제 정보 저장 (Upsert로 변경하여 중복 방지 및 상태 업데이트)
     const { data, error } = await supabase
       .from('payments')
-      .insert({
+      .upsert({
         oid,
         content_id: contentId,
         payment_code: paymentCode,
-        name: name.substring(0, 200), // 최대 200자
-        pay: parseInt(pay.toString()),
+        name: name?.substring(0, 200),
+        pay: pay ? parseInt(pay.toString()) : 0,
         payment_type: paymentType,
         user_name: userName || null,
         phone_number: phoneNumber || null,
-        status: 'success',
+        gender: gender === 'male' || gender === 'female' ? gender : null,
+        status: status || 'success',
         completed_at: new Date().toISOString()
-      })
+      }, { onConflict: 'oid' }) // oid가 같으면 업데이트
       .select()
       .single()
 
