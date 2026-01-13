@@ -397,11 +397,14 @@ export default function PaymentStatsDashboard({ isOpen, onClose }: PaymentStatsD
                             <div className="flex-1 relative">
                               <div className="h-6 bg-gray-700 rounded-full overflow-hidden flex items-center border border-gray-600">
                                 <div
-                                  className="h-full bg-blue-500 rounded-full flex items-center justify-end pr-2 transition-all duration-500"
-                                  style={{ width: `${maxAmount > 0 ? (day.amount / maxAmount) * 100 : 0}%` }}
+                                  className="h-full bg-blue-500 rounded-full flex items-center justify-end pl-2 pr-2 transition-all duration-500"
+                                  style={{ 
+                                    width: `${maxAmount > 0 ? (day.amount / maxAmount) * 100 : 0}%`,
+                                    minWidth: day.amount > 0 ? '140px' : '0px'
+                                  }}
                                 >
                                   {day.amount > 0 && (
-                                    <span className="text-white text-xs font-semibold">
+                                    <span className="text-white text-xs font-semibold whitespace-nowrap">
                                       {formatCurrency(day.amount)}
                                     </span>
                                   )}
@@ -429,7 +432,7 @@ export default function PaymentStatsDashboard({ isOpen, onClose }: PaymentStatsD
                                   className="h-full bg-blue-500 rounded-full flex items-center justify-end pl-2 pr-2 transition-all duration-500"
                                   style={{ 
                                     width: `${maxAmount > 0 ? (hour.amount / maxAmount) * 100 : 0}%`,
-                                    minWidth: hour.amount > 0 ? '120px' : '0px'
+                                    minWidth: hour.amount > 0 ? '140px' : '0px'
                                   }}
                                 >
                                   {hour.amount > 0 && (
@@ -458,11 +461,14 @@ export default function PaymentStatsDashboard({ isOpen, onClose }: PaymentStatsD
                             <div className="flex-1 relative">
                               <div className="h-6 bg-gray-700 rounded-full overflow-hidden flex items-center border border-gray-600">
                                 <div
-                                  className="h-full bg-blue-500 rounded-full flex items-center justify-end pr-2 transition-all duration-500"
-                                  style={{ width: `${maxAmount > 0 ? (week.amount / maxAmount) * 100 : 0}%` }}
+                                  className="h-full bg-blue-500 rounded-full flex items-center justify-end pl-2 pr-2 transition-all duration-500"
+                                  style={{ 
+                                    width: `${maxAmount > 0 ? (week.amount / maxAmount) * 100 : 0}%`,
+                                    minWidth: week.amount > 0 ? '140px' : '0px'
+                                  }}
                                 >
                                   {week.amount > 0 && (
-                                    <span className="text-white text-xs font-semibold">
+                                    <span className="text-white text-xs font-semibold whitespace-nowrap">
                                       {formatCurrency(week.amount)}
                                     </span>
                                   )}
@@ -502,11 +508,14 @@ export default function PaymentStatsDashboard({ isOpen, onClose }: PaymentStatsD
                           <div className="flex-1 relative">
                             <div className="h-10 bg-gray-700 rounded-full overflow-hidden flex items-center border border-gray-600">
                               <div
-                                className="h-full bg-emerald-500 rounded-full flex items-center justify-end pr-3 transition-all duration-500"
-                                style={{ width: `${maxAmount > 0 ? (content.amount / maxAmount) * 100 : 0}%` }}
+                                className="h-full bg-emerald-500 rounded-full flex items-center justify-end pl-3 pr-3 transition-all duration-500"
+                                style={{ 
+                                  width: `${maxAmount > 0 ? (content.amount / maxAmount) * 100 : 0}%`,
+                                  minWidth: content.amount > 0 ? '160px' : '0px'
+                                }}
                               >
                                 {content.amount > 0 && (
-                                  <span className="text-white text-base font-bold">
+                                  <span className="text-white text-base font-bold whitespace-nowrap">
                                     {formatCurrency(content.amount)}
                                   </span>
                                 )}
