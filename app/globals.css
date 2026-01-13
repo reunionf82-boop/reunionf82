@@ -96,4 +96,10 @@ body {
   min-height: 100vh;
 }
 
+/* 모바일 Pull-to-Refresh 방지 (점사 중에만 html에 클래스 토글) */
+html.no-pull-to-refresh,
+html.no-pull-to-refresh body {
+  overscroll-behavior-y: none; /* Android Chrome 등 */
+}
+
 

@@ -10,6 +10,7 @@ import SlideMenuBar from '@/components/SlideMenuBar'
 import MyHistoryPopup from '@/components/MyHistoryPopup'
 import TermsPopup from '@/components/TermsPopup'
 import PrivacyPopup from '@/components/PrivacyPopup'
+import AlertPopup from '@/components/AlertPopup'
 
 interface ResultData {
   content: any
@@ -191,6 +192,8 @@ function ResultContent() {
   const [firstSubtitleReady, setFirstSubtitleReady] = useState(false) // 1-1 소제목 준비 여부
   const firstSubtitleReadyRef = useRef(false)
   const [streamingFinished, setStreamingFinished] = useState(false) // 스트리밍 완료 여부 (realtime)
+  const [showCompletionPopup, setShowCompletionPopup] = useState(false) // 점사 완료 팝업
+  const completionPopupShownRef = useRef(false)
   const thumbnailHtmlCacheRef = useRef<Map<number, string>>(new Map()) // 썸네일 HTML 캐시 (메뉴 인덱스별)
   const manseHtmlCacheRef = useRef<Map<number, string>>(new Map()) // 만세력 HTML 캐시 (메뉴 인덱스별)
   const autoSavedRef = useRef(false) // 자동 저장 여부 (중복 저장 방지)
@@ -2523,6 +2526,83 @@ ${fontFace ? fontFace : ''}
   // isRealtime이고 점사 진행 중이면 resultData가 없어도 허용 (점사 시작 전)
   // requestKey가 있으면 점사를 시작할 예정이므로 resultData 체크를 건너뜀
   const isRealtimeStreaming = isRealtime || requestKey || isStreaming || isStreamingActive
+
+  // 모바일 Pull-to-Refresh 방지 (점사 스트리밍 중)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const shouldBlockPullToRefresh = isRealtimeStreaming && !streamingFinished
+    const root = document.documentElement
+
+    if (!shouldBlockPullToRefresh) {
+      root.classList.remove('no-pull-to-refresh')
+      return
+    }
+
+    root.classList.add('no-pull-to-refresh')
+
+    // iOS Safari는 overscroll-behavior를 무시하는 경우가 있어,
+    // 화면 최상단에서 아래로 당기는 제스처만 preventDefault로 차단
+    let startY = 0
+    const onTouchStart = (e: TouchEvent) => {
+      if (!e.touches || e.touches.length === 0) return
+      startY = e.touches[0].clientY
+    }
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!e.touches || e.touches.length === 0) return
+      const currentY = e.touches[0].clientY
+      const isPullingDown = currentY > startY + 5
+      const atTop = window.scrollY <= 0
+
+      if (atTop && isPullingDown) {
+        e.preventDefault()
+      }
+    }
+
+    window.addEventListener('touchstart', onTouchStart, { passive: true })
+    window.addEventListener('touchmove', onTouchMove, { passive: false })
+
+    return () => {
+      root.classList.remove('no-pull-to-refresh')
+      window.removeEventListener('touchstart', onTouchStart as any)
+      window.removeEventListener('touchmove', onTouchMove as any)
+    }
+  }, [isRealtimeStreaming, streamingFinished])
+
+  // 점사 "완료" 시 엔딩북커버로 이동 + 완료 팝업 표시
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!isRealtimeStreaming) return
+    if (!streamingFinished) return
+    if (completionPopupShownRef.current) return
+
+    // 새로고침/뒤로가기 등으로 중복 표시 방지 (requestKey 우선)
+    const storageKey = `result_completion_popup_shown_${requestKey || savedId || 'unknown'}`
+    try {
+      if (sessionStorage.getItem(storageKey) === '1') {
+        completionPopupShownRef.current = true
+        return
+      }
+      sessionStorage.setItem(storageKey, '1')
+    } catch {
+      // sessionStorage 불가 환경이면 ref만으로 방지
+    }
+
+    completionPopupShownRef.current = true
+
+    // 엔딩북커버가 있으면 해당 위치로 스크롤 (렌더 직후 보장 위해 약간 지연)
+    setTimeout(() => {
+      try {
+        const endingEl = document.querySelector('.ending-book-cover-thumbnail-container') as HTMLElement | null
+        if (endingEl) {
+          endingEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      } catch {}
+    }, 150)
+
+    setShowCompletionPopup(true)
+  }, [isRealtimeStreaming, streamingFinished, requestKey, savedId])
   
   // content가 없어도 HTML이 있으면 표시 가능 (content는 선택사항)
   // isRealtime이고 점사 진행 중이면 HTML이 없어도 허용 (점사 시작 전)
@@ -4871,6 +4951,13 @@ ${fontFace ? fontFace : ''}
       
       {/* 개인정보처리방침 팝업 */}
       <PrivacyPopup isOpen={showPrivacyPopup} onClose={() => setShowPrivacyPopup(false)} />
+
+      {/* 점사 완료 팝업 */}
+      <AlertPopup
+        isOpen={showCompletionPopup}
+        message={'점사가 모두 완료되었습니다'}
+        onClose={() => setShowCompletionPopup(false)}
+      />
 
       {/* 헤더 */}
       <header className="w-full bg-white border-b-2 border-pink-500">
