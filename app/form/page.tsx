@@ -28,6 +28,23 @@ function FormContent() {
   // sessionStorage와 URL 파라미터에서 데이터 가져오기 (하위 호환성 유지)
   useEffect(() => {
     const loadData = async () => {
+      // 결제 성공 sessionStorage 확인 (페이지 로드 시 즉시 확인)
+      if (typeof window !== 'undefined') {
+        const storedOid = sessionStorage.getItem('payment_success_oid')
+        const storedTimestamp = sessionStorage.getItem('payment_success_timestamp')
+        
+        if (storedOid && storedTimestamp) {
+          const timestamp = parseInt(storedTimestamp)
+          const now = Date.now()
+          // 10초 이내의 결제 성공 정보만 처리
+          if (now - timestamp < 10000) {
+            console.log('[결제 성공] 페이지 로드 시 sessionStorage에서 결제 성공 정보 발견:', storedOid)
+            // content가 로드될 때까지 기다리지 않고 즉시 처리하려고 하면 안됨
+            // content 로드 후 useEffect에서 처리됨
+          }
+        }
+      }
+      
       // 결제 실패 URL 처리 (code, msg 파라미터)
       const code = searchParams.get('code')
       const msg = searchParams.get('msg')
@@ -1971,6 +1988,192 @@ function FormContent() {
     }
   }
 
+  // 오픈창에서 결제 성공 메시지 수신 처리 및 sessionStorage 확인 (content가 로드된 후에만 실행)
+  useEffect(() => {
+    if (!content || !content.id) return // content가 로드되지 않았으면 대기
+    
+    let isProcessing = false // 중복 처리 방지 플래그
+    
+    // sessionStorage에서 결제 성공 정보 확인 (메시지가 놓쳤을 경우 대비)
+    const checkSessionStorage = async () => {
+      if (typeof window === 'undefined') return
+      
+      const storedOid = sessionStorage.getItem('payment_success_oid')
+      const storedTimestamp = sessionStorage.getItem('payment_success_timestamp')
+      
+      console.log('[결제 성공] sessionStorage 확인:', { storedOid, storedTimestamp })
+      
+      if (storedOid && storedTimestamp) {
+        const timestamp = parseInt(storedTimestamp)
+        const now = Date.now()
+        const timeDiff = now - timestamp
+        console.log('[결제 성공] 시간 차이:', timeDiff, 'ms')
+        
+        // 10초 이내의 결제 성공 정보만 처리 (오래된 정보는 무시)
+        if (timeDiff < 10000) {
+          console.log('[결제 성공] sessionStorage에서 결제 성공 정보 발견:', storedOid)
+          await processPaymentSuccess(storedOid)
+          // 처리 후 삭제
+          sessionStorage.removeItem('payment_success_oid')
+          sessionStorage.removeItem('payment_success_timestamp')
+        } else {
+          console.log('[결제 성공] 오래된 정보 무시:', timeDiff, 'ms')
+          // 오래된 정보는 삭제
+          sessionStorage.removeItem('payment_success_oid')
+          sessionStorage.removeItem('payment_success_timestamp')
+        }
+      }
+    }
+    
+    // 결제 성공 처리 함수 (postMessage 또는 sessionStorage에서 호출)
+    const processPaymentSuccess = async (oid: string) => {
+      console.log('[결제 성공] processPaymentSuccess 호출됨:', { oid, isProcessing, submitting })
+      
+      // 중복 처리 방지
+      if (isProcessing || submitting) {
+        console.log('[결제 성공] 이미 처리 중이므로 무시')
+        return
+      }
+      
+      isProcessing = true
+      console.log('[결제 성공] 결제 성공 처리 시작:', oid)
+      
+      // sessionStorage에서 결제 정보 가져오기
+      const paymentContentId = sessionStorage.getItem('payment_content_id')
+      if (!paymentContentId) {
+        console.error('[결제 성공] 결제 정보를 찾을 수 없습니다.')
+        isProcessing = false
+        return
+      }
+      
+      // sessionStorage에서 사용자 정보 가져오기
+      const paymentUserName = sessionStorage.getItem('payment_user_name')
+      const paymentUserGender = sessionStorage.getItem('payment_user_gender')
+      const paymentUserCalendarType = sessionStorage.getItem('payment_user_calendar_type')
+      const paymentUserYear = sessionStorage.getItem('payment_user_year')
+      const paymentUserMonth = sessionStorage.getItem('payment_user_month')
+      const paymentUserDay = sessionStorage.getItem('payment_user_day')
+      const paymentUserBirthHour = sessionStorage.getItem('payment_user_birth_hour')
+      const paymentPartnerName = sessionStorage.getItem('payment_partner_name')
+      
+      if (!paymentUserName || !paymentUserYear || !paymentUserMonth || !paymentUserDay) {
+        console.error('[결제 성공] 사용자 정보를 찾을 수 없습니다.')
+        isProcessing = false
+        return
+      }
+      
+      // 결제정보 팝업만 닫기 (최소한의 state 업데이트로 리렌더링 최소화)
+      setShowPaymentPopup(false)
+      setSubmitting(false)
+      setPaymentProcessingMethod(null)
+      
+      // content 정보 로드 후 바로 점사 시작
+      try {
+        const contentData = await getContentById(parseInt(paymentContentId))
+        if (contentData) {
+          // 결제 정보 저장
+          try {
+            const saveResponse = await fetch('/api/payment/save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                oid,
+                contentId: contentData.id,
+                paymentCode: contentData.payment_code,
+                name: contentData.content_name || '',
+                pay: parseInt(contentData.price || '0'),
+                paymentType: 'card', // 기본값
+                userName: paymentUserName,
+                phoneNumber: sessionStorage.getItem('payment_phone') || ''
+              })
+            })
+            
+            if (saveResponse.ok) {
+              console.log('[결제 성공] 결제 정보 저장 성공')
+            } else {
+              console.error('[결제 성공] 결제 정보 저장 실패:', await saveResponse.text())
+            }
+          } catch (error) {
+            console.error('[결제 성공] 결제 정보 저장 오류:', error)
+          }
+          
+          // 점사 시작 (state 업데이트 없이 파라미터로만 전달)
+          console.log('[결제 성공] 점사 시작 준비 완료, startFortuneTellingWithContent 호출')
+          const startTime = Date.now()
+          try {
+            await startFortuneTellingWithContent(
+              startTime, 
+              contentData,
+              {
+                name: paymentUserName,
+                gender: paymentUserGender as 'male' | 'female' | '' || '',
+                calendarType: (paymentUserCalendarType as 'solar' | 'lunar' | 'lunar-leap') || 'solar',
+                year: paymentUserYear,
+                month: paymentUserMonth,
+                day: paymentUserDay,
+                birthHour: paymentUserBirthHour || '',
+                partnerName: paymentPartnerName || '',
+                partnerGender: (sessionStorage.getItem('payment_partner_gender') as 'male' | 'female' | '') || '',
+                partnerCalendarType: (sessionStorage.getItem('payment_partner_calendar_type') as 'solar' | 'lunar' | 'lunar-leap') || 'solar',
+                partnerYear: sessionStorage.getItem('payment_partner_year') || '',
+                partnerMonth: sessionStorage.getItem('payment_partner_month') || '',
+                partnerDay: sessionStorage.getItem('payment_partner_day') || '',
+                partnerBirthHour: sessionStorage.getItem('payment_partner_birth_hour') || ''
+              },
+              true // 결제 성공으로 인한 이동 플래그
+            )
+            console.log('[결제 성공] startFortuneTellingWithContent 완료')
+          } catch (error) {
+            console.error('[결제 성공] startFortuneTellingWithContent 오류:', error)
+            isProcessing = false
+          }
+        } else {
+          console.error('[결제 성공] 컨텐츠 정보를 찾을 수 없습니다.')
+          showAlertMessage('컨텐츠 정보를 찾을 수 없습니다.')
+          isProcessing = false
+        }
+      } catch (error) {
+        console.error('[결제 성공] 컨텐츠 로드 오류:', error)
+        showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
+        isProcessing = false
+      }
+    }
+    
+    const handleMessage = async (event: MessageEvent) => {
+      console.log('[결제 성공] 메시지 수신 시도:', event.data, event.origin)
+      
+      // 보안: 같은 origin에서 온 메시지만 처리
+      if (event.origin !== window.location.origin) {
+        console.log('[결제 성공] origin 불일치:', event.origin, 'vs', window.location.origin)
+        return
+      }
+      
+      // PAYMENT_SUCCESS 타입 메시지만 처리 (React DevTools 메시지 필터링)
+      if (event.data?.type !== 'PAYMENT_SUCCESS' || !event.data?.oid) {
+        console.log('[결제 성공] 메시지 타입 불일치 또는 oid 없음:', event.data)
+        return
+      }
+      
+      console.log('[결제 성공] 메시지 수신 성공:', event.data.oid)
+      await processPaymentSuccess(event.data.oid)
+    }
+    
+    // 초기 sessionStorage 확인
+    checkSessionStorage()
+    
+    // 주기적으로 sessionStorage 확인 (메시지가 놓쳤을 경우 대비)
+    const intervalId = setInterval(() => {
+      checkSessionStorage()
+    }, 500) // 0.5초마다 확인
+    
+    window.addEventListener('message', handleMessage)
+    
+    return () => {
+      window.removeEventListener('message', handleMessage)
+      clearInterval(intervalId)
+    }
+  }, [content, name, phoneNumber1, phoneNumber2, phoneNumber3, submitting])
+
   // 리뷰 로드 함수
   const loadReviews = async (contentId: number) => {
     try {
@@ -2093,14 +2296,32 @@ function FormContent() {
       const { generateOrderId } = await import('@/lib/payment-utils')
       const oid = generateOrderId()
 
-      // 주문번호를 sessionStorage에 저장
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('payment_oid', oid)
-        sessionStorage.setItem('payment_method', paymentMethod)
-        sessionStorage.setItem('payment_content_id', String(content.id))
-        sessionStorage.setItem('payment_user_name', name)
-        sessionStorage.setItem('payment_phone', `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`)
-      }
+        // 주문번호 및 사용자 정보를 sessionStorage에 저장 (result 페이지에서 점사 시작 시 사용)
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('payment_oid', oid)
+          sessionStorage.setItem('payment_method', paymentMethod)
+          sessionStorage.setItem('payment_content_id', String(content.id))
+          sessionStorage.setItem('payment_user_name', name)
+          sessionStorage.setItem('payment_phone', `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`)
+          sessionStorage.setItem('payment_password', password) // 비밀번호도 저장
+          // 점사 시작에 필요한 사용자 정보 저장
+          sessionStorage.setItem('payment_user_gender', gender)
+          sessionStorage.setItem('payment_user_calendar_type', calendarType)
+          sessionStorage.setItem('payment_user_year', year)
+          sessionStorage.setItem('payment_user_month', month)
+          sessionStorage.setItem('payment_user_day', day)
+          sessionStorage.setItem('payment_user_birth_hour', birthHour)
+          // 이성 정보 (궁합형인 경우)
+          if (partnerName) {
+            sessionStorage.setItem('payment_partner_name', partnerName)
+            sessionStorage.setItem('payment_partner_gender', partnerGender)
+            sessionStorage.setItem('payment_partner_calendar_type', partnerCalendarType)
+            sessionStorage.setItem('payment_partner_year', partnerYear)
+            sessionStorage.setItem('payment_partner_month', partnerMonth)
+            sessionStorage.setItem('payment_partner_day', partnerDay)
+            sessionStorage.setItem('payment_partner_birth_hour', partnerBirthHour)
+          }
+        }
 
       // 결제 요청
       const paymentRequestResponse = await fetch('/api/payment/request', {
@@ -2131,6 +2352,68 @@ function FormContent() {
 
       const { paymentUrl, formData, successUrl, failUrl } = paymentRequestData.data
 
+      // 임시: 카드결제의 경우 실제 결제 창을 열지 않고 바로 처리 (개발 중)
+      if (paymentMethod === 'card') {
+        // 결제 정보 저장 (임시로 성공 처리)
+        try {
+          const fullPhoneNumber = `${phoneNumber1}${phoneNumber2}${phoneNumber3}`
+          const saveResponse = await fetch('/api/payment/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              oid,
+              contentId: content.id,
+              paymentCode: content.payment_code,
+              name: content.content_name || '',
+              pay: parseInt(content.price || '0'),
+              paymentType: 'card',
+              userName: name,
+              phoneNumber: fullPhoneNumber
+            })
+          })
+
+          if (saveResponse.ok) {
+            console.log('[임시 결제] 결제 정보 저장 성공')
+          } else {
+            console.error('[임시 결제] 결제 정보 저장 실패')
+          }
+        } catch (e) {
+          console.error('[임시 결제] 결제 정보 저장 오류:', e)
+        }
+
+        // 결제정보 팝업 닫기
+        setShowPaymentPopup(false)
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
+
+        // 바로 점사 시작 (결제 성공 페이지를 거치지 않고 직접 처리)
+        console.log('[임시 결제] 바로 점사 시작')
+        const startTime = Date.now()
+        await startFortuneTellingWithContent(
+          startTime,
+          content,
+          {
+            name: name,
+            gender: gender,
+            calendarType: calendarType,
+            year: year,
+            month: month,
+            day: day,
+            birthHour: birthHour,
+            partnerName: partnerName,
+            partnerGender: partnerGender,
+            partnerCalendarType: partnerCalendarType,
+            partnerYear: partnerYear,
+            partnerMonth: partnerMonth,
+            partnerDay: partnerDay,
+            partnerBirthHour: partnerBirthHour
+          },
+          true // 결제 성공으로 인한 이동 플래그
+        )
+        return
+      }
+
+      // 휴대폰 결제는 기존 로직 유지 (실제 결제 창 열기)
       // 결제 URL로 새 창 열기 (form submit)
       const form = document.createElement('form')
       form.method = 'POST'
@@ -2171,155 +2454,32 @@ function FormContent() {
         }
       }, 100)
 
-      // 새 창이 닫힌 후 결제 상태 확인 (폴링)
-      const checkPaymentStatus = async (): Promise<boolean> => {
-        const maxAttempts = 10 // 최대 10초
-        const interval = 1000 // 1초 간격
-
-        // 새 창이 닫힐 때까지 대기
-        const waitForWindowClose = (): Promise<void> => {
-          return new Promise((resolve) => {
-            const checkInterval = setInterval(() => {
-              if (paymentWindow.closed) {
-                clearInterval(checkInterval)
-                resolve()
-              }
-            }, 100) // 100ms마다 확인
-
-            // 최대 60초 대기 (결제 창이 오래 열려있을 수 있음)
-            setTimeout(() => {
-              clearInterval(checkInterval)
-              resolve()
-            }, 60000)
-          })
-        }
-
-        // 새 창이 닫힐 때까지 대기
-        await waitForWindowClose()
-
-        // 결제 창이 닫힌 시점 기록
-        const windowCloseTime = Date.now()
-
-        // 결제 상태 확인 (폴링) - 결제 창이 닫힌 직후부터 10초 동안 확인
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          try {
-            const checkResponse = await fetch('/api/payment/check', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ oid })
-            })
-
-            if (!checkResponse.ok) {
-              // 다음 확인까지 대기 (정확히 10초가 되도록)
-              const elapsed = Date.now() - windowCloseTime
-              const waitTime = interval - (elapsed % interval)
-              if (attempt < maxAttempts - 1 && waitTime > 0) {
-                await new Promise(resolve => setTimeout(resolve, waitTime))
-                continue // 다음 시도
-              }
-              // 10초가 지났으면 타임아웃
-              if (elapsed >= maxAttempts * interval) {
-                return false
-              }
-              continue
-            }
-
-            const checkData = await checkResponse.json()
-            if (checkData.success && checkData.data.isPaid) {
-              // 결제 완료 - 결제 정보 저장
-              try {
-                const saveResponse = await fetch('/api/payment/save', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    oid,
-                    contentId: content.id,
-                    paymentCode: content.payment_code,
-                    name: content.content_name || '',
-                    pay: parseInt(content.price || '0'),
-                    paymentType: paymentMethod,
-                    userName: name,
-                    phoneNumber: `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
-                  })
-                })
-
-                if (saveResponse.ok) {
-                  console.log('[결제] 결제 정보 저장 성공')
-                } else {
-                  console.error('[결제] 결제 정보 저장 실패')
-                }
-              } catch (error) {
-                console.error('[결제] 결제 정보 저장 오류:', error)
-              }
-
-              return true // 결제 완료
-            }
-
-            // 아직 결제 완료되지 않음 - 다음 확인까지 대기 (정확히 10초가 되도록)
-            const elapsed = Date.now() - windowCloseTime
-            if (elapsed >= maxAttempts * interval) {
-              // 10초가 지났으면 타임아웃
-              return false
-            }
-            const waitTime = interval - (elapsed % interval)
-            if (attempt < maxAttempts - 1 && waitTime > 0) {
-              await new Promise(resolve => setTimeout(resolve, waitTime))
-            }
-          } catch (error) {
-            console.error('[결제 상태 확인] 오류:', error)
-            // 다음 확인까지 대기 (정확히 10초가 되도록)
-            const elapsed = Date.now() - windowCloseTime
-            if (elapsed >= maxAttempts * interval) {
-              // 10초가 지났으면 타임아웃
-              return false
-            }
-            const waitTime = interval - (elapsed % interval)
-            if (attempt < maxAttempts - 1 && waitTime > 0) {
-              await new Promise(resolve => setTimeout(resolve, waitTime))
+      // 결제 창이 닫혔는지 확인 (에러 페이지에서 창을 닫으면 결제정보 팝업도 닫기)
+      const checkWindowClosed = () => {
+        const checkInterval = setInterval(() => {
+          if (paymentWindow.closed) {
+            clearInterval(checkInterval)
+            // 결제 창이 닫혔으면 결제정보 팝업도 닫기 (에러 페이지에서 창 닫기 시)
+            setShowPaymentPopup(false)
+            setSubmitting(false)
+            setPaymentProcessingMethod(null)
+            // sessionStorage 정리
+            if (typeof window !== 'undefined') {
+              sessionStorage.removeItem('payment_oid')
+              sessionStorage.removeItem('payment_method')
+              sessionStorage.removeItem('payment_content_id')
+              sessionStorage.removeItem('payment_user_name')
+              sessionStorage.removeItem('payment_phone')
             }
           }
-        }
-
-        return false // 타임아웃 (10초 후)
-      }
-
-      // 결제 상태 확인 시작
-      const isPaid = await checkPaymentStatus()
-
-      if (!isPaid) {
-        // 타임아웃 또는 결제 실패
-        setSubmitting(false)
-        setPaymentProcessingMethod(null)
-        // 자체 팝업으로 메시지 표시
-        showAlertMessage('결제 시스템의 일시적 문제가 있었습니다.\n결제를 다시 시도해 주세요!')
-        // sessionStorage 정리
-        if (typeof window !== 'undefined') {
-          sessionStorage.removeItem('payment_oid')
-          sessionStorage.removeItem('payment_method')
-          sessionStorage.removeItem('payment_content_id')
-          sessionStorage.removeItem('payment_user_name')
-          sessionStorage.removeItem('payment_phone')
-        }
-        return
-      }
-
-      // 결제 완료 - 점사 시작
-      const startTime = Date.now()
-      
-      // sessionStorage 정리 (점사 시작 전)
-      if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('payment_oid')
-        sessionStorage.removeItem('payment_method')
-        sessionStorage.removeItem('payment_content_id')
-        sessionStorage.removeItem('payment_user_name')
-        sessionStorage.removeItem('payment_phone')
+        }, 500) // 0.5초마다 확인
       }
       
-      await startFortuneTelling(startTime)
+      checkWindowClosed()
+      
+      // 결제정보 팝업은 무기한 대기 (결제 창이 성공/실패 URL로 리다이렉트되면 그대로 유지)
+      // 성공 시: result 페이지에서 바로 점사 시작
+      // 실패 시: 에러 페이지에서 창 닫으면 결제정보 팝업도 닫힘
 
     } catch (error: any) {
       console.error('[결제 처리] 오류:', error)
@@ -2331,12 +2491,57 @@ function FormContent() {
 
   // 점사 시작 함수 (결제 완료 후 호출)
   const startFortuneTelling = async (startTime: number) => {
+    if (!content || !content.id) {
+      console.error('[점사 시작] content가 로드되지 않았습니다.')
+      return
+    }
+    await startFortuneTellingWithContent(startTime, content)
+  }
+
+  // 점사 시작 함수 (content와 사용자 정보를 파라미터로 받음)
+  const startFortuneTellingWithContent = async (
+    startTime: number, 
+    contentData: any,
+    userInfo?: {
+      name?: string
+      gender?: 'male' | 'female' | ''
+      calendarType?: 'solar' | 'lunar' | 'lunar-leap'
+      year?: string
+      month?: string
+      day?: string
+      birthHour?: string
+      partnerName?: string
+      partnerGender?: 'male' | 'female' | ''
+      partnerCalendarType?: 'solar' | 'lunar' | 'lunar-leap'
+      partnerYear?: string
+      partnerMonth?: string
+      partnerDay?: string
+      partnerBirthHour?: string
+    },
+    isPaymentSuccess?: boolean // 결제 성공으로 인한 이동 플래그
+  ) => {
     try {
+      // 사용자 정보: 파라미터가 있으면 사용, 없으면 state 사용
+      const userName = userInfo?.name || name
+      const userGender = userInfo?.gender !== undefined ? userInfo.gender : gender
+      const userCalendarType = userInfo?.calendarType || calendarType
+      const userYear = userInfo?.year || year
+      const userMonth = userInfo?.month || month
+      const userDay = userInfo?.day || day
+      const userBirthHour = userInfo?.birthHour || birthHour
+      const userPartnerName = userInfo?.partnerName || partnerName
+      const userPartnerGender = userInfo?.partnerGender !== undefined ? userInfo.partnerGender : partnerGender
+      const userPartnerCalendarType = userInfo?.partnerCalendarType || partnerCalendarType
+      const userPartnerYear = userInfo?.partnerYear || partnerYear
+      const userPartnerMonth = userInfo?.partnerMonth || partnerMonth
+      const userPartnerDay = userInfo?.partnerDay || partnerDay
+      const userPartnerBirthHour = userInfo?.partnerBirthHour || partnerBirthHour
+      
       // 상품 메뉴 소제목 파싱
-      const menuSubtitles = content.menu_subtitle ? content.menu_subtitle.split('\n').filter((s: string) => s.trim()) : []
-      const interpretationTools = content.interpretation_tool ? content.interpretation_tool.split('\n').filter((s: string) => s.trim()) : []
-      const subtitleCharCount = parseInt(content.subtitle_char_count) || 500
-      const detailMenuCharCount = parseInt(content.detail_menu_char_count) || 500
+      const menuSubtitles = contentData.menu_subtitle ? contentData.menu_subtitle.split('\n').filter((s: string) => s.trim()) : []
+      const interpretationTools = contentData.interpretation_tool ? contentData.interpretation_tool.split('\n').filter((s: string) => s.trim()) : []
+      const subtitleCharCount = parseInt(contentData.subtitle_char_count) || 500
+      const detailMenuCharCount = parseInt(contentData.detail_menu_char_count) || 500
 
       if (menuSubtitles.length === 0) {
         showAlertMessage('상품 메뉴 소제목이 설정되지 않았습니다.')
@@ -2345,7 +2550,7 @@ function FormContent() {
       }
 
       // menu_items에서 소메뉴와 상세메뉴를 모두 평탄화하여 배열 생성
-      const menuItems = content.menu_items || []
+      const menuItems = contentData.menu_items || []
       const menuSubtitlePairs: Array<{ subtitle: string; interpretation_tool: string; char_count: number }> = []
       
       // menuSubtitles 순서대로 처리하면서 상세메뉴도 함께 추가
@@ -2394,9 +2599,10 @@ function FormContent() {
       }
 
       // 재미나이 API 호출
-      const birthDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+      const birthDate = `${userYear}-${userMonth.padStart(2, '0')}-${userDay.padStart(2, '0')}`
+      const isGonghapType = !!userPartnerName
       const partnerBirthDate = isGonghapType 
-        ? `${partnerYear}-${partnerMonth.padStart(2, '0')}-${partnerDay.padStart(2, '0')}`
+        ? `${userPartnerYear}-${userPartnerMonth.padStart(2, '0')}-${userPartnerDay.padStart(2, '0')}`
         : undefined
       
       // 만세력 계산
@@ -2404,23 +2610,23 @@ function FormContent() {
       let manseRyeokText = '' // 텍스트 형식 (제미나이 프롬프트용)
       let manseRyeokData: any = null // 구조화 만세력 데이터
       let dayGanInfo = null // 일간 정보 저장
-      if (year && month && day) {
+      if (userYear && userMonth && userDay) {
         try {
-          const birthYear = parseInt(year)
-          const birthMonth = parseInt(month)
-          const birthDay = parseInt(day)
+          const birthYear = parseInt(userYear)
+          const birthMonth = parseInt(userMonth)
+          const birthDay = parseInt(userDay)
           // 태어난 시를 숫자로 변환 (예: "23-01" -> 23)
           let birthHourNum = 10 // 기본값 10시 (오전 10시)
-          if (birthHour) {
+          if (userBirthHour) {
             // 지지 문자인 경우 시간 매핑
             const hourMap: { [key: string]: number } = {
               '子': 0, '丑': 2, '寅': 4, '卯': 6, '辰': 8, '巳': 10,
               '午': 12, '未': 14, '申': 16, '酉': 18, '戌': 20, '亥': 22
             }
-            if (hourMap[birthHour] !== undefined) {
-              birthHourNum = hourMap[birthHour]
+            if (hourMap[userBirthHour] !== undefined) {
+              birthHourNum = hourMap[userBirthHour]
             } else {
-              const hourMatch = birthHour.match(/(\d+)/)
+              const hourMatch = userBirthHour.match(/(\d+)/)
               if (hourMatch) {
                 birthHourNum = parseInt(hourMatch[1])
               }
@@ -2457,28 +2663,28 @@ function FormContent() {
           // 음력/양력 변환
           let convertedDate: { year: number; month: number; day: number } | null = null
           try {
-            if (calendarType === 'solar') {
+            if (userCalendarType === 'solar') {
               // 양력인 경우 음력으로 변환
               convertedDate = convertSolarToLunarAccurate(birthYear, birthMonth, birthDay)
-            } else if (calendarType === 'lunar' || calendarType === 'lunar-leap') {
+            } else if (userCalendarType === 'lunar' || userCalendarType === 'lunar-leap') {
               // 음력 또는 음력(윤달)인 경우 양력으로 변환
-              convertedDate = convertLunarToSolarAccurate(birthYear, birthMonth, birthDay, calendarType === 'lunar-leap')
+              convertedDate = convertLunarToSolarAccurate(birthYear, birthMonth, birthDay, userCalendarType === 'lunar-leap')
             }
           } catch (error) {
             convertedDate = null
           }
           
           const captionInfo: ManseRyeokCaptionInfo = {
-            name: name || '',
+            name: userName || '',
             year: birthYear,
             month: birthMonth,
             day: birthDay,
-            hour: birthHour || null,
-            calendarType: calendarType,
+            hour: userBirthHour || null,
+            calendarType: userCalendarType,
             convertedDate: convertedDate
           }
           
-          manseRyeokTable = generateManseRyeokTable(manseRyeokData, name, captionInfo) // HTML 테이블 (화면 표시용)
+          manseRyeokTable = generateManseRyeokTable(manseRyeokData, userName, captionInfo) // HTML 테이블 (화면 표시용)
           manseRyeokText = generateManseRyeokText(manseRyeokData) // 텍스트 형식 (제미나이 프롬프트용)
         } catch (error) {
         }
@@ -2494,21 +2700,21 @@ function FormContent() {
       }
 
       const requestData = {
-        role_prompt: content.role_prompt || '',
-        restrictions: content.restrictions || '',
+        role_prompt: contentData.role_prompt || '',
+        restrictions: contentData.restrictions || '',
         menu_subtitles: menuSubtitlePairs,
-        menu_items: content.menu_items || [],
+        menu_items: contentData.menu_items || [],
         user_info: {
-          name,
-          gender: gender === 'male' ? '남자' : '여자',
+          name: userName,
+          gender: userGender === 'male' ? '남자' : '여자',
           birth_date: birthDate,
-          birth_hour: birthHour || undefined
+          birth_hour: userBirthHour || undefined
         },
         partner_info: isGonghapType ? {
-          name: partnerName,
-          gender: partnerGender === 'male' ? '남자' : '여자',
+          name: userPartnerName,
+          gender: userPartnerGender === 'male' ? '남자' : '여자',
           birth_date: partnerBirthDate || '',
-          birth_hour: partnerBirthHour || undefined
+          birth_hour: userPartnerBirthHour || undefined
         } : undefined,
         model: currentModel,
         manse_ryeok_table: manseRyeokTable, // HTML 테이블 (화면 표시용)
@@ -2534,7 +2740,8 @@ function FormContent() {
       }
 
       // realtime 모드일 경우 즉시 result 페이지로 리다이렉트
-      if (fortuneViewMode === 'realtime') {
+      // 결제 성공으로 인한 이동인 경우에도 동일하게 처리
+      if (fortuneViewMode === 'realtime' || isPaymentSuccess) {
         
         // 병렬점사 모드일 경우 대메뉴별로 분할된 데이터 준비
         let finalRequestData: any = requestData
@@ -2545,7 +2752,7 @@ function FormContent() {
         }> = []
         if (!useSequentialFortune) {
           // 대메뉴 단위로 분할
-          const menuItems = content.menu_items || []
+          const menuItems = contentData.menu_items || []
           menuGroups = []
           
           // 각 대메뉴별로 소제목 그룹화
@@ -2603,10 +2810,10 @@ function FormContent() {
         const requestKey = `request_${Date.now()}`
         const payload = {
           requestData: finalRequestData,
-          content,
+          content: contentData,
           startTime,
           model: currentModel,
-          userName: name,
+          userName: userName,
           useSequentialFortune, // 병렬/직렬 모드 정보도 전달
           allMenuGroups: !useSequentialFortune ? (finalRequestData.allMenuGroups || menuGroups || []) : undefined // 병렬점사 모드일 때만 전달
         }
@@ -2658,8 +2865,14 @@ function FormContent() {
           // 초안을 미리 생성하면 빈 HTML로 저장되어 이후 업데이트가 제대로 안 될 수 있음
           sessionStorage.setItem('result_requestKey', requestKey)
           sessionStorage.setItem('result_stream', 'true')
+          
           // 휴대폰 번호와 비밀번호를 DB에 저장 (savedId 없이)
-          const fullPhoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+          // 결제 성공으로 인한 이동인 경우 sessionStorage에서 가져오기
+          const paymentPhone = sessionStorage.getItem('payment_phone') || ''
+          const paymentPassword = sessionStorage.getItem('payment_password') || ''
+          const fullPhoneNumber = paymentPhone || `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+          const userPassword = paymentPassword || password
+          
           console.log('[결제 처리] user_credentials 저장 시도 (savedId 없음):', { requestKey, phone: fullPhoneNumber })
           try {
             const response = await fetch('/api/user-credentials/save', {
@@ -2669,7 +2882,7 @@ function FormContent() {
                 requestKey: requestKey,
                 // savedId는 점사 완료 후 저장 시점에 생성됨
                 phone: fullPhoneNumber,
-                password: password
+                password: userPassword
               })
             })
             if (response.ok) {
@@ -2708,7 +2921,7 @@ function FormContent() {
       // 병렬점사 모드 (useSequentialFortune === false)
       if (!useSequentialFortune) {
         // 대메뉴 단위로 분할
-        const menuItems = content.menu_items || []
+        const menuItems = contentData.menu_items || []
         const menuGroups: Array<{
           menuIndex: number
           menuItem: any

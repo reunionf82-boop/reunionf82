@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 /**
  * 결제 통계 조회 API
  * GET /api/admin/payments/stats

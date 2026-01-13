@@ -61,12 +61,27 @@ export async function POST(request: NextRequest) {
       existingData: existingData
     })
     
-    const { data, error } = await supabase
+    // saved_id가 NULL인 행만 업데이트하거나, 모든 행을 업데이트 (saved_id가 이미 설정된 경우도 덮어쓰기)
+    // 먼저 saved_id가 NULL인 행만 업데이트 시도
+    let { data, error } = await supabase
       .from('user_credentials')
       .update({ saved_id: savedIdNumber })
       .eq('request_key', normalizedRequestKey)
       .is('saved_id', null)
       .select('id, request_key, saved_id, created_at, expires_at')
+
+    // saved_id가 NULL인 행이 없으면, 모든 행을 업데이트 (이미 saved_id가 설정된 경우도 덮어쓰기)
+    if (!data || data.length === 0) {
+      console.log('[user-credentials/update] saved_id가 NULL인 행이 없음, 모든 행 업데이트 시도')
+      const updateResult = await supabase
+        .from('user_credentials')
+        .update({ saved_id: savedIdNumber })
+        .eq('request_key', normalizedRequestKey)
+        .select('id, request_key, saved_id, created_at, expires_at')
+      
+      data = updateResult.data
+      error = updateResult.error
+    }
 
     if (error) {
       return NextResponse.json(
@@ -78,11 +93,12 @@ export async function POST(request: NextRequest) {
     if (!data || data.length === 0) {
       console.log('[user-credentials/update] 업데이트 대상 없음:', {
         requestKey: normalizedRequestKey,
-        savedId: savedIdNumber
+        savedId: savedIdNumber,
+        existingData: existingData
       })
       return NextResponse.json(
         {
-          error: '업데이트할 인증 정보를 찾을 수 없습니다. (requestKey 매칭 실패 또는 이미 saved_id가 설정됨)',
+          error: '업데이트할 인증 정보를 찾을 수 없습니다. (requestKey 매칭 실패)',
           details: { requestKey: normalizedRequestKey, savedId: savedIdNumber }
         },
         { status: 404 }

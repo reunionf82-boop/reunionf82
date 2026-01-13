@@ -227,13 +227,8 @@ function ResultContent() {
     }
     loadMode()
 
-    // 결제 성공 진입 플래그가 있는 경우 팝업 강제 비활성화
-    const paid = searchParams.get('paid')
-    if (paid === 'true') {
-      setShowRealtimeLoading(false)
-      // 결제 성공 URL로 접근한 경우는 form 페이지에서 이미 결제 상태 확인을 완료했으므로
-      // 여기서는 추가 처리 없이 기존 로직대로 진행
-    }
+    // 결제 성공 진입 플래그가 있는 경우는 처리하지 않음
+    // (결제 성공 URL이 form 페이지로 변경되었으므로 여기서는 처리 불필요)
   }, [searchParams, isRealtime])
   
   // 저장된 결과 목록 로드 함수 (useEffect 위에 정의)
@@ -899,15 +894,20 @@ function ResultContent() {
           }, 500)
           console.log('[병렬점사] 모든 대메뉴 완료 (processNextMenu 체크), 스트리밍 종료')
           
-          // 모든 대메뉴 완료 시 즉시 결과 저장
+          // 모든 대메뉴 완료 시 즉시 결과 저장 (지연 없이)
             if (!autoSavedRef.current) {
               console.log('[병렬점사] 완료 (체크), 결과 저장 시작')
               autoSavedRef.current = true
-              setTimeout(() => {
-                saveResultToLocal(false, allAccumulatedHtml, content, model, startTime, userName).catch(err => {
+              // 즉시 저장 (setTimeout 제거)
+              ;(async () => {
+                try {
+                  await saveResultToLocal(false, allAccumulatedHtml, content, model, startTime, userName)
+                  console.log('[병렬점사] 결과 저장 완료')
+                } catch (err) {
                   console.error('[병렬점사] 결과 저장 실패:', err)
-                })
-              }, 100)
+                  autoSavedRef.current = false // 실패 시 재시도 가능하도록
+                }
+              })()
             }
           
           return
@@ -1141,16 +1141,20 @@ function ResultContent() {
                 }, 500)
                 console.log('[병렬점사] 모든 대메뉴 완료, 스트리밍 종료')
                 
-                // 병렬점사 완료 시 즉시 결과 저장 (자동 저장 대기하지 않음)
+                // 병렬점사 완료 시 즉시 결과 저장 (지연 없이)
                 if (!autoSavedRef.current) {
                   console.log('[병렬점사] 완료, 결과 저장 시작')
                   autoSavedRef.current = true
-                  // resultData가 설정된 후 저장하도록 약간 지연
-                  setTimeout(() => {
-                    saveResultToLocal(false, allAccumulatedHtml, content, model, startTime, userName).catch(err => {
+                  // 즉시 저장 (setTimeout 제거)
+                  ;(async () => {
+                    try {
+                      await saveResultToLocal(false, allAccumulatedHtml, content, model, startTime, userName)
+                      console.log('[병렬점사] 결과 저장 완료')
+                    } catch (err) {
                       console.error('[병렬점사] 결과 저장 실패:', err)
-                    })
-                  }, 100)
+                      autoSavedRef.current = false // 실패 시 재시도 가능하도록
+                    }
+                  })()
                 }
                 
                 return // 마지막 대메뉴이므로 다음 대메뉴 요청하지 않음
@@ -1608,6 +1612,12 @@ ${fontFace ? fontFace : ''}
               return
             }
             
+            // savedId가 유효한지 재확인
+            if (!savedIdNumber || savedIdNumber <= 0) {
+              console.error('[결과 저장] savedId가 유효하지 않음:', savedIdNumber)
+              return
+            }
+            
             console.log('[결과 저장] user_credentials 업데이트 요청:', {
               requestKey: currentRequestKey,
               savedId: savedIdNumber
@@ -2020,12 +2030,14 @@ ${fontFace ? fontFace : ''}
     const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
 
     // ✅ 방어 로직:
-    // 점사 HTML이 "완료"로 끝났더라도, 간헐적으로 마지막에
+    // 점사 HTML이 "완료"로 끝났더라도, 간헐적으로 마지막에 또는 첫번째에
     // <div class="menu-section"><h2 class="menu-title">...</h2></div>
-    // 처럼 "메뉴 제목만 있고 소제목/본문이 없는" 빈 섹션이 꼬리로 붙는 경우가 있음.
+    // 처럼 "메뉴 제목만 있고 소제목/본문이 없는" 빈 섹션이 붙는 경우가 있음.
     // 이 경우 UI에서 '첫번째 대제목만' 덩그러니 렌더링되는 문제가 발생하므로,
-    // 마지막에 붙은 "빈 menu-section"은 파싱 대상에서 제외한다. (중간 섹션은 건드리지 않음)
+    // 첫번째와 마지막에 붙은 "빈 menu-section"은 파싱 대상에서 제외한다. (중간 섹션은 건드리지 않음)
     const cleanedMenuSections = [...menuSections]
+    
+    // 마지막 빈 섹션 제거
     while (cleanedMenuSections.length > 0) {
       const last = cleanedMenuSections[cleanedMenuSections.length - 1]
       const hasSubSections =
@@ -2034,6 +2046,23 @@ ${fontFace ? fontFace : ''}
         last.querySelectorAll('.subtitle-content, .detail-menu-content').length > 0
       if (hasSubSections || hasBodyContent) break
       cleanedMenuSections.pop()
+    }
+    
+    // 첫번째 빈 섹션 제거 (중복 방지)
+    while (cleanedMenuSections.length > 0) {
+      const first = cleanedMenuSections[0]
+      const hasSubSections =
+        first.querySelectorAll('.subtitle-section, .detail-menu-section').length > 0
+      const hasBodyContent =
+        first.querySelectorAll('.subtitle-content, .detail-menu-content').length > 0
+      if (hasSubSections || hasBodyContent) break
+      // 첫번째가 빈 섹션이고 다른 섹션이 있으면 제거
+      if (cleanedMenuSections.length > 1) {
+        cleanedMenuSections.shift()
+      } else {
+        // 섹션이 하나뿐이면 빈 섹션이어도 유지 (모두 제거되는 것 방지)
+        break
+      }
     }
 
     // 숫자 접두사 제거 함수 (예: "1. " → "", "1-1. " → "", "1-1-1. " → "")

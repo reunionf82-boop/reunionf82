@@ -37,8 +37,8 @@ export async function POST(request: NextRequest) {
 
     // 성공/실패 URL 생성 (현재 도메인 기준)
     const baseUrl = request.headers.get('origin') || request.nextUrl.origin
-    const successUrl = `${baseUrl}/result?paid=true&oid=${encodeURIComponent(oid)}`
-    const failUrl = `${baseUrl}/form?code=T001&msg=close`
+    const successUrl = `${baseUrl}/payment/success?oid=${encodeURIComponent(oid)}`
+    const failUrl = `${baseUrl}/payment/error?code=T001&msg=close`
 
     // 결제 요청 데이터 준비
     const formData = {
