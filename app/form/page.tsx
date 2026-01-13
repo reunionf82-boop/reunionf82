@@ -2484,6 +2484,7 @@ function FormContent() {
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
 
       // 0. DB에 pending 상태로 미리 저장 (서버 폴링을 위해)
+      let pendingSaved = false
       try {
         const pendingSaveResponse = await fetch('/api/payment/save', {
           method: 'POST',
@@ -2505,6 +2506,7 @@ function FormContent() {
         if (pendingSaveResponse.ok) {
           const pendingSaveData = await pendingSaveResponse.json()
           if (pendingSaveData.success) {
+            pendingSaved = true
             console.log('[결제 처리] pending 상태 저장 성공:', pendingSaveData)
           } else {
             console.error('[결제 처리] pending 상태 저장 실패:', pendingSaveData)
@@ -2515,7 +2517,16 @@ function FormContent() {
         }
       } catch (error) {
         console.error('[결제 처리] pending 상태 저장 오류:', error)
-        // pending 저장 실패해도 결제는 계속 진행
+      }
+
+      // payments 테이블은 여러 컬럼이 NOT NULL이라 "먼저 pending 레코드 생성"이 필수.
+      // pending 생성에 실패하면 결제를 진행해도 success 마킹/레코드 생성이 불가능해질 수 있으므로
+      // 여기서 결제를 중단한다.
+      if (!pendingSaved) {
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
+        showAlertMessage('결제 정보를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.')
+        return
       }
 
 

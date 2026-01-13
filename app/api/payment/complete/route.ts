@@ -17,35 +17,17 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = getAdminSupabaseClient()
-    
-    // 먼저 기존 레코드 확인
-    const { data: existingData, error: checkError } = await supabase
-      .from('payments')
-      .select('*')
-      .eq('oid', oid)
-      .single()
-    
-    // 상태를 success로 업데이트 (upsert로 변경하여 데이터가 없어도 생성)
-    // 기존 레코드가 있으면 업데이트, 없으면 최소한의 정보로 생성
-    const updateData: any = {
-      oid,
-      status: 'success',
-      completed_at: new Date().toISOString()
-    }
-    
-    // 기존 레코드가 있으면 기존 필드 유지
-    if (existingData && !checkError) {
-      // 기존 데이터의 필드들을 유지하면서 status만 업데이트
-      Object.keys(existingData).forEach(key => {
-        if (key !== 'status' && key !== 'completed_at' && existingData[key] !== null) {
-          updateData[key] = existingData[key]
-        }
-      })
-    }
-    
+
+    // ⚠️ payments 테이블은 payment_code/name/pay/payment_type 등이 NOT NULL.
+    // 여기서 upsert(삽입)를 시도하면 필수 컬럼 누락으로 삽입이 실패할 수 있음.
+    // 따라서 "기존 레코드가 존재할 때만" status 업데이트를 수행한다.
     const { data, error } = await supabase
       .from('payments')
-      .upsert(updateData, { onConflict: 'oid' })
+      .update({
+        status: 'success',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('oid', oid)
       .select()
       .single()
 

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
-import { encrypt } from '@/lib/encryption'
 
 /**
  * 결제 정보 저장 API
@@ -26,7 +25,8 @@ export async function POST(request: NextRequest) {
     // if (!oid || !contentId || !paymentCode || !name || !pay || !paymentType) {
     // pending 저장 시에는 결제 정보가 다 있지만, update 시에는 oid만 있을 수도 있음.
     // 여기서는 pending 저장용으로 다 받는다고 가정.
-    if (!oid || !contentId || !paymentCode || !name || !pay || !paymentType) {
+    const missingPay = pay === undefined || pay === null || Number.isNaN(Number(pay))
+    if (!oid || !contentId || !paymentCode || !name || missingPay || !paymentType) {
       return NextResponse.json(
         { success: false, error: '필수 파라미터가 누락되었습니다.' },
         { status: 400 }
@@ -35,36 +35,21 @@ export async function POST(request: NextRequest) {
 
     const supabase = getAdminSupabaseClient()
 
-    // user_name과 phone_number 암호화
-    let encryptedUserName: string | null = null
-    let encryptedPhoneNumber: string | null = null
-    
-    try {
-      if (userName) {
-        encryptedUserName = encrypt(userName)
-      }
-      if (phoneNumber) {
-        encryptedPhoneNumber = encrypt(phoneNumber)
-      }
-    } catch (encryptError: any) {
-      console.error('[결제 정보 저장] 암호화 오류:', encryptError)
-      return NextResponse.json(
-        { success: false, error: '암호화 중 오류가 발생했습니다.', details: encryptError.message },
-        { status: 500 }
-      )
-    }
+    // ⚠️ 요청에 따라 암호화 없이 원문 저장
+    const plainUserName: string | null = userName ? String(userName) : null
+    const plainPhoneNumber: string | null = phoneNumber ? String(phoneNumber) : null
 
     // 결제 정보 저장 (Upsert로 변경하여 중복 방지 및 상태 업데이트)
     const paymentStatus = status || 'pending' // 기본값을 pending으로 변경
     const upsertData: any = {
       oid,
       content_id: contentId,
-      payment_code: paymentCode,
+      payment_code: String(paymentCode).slice(0, 4),
       name: name?.substring(0, 200),
-      pay: pay ? parseInt(pay.toString()) : 0,
+      pay: parseInt(String(pay)),
       payment_type: paymentType,
-      user_name: encryptedUserName,
-      phone_number: encryptedPhoneNumber,
+      user_name: plainUserName,
+      phone_number: plainPhoneNumber,
       gender: gender === 'male' || gender === 'female' ? gender : null,
       status: paymentStatus
     }
@@ -74,11 +59,57 @@ export async function POST(request: NextRequest) {
       upsertData.completed_at = new Date().toISOString()
     }
     
-    const { data, error } = await supabase
-      .from('payments')
-      .upsert(upsertData, { onConflict: 'oid' }) // oid가 같으면 업데이트
-      .select()
-      .single()
+    // 1) 우선 Upsert 시도 (oid UNIQUE 제약이 있을 때 가장 안정적/빠름)
+    let data: any = null
+    let error: any = null
+    {
+      const res = await supabase
+        .from('payments')
+        .upsert(upsertData, { onConflict: 'oid' }) // oid가 같으면 업데이트
+        .select()
+        .single()
+      data = res.data
+      error = res.error
+    }
+
+    // 2) 만약 DB에 UNIQUE 제약이 없어서 upsert가 실패(42P10)하는 경우:
+    //    select → 있으면 update / 없으면 insert 로 우회
+    if (error?.code === '42P10') {
+      console.error('[결제 정보 저장] upsert 실패(UNIQUE 제약 없음). fallback insert/update로 전환:', error)
+
+      const { data: existingRows, error: existingError } = await supabase
+        .from('payments')
+        .select('id')
+        .eq('oid', oid)
+        .limit(1)
+
+      if (existingError) {
+        console.error('[결제 정보 저장] 기존 레코드 조회 실패:', existingError)
+        return NextResponse.json(
+          { success: false, error: existingError.message || '결제 정보 저장에 실패했습니다.' },
+          { status: 500 }
+        )
+      }
+
+      if (existingRows && existingRows.length > 0) {
+        const upd = await supabase
+          .from('payments')
+          .update(upsertData)
+          .eq('oid', oid)
+          .select()
+          .single()
+        data = upd.data
+        error = upd.error
+      } else {
+        const ins = await supabase
+          .from('payments')
+          .insert(upsertData)
+          .select()
+          .single()
+        data = ins.data
+        error = ins.error
+      }
+    }
 
     if (error) {
       console.error('[결제 정보 저장] 오류:', error)
