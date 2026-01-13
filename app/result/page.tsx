@@ -2512,17 +2512,6 @@ ${fontFace ? fontFace : ''}
   // 점사 완료 시에는 진행 위치(activePos)로 UI를 제한하지 않는다.
   const shouldGateByActivePos = fortuneViewMode === 'realtime' && !streamingFinished
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center text-gray-400">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto mb-4"></div>
-          <p>결과 로딩 중...</p>
-        </div>
-      </div>
-    )
-  }
-
   // isRealtime이고 점사 진행 중이면 resultData가 없어도 허용 (점사 시작 전)
   // requestKey가 있으면 점사를 시작할 예정이므로 resultData 체크를 건너뜀
   const isRealtimeStreaming = isRealtime || requestKey || isStreaming || isStreamingActive
@@ -2603,6 +2592,17 @@ ${fontFace ? fontFace : ''}
 
     setShowCompletionPopup(true)
   }, [isRealtimeStreaming, streamingFinished, requestKey, savedId])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center text-gray-400">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto mb-4"></div>
+          <p>결과 로딩 중...</p>
+        </div>
+      </div>
+    )
+  }
   
   // content가 없어도 HTML이 있으면 표시 가능 (content는 선택사항)
   // isRealtime이고 점사 진행 중이면 HTML이 없어도 허용 (점사 시작 전)
