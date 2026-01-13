@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getKSTNow } from '@/lib/payment-utils'
 
 // 서버 사이드에서만 서비스 롤 키 사용
 function getSupabaseClient() {
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
       ...restData,
       menu_items: menu_items ? JSON.stringify(menu_items) : null,
       preview_thumbnails: preview_thumbnails ? (Array.isArray(preview_thumbnails) ? JSON.stringify(preview_thumbnails) : preview_thumbnails) : '[]',
-      updated_at: new Date().toISOString(),
+      updated_at: getKSTNow(), // KST 기준으로 저장
     }
 
     if (id) {
@@ -113,7 +114,7 @@ export async function POST(req: NextRequest) {
         .from('contents')
         .insert({
           ...dataWithoutId,
-          created_at: new Date().toISOString(),
+          created_at: getKSTNow(), // KST 기준으로 저장
         })
         .select()
 

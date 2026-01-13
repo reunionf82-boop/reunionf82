@@ -42,6 +42,15 @@ export async function POST(request: NextRequest) {
 
     // 결제 정보 저장 (Upsert로 변경하여 중복 방지 및 상태 업데이트)
     const paymentStatus = status || 'pending' // 기본값을 pending으로 변경
+    const kstNow = getKSTNow()
+    
+    // 기존 레코드 존재 여부 확인 (created_at 보존을 위해)
+    const { data: existingRecord } = await supabase
+      .from('payments')
+      .select('id, created_at')
+      .eq('oid', oid)
+      .maybeSingle()
+    
     const upsertData: any = {
       oid,
       content_id: contentId,
@@ -52,12 +61,19 @@ export async function POST(request: NextRequest) {
       user_name: plainUserName,
       phone_number: plainPhoneNumber,
       gender: gender === 'male' || gender === 'female' ? gender : null,
-      status: paymentStatus
+      status: paymentStatus,
+      updated_at: kstNow // KST 기준으로 저장 (트리거보다 명시적 값이 우선)
     }
+    
+    // 새 레코드인 경우에만 created_at 설정 (KST 기준)
+    if (!existingRecord) {
+      upsertData.created_at = kstNow
+    }
+    // 기존 레코드인 경우 created_at은 유지 (설정하지 않음)
     
     // success 상태일 때만 completed_at 설정 (KST 기준)
     if (paymentStatus === 'success') {
-      upsertData.completed_at = getKSTNow()
+      upsertData.completed_at = kstNow
     }
     
     // 1) 우선 Upsert 시도 (oid UNIQUE 제약이 있을 때 가장 안정적/빠름)

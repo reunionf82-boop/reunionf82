@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
+import { getKSTNow } from '@/lib/payment-utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getAdminSupabaseClient()
 
-    // 문의 저장 (inquiries 테이블이 있다고 가정, 없으면 생성 필요)
+    // 문의 저장 (inquiries 테이블이 있다고 가정, 없으면 생성 필요) - KST 기준
     const { data, error } = await supabase
       .from('inquiries')
       .insert({
@@ -33,7 +34,8 @@ export async function POST(req: NextRequest) {
         phone: phone.trim(),
         email: email.trim(),
         content: content.trim(),
-        created_at: new Date().toISOString()
+        created_at: getKSTNow(), // KST 기준으로 저장
+        updated_at: getKSTNow() // KST 기준으로 저장
       })
       .select()
       .single()

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getKSTNow } from '@/lib/payment-utils'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -26,18 +27,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 24시간 후 만료 시간 계산
-    const expiresAt = new Date()
-    expiresAt.setHours(expiresAt.getHours() + 24)
+    // 24시간 후 만료 시간 계산 (KST 기준)
+    const nowKST = new Date(getKSTNow())
+    const expiresAt = new Date(nowKST.getTime() + 24 * 60 * 60 * 1000) // 24시간 후
 
-    // 임시 요청 데이터를 Supabase에 저장
+    // 임시 요청 데이터를 Supabase에 저장 (KST 기준)
     const { data, error } = await supabase
       .from('temp_requests')
       .upsert({
         id: requestKey,
         payload: payload,
-        created_at: new Date().toISOString(),
-        expires_at: expiresAt.toISOString()
+        created_at: getKSTNow(), // KST 기준으로 저장
+        expires_at: expiresAt.toISOString() // KST 기준으로 계산된 만료 시간
       }, {
         onConflict: 'id'
       })
