@@ -9,9 +9,92 @@ function PaymentErrorContent() {
   const msg = searchParams.get('msg')
 
   useEffect(() => {
-    // 오픈창에서 열린 경우이므로, 일정 시간 후 자동으로 창 닫기
-    // 또는 사용자가 닫기 버튼을 클릭할 수 있도록 함
-  }, [])
+    // opener에 오류 알림 (성공 페이지와 동일한 패턴)
+    if (typeof window === 'undefined') return
+
+    console.log('[결제 오류 페이지] useEffect 실행:', { 
+      hasWindow: typeof window !== 'undefined',
+      code: code || '없음',
+      msg: msg || '없음',
+      url: typeof window !== 'undefined' ? window.location.href : 'N/A',
+      hasOpener: !!window.opener,
+      openerClosed: window.opener?.closed
+    })
+
+    // opener 함수 직접 호출 (성공 페이지와 동일한 패턴)
+    const callOpenerFunction = async () => {
+      if (window.opener && !window.opener.closed) {
+        try {
+          const opener = window.opener as any
+          if (typeof opener.handlePaymentError === 'function') {
+            console.log('[결제 오류 페이지] opener.handlePaymentError 호출 시도:', { code, msg })
+            await opener.handlePaymentError(code || 'UNKNOWN', msg || 'Payment failed')
+            console.log('[결제 오류 페이지] opener.handlePaymentError 호출 성공')
+            return true
+          } else {
+            console.log('[결제 오류 페이지] opener.handlePaymentError 함수 없음')
+          }
+        } catch (error) {
+          console.error('[결제 오류 페이지] opener 함수 호출 오류:', error)
+        }
+      } else {
+        console.log('[결제 오류 페이지] opener 없음 또는 닫힘')
+      }
+      return false
+    }
+
+    // fallback: localStorage 저장 (opener 호출 실패 시 대비)
+    try {
+      localStorage.setItem('payment_error_code', code || 'UNKNOWN')
+      localStorage.setItem('payment_error_msg', msg || 'Payment failed')
+      localStorage.setItem('payment_error_timestamp', Date.now().toString())
+    } catch {
+      // localStorage가 막혀도 무시
+    }
+
+    // 약간의 딜레이를 주고 opener 함수 호출 시도
+    setTimeout(() => {
+      let functionCalled = false
+      callOpenerFunction().then(result => { 
+        functionCalled = result
+        if (result) {
+          console.log('[결제 오류 페이지] opener 호출 성공, 창 닫기 준비')
+        }
+      })
+
+      // 추가로 여러 번 시도
+      let attemptCount = 0
+      const maxAttempts = 20
+      const messageInterval = setInterval(() => {
+        attemptCount++
+        if (window.opener && !window.opener.closed) {
+          if (!functionCalled) {
+            callOpenerFunction().then(result => { 
+              functionCalled = result
+              if (result) {
+                console.log('[결제 오류 페이지] opener 호출 성공 (재시도), 창 닫기 준비')
+              }
+            })
+          }
+        }
+        
+        if (attemptCount >= maxAttempts || functionCalled) {
+          clearInterval(messageInterval)
+          setTimeout(() => {
+            console.log('[결제 오류 페이지] 창 닫기 실행')
+            window.close()
+          }, 500)
+        }
+      }, 100)
+
+      // 최대 3초 후에는 무조건 창 닫기
+      setTimeout(() => {
+        clearInterval(messageInterval)
+        console.log('[결제 오류 페이지] 최대 시간 도달, 창 닫기')
+        window.close()
+      }, 3000)
+    }, 300)
+  }, [code, msg])
 
   const handleClose = () => {
     if (typeof window !== 'undefined') {

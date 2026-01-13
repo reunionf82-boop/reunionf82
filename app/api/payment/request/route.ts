@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateOrderId } from '@/lib/payment-utils'
+import { generateOrderId, truncateStringByBytes } from '@/lib/payment-utils'
 
 /**
  * 결제 요청 API
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     // (성공/실패 리다이렉트 URL도 포함시켜 결제사가 우리 페이지로 돌아오게 함)
     const formData = {
       code: paymentCode,
-      name: name.substring(0, 50), // 최대 50byte
+      name: truncateStringByBytes(name, 50), // 최대 50byte 제한 (한글 고려)
       pay: pay.toString(),
       oid,
       successUrl,

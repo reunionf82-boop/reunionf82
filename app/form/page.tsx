@@ -2300,6 +2300,16 @@ function FormContent() {
         console.log('[결제 성공] window.handlePaymentSuccess 호출됨 (opener 직접 호출):', oid)
         await processPaymentSuccess(oid)
       }
+      
+      // 전역 함수로 결제 오류 처리기 등록 (opener에서 직접 호출용)
+      (window as any).handlePaymentError = async (code: string, msg: string) => {
+        console.log('[결제 오류] window.handlePaymentError 호출됨 (opener 직접 호출):', { code, msg })
+        isProcessing = false
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
+        setShowRealtimePopup(false)
+        showAlertMessage('결제 시스템에 일시적인 문제가 발생했습니다.\n잠시 후 다시 시도해 주세요.')
+      }
     }
 
     // fallback: postMessage 리스너 (opener 호출 실패 시 대비)
@@ -2348,6 +2358,7 @@ function FormContent() {
     return () => {
       if (typeof window !== 'undefined') {
         delete (window as any).handlePaymentSuccess
+        delete (window as any).handlePaymentError
       }
       window.removeEventListener('message', handleMessage)
       window.removeEventListener('storage', handleStorage)
@@ -2714,9 +2725,25 @@ function FormContent() {
               }
             }
             
-            // localStorage도 주기적으로 확인 (성공 페이지가 opener 호출 실패했을 경우)
+            // localStorage도 주기적으로 확인 (성공/실패 페이지가 opener 호출 실패했을 경우)
             if (checkCount % 3 === 0) { // 3초마다 확인
               try {
+                // 먼저 오류 신호 확인
+                const errorCode = localStorage.getItem('payment_error_code')
+                if (errorCode) {
+                  clearInterval(checkInterval)
+                  const errorMsg = localStorage.getItem('payment_error_msg')
+                  console.log(`[결제 처리] localStorage 오류 신호 확인 (${checkCount}회, ${checkCount * 1}초 경과), 처리 시작`)
+                  if (typeof window !== 'undefined' && (window as any).handlePaymentError) {
+                    await (window as any).handlePaymentError(errorCode, errorMsg || 'Payment failed')
+                  }
+                  // localStorage 오류 신호 제거
+                  localStorage.removeItem('payment_error_code')
+                  localStorage.removeItem('payment_error_msg')
+                  localStorage.removeItem('payment_error_timestamp')
+                  return
+                }
+                
                 const successOid = localStorage.getItem('payment_success_oid')
                 // oid가 정확히 일치할 때만 처리
                 if (successOid === oid) {
@@ -2755,6 +2782,21 @@ function FormContent() {
               }
               
               // opener 호출이 실패했을 경우를 대비해 localStorage 확인 (fallback)
+              // 먼저 오류 신호 확인
+              const errorCode = localStorage.getItem('payment_error_code')
+              const errorMsg = localStorage.getItem('payment_error_msg')
+              if (errorCode) {
+                console.log('[결제 처리] 결제 창 닫힘, localStorage 오류 신호 발견 (fallback):', { errorCode, errorMsg })
+                if (typeof window !== 'undefined' && (window as any).handlePaymentError) {
+                  await (window as any).handlePaymentError(errorCode, errorMsg || 'Payment failed')
+                }
+                // localStorage 오류 신호 제거
+                localStorage.removeItem('payment_error_code')
+                localStorage.removeItem('payment_error_msg')
+                localStorage.removeItem('payment_error_timestamp')
+                return
+              }
+              
               const successOid = localStorage.getItem('payment_success_oid')
               if (!successOid) {
                 // 사용자가 결제창을 닫았거나 실패/취소로 닫힌 경우: 팝업은 유지하고 버튼만 다시 활성화

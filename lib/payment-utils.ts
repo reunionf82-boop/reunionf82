@@ -140,3 +140,34 @@ export function getKSTDayOfWeek(date: Date): number {
   const kstDate = new Date(date.getTime() + kstOffset)
   return kstDate.getUTCDay()
 }
+
+/**
+ * 문자열을 지정된 바이트 길이(UTF-8 기준)로 자릅니다.
+ * 한글 등 멀티바이트 문자는 안전하게 3바이트로 계산합니다.
+ * @param str 원본 문자열
+ * @param maxBytes 최대 바이트 수
+ */
+export function truncateStringByBytes(str: string, maxBytes: number): string {
+  if (!str) return ''
+  
+  let totalBytes = 0
+  let result = ''
+  
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i]
+    const charCode = char.charCodeAt(0)
+    
+    // ASCII 범위는 1바이트, 그 외(한글 등)는 3바이트로 계산 (UTF-8)
+    // PG사 인코딩이 EUC-KR(2바이트)일 수도 있지만, 3바이트로 계산하면 더 짧게 잘리므로 안전함
+    const charBytes = (charCode <= 127) ? 1 : 3
+    
+    if (totalBytes + charBytes > maxBytes) {
+      break
+    }
+    
+    totalBytes += charBytes
+    result += char
+  }
+  
+  return result
+}
