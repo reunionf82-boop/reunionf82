@@ -2034,7 +2034,25 @@ function FormContent() {
       }
       
       isProcessing = true
-      console.log('[결제 성공] 결제 성공 처리 시작, 서버 상태 확인:', oid)
+      console.log('[결제 성공] 결제 성공 처리 시작:', oid)
+      
+      // 먼저 localStorage 확인 (서버 상태 확인보다 우선)
+      const successOid = localStorage.getItem('payment_success_oid')
+      const successTimestamp = localStorage.getItem('payment_success_timestamp')
+      const timestampDiff = successTimestamp ? Date.now() - parseInt(successTimestamp) : null
+      // localStorage에 성공 신호가 있고, oid가 일치하거나 최근 30초 이내의 성공 신호가 있으면 처리
+      const hasLocalStorageSignal = (successOid === oid) || 
+        (successOid && successTimestamp && timestampDiff !== null && timestampDiff < 30000)
+      
+      console.log('[결제 성공] localStorage 사전 확인:', {
+        successOid,
+        oid,
+        exactMatch: successOid === oid,
+        hasLocalStorageSignal,
+        successTimestamp,
+        timestampDiff,
+        within30s: timestampDiff !== null && timestampDiff < 30000
+      })
       
       // OID로 서버 상태 확인 (한 번만 확인)
       // 성공 페이지가 DB를 업데이트했는지 확인
@@ -2077,38 +2095,35 @@ function FormContent() {
       }
       
       // 서버 상태 확인이 실패했지만, localStorage에 성공 신호가 있으면 처리 진행
-      // (성공 페이지가 DB를 업데이트하지 않았을 경우를 대비)
-      if (!serverStatusConfirmed) {
-        console.log('[결제 성공] 서버 상태 확인 실패, localStorage 확인 시작:', { oid, serverStatusConfirmed })
-        const successOid = localStorage.getItem('payment_success_oid')
-        console.log('[결제 성공] localStorage 확인 결과:', { successOid, oid, match: successOid === oid })
-        
-        if (successOid === oid) {
-          console.log('[결제 성공] 서버 상태 확인 실패했지만 localStorage에 성공 신호 있음, 처리 진행')
-          // DB를 직접 업데이트 시도 (성공 페이지가 업데이트하지 않았을 경우)
-          try {
-            const updateRes = await fetch('/api/payment/complete', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ oid })
-            })
-            const updateData = await updateRes.json()
-            console.log('[결제 성공] DB 직접 업데이트 시도 완료:', updateData)
-          } catch (e) {
-            console.error('[결제 성공] DB 직접 업데이트 오류:', e)
-          }
-          // localStorage에 성공 신호가 있으면 서버 상태 확인 없이도 처리 진행
-          console.log('[결제 성공] localStorage 성공 신호 기반으로 처리 계속 진행')
-        } else {
-          console.error('[결제 성공] 서버 상태 확인 실패하고 localStorage에도 성공 신호 없음 또는 oid 불일치:', {
-            successOid,
-            oid,
-            match: successOid === oid
+      // localStorage 신호가 있으면 서버 상태 확인 실패해도 무조건 처리
+      if (!serverStatusConfirmed && !hasLocalStorageSignal) {
+        console.error('[결제 성공] 서버 상태 확인 실패하고 localStorage에도 성공 신호 없음:', {
+          serverStatusConfirmed,
+          hasLocalStorageSignal,
+          successOid,
+          oid
+        })
+        isProcessing = false
+        showAlertMessage('결제 상태를 확인할 수 없습니다. 잠시 후 다시 시도해주세요.')
+        return
+      }
+      
+      // localStorage에 성공 신호가 있으면 서버 상태 확인 실패해도 처리 진행
+      if (!serverStatusConfirmed && hasLocalStorageSignal) {
+        console.log('[결제 성공] 서버 상태 확인 실패했지만 localStorage에 성공 신호 있음, 처리 진행')
+        // DB를 직접 업데이트 시도 (성공 페이지가 업데이트하지 않았을 경우)
+        try {
+          const updateRes = await fetch('/api/payment/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ oid: successOid || oid })
           })
-          isProcessing = false
-          showAlertMessage('결제 상태를 확인할 수 없습니다. 잠시 후 다시 시도해주세요.')
-          return
+          const updateData = await updateRes.json()
+          console.log('[결제 성공] DB 직접 업데이트 시도 완료:', updateData)
+        } catch (e) {
+          console.error('[결제 성공] DB 직접 업데이트 오류:', e)
         }
+        console.log('[결제 성공] localStorage 성공 신호 기반으로 처리 계속 진행')
       }
       
       // sessionStorage에서 결제 정보 가져오기
