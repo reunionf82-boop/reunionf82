@@ -4,16 +4,39 @@ import { useSearchParams } from 'next/navigation'
 import { Suspense, useEffect } from 'react'
 
 function PaymentSuccessContent() {
+  // 컴포넌트 렌더링 즉시 로그
+  if (typeof window !== 'undefined') {
+    console.log('[결제 성공 페이지] 컴포넌트 렌더링:', window.location.href)
+  }
+  
   const searchParams = useSearchParams()
   const oid = searchParams.get('oid')
+  
+  // oid 확인 로그
+  if (typeof window !== 'undefined') {
+    console.log('[결제 성공 페이지] oid 추출:', oid)
+  }
 
   useEffect(() => {
+    // 페이지 로드 확인용 즉시 로그
+    console.log('[결제 성공 페이지] useEffect 실행:', { 
+      hasWindow: typeof window !== 'undefined',
+      oid: oid || '없음',
+      url: typeof window !== 'undefined' ? window.location.href : 'N/A'
+    })
+    
     if (typeof window === 'undefined' || !oid) {
       console.log('[결제 성공 페이지] 초기화 실패: window 또는 oid 없음')
       return
     }
 
-    console.log('[결제 성공 페이지] 초기화 시작:', { oid, hasOpener: !!window.opener, origin: window.location.origin })
+    console.log('[결제 성공 페이지] 초기화 시작:', { 
+      oid, 
+      hasOpener: !!window.opener, 
+      openerClosed: window.opener?.closed,
+      origin: window.location.origin,
+      href: window.location.href
+    })
 
     // 1. 먼저 DB 상태를 success로 업데이트 (processPaymentSuccess에서 상태 확인할 수 있도록)
     console.log('[결제 성공 페이지] DB 업데이트 시작:', oid)

@@ -2526,9 +2526,45 @@ function FormContent() {
 
       // 결제 창이 닫혔는지 확인 (opener 호출 실패 시 대비용)
       // 통화 내용: "오픈창에서 오픈어의 함수를 호출하면 돼요" - 주 방식은 opener 호출
+      let checkCount = 0
       const checkWindowClosed = () => {
         const checkInterval = setInterval(async () => {
           try {
+            checkCount++
+            // 10번째마다 로그 출력 (너무 많은 로그 방지)
+            if (checkCount % 10 === 0) {
+              console.log(`[결제 처리] 결제 창 상태 확인 (${checkCount}회):`, {
+                closed: paymentWindow.closed,
+                location: paymentWindow.location?.href || 'cross-origin'
+              })
+            }
+            
+            // 서버 상태도 주기적으로 확인 (성공 페이지가 로드되었는지 확인)
+            // 결제 서버가 successUrl로 리다이렉트하지 않았을 경우를 대비
+            if (checkCount % 3 === 0) { // 3초마다 확인 (1초 간격이므로)
+              try {
+                const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
+                const statusData = await statusRes.json()
+                
+                if (checkCount % 9 === 0) { // 9초마다 로그 출력
+                  console.log(`[결제 처리] 주기적 서버 상태 확인 (${checkCount}회):`, statusData)
+                }
+                
+                if (statusData.success && statusData.status === 'success') {
+                  clearInterval(checkInterval)
+                  console.log('[결제 처리] 서버 상태 success 확인 (주기적 체크), 처리 시작')
+                  if (typeof window !== 'undefined' && (window as any).handlePaymentSuccess) {
+                    await (window as any).handlePaymentSuccess(oid)
+                  }
+                  return
+                }
+              } catch (e) {
+                if (checkCount % 9 === 0) {
+                  console.error('[결제 처리] 서버 상태 확인 오류:', e)
+                }
+              }
+            }
+            
             if (paymentWindow.closed) {
               clearInterval(checkInterval)
               console.log('[결제 처리] 결제 창이 닫힘 감지, 서버 상태 확인')
