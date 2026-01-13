@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
+import { encrypt } from '@/lib/encryption'
 
 /**
  * 결제 정보 저장 API
@@ -34,6 +35,25 @@ export async function POST(request: NextRequest) {
 
     const supabase = getAdminSupabaseClient()
 
+    // user_name과 phone_number 암호화
+    let encryptedUserName: string | null = null
+    let encryptedPhoneNumber: string | null = null
+    
+    try {
+      if (userName) {
+        encryptedUserName = encrypt(userName)
+      }
+      if (phoneNumber) {
+        encryptedPhoneNumber = encrypt(phoneNumber)
+      }
+    } catch (encryptError: any) {
+      console.error('[결제 정보 저장] 암호화 오류:', encryptError)
+      return NextResponse.json(
+        { success: false, error: '암호화 중 오류가 발생했습니다.', details: encryptError.message },
+        { status: 500 }
+      )
+    }
+
     // 결제 정보 저장 (Upsert로 변경하여 중복 방지 및 상태 업데이트)
     const { data, error } = await supabase
       .from('payments')
@@ -44,8 +64,8 @@ export async function POST(request: NextRequest) {
         name: name?.substring(0, 200),
         pay: pay ? parseInt(pay.toString()) : 0,
         payment_type: paymentType,
-        user_name: userName || null,
-        phone_number: phoneNumber || null,
+        user_name: encryptedUserName,
+        phone_number: encryptedPhoneNumber,
         gender: gender === 'male' || gender === 'female' ? gender : null,
         status: status || 'success',
         completed_at: new Date().toISOString()
