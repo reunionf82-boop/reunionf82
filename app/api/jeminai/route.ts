@@ -209,13 +209,22 @@ ${isSecondRequest ? `
 다음 상품 메뉴 구성과 소제목들을 각각 해석해주세요.
 
 ${menuItemsInfo.map((menuItem: any, menuIdx: number) => {
-  const menuNumber = menuIdx + 1
-  // 메뉴 번호로 시작하는 모든 항목 필터링 (소메뉴와 상세메뉴 모두 포함)
-  // 예: 메뉴 1이면 "1-", "1-1", "1-1-1" 등 모두 포함
-  const subtitlesForMenu = menu_subtitles.filter((sub: any, idx: number) => {
-    const match = sub.subtitle.match(/^(\d+)/)
-    return match ? parseInt(match[1]) === menuNumber : false
-  })
+  // ⚠️ 병렬점사 모드에서는 요청마다 "현재 대메뉴 1개"만 들어오고,
+  // menu_subtitles도 "현재 대메뉴에 해당하는 소제목/상세메뉴"만 전달된다.
+  // 따라서 여기서 다시 숫자(prefix)로 필터링하면 2번째 대메뉴부터 전부 비게 되어
+  // "첫 대제목만 덩그러니 남는" 현상이 발생할 수 있다.
+  const menuNumber = (isParallelMode && typeof currentMenuIndex === 'number')
+    ? currentMenuIndex + 1
+    : menuIdx + 1
+
+  // 병렬점사: 이미 현재 대메뉴 것만 넘어오므로 그대로 사용
+  // 직렬/일괄: 전체가 넘어오므로 메뉴번호로 필터링
+  const subtitlesForMenu = (isParallelMode && typeof currentMenuIndex === 'number')
+    ? menu_subtitles
+    : menu_subtitles.filter((sub: any) => {
+        const match = sub.subtitle.match(/^(\d+)/)
+        return match ? parseInt(match[1]) === menuNumber : false
+      })
   
   // 2차 요청일 때는 남은 소제목이 있는 메뉴만 표시
   if (isSecondRequest && subtitlesForMenu.length === 0) {
