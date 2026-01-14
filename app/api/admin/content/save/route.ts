@@ -40,6 +40,49 @@ export async function POST(req: NextRequest) {
         delete dataToSave.payment_code
       }
       
+      // 북커버/엔딩북커버 썸네일 보호: 빈 문자열이면 기존 값 유지
+      // 먼저 기존 레코드를 조회하여 현재 값 확인
+      const { data: existingContent } = await supabase
+        .from('contents')
+        .select('book_cover_thumbnail, book_cover_thumbnail_video, ending_book_cover_thumbnail, ending_book_cover_thumbnail_video')
+        .eq('id', id)
+        .single()
+      
+      // 북커버/엔딩북커버 썸네일이 빈 문자열이거나 undefined/null이면 기존 값으로 유지
+      if (existingContent) {
+        if (!dataToSave.book_cover_thumbnail || dataToSave.book_cover_thumbnail.trim() === '') {
+          if (existingContent.book_cover_thumbnail) {
+            dataToSave.book_cover_thumbnail = existingContent.book_cover_thumbnail
+          } else {
+            delete dataToSave.book_cover_thumbnail
+          }
+        }
+        
+        if (!dataToSave.book_cover_thumbnail_video || dataToSave.book_cover_thumbnail_video.trim() === '') {
+          if (existingContent.book_cover_thumbnail_video) {
+            dataToSave.book_cover_thumbnail_video = existingContent.book_cover_thumbnail_video
+          } else {
+            delete dataToSave.book_cover_thumbnail_video
+          }
+        }
+        
+        if (!dataToSave.ending_book_cover_thumbnail || dataToSave.ending_book_cover_thumbnail.trim() === '') {
+          if (existingContent.ending_book_cover_thumbnail) {
+            dataToSave.ending_book_cover_thumbnail = existingContent.ending_book_cover_thumbnail
+          } else {
+            delete dataToSave.ending_book_cover_thumbnail
+          }
+        }
+        
+        if (!dataToSave.ending_book_cover_thumbnail_video || dataToSave.ending_book_cover_thumbnail_video.trim() === '') {
+          if (existingContent.ending_book_cover_thumbnail_video) {
+            dataToSave.ending_book_cover_thumbnail_video = existingContent.ending_book_cover_thumbnail_video
+          } else {
+            delete dataToSave.ending_book_cover_thumbnail_video
+          }
+        }
+      }
+      
       const { data, error } = await supabase
         .from('contents')
         .update(dataToSave)
@@ -92,30 +135,36 @@ export async function POST(req: NextRequest) {
       
       // payment_code 자동 부여 (없는 경우에만)
       if (!dataWithoutId.payment_code || dataWithoutId.payment_code === '') {
-        // 기존 컨텐츠의 모든 payment_code를 가져와서 숫자로 변환 후 최대값 찾기
-        // (문자열 정렬 대신 숫자 비교로 정확한 최대값 찾기)
+        // 기존 컨텐츠의 모든 payment_code를 가져와서 Set으로 변환 (빠른 조회를 위해)
         const { data: existingCodes } = await supabase
           .from('contents')
           .select('payment_code')
           .not('payment_code', 'is', null)
         
-        let nextCode = 1001 // 기본 시작 코드 (1001부터 시작)
-        
+        // 존재하는 payment_code를 Set으로 변환 (빠른 조회를 위해)
+        const existingCodeSet = new Set<string>()
         if (existingCodes && existingCodes.length > 0) {
-          // 모든 payment_code를 숫자로 변환하고 최대값 찾기
-          const codeNumbers = existingCodes
-            .map(item => {
-              const code = item.payment_code
-              if (!code) return null
-              const num = parseInt(String(code).trim(), 10)
-              return isNaN(num) ? null : num
-            })
-            .filter((num): num is number => num !== null && num >= 1000 && num <= 9999)
-          
-          if (codeNumbers.length > 0) {
-            const maxCode = Math.max(...codeNumbers)
-            nextCode = maxCode + 1
+          existingCodes.forEach(item => {
+            if (item.payment_code) {
+              const code = String(item.payment_code).trim()
+              // 1000-9999 범위의 코드만 고려
+              const num = parseInt(code, 10)
+              if (!isNaN(num) && num >= 1000 && num <= 9999) {
+                existingCodeSet.add(code.padStart(4, '0')) // 4자리로 정규화
+              }
+            }
+          })
+        }
+        
+        // 1001부터 순차적으로 증가하면서 DB에 없는 첫 번째 값 찾기
+        let nextCode = 1001
+        while (nextCode <= 9999) {
+          const codeStr = String(nextCode).padStart(4, '0')
+          if (!existingCodeSet.has(codeStr)) {
+            // 이 코드가 DB에 없으므로 사용 가능
+            break
           }
+          nextCode++
         }
         
         // 9999를 넘으면 에러 발생 (VARCHAR(4) 제한)

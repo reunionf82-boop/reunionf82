@@ -115,6 +115,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     }>;
   }>({ value: '', thumbnail: '', thumbnailImageUrl: '', thumbnailVideoUrl: '', subtitles: [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }] })
   const [initialData, setInitialData] = useState<any>(null)
+  const [nextPaymentCode, setNextPaymentCode] = useState<string | null>(null) // 복제/추가 시 다음 결제 코드
   const [hasChanges, setHasChanges] = useState(false)
   const [showThumbnailModal, setShowThumbnailModal] = useState(false)
   const [showHtmlPreview, setShowHtmlPreview] = useState(false)
@@ -320,10 +321,40 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   useEffect(() => {
     if (contentId) {
       loadContent(parseInt(contentId))
+      setNextPaymentCode(null) // 수정 모드일 때는 다음 결제 코드 불필요
     } else if (duplicateId) {
       loadContentForDuplicate(parseInt(duplicateId))
+      loadNextPaymentCode() // 복제 모드일 때 다음 결제 코드 조회
+    } else {
+      // 추가 모드 (새 컨텐츠)
+      loadNextPaymentCode() // 추가 모드일 때 다음 결제 코드 조회
     }
   }, [contentId, duplicateId])
+
+  // 다음 결제 코드 조회
+  const loadNextPaymentCode = async () => {
+    try {
+      const response = await fetch('/api/admin/content/next-payment-code', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      })
+
+      if (!response.ok) {
+        throw new Error('다음 결제 코드를 조회하는데 실패했습니다.')
+      }
+
+      const result = await response.json()
+      if (result.success && result.nextPaymentCode) {
+        setNextPaymentCode(result.nextPaymentCode)
+      }
+    } catch (error) {
+      console.error('[다음 결제 코드 조회 에러]', error)
+      // 에러가 발생해도 계속 진행 (서버에서 자동 생성되므로)
+    }
+  }
 
   // 변경 감지
   useEffect(() => {
@@ -2095,21 +2126,29 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               placeholder="예: 22,000원"
             />
           </div>
-          {initialData?.payment_code && (
+          {/* 결제 코드 섹션: 수정 모드일 때는 기존 코드 표시, 복제/추가 모드일 때는 다음 코드 미리보기 */}
+          {/* 수정 모드일 때는 initialData.payment_code가 있을 때만 표시, 복제/추가 모드일 때는 항상 표시 */}
+          {(contentId ? initialData?.payment_code : true) && (
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 결제 코드 (Payment Code)
               </label>
               <input
                 type="text"
-                value={initialData.payment_code}
+                value={contentId 
+                  ? (initialData?.payment_code || '') 
+                  : (nextPaymentCode || '로딩 중...')}
                 readOnly
                 disabled
                 className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-gray-400 cursor-not-allowed"
                 style={{ opacity: 0.7 }}
               />
               <p className="mt-1 text-xs text-gray-500">
-                결제 코드는 자동으로 부여되며 변경할 수 없습니다.
+                {contentId 
+                  ? '결제 코드는 자동으로 부여되며 변경할 수 없습니다.'
+                  : nextPaymentCode 
+                    ? `다음 결제 코드: ${nextPaymentCode} (저장 시 자동 부여)`
+                    : '결제 코드를 조회하는 중...'}
               </p>
             </div>
           )}
