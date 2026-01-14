@@ -92,22 +92,53 @@ export async function POST(req: NextRequest) {
       
       // payment_code 자동 부여 (없는 경우에만)
       if (!dataWithoutId.payment_code || dataWithoutId.payment_code === '') {
-        // 기존 컨텐츠 중 가장 큰 payment_code 찾기
+        // 기존 컨텐츠의 모든 payment_code를 가져와서 숫자로 변환 후 최대값 찾기
+        // (문자열 정렬 대신 숫자 비교로 정확한 최대값 찾기)
         const { data: existingCodes } = await supabase
           .from('contents')
           .select('payment_code')
           .not('payment_code', 'is', null)
-          .order('payment_code', { ascending: false })
-          .limit(1)
         
-        let nextCode = 1000 // 기본 시작 코드
-        if (existingCodes && existingCodes.length > 0 && existingCodes[0].payment_code) {
-          const maxCode = parseInt(existingCodes[0].payment_code) || 999
-          nextCode = maxCode + 1
+        let nextCode = 1001 // 기본 시작 코드 (1001부터 시작)
+        
+        if (existingCodes && existingCodes.length > 0) {
+          // 모든 payment_code를 숫자로 변환하고 최대값 찾기
+          const codeNumbers = existingCodes
+            .map(item => {
+              const code = item.payment_code
+              if (!code) return null
+              const num = parseInt(String(code).trim(), 10)
+              return isNaN(num) ? null : num
+            })
+            .filter((num): num is number => num !== null && num >= 1000 && num <= 9999)
+          
+          if (codeNumbers.length > 0) {
+            const maxCode = Math.max(...codeNumbers)
+            nextCode = maxCode + 1
+          }
         }
         
-        // 4자리로 포맷팅 (예: 1000, 1001, ...)
+        // 9999를 넘으면 에러 발생 (VARCHAR(4) 제한)
+        if (nextCode > 9999) {
+          return NextResponse.json(
+            { error: '저장에 실패했습니다: 결제 코드가 최대값(9999)을 초과했습니다. 관리자에게 문의하세요.' },
+            { status: 500 }
+          )
+        }
+        
+        // 4자리로 포맷팅 (예: 1001, 1002, ...)
         dataWithoutId.payment_code = String(nextCode).padStart(4, '0')
+      } else {
+        // 클라이언트에서 payment_code를 전송한 경우, 4글자 제한 검증
+        const paymentCodeStr = String(dataWithoutId.payment_code).trim()
+        if (paymentCodeStr.length > 4) {
+          return NextResponse.json(
+            { error: '저장에 실패했습니다: 결제 코드는 4글자 이하여야 합니다.' },
+            { status: 400 }
+          )
+        }
+        // 4글자 이하로 제한
+        dataWithoutId.payment_code = paymentCodeStr.substring(0, 4)
       }
       
       const { data, error } = await supabase
