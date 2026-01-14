@@ -640,9 +640,23 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           }
           return thumbnails.slice(0, 3)
         })(),
-        bookCoverThumbnailImageUrl: (data.book_cover_thumbnail && data.book_cover_thumbnail.trim()) ? data.book_cover_thumbnail.trim() : '',
+        // 북커버 썸네일: 이미지 썸네일이 없고 동영상 썸네일만 있으면 동적 생성 (대메뉴/소메뉴와 동일한 Fallback 로직)
+        bookCoverThumbnailImageUrl: (() => {
+          let imageUrl = (data.book_cover_thumbnail && data.book_cover_thumbnail.trim()) ? data.book_cover_thumbnail.trim() : ''
+          if (!imageUrl && data.book_cover_thumbnail_video) {
+            imageUrl = getThumbnailUrl(`${data.book_cover_thumbnail_video}.jpg`)
+          }
+          return imageUrl
+        })(),
         bookCoverThumbnailVideoUrl: (data.book_cover_thumbnail_video && data.book_cover_thumbnail_video.trim()) ? data.book_cover_thumbnail_video.trim() : '',
-        endingBookCoverThumbnailImageUrl: (data.ending_book_cover_thumbnail && data.ending_book_cover_thumbnail.trim()) ? data.ending_book_cover_thumbnail.trim() : '',
+        // 엔딩북커버 썸네일: 이미지 썸네일이 없고 동영상 썸네일만 있으면 동적 생성 (대메뉴/소메뉴와 동일한 Fallback 로직)
+        endingBookCoverThumbnailImageUrl: (() => {
+          let imageUrl = (data.ending_book_cover_thumbnail && data.ending_book_cover_thumbnail.trim()) ? data.ending_book_cover_thumbnail.trim() : ''
+          if (!imageUrl && data.ending_book_cover_thumbnail_video) {
+            imageUrl = getThumbnailUrl(`${data.ending_book_cover_thumbnail_video}.jpg`)
+          }
+          return imageUrl
+        })(),
         endingBookCoverThumbnailVideoUrl: (data.ending_book_cover_thumbnail_video && data.ending_book_cover_thumbnail_video.trim()) ? data.ending_book_cover_thumbnail_video.trim() : '',
       })
       
@@ -852,7 +866,14 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         isFree: data.content_type === 'gonghap',
         showNew: data.is_new || false,
         contentName: duplicatedContentName,
-        thumbnailImageUrl: data.thumbnail_url || '',
+        // 컨텐츠명 썸네일: 이미지 썸네일이 없고 동영상 썸네일만 있으면 동적 생성 (대메뉴/소메뉴와 동일한 Fallback 로직)
+        thumbnailImageUrl: (() => {
+          let imageUrl = (data.thumbnail_url && data.thumbnail_url.trim()) ? data.thumbnail_url.trim() : ''
+          if (!imageUrl && data.thumbnail_video_url) {
+            imageUrl = getThumbnailUrl(`${data.thumbnail_video_url}.jpg`)
+          }
+          return imageUrl
+        })(),
         thumbnailVideoUrl: data.thumbnail_video_url || '',
         summary: data.summary || '',
         introduction: data.introduction || '',
@@ -900,9 +921,23 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           }
           return thumbnails.slice(0, 3)
         })(),
-        bookCoverThumbnailImageUrl: data.book_cover_thumbnail || '',
+        // 북커버 썸네일: 이미지 썸네일이 없고 동영상 썸네일만 있으면 동적 생성 (대메뉴/소메뉴와 동일한 Fallback 로직)
+        bookCoverThumbnailImageUrl: (() => {
+          let imageUrl = (data.book_cover_thumbnail && data.book_cover_thumbnail.trim()) ? data.book_cover_thumbnail.trim() : ''
+          if (!imageUrl && data.book_cover_thumbnail_video) {
+            imageUrl = getThumbnailUrl(`${data.book_cover_thumbnail_video}.jpg`)
+          }
+          return imageUrl
+        })(),
         bookCoverThumbnailVideoUrl: data.book_cover_thumbnail_video || '',
-        endingBookCoverThumbnailImageUrl: data.ending_book_cover_thumbnail || '',
+        // 엔딩북커버 썸네일: 이미지 썸네일이 없고 동영상 썸네일만 있으면 동적 생성 (대메뉴/소메뉴와 동일한 Fallback 로직)
+        endingBookCoverThumbnailImageUrl: (() => {
+          let imageUrl = (data.ending_book_cover_thumbnail && data.ending_book_cover_thumbnail.trim()) ? data.ending_book_cover_thumbnail.trim() : ''
+          if (!imageUrl && data.ending_book_cover_thumbnail_video) {
+            imageUrl = getThumbnailUrl(`${data.ending_book_cover_thumbnail_video}.jpg`)
+          }
+          return imageUrl
+        })(),
         endingBookCoverThumbnailVideoUrl: data.ending_book_cover_thumbnail_video || '',
       })
       
@@ -2406,18 +2441,21 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               }}
               className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
             >
-              {firstMenuField.thumbnailImageUrl ? (
-                <img 
-                  src={addCacheBusting(firstMenuField.thumbnailImageUrl)} 
-                  alt="첫 메뉴 이미지 썸네일" 
-                  className="absolute inset-0 w-full h-full object-contain"
-                />
-              ) : (
-                <span className="text-xs leading-tight text-center">
-                  <div>이미지</div>
-                  <div>썸네일</div>
-                </span>
-              )}
+              {(() => {
+                const imageUrl = firstMenuField.thumbnailImageUrl || (firstMenuField.thumbnailVideoUrl ? getThumbnailUrl(`${firstMenuField.thumbnailVideoUrl}.jpg`) : '')
+                return imageUrl ? (
+                  <img 
+                    src={addCacheBusting(imageUrl)} 
+                    alt="첫 메뉴 이미지 썸네일" 
+                    className="absolute inset-0 w-full h-full object-contain"
+                  />
+                ) : (
+                  <span className="text-xs leading-tight text-center">
+                    <div>이미지</div>
+                    <div>썸네일</div>
+                  </span>
+                )
+              })()}
             </button>
             <button
               type="button"
@@ -2429,34 +2467,43 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 firstMenuField.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
               }`}
             >
-              {firstMenuField.thumbnailVideoUrl && firstMenuField.thumbnailImageUrl ? (
-                <>
-                  <img 
-                    src={addCacheBusting(firstMenuField.thumbnailImageUrl)} 
-                    alt="첫 메뉴 동영상 썸네일" 
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
-                    <svg 
-                      className="w-6 h-6 text-white opacity-80" 
-                      fill="currentColor" 
-                      viewBox="0 0 24 24"
-                    >
-                      <path d="M8 5v14l11-7z"/>
-                    </svg>
-                  </div>
-                </>
-              ) : firstMenuField.thumbnailVideoUrl ? (
-                <span className="text-xs text-green-400 leading-tight text-center">
-                  <div>동영상</div>
-                  <div>썸네일</div>
-                </span>
-              ) : (
-                <span className="text-xs leading-tight text-center">
-                  <div>동영상</div>
-                  <div>썸네일</div>
-                </span>
-              )}
+              {(() => {
+                const imageUrl = firstMenuField.thumbnailImageUrl || (firstMenuField.thumbnailVideoUrl ? getThumbnailUrl(`${firstMenuField.thumbnailVideoUrl}.jpg`) : '')
+                if (firstMenuField.thumbnailVideoUrl && imageUrl) {
+                  return (
+                    <>
+                      <img 
+                        src={addCacheBusting(imageUrl)} 
+                        alt="첫 메뉴 동영상 썸네일" 
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                        <svg 
+                          className="w-6 h-6 text-white opacity-80" 
+                          fill="currentColor" 
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M8 5v14l11-7z"/>
+                        </svg>
+                      </div>
+                    </>
+                  )
+                } else if (firstMenuField.thumbnailVideoUrl) {
+                  return (
+                    <span className="text-xs text-green-400 leading-tight text-center">
+                      <div>동영상</div>
+                      <div>썸네일</div>
+                    </span>
+                  )
+                } else {
+                  return (
+                    <span className="text-xs leading-tight text-center">
+                      <div>동영상</div>
+                      <div>썸네일</div>
+                    </span>
+                  )
+                }
+              })()}
             </button>
             <button
               type="button"
@@ -2508,18 +2555,21 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     }}
                     className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-1 py-1 rounded-lg transition-colors duration-200 relative overflow-hidden w-[50px] h-[36px] flex items-center justify-center"
                   >
-                      {subtitle.thumbnailImageUrl && subtitle.thumbnailImageUrl.trim() ? (
-                      <img 
-                        src={addCacheBusting(subtitle.thumbnailImageUrl)} 
-                        alt="소제목 이미지 썸네일" 
-                        className="absolute inset-0 w-full h-full object-contain"
-                      />
-                    ) : (
-                      <span className="text-[8px] leading-tight text-center">
-                        <div>이미지</div>
-                        <div>썸네일</div>
-                      </span>
-                    )}
+                      {(() => {
+                        const imageUrl = subtitle.thumbnailImageUrl || (subtitle.thumbnailVideoUrl ? getThumbnailUrl(`${subtitle.thumbnailVideoUrl}.jpg`) : '')
+                        return imageUrl ? (
+                          <img 
+                            src={addCacheBusting(imageUrl)} 
+                            alt="소제목 이미지 썸네일" 
+                            className="absolute inset-0 w-full h-full object-contain"
+                          />
+                        ) : (
+                          <span className="text-[8px] leading-tight text-center">
+                            <div>이미지</div>
+                            <div>썸네일</div>
+                          </span>
+                        )
+                      })()}
                   </button>
                   <button
                     type="button"
@@ -2532,34 +2582,43 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       subtitle.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
                     }`}
                   >
-                      {subtitle.thumbnailVideoUrl && subtitle.thumbnailImageUrl ? (
-                        <>
-                          <img 
-                            src={addCacheBusting(subtitle.thumbnailImageUrl)} 
-                            alt="소제목 동영상 썸네일" 
-                            className="absolute inset-0 w-full h-full object-cover"
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
-                            <svg 
-                              className="w-4 h-4 text-white opacity-80" 
-                              fill="currentColor" 
-                              viewBox="0 0 24 24"
-                            >
-                              <path d="M8 5v14l11-7z"/>
-                            </svg>
-                          </div>
-                        </>
-                      ) : subtitle.thumbnailVideoUrl ? (
-                        <span className="text-[8px] text-green-400 leading-tight text-center">
-                          <div>동영상</div>
-                          <div>썸네일</div>
-                        </span>
-                      ) : (
-                        <span className="text-[8px] leading-tight text-center">
-                          <div>동영상</div>
-                          <div>썸네일</div>
-                        </span>
-                      )}
+                      {(() => {
+                        const imageUrl = subtitle.thumbnailImageUrl || (subtitle.thumbnailVideoUrl ? getThumbnailUrl(`${subtitle.thumbnailVideoUrl}.jpg`) : '')
+                        if (subtitle.thumbnailVideoUrl && imageUrl) {
+                          return (
+                            <>
+                              <img 
+                                src={addCacheBusting(imageUrl)} 
+                                alt="소제목 동영상 썸네일" 
+                                className="absolute inset-0 w-full h-full object-cover"
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                                <svg 
+                                  className="w-4 h-4 text-white opacity-80" 
+                                  fill="currentColor" 
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path d="M8 5v14l11-7z"/>
+                                </svg>
+                              </div>
+                            </>
+                          )
+                        } else if (subtitle.thumbnailVideoUrl) {
+                          return (
+                            <span className="text-[8px] text-green-400 leading-tight text-center">
+                              <div>동영상</div>
+                              <div>썸네일</div>
+                            </span>
+                          )
+                        } else {
+                          return (
+                            <span className="text-[8px] leading-tight text-center">
+                              <div>동영상</div>
+                              <div>썸네일</div>
+                            </span>
+                          )
+                        }
+                      })()}
                   </button>
                   {subIndex === 0 ? (
                     <button
@@ -2634,18 +2693,21 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                           }}
                           className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-1 py-1 rounded-lg transition-colors duration-200 relative overflow-hidden w-[50px] h-[36px] flex items-center justify-center"
                         >
-                          {detailMenu.thumbnailImageUrl && detailMenu.thumbnailImageUrl.trim() ? (
-                            <img 
-                              src={addCacheBusting(detailMenu.thumbnailImageUrl)} 
-                              alt="상세메뉴 이미지 썸네일" 
-                              className="absolute inset-0 w-full h-full object-contain"
-                            />
-                          ) : (
-                            <span className="text-[8px] leading-tight text-center">
-                              <div>이미지</div>
-                              <div>썸네일</div>
-                            </span>
-                          )}
+                          {(() => {
+                            const imageUrl = detailMenu.thumbnailImageUrl || (detailMenu.thumbnailVideoUrl ? getThumbnailUrl(`${detailMenu.thumbnailVideoUrl}.jpg`) : '')
+                            return imageUrl ? (
+                              <img 
+                                src={addCacheBusting(imageUrl)} 
+                                alt="상세메뉴 이미지 썸네일" 
+                                className="absolute inset-0 w-full h-full object-contain"
+                              />
+                            ) : (
+                              <span className="text-[8px] leading-tight text-center">
+                                <div>이미지</div>
+                                <div>썸네일</div>
+                              </span>
+                            )
+                          })()}
                         </button>
                         <button
                           type="button"
@@ -2658,34 +2720,43 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                             detailMenu.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
                           }`}
                         >
-                          {detailMenu.thumbnailVideoUrl && detailMenu.thumbnailImageUrl ? (
-                            <>
-                              <img 
-                                src={addCacheBusting(detailMenu.thumbnailImageUrl)} 
-                                alt="상세메뉴 동영상 썸네일" 
-                                className="absolute inset-0 w-full h-full object-cover"
-                              />
-                              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
-                                <svg 
-                                  className="w-4 h-4 text-white opacity-80" 
-                                  fill="currentColor" 
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path d="M8 5v14l11-7z"/>
-                                </svg>
-                              </div>
-                            </>
-                          ) : detailMenu.thumbnailVideoUrl ? (
-                            <span className="text-[8px] text-green-400 leading-tight text-center">
-                              <div>동영상</div>
-                              <div>썸네일</div>
-                            </span>
-                          ) : (
-                            <span className="text-[8px] leading-tight text-center">
-                              <div>동영상</div>
-                              <div>썸네일</div>
-                            </span>
-                          )}
+                          {(() => {
+                            const imageUrl = detailMenu.thumbnailImageUrl || (detailMenu.thumbnailVideoUrl ? getThumbnailUrl(`${detailMenu.thumbnailVideoUrl}.jpg`) : '')
+                            if (detailMenu.thumbnailVideoUrl && imageUrl) {
+                              return (
+                                <>
+                                  <img 
+                                    src={addCacheBusting(imageUrl)} 
+                                    alt="상세메뉴 동영상 썸네일" 
+                                    className="absolute inset-0 w-full h-full object-cover"
+                                  />
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                                    <svg 
+                                      className="w-4 h-4 text-white opacity-80" 
+                                      fill="currentColor" 
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path d="M8 5v14l11-7z"/>
+                                    </svg>
+                                  </div>
+                                </>
+                              )
+                            } else if (detailMenu.thumbnailVideoUrl) {
+                              return (
+                                <span className="text-[8px] text-green-400 leading-tight text-center">
+                                  <div>동영상</div>
+                                  <div>썸네일</div>
+                                </span>
+                              )
+                            } else {
+                              return (
+                                <span className="text-[8px] leading-tight text-center">
+                                  <div>동영상</div>
+                                  <div>썸네일</div>
+                                </span>
+                              )
+                            }
+                          })()}
                         </button>
                         {detailIndex === 0 ? (
                           <button
@@ -2782,18 +2853,21 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   }}
                   className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-3 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[48px] flex items-center justify-center"
                 >
-                  {field.thumbnailImageUrl ? (
-                    <img 
-                      src={addCacheBusting(field.thumbnailImageUrl)} 
-                      alt="메뉴 이미지 썸네일" 
-                      className="absolute inset-0 w-full h-full object-contain"
-                    />
-                  ) : (
-                    <span className="text-xs leading-tight text-center">
-                      <div>이미지</div>
-                      <div>썸네일</div>
-                    </span>
-                  )}
+                  {(() => {
+                    const imageUrl = field.thumbnailImageUrl || (field.thumbnailVideoUrl ? getThumbnailUrl(`${field.thumbnailVideoUrl}.jpg`) : '')
+                    return imageUrl ? (
+                      <img 
+                        src={addCacheBusting(imageUrl)} 
+                        alt="메뉴 이미지 썸네일" 
+                        className="absolute inset-0 w-full h-full object-contain"
+                      />
+                    ) : (
+                      <span className="text-xs leading-tight text-center">
+                        <div>이미지</div>
+                        <div>썸네일</div>
+                      </span>
+                    )
+                  })()}
                 </button>
                 <button
                   type="button"
@@ -2805,34 +2879,43 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     field.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
                   }`}
                 >
-                  {field.thumbnailVideoUrl && field.thumbnailImageUrl ? (
-                    <>
-                      <img 
-                        src={addCacheBusting(field.thumbnailImageUrl)} 
-                        alt="메뉴 동영상 썸네일" 
-                        className="absolute inset-0 w-full h-full object-cover"
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
-                        <svg 
-                          className="w-6 h-6 text-white opacity-80" 
-                          fill="currentColor" 
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M8 5v14l11-7z"/>
-                        </svg>
-                      </div>
-                    </>
-                  ) : field.thumbnailVideoUrl ? (
-                    <span className="text-xs text-green-400 leading-tight text-center">
-                      <div>동영상</div>
-                      <div>썸네일</div>
-                    </span>
-                  ) : (
-                    <span className="text-xs leading-tight text-center">
-                      <div>동영상</div>
-                      <div>썸네일</div>
-                    </span>
-                  )}
+                  {(() => {
+                    const imageUrl = field.thumbnailImageUrl || (field.thumbnailVideoUrl ? getThumbnailUrl(`${field.thumbnailVideoUrl}.jpg`) : '')
+                    if (field.thumbnailVideoUrl && imageUrl) {
+                      return (
+                        <>
+                          <img 
+                            src={addCacheBusting(imageUrl)} 
+                            alt="메뉴 동영상 썸네일" 
+                            className="absolute inset-0 w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                            <svg 
+                              className="w-6 h-6 text-white opacity-80" 
+                              fill="currentColor" 
+                              viewBox="0 0 24 24"
+                            >
+                              <path d="M8 5v14l11-7z"/>
+                            </svg>
+                          </div>
+                        </>
+                      )
+                    } else if (field.thumbnailVideoUrl) {
+                      return (
+                        <span className="text-xs text-green-400 leading-tight text-center">
+                          <div>동영상</div>
+                          <div>썸네일</div>
+                        </span>
+                      )
+                    } else {
+                      return (
+                        <span className="text-xs leading-tight text-center">
+                          <div>동영상</div>
+                          <div>썸네일</div>
+                        </span>
+                      )
+                    }
+                  })()}
                 </button>
                 <button
                   type="button"
@@ -2893,18 +2976,21 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                         }}
                         className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-1 py-1 rounded-lg transition-colors duration-200 relative overflow-hidden w-[50px] h-[36px] flex items-center justify-center"
                       >
-                        {subtitle.thumbnailImageUrl ? (
-                          <img 
-                            src={addCacheBusting(subtitle.thumbnailImageUrl)} 
-                            alt="소제목 이미지 썸네일" 
-                            className="absolute inset-0 w-full h-full object-contain"
-                          />
-                        ) : (
-                          <span className="text-[8px] leading-tight text-center">
-                            <div>이미지</div>
-                            <div>썸네일</div>
-                          </span>
-                        )}
+                        {(() => {
+                          const imageUrl = subtitle.thumbnailImageUrl || (subtitle.thumbnailVideoUrl ? getThumbnailUrl(`${subtitle.thumbnailVideoUrl}.jpg`) : '')
+                          return imageUrl ? (
+                            <img 
+                              src={addCacheBusting(imageUrl)} 
+                              alt="소제목 이미지 썸네일" 
+                              className="absolute inset-0 w-full h-full object-contain"
+                            />
+                          ) : (
+                            <span className="text-[8px] leading-tight text-center">
+                              <div>이미지</div>
+                              <div>썸네일</div>
+                            </span>
+                          )
+                        })()}
                       </button>
                       <button
                         type="button"
@@ -2920,34 +3006,43 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                           subtitle.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
                         }`}
                       >
-                        {subtitle.thumbnailVideoUrl && subtitle.thumbnailImageUrl ? (
-                          <>
-                            <img 
-                              src={addCacheBusting(subtitle.thumbnailImageUrl)} 
-                              alt="소제목 동영상 썸네일" 
-                              className="absolute inset-0 w-full h-full object-cover"
-                            />
-                            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
-                              <svg 
-                                className="w-4 h-4 text-white opacity-80" 
-                                fill="currentColor" 
-                                viewBox="0 0 24 24"
-                              >
-                                <path d="M8 5v14l11-7z"/>
-                              </svg>
-                            </div>
-                          </>
-                        ) : subtitle.thumbnailVideoUrl ? (
-                          <span className="text-[8px] text-green-400 leading-tight text-center">
-                            <div>동영상</div>
-                            <div>썸네일</div>
-                          </span>
-                        ) : (
-                          <span className="text-[8px] leading-tight text-center">
-                            <div>동영상</div>
-                            <div>썸네일</div>
-                          </span>
-                        )}
+                        {(() => {
+                          const imageUrl = subtitle.thumbnailImageUrl || (subtitle.thumbnailVideoUrl ? getThumbnailUrl(`${subtitle.thumbnailVideoUrl}.jpg`) : '')
+                          if (subtitle.thumbnailVideoUrl && imageUrl) {
+                            return (
+                              <>
+                                <img 
+                                  src={addCacheBusting(imageUrl)} 
+                                  alt="소제목 동영상 썸네일" 
+                                  className="absolute inset-0 w-full h-full object-cover"
+                                />
+                                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                                  <svg 
+                                    className="w-4 h-4 text-white opacity-80" 
+                                    fill="currentColor" 
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path d="M8 5v14l11-7z"/>
+                                  </svg>
+                                </div>
+                              </>
+                            )
+                          } else if (subtitle.thumbnailVideoUrl) {
+                            return (
+                              <span className="text-[8px] text-green-400 leading-tight text-center">
+                                <div>동영상</div>
+                                <div>썸네일</div>
+                              </span>
+                            )
+                          } else {
+                            return (
+                              <span className="text-[8px] leading-tight text-center">
+                                <div>동영상</div>
+                                <div>썸네일</div>
+                              </span>
+                            )
+                          }
+                        })()}
                       </button>
                       {subIndex === 0 ? (
                         <button
@@ -3032,18 +3127,21 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                               }}
                               className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-1 py-1 rounded-lg transition-colors duration-200 relative overflow-hidden w-[50px] h-[36px] flex items-center justify-center"
                             >
-                              {detailMenu.thumbnailImageUrl && detailMenu.thumbnailImageUrl.trim() ? (
-                                <img 
-                                  src={addCacheBusting(detailMenu.thumbnailImageUrl)} 
-                                  alt="상세메뉴 이미지 썸네일" 
-                                  className="absolute inset-0 w-full h-full object-contain"
-                                />
-                              ) : (
-                                <span className="text-[8px] leading-tight text-center">
-                                  <div>이미지</div>
-                                  <div>썸네일</div>
-                                </span>
-                              )}
+                              {(() => {
+                                const imageUrl = detailMenu.thumbnailImageUrl || (detailMenu.thumbnailVideoUrl ? getThumbnailUrl(`${detailMenu.thumbnailVideoUrl}.jpg`) : '')
+                                return imageUrl ? (
+                                  <img 
+                                    src={addCacheBusting(imageUrl)} 
+                                    alt="상세메뉴 이미지 썸네일" 
+                                    className="absolute inset-0 w-full h-full object-contain"
+                                  />
+                                ) : (
+                                  <span className="text-[8px] leading-tight text-center">
+                                    <div>이미지</div>
+                                    <div>썸네일</div>
+                                  </span>
+                                )
+                              })()}
                             </button>
                             <button
                               type="button"
@@ -3060,34 +3158,43 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                                 detailMenu.thumbnailVideoUrl ? 'border-2 border-green-400' : ''
                               }`}
                             >
-                              {detailMenu.thumbnailVideoUrl && detailMenu.thumbnailImageUrl ? (
-                                <>
-                                  <img 
-                                    src={addCacheBusting(detailMenu.thumbnailImageUrl)} 
-                                    alt="상세메뉴 동영상 썸네일" 
-                                    className="absolute inset-0 w-full h-full object-cover"
-                                  />
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
-                                    <svg 
-                                      className="w-4 h-4 text-white opacity-80" 
-                                      fill="currentColor" 
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path d="M8 5v14l11-7z"/>
-                                    </svg>
-                                  </div>
-                                </>
-                              ) : detailMenu.thumbnailVideoUrl ? (
-                                <span className="text-[8px] text-green-400 leading-tight text-center">
-                                  <div>상세메뉴</div>
-                                  <div>동영상</div>
-                                </span>
-                              ) : (
-                                <span className="text-[8px] leading-tight text-center">
-                                  <div>상세메뉴</div>
-                                  <div>동영상</div>
-                                </span>
-                              )}
+                              {(() => {
+                                const imageUrl = detailMenu.thumbnailImageUrl || (detailMenu.thumbnailVideoUrl ? getThumbnailUrl(`${detailMenu.thumbnailVideoUrl}.jpg`) : '')
+                                if (detailMenu.thumbnailVideoUrl && imageUrl) {
+                                  return (
+                                    <>
+                                      <img 
+                                        src={addCacheBusting(imageUrl)} 
+                                        alt="상세메뉴 동영상 썸네일" 
+                                        className="absolute inset-0 w-full h-full object-cover"
+                                      />
+                                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                                        <svg 
+                                          className="w-4 h-4 text-white opacity-80" 
+                                          fill="currentColor" 
+                                          viewBox="0 0 24 24"
+                                        >
+                                          <path d="M8 5v14l11-7z"/>
+                                        </svg>
+                                      </div>
+                                    </>
+                                  )
+                                } else if (detailMenu.thumbnailVideoUrl) {
+                                  return (
+                                    <span className="text-[8px] text-green-400 leading-tight text-center">
+                                      <div>상세메뉴</div>
+                                      <div>동영상</div>
+                                    </span>
+                                  )
+                                } else {
+                                  return (
+                                    <span className="text-[8px] leading-tight text-center">
+                                      <div>상세메뉴</div>
+                                      <div>동영상</div>
+                                    </span>
+                                  )
+                                }
+                              })()}
                             </button>
                             {detailIndex === 0 ? (
                               <button
