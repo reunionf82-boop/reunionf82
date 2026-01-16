@@ -187,6 +187,7 @@ function ResultContent() {
   const [showRealtimePopup, setShowRealtimePopup] = useState(false) // realtime 전용 로딩 팝업
   const [showSlideMenu, setShowSlideMenu] = useState(false) // 슬라이드 메뉴 표시
   const [showMyHistoryPopup, setShowMyHistoryPopup] = useState(false) // 나의 이용내역 팝업 표시
+  const [showMansePopup, setShowMansePopup] = useState(false) // 나의 사주명식 보기 팝업
   const [showTermsPopup, setShowTermsPopup] = useState(false) // 이용약관 팝업
   const [showPrivacyPopup, setShowPrivacyPopup] = useState(false) // 개인정보처리방침 팝업
   const [firstSubtitleReady, setFirstSubtitleReady] = useState(false) // 1-1 소제목 준비 여부
@@ -2435,7 +2436,10 @@ ${fontFace ? fontFace : ''}
       
       return updated
     })
-    setTotalSubtitles(cursor)
+    
+    // 전체 소메뉴 개수 계산: parsed의 모든 subtitles 길이 합산 (소메뉴 단위 기준)
+    const totalSubtitleCount = parsed.reduce((sum: number, menu: ParsedMenu) => sum + menu.subtitles.length, 0)
+    setTotalSubtitles(totalSubtitleCount || cursor)
 
     // 소제목별 단위로 한 번에 표시:
     // - 스트리밍 중: 항상 마지막 소제목 하나는 "점사중입니다..." 상태로 숨김
@@ -4928,7 +4932,7 @@ ${fontFace ? fontFace : ''}
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gray-50 flex flex-col" style={{ overflowY: 'auto', height: '100vh' }}>
       {/* 슬라이드 메뉴바 */}
       <SlideMenuBar 
         isOpen={showSlideMenu} 
@@ -5001,18 +5005,79 @@ ${fontFace ? fontFace : ''}
         </div>
       </header>
 
-      {/* 플로팅 배너 - 목차로 이동 (점사 중에도 허용) */}
+      {/* 플로팅 배너 - 나의 사주명식 보기 + 목차로 이동 + 완료율 로딩바 */}
       {parsedMenus.length > 0 && (
-        <div className="fixed bottom-6 right-6 z-40">
-          <button
-            onClick={scrollToTableOfContents}
-            className="bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold px-6 py-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2 opacity-80"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-            <span>목차로 이동</span>
-          </button>
+        <>
+          {/* 왼쪽: 나의 사주명식 보기 버튼 */}
+          {parsedMenus.length > 0 && parsedMenus[0].manseHtml && (
+            <div className="fixed bottom-6 left-6 z-40">
+              <button
+                onClick={() => setShowMansePopup(true)}
+                className="bg-gradient-to-r from-pink-400 to-pink-500 hover:from-pink-500 hover:to-pink-600 text-white font-semibold px-5 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 text-sm opacity-80 hover:opacity-100"
+              >
+                나의 사주명식 보기
+              </button>
+            </div>
+          )}
+          
+          {/* 오른쪽: 완료율 로딩바 + 목차로 이동 버튼 */}
+          <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
+            {/* 완료율 로딩바 (목차로 이동 버튼 위에 수직 배치) */}
+            {!streamingFinished && isStreamingActive && totalSubtitles > 0 && (
+              <div className="flex flex-col items-end gap-1 opacity-80">
+                <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">완료율</span>
+                <div className="relative w-full h-6 bg-gray-200 rounded-full overflow-hidden min-w-[200px]">
+                  <div 
+                    className="h-full bg-gradient-to-r from-pink-500 to-pink-600 transition-all duration-500 ease-out rounded-full flex items-center justify-end pr-2 opacity-80"
+                    style={{
+                      width: `${Math.min(100, (revealedCount / Math.max(1, totalSubtitles)) * 100)}%`
+                    }}
+                  >
+                    <span className="text-xs font-bold text-white whitespace-nowrap">
+                      {Math.min(100, Math.round((revealedCount / Math.max(1, totalSubtitles)) * 100))}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* 목차로 이동 버튼 */}
+            <button
+              onClick={scrollToTableOfContents}
+              className="bg-pink-500/80 hover:bg-pink-500/90 text-white font-semibold px-6 py-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              <span>목차로 이동</span>
+            </button>
+          </div>
+        </>
+      )}
+      
+      {/* 나의 사주명식 보기 팝업 */}
+      {showMansePopup && parsedMenus.length > 0 && parsedMenus[0].manseHtml && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-auto shadow-2xl relative">
+            {/* 닫기 버튼 (우측 상단) */}
+            <button
+              onClick={() => setShowMansePopup(false)}
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 transition-colors w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 z-10"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            {/* 만세력 표시 */}
+            <div className="p-6 pt-12">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">나의 사주명식</h2>
+              <div 
+                className="manse-ryeok-container"
+                dangerouslySetInnerHTML={{ __html: parsedMenus[0].manseHtml || '' }}
+              />
+            </div>
+          </div>
         </div>
       )}
       

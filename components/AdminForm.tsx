@@ -164,6 +164,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     detailMenus: '',
     tools: ''
   })
+  // 이미지 등록 모달 상태 (소개/추천/상품 메뉴 구성용)
+  const [showContentImagesModal, setShowContentImagesModal] = useState(false)
+  const [currentImageType, setCurrentImageType] = useState<'introduction' | 'recommendation' | 'menu_composition' | null>(null)
+  const [contentImages, setContentImages] = useState<string[]>([]) // 이미지는 선택 사항 (빈 배열 허용)
+  const [uploadingContentImageIndex, setUploadingContentImageIndex] = useState<number | null>(null)
+  
   const [showIntegrityCheckResult, setShowIntegrityCheckResult] = useState(false) // 무결성 체크 결과 팝업
   const [integrityCheckResult, setIntegrityCheckResult] = useState<{
     isValid: boolean
@@ -1255,6 +1261,109 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     setShowThumbnailModal(true)
   }
 
+  // 이미지 등록 모달 열기 핸들러
+  const handleOpenContentImagesModal = (type: 'introduction' | 'recommendation' | 'menu_composition') => {
+    // 해당 섹션의 HTML에서 기존 이미지 추출 (img 태그의 src 속성)
+    let htmlContent = ''
+    if (type === 'introduction') {
+      htmlContent = formData.introduction
+    } else if (type === 'recommendation') {
+      htmlContent = formData.recommendation
+    } else if (type === 'menu_composition') {
+      htmlContent = formData.menu_composition
+    }
+    
+    // HTML에서 img 태그의 src 추출
+    const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
+    const extractedImages: string[] = []
+    let match
+    while ((match = imgRegex.exec(htmlContent)) !== null) {
+      extractedImages.push(match[1])
+    }
+    
+    setContentImages(extractedImages)
+    setCurrentImageType(type)
+    setShowContentImagesModal(true)
+  }
+
+  // 이미지 업로드 핸들러
+  const handleContentImageUpload = async (file: File, index: number) => {
+    if (!file || !file.type.startsWith('image/')) {
+      alert('이미지 파일만 업로드 가능합니다.')
+      return
+    }
+    
+    setUploadingContentImageIndex(index)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('folder', 'content') // content 폴더에 저장
+      
+      const response = await fetch('/api/admin/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '이미지 업로드 실패')
+      }
+      
+      const data = await response.json()
+      const imageUrl = data.url || data.path
+      
+      // contentImages 배열 업데이트
+      const updatedImages = [...contentImages]
+      updatedImages[index] = imageUrl
+      setContentImages(updatedImages)
+    } catch (error: any) {
+      console.error('[이미지 업로드 에러]', error)
+      alert(`이미지 업로드 실패: ${error?.message || '알 수 없는 오류'}`)
+    } finally {
+      setUploadingContentImageIndex(null)
+    }
+  }
+
+  // 이미지 추가 핸들러
+  const handleAddContentImage = async (file: File | null) => {
+    if (!file) return
+    await handleContentImageUpload(file, contentImages.length)
+  }
+
+  // 이미지 삭제 핸들러
+  const handleRemoveContentImage = async (index: number) => {
+    const imageUrl = contentImages[index]
+    if (!imageUrl) return
+    
+    try {
+      // 이미지 삭제 API 호출
+      const response = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', url: imageUrl }),
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || '이미지 삭제 실패')
+      }
+      
+      // contentImages 배열에서 제거
+      const updatedImages = contentImages.filter((_, i) => i !== index)
+      setContentImages(updatedImages)
+    } catch (error: any) {
+      console.error('[이미지 삭제 에러]', error)
+      alert(`이미지 삭제 실패: ${error?.message || '알 수 없는 오류'}`)
+    }
+  }
+
+  // 이미지 모달 닫기 및 HTML 업데이트 핸들러
+  const handleCloseContentImagesModal = () => {
+    setShowContentImagesModal(false)
+    setCurrentImageType(null)
+    // contentImages는 유지 (다음에 열 때 계속 사용)
+  }
+
   // 숫자 접두사 형식 체크 함수
   const checkNumberPrefix = (text: string, expectedPattern: 'menu' | 'subtitle' | 'detailMenu'): boolean => {
     if (!text || !text.trim()) return false
@@ -2210,21 +2319,33 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             <label className="block text-sm font-medium text-gray-300">
               소개
             </label>
-            <button
-              type="button"
-              onClick={() => {
-                setHtmlPreviewContent(formData.introduction)
-                setHtmlPreviewTitle('소개 미리보기')
-                setShowHtmlPreview(true)
-              }}
-              className="text-gray-400 hover:text-pink-500 transition-colors duration-200"
-              title="HTML 미리보기"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleOpenContentImagesModal('introduction')}
+                className="text-gray-400 hover:text-pink-500 transition-colors duration-200"
+                title="이미지 등록"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setHtmlPreviewContent(formData.introduction)
+                  setHtmlPreviewTitle('소개 미리보기')
+                  setShowHtmlPreview(true)
+                }}
+                className="text-gray-400 hover:text-pink-500 transition-colors duration-200"
+                title="HTML 미리보기"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </button>
+            </div>
           </div>
           <textarea
             name="introduction"
@@ -2240,21 +2361,33 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             <label className="block text-sm font-medium text-gray-300">
               추천
             </label>
-            <button
-              type="button"
-              onClick={() => {
-                setHtmlPreviewContent(formData.recommendation)
-                setHtmlPreviewTitle('추천 미리보기')
-                setShowHtmlPreview(true)
-              }}
-              className="text-gray-400 hover:text-pink-500 transition-colors duration-200"
-              title="HTML 미리보기"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleOpenContentImagesModal('recommendation')}
+                className="text-gray-400 hover:text-pink-500 transition-colors duration-200"
+                title="이미지 등록"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setHtmlPreviewContent(formData.recommendation)
+                  setHtmlPreviewTitle('추천 미리보기')
+                  setShowHtmlPreview(true)
+                }}
+                className="text-gray-400 hover:text-pink-500 transition-colors duration-200"
+                title="HTML 미리보기"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </button>
+            </div>
           </div>
           <textarea
             name="recommendation"
@@ -2270,21 +2403,33 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             <label className="block text-sm font-medium text-gray-300">
               상품 메뉴 구성
             </label>
-            <button
-              type="button"
-              onClick={() => {
-                setHtmlPreviewContent(formData.menu_composition)
-                setHtmlPreviewTitle('상품 메뉴 편성 미리보기')
-                setShowHtmlPreview(true)
-              }}
-              className="text-gray-400 hover:text-pink-500 transition-colors duration-200"
-              title="HTML 미리보기"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleOpenContentImagesModal('menu_composition')}
+                className="text-gray-400 hover:text-pink-500 transition-colors duration-200"
+                title="이미지 등록"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setHtmlPreviewContent(formData.menu_composition)
+                  setHtmlPreviewTitle('상품 메뉴 편성 미리보기')
+                  setShowHtmlPreview(true)
+                }}
+                className="text-gray-400 hover:text-pink-500 transition-colors duration-200"
+                title="HTML 미리보기"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </button>
+            </div>
           </div>
           <textarea
             name="menu_composition"
@@ -4602,6 +4747,258 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             : undefined
         }
       />
+
+      {/* 이미지 등록 모달 (소개/추천/상품 메뉴 구성용 - 홈HTML과 동일한 UI) */}
+      {showContentImagesModal && currentImageType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-3xl bg-gray-900 border border-gray-700 rounded-xl overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+              <div>
+                <h2 className="text-sm font-bold text-white">
+                  {currentImageType === 'introduction' ? '소개' : currentImageType === 'recommendation' ? '추천' : '상품 메뉴 구성'} 이미지 등록
+                </h2>
+                <p className="text-xs text-gray-400 mt-1">
+                  이미지 URL을 복사하여 HTML 코드 내 원하는 위치에 &lt;img src=&quot;이미지URL&quot;&gt; 형태로 넣어주세요. {contentImages.filter(url => url).length}개 이미지 업로드됨
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseContentImagesModal}
+                className="text-gray-300 hover:text-white text-sm font-semibold px-3 py-1 rounded-md"
+              >
+                닫기
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* 이미지 업로드 섹션 */}
+              <div>
+                <label className="block text-sm font-semibold text-white mb-2">
+                  이미지 (선택 사항)
+                </label>
+                <div className="flex items-start gap-2 overflow-x-auto pb-2">
+                  {contentImages.map((imageUrl, index) => (
+                    <div key={index} className="flex-shrink-0 w-24">
+                      {imageUrl ? (
+                        <div className="space-y-2">
+                          <div className="relative w-24 h-24 group">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0]
+                                if (!file) return
+                                if (!file.type.startsWith('image/')) {
+                                  alert('이미지 파일만 업로드할 수 있습니다.')
+                                  return
+                                }
+                                await handleContentImageUpload(file, index)
+                                e.target.value = ''
+                              }}
+                              className="hidden"
+                              id={`content-image-replace-${currentImageType}-${index}`}
+                              disabled={uploadingContentImageIndex === index}
+                            />
+                            <label
+                              htmlFor={`content-image-replace-${currentImageType}-${index}`}
+                              onDrop={async (e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                const file = e.dataTransfer.files?.[0]
+                                if (!file) return
+                                if (!file.type.startsWith('image/')) {
+                                  alert('이미지 파일만 업로드할 수 있습니다.')
+                                  return
+                                }
+                                await handleContentImageUpload(file, index)
+                              }}
+                              onDragOver={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                e.currentTarget.classList.add('opacity-50')
+                              }}
+                              onDragLeave={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                e.currentTarget.classList.remove('opacity-50')
+                              }}
+                              className="block w-full h-full cursor-pointer"
+                            >
+                              <img
+                                src={addCacheBusting(imageUrl)}
+                                alt={`이미지 ${index + 1}`}
+                                className="w-full h-full object-cover bg-gray-800 border border-gray-700 rounded-lg"
+                                onError={(e) => {
+                                  ;(e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23333" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3E이미지 로드 실패%3C/text%3E%3C/svg%3E'
+                                }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleRemoveContentImage(index)
+                              }}
+                              className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center z-10"
+                              title="이미지 삭제"
+                            >
+                              ×
+                            </button>
+                            {/* 드래그 오버 시 힌트 */}
+                            <div className="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                              <span className="text-white text-xs text-center px-1">드래그하여 교체</span>
+                            </div>
+                          </div>
+                          {/* 이미지 URL 복사 버튼 */}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(imageUrl)
+                                alert('이미지 URL이 클립보드에 복사되었습니다.\n\nHTML 코드 섹션에서 원하는 위치에 커서를 두고 Ctrl+V로 붙여넣으세요.')
+                              } catch (err) {
+                                // 클립보드 API가 지원되지 않는 경우 fallback
+                                const textArea = document.createElement('textarea')
+                                textArea.value = imageUrl
+                                textArea.style.position = 'fixed'
+                                textArea.style.opacity = '0'
+                                document.body.appendChild(textArea)
+                                textArea.select()
+                                try {
+                                  document.execCommand('copy')
+                                  alert('이미지 URL이 클립보드에 복사되었습니다.\n\nHTML 코드 섹션에서 원하는 위치에 커서를 두고 Ctrl+V로 붙여넣으세요.')
+                                } catch (e) {
+                                  alert('클립보드 복사에 실패했습니다. 수동으로 복사해주세요:\n\n' + imageUrl)
+                                }
+                                document.body.removeChild(textArea)
+                              }
+                            }}
+                            className="w-full py-1 px-2 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded flex items-center justify-center gap-1 transition-colors"
+                            title="이미지 URL 복사"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            <span className="text-[10px]">복사</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="w-full h-24 relative">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+                              if (!file.type.startsWith('image/')) {
+                                alert('이미지 파일만 업로드할 수 있습니다.')
+                                return
+                              }
+                              await handleContentImageUpload(file, index)
+                              e.target.value = ''
+                            }}
+                            className="hidden"
+                            id={`content-image-${currentImageType}-${index}`}
+                            disabled={uploadingContentImageIndex === index}
+                          />
+                          <label
+                            htmlFor={`content-image-${currentImageType}-${index}`}
+                            onDrop={async (e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              const file = e.dataTransfer.files?.[0]
+                              if (!file) return
+                              if (!file.type.startsWith('image/')) {
+                                alert('이미지 파일만 업로드할 수 있습니다.')
+                                return
+                              }
+                              await handleContentImageUpload(file, index)
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              e.currentTarget.classList.add('border-pink-500', 'bg-gray-700')
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              e.currentTarget.classList.remove('border-pink-500', 'bg-gray-700')
+                            }}
+                            className="block w-full h-full bg-gray-800 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center cursor-pointer hover:border-pink-500 transition-colors"
+                          >
+                            {uploadingContentImageIndex === index ? (
+                              <span className="text-gray-400 text-xs">업로드 중...</span>
+                            ) : (
+                              <span className="text-gray-400 text-xs text-center px-1">드래그 또는 클릭</span>
+                            )}
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  
+                  {/* + 버튼으로 이미지 추가 (항상 표시, 드래그&드롭 가능) */}
+                  <div className="flex-shrink-0 w-24 h-24">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        if (!file.type.startsWith('image/')) {
+                          alert('이미지 파일만 업로드할 수 있습니다.')
+                          return
+                        }
+                        const newIndex = contentImages.length
+                        setContentImages([...contentImages, ''])
+                        await handleContentImageUpload(file, newIndex)
+                        e.target.value = ''
+                      }}
+                      className="hidden"
+                      id={`content-image-add-${currentImageType}`}
+                      disabled={uploadingContentImageIndex !== null}
+                    />
+                    <label
+                      htmlFor={`content-image-add-${currentImageType}`}
+                      onDrop={async (e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        const file = e.dataTransfer.files?.[0]
+                        if (!file) return
+                        if (!file.type.startsWith('image/')) {
+                          alert('이미지 파일만 업로드할 수 있습니다.')
+                          return
+                        }
+                        const newIndex = contentImages.length
+                        setContentImages([...contentImages, ''])
+                        await handleContentImageUpload(file, newIndex)
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        e.currentTarget.classList.add('border-pink-500', 'bg-gray-600')
+                      }}
+                      onDragLeave={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        e.currentTarget.classList.remove('border-pink-500', 'bg-gray-600')
+                      }}
+                      className="flex w-full h-full bg-gray-700 hover:bg-gray-600 border-2 border-dashed border-gray-500 rounded-lg items-center justify-center cursor-pointer transition-colors"
+                      title="클릭하거나 드래그하여 이미지 추가"
+                    >
+                      {uploadingContentImageIndex !== null ? (
+                        <span className="text-gray-300 text-xs">업로드 중...</span>
+                      ) : (
+                        <span className="text-white text-2xl font-bold">+</span>
+                      )}
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 취소 경고 팝업 */}
       {showCancelWarning && (

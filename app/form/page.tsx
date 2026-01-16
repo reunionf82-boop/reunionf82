@@ -2154,7 +2154,7 @@ function FormContent() {
         return
       }
       
-      // 결제정보 팝업만 닫기 (최소한의 state 업데이트로 리렌더링 최소화)
+      // 결제정보 팝업 즉시 닫기 (최대한 빠른 리절트 화면 이동을 위해)
       setShowPaymentPopup(false)
       setSubmitting(false)
       setPaymentProcessingMethod(null)
@@ -3273,7 +3273,26 @@ function FormContent() {
           )
         }
         
-        // 모든 비동기 작업을 최대 3초까지만 대기 (타임아웃)
+        // 결제 성공으로 인한 이동인 경우, 비동기 작업 완료를 기다리지 않고 즉시 페이지 이동
+        if (isPaymentSuccess) {
+          console.log('[결제 처리] 결제 성공으로 인한 이동, 비동기 작업 백그라운드 실행 후 즉시 리절트 페이지로 이동')
+          Promise.race([
+            Promise.allSettled(asyncTasks),
+            new Promise((resolve) => setTimeout(resolve, 3000)) // 최대 3초 대기
+          ]).then(() => {
+            console.log('[결제 처리] 백그라운드 비동기 작업 완료 (결제 성공)')
+          }).catch((e) => {
+            console.error('[결제 처리] 백그라운드 비동기 작업 오류 (결제 성공):', e)
+          })
+          
+          setSubmitting(false)
+          setShowPaymentPopup(false) // 팝업 닫기
+          setPaymentProcessingMethod(null)
+          router.push('/result')
+          return
+        }
+        
+        // realtime 모드 (결제 성공이 아닌 경우): 비동기 작업 완료를 기다림
         try {
           await Promise.race([
             Promise.allSettled(asyncTasks),
@@ -3285,7 +3304,11 @@ function FormContent() {
         }
         
         // 페이지 이동은 항상 실행 (비동기 작업 성공/실패와 무관)
+        // 결제 완료 후 최대한 빠르게 리절트 화면으로 이동
         setSubmitting(false)
+        // 결제정보 팝업 닫기 (최대한 빠른 이동을 위해)
+        setShowPaymentPopup(false)
+        setPaymentProcessingMethod(null)
         router.push('/result')
         return
       }
@@ -4518,16 +4541,24 @@ function FormContent() {
                       try {
                         const iframe = introductionIframeRef.current
                         if (iframe?.contentWindow?.document?.body) {
+                          // iframe 내부 body와 html의 패딩/마진을 0으로 설정
+                          const body = iframe.contentWindow.document.body
+                          const html = iframe.contentWindow.document.documentElement
+                          body.style.margin = '0'
+                          body.style.padding = '0'
+                          html.style.margin = '0'
+                          html.style.padding = '0'
+                          
                           const height = Math.max(
-                            iframe.contentWindow.document.body.scrollHeight,
-                            iframe.contentWindow.document.documentElement.scrollHeight,
+                            body.scrollHeight,
+                            html.scrollHeight,
                             200
                           )
                           iframe.style.height = `${height}px`
                           iframe.style.overflow = 'hidden'
                           // iframe 내부 body의 스크롤도 숨김
-                          iframe.contentWindow.document.body.style.overflow = 'hidden'
-                          iframe.contentWindow.document.documentElement.style.overflow = 'hidden'
+                          body.style.overflow = 'hidden'
+                          html.style.overflow = 'hidden'
                         }
                       } catch (err) {
                         // cross-origin 등으로 접근 불가 시 무시
@@ -4566,16 +4597,24 @@ function FormContent() {
                       try {
                         const iframe = recommendationIframeRef.current
                         if (iframe?.contentWindow?.document?.body) {
+                          // iframe 내부 body와 html의 패딩/마진을 0으로 설정
+                          const body = iframe.contentWindow.document.body
+                          const html = iframe.contentWindow.document.documentElement
+                          body.style.margin = '0'
+                          body.style.padding = '0'
+                          html.style.margin = '0'
+                          html.style.padding = '0'
+                          
                           const height = Math.max(
-                            iframe.contentWindow.document.body.scrollHeight,
-                            iframe.contentWindow.document.documentElement.scrollHeight,
+                            body.scrollHeight,
+                            html.scrollHeight,
                             200
                           )
                           iframe.style.height = `${height}px`
                           iframe.style.overflow = 'hidden'
                           // iframe 내부 body의 스크롤도 숨김
-                          iframe.contentWindow.document.body.style.overflow = 'hidden'
-                          iframe.contentWindow.document.documentElement.style.overflow = 'hidden'
+                          body.style.overflow = 'hidden'
+                          html.style.overflow = 'hidden'
                         }
                       } catch (err) {
                         // cross-origin 등으로 접근 불가 시 무시
@@ -4612,16 +4651,24 @@ function FormContent() {
                       try {
                         const iframe = menuItemsIframeRef.current
                         if (iframe?.contentWindow?.document?.body) {
+                          // iframe 내부 body와 html의 패딩/마진을 0으로 설정
+                          const body = iframe.contentWindow.document.body
+                          const html = iframe.contentWindow.document.documentElement
+                          body.style.margin = '0'
+                          body.style.padding = '0'
+                          html.style.margin = '0'
+                          html.style.padding = '0'
+                          
                           const height = Math.max(
-                            iframe.contentWindow.document.body.scrollHeight,
-                            iframe.contentWindow.document.documentElement.scrollHeight,
+                            body.scrollHeight,
+                            html.scrollHeight,
                             200
                           )
                           iframe.style.height = `${height}px`
                           iframe.style.overflow = 'hidden'
                           // iframe 내부 body의 스크롤도 숨김
-                          iframe.contentWindow.document.body.style.overflow = 'hidden'
-                          iframe.contentWindow.document.documentElement.style.overflow = 'hidden'
+                          body.style.overflow = 'hidden'
+                          html.style.overflow = 'hidden'
                         }
                       } catch (err) {
                         // cross-origin 등으로 접근 불가 시 무시
@@ -4660,16 +4707,24 @@ function FormContent() {
                         try {
                           const iframe = menuItemsIframeRef.current
                           if (iframe?.contentWindow?.document?.body) {
+                            // iframe 내부 body와 html의 패딩/마진을 0으로 설정
+                            const body = iframe.contentWindow.document.body
+                            const html = iframe.contentWindow.document.documentElement
+                            body.style.margin = '0'
+                            body.style.padding = '0'
+                            html.style.margin = '0'
+                            html.style.padding = '0'
+                            
                             const height = Math.max(
-                              iframe.contentWindow.document.body.scrollHeight,
-                              iframe.contentWindow.document.documentElement.scrollHeight,
+                              body.scrollHeight,
+                              html.scrollHeight,
                               200
                             )
                             iframe.style.height = `${height}px`
                             iframe.style.overflow = 'hidden'
                             // iframe 내부 body의 스크롤도 숨김
-                            iframe.contentWindow.document.body.style.overflow = 'hidden'
-                            iframe.contentWindow.document.documentElement.style.overflow = 'hidden'
+                            body.style.overflow = 'hidden'
+                            html.style.overflow = 'hidden'
                           }
                         } catch (err) {
                           // cross-origin 등으로 접근 불가 시 무시

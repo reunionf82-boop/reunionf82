@@ -16,8 +16,8 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
   const router = useRouter()
   const [contents, setContents] = useState<any[]>([])
   const [paidContents, setPaidContents] = useState<any[]>([])
-  const [loadingContents, setLoadingContents] = useState(true)
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['백야', '고객지원']))
+  const [loadingContents, setLoadingContents] = useState(false) // 초기값을 false로 변경 (프리로딩 시작 전에는 로딩 중이 아님)
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['설백야', '고객지원']))
   const [activeSection, setActiveSection] = useState<'menu' | 'faq' | 'inquiry'>('menu')
   const [selectedContentId, setSelectedContentId] = useState<number | null>(null)
   const [showTermsPopup, setShowTermsPopup] = useState(false)
@@ -35,17 +35,41 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
   })
   const [submittingInquiry, setSubmittingInquiry] = useState(false)
 
+  // 프리로딩: 컴포넌트 마운트 시 로그인 확인 후 설백야 콘텐츠 프리로딩
+  useEffect(() => {
+    const preloadPaidContents = async () => {
+      try {
+        // 로그인 여부 확인 (saved-results API 호출)
+        const savedResponse = await fetch('/api/saved-results/list', { cache: 'no-store' })
+        if (savedResponse.ok) {
+          // 로그인된 경우: 설백야 콘텐츠 프리로딩 (로딩 표시 없이 백그라운드에서 실행)
+          loadPaidContents(true) // silent 모드로 프리로딩
+        }
+      } catch (error) {
+        // 로그인 확인 실패 시 프리로딩하지 않음 (메뉴 열 때 로드)
+        console.error('[설백야 프리로딩] 로그인 확인 실패:', error)
+      }
+    }
+    
+    preloadPaidContents()
+  }, []) // 컴포넌트 마운트 시 한 번만 실행
+
   // 컨텐츠 목록 로드 및 초기화
   useEffect(() => {
     if (isOpen) {
-      // 메뉴가 열릴 때마다 초기화 - 백야 카테고리는 기본이 펼침
+      // 메뉴가 열릴 때마다 초기화 - 설백야 카테고리는 기본이 펼침
       setActiveSection('menu')
-      // 백야 카테고리는 항상 기본 펼침 상태로 설정
-      setExpandedCategories(new Set(['백야', '고객지원']))
+      // 설백야 카테고리는 항상 기본 펼침 상태로 설정
+      setExpandedCategories(new Set(['설백야', '고객지원']))
       setSelectedContentId(null)
-      loadPaidContents()
+      
+      // 이미 로드된 데이터가 없고, 현재 로딩 중이 아닐 때만 로드
+      // (프리로딩이 완료되어 paidContents가 있으면 로드하지 않음)
+      if (paidContents.length === 0 && !loadingContents) {
+        loadPaidContents()
+      }
     }
-  }, [isOpen])
+  }, [isOpen]) // isOpen만 의존성 배열에 포함 (무한 루프 방지)
 
   // 브라우저 뒤로가기로 메뉴 닫기
   useEffect(() => {
@@ -69,9 +93,11 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
     }
   }, [isOpen, onClose])
 
-  const loadPaidContents = async () => {
+  const loadPaidContents = async (silent = false) => { // silent 파라미터 추가
     try {
-      setLoadingContents(true)
+      if (!silent) { // silent 모드가 아닐 때만 로딩 상태 표시
+        setLoadingContents(true)
+      }
       
       // 1. 모든 컨텐츠 가져오기
       const allContents = await getContents()
@@ -95,6 +121,7 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
       console.error('컨텐츠 로드 실패:', error)
       setPaidContents([])
     } finally {
+      // silent 모드여도 로딩 완료 상태로 설정 (다음 로드 시 중복 방지)
       setLoadingContents(false)
     }
   }
@@ -110,19 +137,36 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
     setExpandedCategories(newExpanded)
   }
 
-  // 컨텐츠 클릭 (백야 카테고리만 점사 중 제한)
+  // 컨텐츠 클릭 (설백야 카테고리만 점사 중 제한)
   const handleContentClick = (contentId: number, category: string) => {
-    // 백야 카테고리만 점사 중 제한
-    if (!streamingFinished && category === '백야') {
+    // 설백야 카테고리만 점사 중 제한
+    if (!streamingFinished && category === '설백야') {
       alert('점사중이니 완료될때까지 기다려주세요')
       return
     }
+    
     if (typeof window !== 'undefined') {
       const content = paidContents.find(c => c.id === contentId) || contents.find(c => c.id === contentId)
       if (content) {
+        // 현재 콘텐츠 ID 확인
+        const currentContentId = sessionStorage.getItem('form_content_id')
+        
+        // 같은 콘텐츠면 전환하지 않음 (불필요한 리로딩 방지)
+        if (currentContentId === String(contentId) && window.location.pathname === '/form') {
+          onClose() // 메뉴만 닫기
+          return
+        }
+        
+        // sessionStorage에 새 콘텐츠 정보 저장
         sessionStorage.setItem('form_title', content.content_name || '')
         sessionStorage.setItem('form_content_id', String(contentId))
-        router.push('/form')
+        
+        // 프론트폼 화면이면 페이지 리로드하여 새 콘텐츠로 전환
+        if (window.location.pathname === '/form') {
+          window.location.reload() // 같은 페이지에서 콘텐츠 전환
+        } else {
+          router.push('/form') // 다른 페이지에서 폼으로 이동
+        }
         onClose()
       }
     }
@@ -269,16 +313,16 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
           {/* 메뉴 섹션 (기본) */}
           {activeSection === 'menu' && (
             <div className="p-6 space-y-4">
-              {/* 백야 카테고리 */}
+              {/* 설백야 카테고리 */}
               <div>
                 <button
-                  onClick={() => toggleCategory('백야')}
+                  onClick={() => toggleCategory('설백야')}
                   className="w-full flex items-center justify-between py-3 px-4 bg-pink-50 rounded-lg hover:bg-pink-100 transition-colors"
                 >
-                  <span className="font-bold text-gray-900">백야</span>
+                  <span className="font-bold text-gray-900">설백야</span>
                   <svg
                     className={`w-5 h-5 text-gray-600 transition-transform ${
-                      expandedCategories.has('백야') ? 'rotate-180' : ''
+                      expandedCategories.has('설백야') ? 'rotate-180' : ''
                     }`}
                     fill="none"
                     stroke="currentColor"
@@ -287,7 +331,7 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
-                {expandedCategories.has('백야') && (
+                {expandedCategories.has('설백야') && (
                   <div className="mt-2 space-y-1 pl-4">
                     {loadingContents ? (
                       <div className="text-sm text-gray-500 py-2">로딩 중...</div>
@@ -297,7 +341,7 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
                       paidContents.map((content) => (
                         <button
                           key={content.id}
-                          onClick={() => handleContentClick(content.id, '백야')}
+                          onClick={() => handleContentClick(content.id, '설백야')}
                           className={`w-full text-left py-2.5 px-4 rounded-lg text-sm transition-colors ${
                             selectedContentId === content.id
                               ? 'bg-pink-600 text-white border-2 border-pink-600'
