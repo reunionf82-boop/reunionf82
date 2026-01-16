@@ -4951,7 +4951,7 @@ ${fontFace ? fontFace : ''}
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col" style={{ overflowY: 'auto', height: '100vh' }}>
+    <div className="min-h-screen bg-gray-50 flex flex-col" style={{ WebkitOverflowScrolling: 'touch' }}>
       {/* 슬라이드 메뉴바 */}
       <SlideMenuBar 
         isOpen={showSlideMenu} 
