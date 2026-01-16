@@ -3190,46 +3190,44 @@ function FormContent() {
           // sessionStorage 실패해도 페이지 이동은 진행
         }
         
-        // 비동기 작업들은 Promise.allSettled로 병렬 처리하고, 실패해도 페이지 이동은 진행
-        const asyncTasks = []
-        
-        // Supabase에 임시 요청 데이터 저장
-        asyncTasks.push(
-          fetch('/api/temp-request/save', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              requestKey,
-              payload
-            })
-          }).then(async (saveResponse) => {
-            if (!saveResponse.ok) {
-              const text = await saveResponse.text()
-              let errorData: any = {}
-              if (text) {
-                try {
-                  errorData = JSON.parse(text)
-                } catch (e) {
-                  errorData = { error: text || '임시 요청 데이터 저장 실패' }
-                }
-              }
-              throw new Error(errorData.error || '임시 요청 데이터 저장 실패')
-            }
+        // Supabase에 임시 요청 데이터 저장 (필수 - 리절트 페이지에서 필요)
+        const saveTempRequestTask = fetch('/api/temp-request/save', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requestKey,
+            payload
+          })
+        }).then(async (saveResponse) => {
+          if (!saveResponse.ok) {
             const text = await saveResponse.text()
+            let errorData: any = {}
             if (text) {
               try {
-                return JSON.parse(text)
+                errorData = JSON.parse(text)
               } catch (e) {
-                console.error('응답 파싱 실패:', e)
+                errorData = { error: text || '임시 요청 데이터 저장 실패' }
               }
             }
-          }).catch((e: any) => {
-            console.error('[결제 처리] 임시 요청 데이터 저장 실패:', e)
-            // 저장 실패해도 페이지 이동은 진행
-          })
-        )
+            throw new Error(errorData.error || '임시 요청 데이터 저장 실패')
+          }
+          const text = await saveResponse.text()
+          if (text) {
+            try {
+              return JSON.parse(text)
+            } catch (e) {
+              console.error('응답 파싱 실패:', e)
+            }
+          }
+        }).catch((e: any) => {
+          console.error('[결제 처리] 임시 요청 데이터 저장 실패:', e)
+          // 저장 실패해도 페이지 이동은 진행
+        })
+
+        // 비동기 작업들은 Promise.allSettled로 병렬 처리하고, 실패해도 페이지 이동은 진행
+        const asyncTasks = [saveTempRequestTask]
         
         // 휴대폰 번호와 비밀번호를 DB에 저장 (savedId 없이)
         // 결제 성공으로 인한 이동인 경우 sessionStorage에서 가져오기
@@ -3273,17 +3271,32 @@ function FormContent() {
           )
         }
         
-        // 결제 성공으로 인한 이동인 경우, 비동기 작업 완료를 기다리지 않고 즉시 페이지 이동
+        // 결제 성공으로 인한 이동인 경우, temp-request 저장만 완료될 때까지 기다린 후 페이지 이동
         if (isPaymentSuccess) {
-          console.log('[결제 처리] 결제 성공으로 인한 이동, 비동기 작업 백그라운드 실행 후 즉시 리절트 페이지로 이동')
+          console.log('[결제 처리] 결제 성공으로 인한 이동, temp-request 저장 완료 후 리절트 페이지로 이동')
+          
+          // temp-request 저장은 필수이므로 완료될 때까지 대기 (최대 3초)
           Promise.race([
-            Promise.allSettled(asyncTasks),
+            saveTempRequestTask,
             new Promise((resolve) => setTimeout(resolve, 3000)) // 최대 3초 대기
           ]).then(() => {
+            console.log('[결제 처리] temp-request 저장 완료 (결제 성공)')
+          }).catch((e) => {
+            console.error('[결제 처리] temp-request 저장 오류 (결제 성공):', e)
+          })
+          
+          // 나머지 비동기 작업들은 백그라운드에서 실행
+          Promise.allSettled(asyncTasks.slice(1)).then(() => {
             console.log('[결제 처리] 백그라운드 비동기 작업 완료 (결제 성공)')
           }).catch((e) => {
             console.error('[결제 처리] 백그라운드 비동기 작업 오류 (결제 성공):', e)
           })
+          
+          // temp-request 저장 완료를 기다린 후 페이지 이동 (최대 3초)
+          await Promise.race([
+            saveTempRequestTask,
+            new Promise((resolve) => setTimeout(resolve, 3000))
+          ])
           
           setSubmitting(false)
           setShowPaymentPopup(false) // 팝업 닫기
