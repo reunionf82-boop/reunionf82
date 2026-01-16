@@ -184,6 +184,8 @@ function ResultContent() {
   const [totalSubtitles, setTotalSubtitles] = useState(0)
   const [revealedCount, setRevealedCount] = useState(0)
   const [showRealtimeLoading, setShowRealtimeLoading] = useState(false) // 기존 플래그(사용 안함)
+  const tocButtonRef = useRef<HTMLButtonElement | null>(null) // 목차로 이동 버튼 ref
+  const [tocButtonWidth, setTocButtonWidth] = useState<number | null>(null) // 목차로 이동 버튼 너비
   const [showRealtimePopup, setShowRealtimePopup] = useState(false) // realtime 전용 로딩 팝업
   const [showSlideMenu, setShowSlideMenu] = useState(false) // 슬라이드 메뉴 표시
   const [showMyHistoryPopup, setShowMyHistoryPopup] = useState(false) // 나의 이용내역 팝업 표시
@@ -208,6 +210,23 @@ function ResultContent() {
   useEffect(() => {
     firstSubtitleReadyRef.current = firstSubtitleReady
   }, [firstSubtitleReady])
+
+  // 목차로 이동 버튼 너비 측정
+  useEffect(() => {
+    if (tocButtonRef.current) {
+      const updateWidth = () => {
+        if (tocButtonRef.current) {
+          setTocButtonWidth(tocButtonRef.current.offsetWidth)
+        }
+      }
+      updateWidth()
+      // 리사이즈 이벤트 리스너 추가 (반응형 대응)
+      window.addEventListener('resize', updateWidth)
+      return () => {
+        window.removeEventListener('resize', updateWidth)
+      }
+    }
+  }, [parsedMenus.length]) // parsedMenus가 변경될 때마다 재측정
 
   // 점사 모드 로드
   useEffect(() => {
@@ -2437,9 +2456,18 @@ ${fontFace ? fontFace : ''}
       return updated
     })
     
-    // 전체 소메뉴 개수 계산: parsed의 모든 subtitles 길이 합산 (소메뉴 단위 기준)
+    // 전체 소메뉴 개수 계산: 실제로 스트리밍이 시작된 소제목 수만 카운트 (아직 점사가 안 된 것은 제외)
+    // cursor는 현재까지 처리된 소제목 인덱스이므로, 실제로 스트리밍이 진행 중이거나 완료된 소제목 수
+    // 스트리밍이 완료된 경우 전체 소제목 수를 사용, 진행 중인 경우 cursor를 사용
     const totalSubtitleCount = parsed.reduce((sum: number, menu: ParsedMenu) => sum + menu.subtitles.length, 0)
-    setTotalSubtitles(totalSubtitleCount || cursor)
+    
+    // 실제로 점사가 시작된 소제목 수만 카운트 (cursor 기준)
+    // cursor가 0이면 아직 시작 안 됨, cursor > 0이면 cursor 개수만큼 시작됨
+    const startedSubtitles = streamingFinished || !isStreamingActive 
+      ? totalSubtitleCount // 완료된 경우 전체 수 사용
+      : Math.max(cursor, 1) // 진행 중인 경우 cursor 기준 (최소 1)
+    
+    setTotalSubtitles(startedSubtitles)
 
     // 소제목별 단위로 한 번에 표시:
     // - 스트리밍 중: 항상 마지막 소제목 하나는 "점사중입니다..." 상태로 숨김
@@ -2577,16 +2605,7 @@ ${fontFace ? fontFace : ''}
 
     completionPopupShownRef.current = true
 
-    // 엔딩북커버가 있으면 해당 위치로 스크롤 (렌더 직후 보장 위해 약간 지연)
-    setTimeout(() => {
-      try {
-        const endingEl = document.querySelector('.ending-book-cover-thumbnail-container') as HTMLElement | null
-        if (endingEl) {
-          endingEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
-      } catch {}
-    }, 150)
-
+    // 팝업만 표시 (스크롤 강제하지 않음)
     setShowCompletionPopup(true)
   }, [isRealtimeStreaming, streamingFinished, requestKey, savedId])
 
@@ -5005,46 +5024,53 @@ ${fontFace ? fontFace : ''}
         </div>
       </header>
 
-      {/* 플로팅 배너 - 나의 사주명식 보기 + 목차로 이동 + 완료율 로딩바 */}
+      {/* 플로팅 배너 - 완료율 로딩바 + 나의 사주명식 보기 + 목차로 이동 */}
       {parsedMenus.length > 0 && (
-        <>
-          {/* 왼쪽: 나의 사주명식 보기 버튼 */}
-          {parsedMenus.length > 0 && parsedMenus[0].manseHtml && (
-            <div className="fixed bottom-6 left-6 z-40">
-              <button
-                onClick={() => setShowMansePopup(true)}
-                className="bg-gradient-to-r from-pink-400 to-pink-500 hover:from-pink-500 hover:to-pink-600 text-white font-semibold px-5 py-2.5 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 text-sm opacity-80 hover:opacity-100"
+        <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
+          {/* 완료율 로딩바 (목차로 이동 버튼 위에 수직 배치, 시작 위치 맞춤) */}
+          {!streamingFinished && isStreamingActive && totalSubtitles > 0 && (
+            <div 
+              className="relative overflow-visible py-0.5" 
+              style={{ width: tocButtonWidth ? `${tocButtonWidth}px` : 'fit-content', minWidth: '120px' }}
+            >
+              {/* 배경바 (프로그래스바 뒤) */}
+              <div 
+                className="absolute inset-0 bg-pink-500/50 rounded-full min-h-[20px]"
+                style={{ width: '100%' }}
+              />
+              {/* 프로그래스바 (배경바 위) */}
+              <div 
+                className="h-full bg-gradient-to-r from-pink-400 via-pink-500 to-pink-600 transition-all duration-500 ease-out rounded-full flex items-center pl-2 min-h-[20px] relative"
+                style={{
+                  width: `${Math.min(100, (revealedCount / Math.max(1, totalSubtitles)) * 100)}%`,
+                  marginLeft: '2px'
+                }}
               >
-                나의 사주명식 보기
-              </button>
+                <span className="text-xs font-medium text-white whitespace-nowrap">완료율</span>
+                <span className="text-xs font-medium text-white whitespace-nowrap absolute right-2">
+                  {Math.min(100, Math.round((revealedCount / Math.max(1, totalSubtitles)) * 100))}%
+                </span>
+              </div>
             </div>
           )}
           
-          {/* 오른쪽: 완료율 로딩바 + 목차로 이동 버튼 */}
-          <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
-            {/* 완료율 로딩바 (목차로 이동 버튼 위에 수직 배치) */}
-            {!streamingFinished && isStreamingActive && totalSubtitles > 0 && (
-              <div className="flex flex-col items-end gap-1 opacity-80">
-                <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">완료율</span>
-                <div className="relative w-full h-6 bg-gray-200 rounded-full overflow-hidden min-w-[200px]">
-                  <div 
-                    className="h-full bg-gradient-to-r from-pink-500 to-pink-600 transition-all duration-500 ease-out rounded-full flex items-center justify-end pr-2 opacity-80"
-                    style={{
-                      width: `${Math.min(100, (revealedCount / Math.max(1, totalSubtitles)) * 100)}%`
-                    }}
-                  >
-                    <span className="text-xs font-bold text-white whitespace-nowrap">
-                      {Math.min(100, Math.round((revealedCount / Math.max(1, totalSubtitles)) * 100))}%
-                    </span>
-                  </div>
-                </div>
-              </div>
+          {/* 나의 사주명식 보기 + 목차로 이동 버튼 (같은 줄에 배치) */}
+          <div className="flex items-center gap-2">
+            {/* 나의 사주명식 보기 버튼 (목차로 이동 버튼 왼쪽) */}
+            {parsedMenus.length > 0 && parsedMenus[0].manseHtml && (
+              <button
+                onClick={() => setShowMansePopup(true)}
+                className="bg-pink-500/80 hover:bg-pink-500/90 text-white font-semibold px-5 py-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 text-sm"
+              >
+                나의 사주명식 보기
+              </button>
             )}
             
-            {/* 목차로 이동 버튼 */}
+            {/* 목차로 이동 버튼 (타이틀 내용에 맞게 너비 자동 조정) */}
             <button
+              ref={tocButtonRef}
               onClick={scrollToTableOfContents}
-              className="bg-pink-500/80 hover:bg-pink-500/90 text-white font-semibold px-6 py-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2"
+              className="bg-pink-500/80 hover:bg-pink-500/90 text-white font-semibold px-4 py-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2 whitespace-nowrap text-sm"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -5052,13 +5078,13 @@ ${fontFace ? fontFace : ''}
               <span>목차로 이동</span>
             </button>
           </div>
-        </>
+        </div>
       )}
       
       {/* 나의 사주명식 보기 팝업 */}
       {showMansePopup && parsedMenus.length > 0 && parsedMenus[0].manseHtml && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-auto shadow-2xl relative">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-auto shadow-2xl relative flex flex-col">
             {/* 닫기 버튼 (우측 상단) */}
             <button
               onClick={() => setShowMansePopup(false)}
@@ -5070,12 +5096,22 @@ ${fontFace ? fontFace : ''}
             </button>
             
             {/* 만세력 표시 */}
-            <div className="p-6 pt-12">
+            <div className="p-6 pt-12 flex-1">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">나의 사주명식</h2>
               <div 
                 className="manse-ryeok-container"
                 dangerouslySetInnerHTML={{ __html: parsedMenus[0].manseHtml || '' }}
               />
+            </div>
+            
+            {/* 하단 닫기 버튼 */}
+            <div className="p-6 border-t border-gray-200">
+              <button
+                onClick={() => setShowMansePopup(false)}
+                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              >
+                닫기
+              </button>
             </div>
           </div>
         </div>

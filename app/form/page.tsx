@@ -4320,7 +4320,50 @@ function FormContent() {
                 </button>
               </div>
 
-              {/* (삭제) 임시 결과 화면 이동 버튼 (개발용) */}
+              {/* 임시 결과 화면 이동 버튼 (개발용) */}
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!content || !content.id) {
+                      showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
+                      return
+                    }
+                    
+                    // 결제 완료와 동일한 방식으로 startFortuneTellingWithContent 호출
+                    const startTime = Date.now()
+                    try {
+                      await startFortuneTellingWithContent(
+                        startTime,
+                        content,
+                        {
+                          name: name,
+                          gender: gender,
+                          calendarType: calendarType,
+                          year: year,
+                          month: month,
+                          day: day,
+                          birthHour: birthHour || '',
+                          partnerName: isGonghapType ? partnerName : '',
+                          partnerGender: isGonghapType ? partnerGender : '',
+                          partnerCalendarType: isGonghapType ? partnerCalendarType : 'solar',
+                          partnerYear: isGonghapType ? partnerYear : '',
+                          partnerMonth: isGonghapType ? partnerMonth : '',
+                          partnerDay: isGonghapType ? partnerDay : '',
+                          partnerBirthHour: isGonghapType ? partnerBirthHour : ''
+                        },
+                        true // 결제 성공으로 인한 이동 플래그
+                      )
+                    } catch (error) {
+                      console.error('[임시 리절트 이동] 오류:', error)
+                      showAlertMessage(error instanceof Error ? error.message : '리절트 화면 이동 중 오류가 발생했습니다.')
+                    }
+                  }}
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
+                >
+                  리절트로 이동 (임시)
+                </button>
+              </div>
             </div>
           </div>
         </div>

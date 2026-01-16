@@ -17,7 +17,13 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
   const [contents, setContents] = useState<any[]>([])
   const [paidContents, setPaidContents] = useState<any[]>([])
   const [loadingContents, setLoadingContents] = useState(false) // 초기값을 false로 변경 (프리로딩 시작 전에는 로딩 중이 아님)
+  const [isPreloading, setIsPreloading] = useState(false) // 프리로딩 진행 여부 추적
+  const [preloadCompleted, setPreloadCompleted] = useState(false) // 프리로딩 완료 여부 추적
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['설백야', '고객지원']))
+  
+  // localStorage 키
+  const STORAGE_KEY = 'baekya_paid_contents'
+  const STORAGE_TIMESTAMP_KEY = 'baekya_paid_contents_timestamp'
   const [activeSection, setActiveSection] = useState<'menu' | 'faq' | 'inquiry'>('menu')
   const [selectedContentId, setSelectedContentId] = useState<number | null>(null)
   const [showTermsPopup, setShowTermsPopup] = useState(false)
@@ -35,19 +41,49 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
   })
   const [submittingInquiry, setSubmittingInquiry] = useState(false)
 
-  // 프리로딩: 컴포넌트 마운트 시 로그인 확인 후 설백야 콘텐츠 프리로딩
+  // localStorage에서 설백야 컨텐츠 로드 (컴포넌트 마운트 시)
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      const storedTimestamp = localStorage.getItem(STORAGE_TIMESTAMP_KEY)
+      
+      if (stored && storedTimestamp) {
+        // 24시간 이내 데이터만 유효 (선택사항)
+        const timestamp = parseInt(storedTimestamp, 10)
+        const now = Date.now()
+        const isValid = (now - timestamp) < 24 * 60 * 60 * 1000 // 24시간
+        
+        if (isValid) {
+          const parsed = JSON.parse(stored)
+          if (Array.isArray(parsed) && parsed.length >= 0) {
+            setPaidContents(parsed)
+            setPreloadCompleted(true)
+            return // localStorage에서 로드했으면 API 호출 불필요
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[설백야 localStorage] 로드 실패:', error)
+    }
+    
+    // localStorage에 데이터가 없거나 유효하지 않으면 API로 로드
     const preloadPaidContents = async () => {
       try {
+        setIsPreloading(true)
         // 로그인 여부 확인 (saved-results API 호출)
         const savedResponse = await fetch('/api/saved-results/list', { cache: 'no-store' })
         if (savedResponse.ok) {
           // 로그인된 경우: 설백야 콘텐츠 프리로딩 (로딩 표시 없이 백그라운드에서 실행)
-          loadPaidContents(true) // silent 모드로 프리로딩
+          await loadPaidContents(true) // silent 모드로 프리로딩
+          setPreloadCompleted(true)
         }
       } catch (error) {
         // 로그인 확인 실패 시 프리로딩하지 않음 (메뉴 열 때 로드)
         console.error('[설백야 프리로딩] 로그인 확인 실패:', error)
+      } finally {
+        setIsPreloading(false)
       }
     }
     
@@ -63,13 +99,22 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
       setExpandedCategories(new Set(['설백야', '고객지원']))
       setSelectedContentId(null)
       
-      // 이미 로드된 데이터가 없고, 현재 로딩 중이 아닐 때만 로드
-      // (프리로딩이 완료되어 paidContents가 있으면 로드하지 않음)
+      // 프리로딩 완료되었거나 데이터가 이미 있으면 로드하지 않음
+      if (preloadCompleted || paidContents.length > 0) {
+        return
+      }
+      
+      // 프리로딩 진행 중이면 로딩 상태 표시하지 않고 대기
+      if (isPreloading) {
+        return
+      }
+      
+      // 프리로딩이 시작되지 않았거나 실패한 경우에만 로드
       if (paidContents.length === 0 && !loadingContents) {
         loadPaidContents()
       }
     }
-  }, [isOpen]) // isOpen만 의존성 배열에 포함 (무한 루프 방지)
+  }, [isOpen, preloadCompleted, isPreloading, paidContents.length, loadingContents]) // 관련 상태들을 의존성 배열에 추가
 
   // 브라우저 뒤로가기로 메뉴 닫기
   useEffect(() => {
@@ -114,8 +159,27 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
           savedTitles.has(content.content_name)
         )
         setPaidContents(paid)
+        
+        // 4. localStorage에 저장 (로딩 없이 즉시 표시를 위해)
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(paid))
+            localStorage.setItem(STORAGE_TIMESTAMP_KEY, Date.now().toString())
+          } catch (error) {
+            console.error('[설백야 localStorage] 저장 실패:', error)
+          }
+        }
       } else {
         setPaidContents([])
+        // 빈 배열도 저장 (로딩 없이 표시하기 위해)
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify([]))
+            localStorage.setItem(STORAGE_TIMESTAMP_KEY, Date.now().toString())
+          } catch (error) {
+            console.error('[설백야 localStorage] 저장 실패:', error)
+          }
+        }
       }
     } catch (error) {
       console.error('컨텐츠 로드 실패:', error)
@@ -333,7 +397,9 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
                 </button>
                 {expandedCategories.has('설백야') && (
                   <div className="mt-2 space-y-1 pl-4">
-                    {loadingContents ? (
+                    {/* localStorage에 데이터가 있고 프리로딩 완료되지 않았어도 표시 */}
+                    {/* 로딩 중은 실제로 로딩 중이고 localStorage에도 없을 때만 표시 */}
+                    {!preloadCompleted && !isPreloading && paidContents.length === 0 && loadingContents ? (
                       <div className="text-sm text-gray-500 py-2">로딩 중...</div>
                     ) : paidContents.length === 0 ? (
                       <div className="text-sm text-gray-500 py-2">결제한 컨텐츠가 없습니다.</div>
