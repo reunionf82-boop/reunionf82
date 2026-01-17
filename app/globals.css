@@ -94,6 +94,7 @@ body {
 body {
   background: linear-gradient(to bottom, #f8f9fa, #ffffff);
   min-height: 100vh;
+  overflow-y: auto;
 }
 
 /* 모바일 Pull-to-Refresh 방지 (점사 중에만 html에 클래스 토글) */
