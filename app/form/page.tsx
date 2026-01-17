@@ -36,8 +36,8 @@ function FormContent() {
         if (storedOid && storedTimestamp) {
           const timestamp = parseInt(storedTimestamp)
           const now = Date.now()
-          // 10초 이내의 결제 성공 정보만 처리
-          if (now - timestamp < 10000) {
+          // 1시간(3600000ms) 이내의 결제 성공 정보만 처리 (사용자가 오래 결제창을 열어놓은 경우 대비)
+          if (now - timestamp < 3600000) {
             console.log('[결제 성공] 페이지 로드 시 localStorage에서 결제 성공 정보 발견:', storedOid)
             // content가 로드될 때까지 기다리지 않고 즉시 처리하려고 하면 안됨
             // content 로드 후 useEffect에서 처리됨
@@ -228,6 +228,9 @@ function FormContent() {
   const [phoneNumber2, setPhoneNumber2] = useState('')
   const [phoneNumber3, setPhoneNumber3] = useState('')
   const [password, setPassword] = useState('')
+  
+  // 결제 창 참조 (닫기용)
+  const paymentWindowRef = useRef<Window | null>(null)
 
   // 제출이 끝나면(성공/실패 포함) 결제 버튼 로딩 상태 해제
   useEffect(() => {
@@ -2007,15 +2010,15 @@ function FormContent() {
         const now = Date.now()
         const timeDiff = now - timestamp
         
-        // 10초 이내의 결제 성공 정보만 처리 (오래된 정보는 무시)
-        if (timeDiff < 10000) {
+        // 1시간(3600000ms) 이내의 결제 성공 정보만 처리 (사용자가 오래 결제창을 열어놓은 경우 대비)
+        if (timeDiff < 3600000) {
           console.log('[결제 성공] localStorage에서 결제 성공 정보 발견:', storedOid)
           await processPaymentSuccess(storedOid)
           // 처리 후 삭제
           localStorage.removeItem('payment_success_oid')
           localStorage.removeItem('payment_success_timestamp')
         } else {
-          // 오래된 정보는 삭제 (로그 없이)
+          // 1시간 이상 지난 오래된 정보는 삭제 (로그 없이)
           localStorage.removeItem('payment_success_oid')
           localStorage.removeItem('payment_success_timestamp')
         }
@@ -2035,6 +2038,16 @@ function FormContent() {
       
       isProcessing = true
       console.log('[결제 성공] 결제 성공 처리 시작:', oid)
+      
+      // ✅ 결제 창 닫기 (성공 시)
+      try {
+        if (paymentWindowRef.current && !paymentWindowRef.current.closed) {
+          paymentWindowRef.current.close()
+          console.log('[결제 성공] 결제 창 닫기 완료')
+        }
+      } catch (e) {
+        console.warn('[결제 성공] 결제 창 닫기 실패:', e)
+      }
       
       // 먼저 localStorage 확인 (서버 상태 확인보다 우선)
       const successOid = localStorage.getItem('payment_success_oid')
@@ -2304,6 +2317,17 @@ function FormContent() {
       // 전역 함수로 결제 오류 처리기 등록 (opener에서 직접 호출용)
       (window as any).handlePaymentError = async (code: string, msg: string) => {
         console.log('[결제 오류] window.handlePaymentError 호출됨 (opener 직접 호출):', { code, msg })
+        
+        // ✅ 결제 창 닫기 (실패 시)
+        try {
+          if (paymentWindowRef.current && !paymentWindowRef.current.closed) {
+            paymentWindowRef.current.close()
+            console.log('[결제 오류] 결제 창 닫기 완료')
+          }
+        } catch (e) {
+          console.warn('[결제 오류] 결제 창 닫기 실패:', e)
+        }
+        
         isProcessing = false
         setSubmitting(false)
         setPaymentProcessingMethod(null)
@@ -2348,6 +2372,15 @@ function FormContent() {
     // fallback 리스너 등록
     window.addEventListener('message', handleMessage)
     window.addEventListener('storage', handleStorage)
+    
+    // ✅ 페이지 포커스 시에도 localStorage 체크 (사용자가 다른 탭으로 갔다가 돌아온 경우 대비)
+    const handleFocus = async () => {
+      if (typeof window !== 'undefined' && !isProcessing) {
+        await checkLocalStorage()
+      }
+    }
+    window.addEventListener('focus', handleFocus)
+    
     try {
       bc = new BroadcastChannel('payment_success')
       bc.addEventListener('message', handleBroadcast)
@@ -2362,6 +2395,7 @@ function FormContent() {
       }
       window.removeEventListener('message', handleMessage)
       window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('focus', handleFocus)
       try {
         bc?.removeEventListener('message', handleBroadcast)
         bc?.close()
@@ -2647,6 +2681,8 @@ function FormContent() {
       // 이후 form.target을 이 창 이름으로 지정하여 같은 창으로 POST submit
       const paymentWindowName = `payment_${oid}`
       const paymentWindow = window.open('about:blank', paymentWindowName, 'width=800,height=600')
+      // 결제 창 참조 저장 (닫기용)
+      paymentWindowRef.current = paymentWindow
       if (!paymentWindow) {
         // 팝업이 차단된 경우
         alert('팝업이 차단되었습니다. 브라우저 설정에서 팝업을 허용해주세요.')
@@ -2817,10 +2853,8 @@ function FormContent() {
           }
         }, 1000) // 1초마다 확인
         
-        // 최대 30초 후에는 체크 중단
-        setTimeout(() => {
-          clearInterval(checkInterval)
-        }, 30000)
+        // ✅ 타임아웃 제거: 결제가 완료되거나 창이 닫히면 clearInterval이 자동 호출되므로 타임아웃 불필요
+        // 결제 성공/실패 시 또는 결제 창이 닫힐 때 자동으로 clearInterval이 호출되어 중단됨
       }
       
       checkWindowClosed()

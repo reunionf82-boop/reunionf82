@@ -2635,8 +2635,20 @@ ${fontFace ? fontFace : ''}
 
     completionPopupShownRef.current = true
 
-    // 팝업만 표시 (스크롤 강제하지 않음)
-    setShowCompletionPopup(true)
+    // ✅ 점사율이 100%가 아니면 100%까지 애니메이션 후 팝업 표시
+    const currentProgress = totalSubtitles > 0 ? Math.min(100, Math.round((revealedCount / totalSubtitles) * 100)) : 100
+    if (currentProgress < 100) {
+      // 점사율을 100%로 애니메이션
+      setRevealedCount(totalSubtitles)
+      
+      // 애니메이션 완료 후 팝업 표시 (0.5초 후)
+      setTimeout(() => {
+        setShowCompletionPopup(true)
+      }, 500)
+    } else {
+      // 이미 100%이면 즉시 팝업 표시
+      setShowCompletionPopup(true)
+    }
   }, [isRealtimeStreaming, streamingFinished, requestKey, savedId])
 
   if (loading) {
