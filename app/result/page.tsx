@@ -2471,12 +2471,13 @@ ${fontFace ? fontFace : ''}
 
     // 소제목별 단위로 한 번에 표시:
     // - 스트리밍 중: 항상 마지막 소제목 하나는 "점사중입니다..." 상태로 숨김
-    // - 스트리밍 완료: 모든 소제목을 한 번에 표시
+    // - 스트리밍 완료: 모든 소제목을 한 번에 표시 (totalSubtitleCount 사용)
     let revealed = 0
     if (cursor === 0) {
       revealed = 0
     } else if (streamingFinished || !isStreamingActive) {
-      revealed = cursor
+      // 점사 완료 시에는 cursor가 아닌 전체 소제목 수를 사용 (빈 섹션 등으로 인한 cursor 부족 문제 해결)
+      revealed = totalSubtitleCount
     } else {
       revealed = Math.max(0, cursor - 1)
     }
