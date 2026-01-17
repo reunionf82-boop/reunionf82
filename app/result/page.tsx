@@ -2381,6 +2381,40 @@ ${fontFace ? fontFace : ''}
     // 썸네일/만세력 HTML이 변경되지 않았으면 기존 parsedMenus의 값을 유지 (깜빡임 방지)
     // 스트리밍 중에는 완성되지 않은 섹션은 이전 완성된 상태를 유지
     setParsedMenus((prevParsedMenus) => {
+      // ✅ 핵심 수정: streamingFinished가 true이면 무조건 새로운 parsed 반환
+      // 클로저 문제 방지를 위해 현재 스코프의 streamingFinished 사용 (의존성 배열에서 최신 값 가져옴)
+      const currentStreamingFinished = streamingFinished
+      const currentIsStreamingActive = isStreamingActive
+      
+      // 스트리밍 완료 시: 새로운 parsed를 그대로 반환 (이전 상태와 무관하게)
+      if (currentStreamingFinished || !currentIsStreamingActive) {
+        return parsed
+      }
+      
+      // ✅ 추가 조치: 스트리밍 중 이미 표시된 대메뉴는 중복 추가 방지
+      // 대메뉴 제목은 절대 중복될 수 없으므로 제목 기준으로 필터링
+      if (prevParsedMenus.length > 0) {
+        const existingMenuTitles = new Set(
+          prevParsedMenus.map(menu => (menu.title || '').trim())
+        )
+        
+        // parsed에서 이미 표시된 대메뉴 제목을 가진 항목 필터링
+        const filteredParsed = parsed.filter(menu => {
+          const menuTitle = (menu.title || '').trim()
+          // 이미 표시된 제목이 아니거나, 빈 제목이 아니면 포함
+          return !existingMenuTitles.has(menuTitle) || menuTitle === ''
+        })
+        
+        // 필터링된 결과가 있으면 기존 배열에 추가
+        if (filteredParsed.length > 0) {
+          // 기존 메뉴 유지 + 새로운 메뉴만 추가
+          return [...prevParsedMenus, ...filteredParsed]
+        }
+        
+        // 필터링된 결과가 없으면 기존 메뉴만 유지 (파싱 결과가 이미 모두 포함됨)
+        // 이 경우 아래 로직으로 넘어가서 기존 메뉴의 내용만 업데이트
+      }
+      
       // 첫 번째 파싱이거나 메뉴 개수가 변경된 경우 새로 설정
       if (prevParsedMenus.length === 0 || prevParsedMenus.length !== parsed.length) {
         return parsed
@@ -2411,11 +2445,6 @@ ${fontFace ? fontFace : ''}
         // 상세메뉴도 subtitles 배열에 포함되므로 소메뉴와 동일하게 처리
         const updatedSubtitles = newMenu.subtitles.map((newSub, subIndex) => {
           const prevSub = prevMenu.subtitles[subIndex]
-          
-          if (streamingFinished || !isStreamingActive) {
-            // 스트리밍 완료: 새 데이터 사용
-            return newSub
-          }
           
           // 스트리밍 중: contentHtml이 있으면 완성으로 간주 (소메뉴와 상세메뉴 모두 동일)
           const contentHtml = newSub.contentHtml || ''
@@ -5025,10 +5054,10 @@ ${fontFace ? fontFace : ''}
         </div>
       </header>
 
-      {/* 플로팅 배너 - 완료율 로딩바 + 나의 사주명식 보기 + 목차로 이동 */}
+      {/* 플로팅 배너 - 점사율 로딩바 + 나의 사주명식 보기 + 목차로 이동 */}
       {parsedMenus.length > 0 && (
         <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
-          {/* 완료율 로딩바 (목차로 이동 버튼 위에 수직 배치, 시작 위치 맞춤) */}
+          {/* 점사율 로딩바 (목차로 이동 버튼 위에 수직 배치, 시작 위치 맞춤) */}
           {!streamingFinished && isStreamingActive && totalSubtitles > 0 && (
             <div 
               className="relative overflow-visible py-0.5" 
@@ -5047,7 +5076,7 @@ ${fontFace ? fontFace : ''}
                   marginLeft: '2px'
                 }}
               >
-                <span className="text-xs font-medium text-white whitespace-nowrap">완료율</span>
+                <span className="text-xs font-medium text-white whitespace-nowrap">점사율</span>
                 <span className="text-xs font-medium text-white whitespace-nowrap absolute right-2">
                   {Math.min(100, Math.round((revealedCount / Math.max(1, totalSubtitles)) * 100))}%
                 </span>
