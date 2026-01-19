@@ -799,11 +799,9 @@ function ResultContent() {
               }
             }
 
-            // 직렬점사: finalHtml만 표시 (allAccumulatedHtml 사용 안 함)
-            if (finalHtml.length >= lastRenderedLength) {
-              lastRenderedLength = finalHtml.length
-              setStreamingHtml(finalHtml)
-            }
+            // 직렬점사: 완료 이벤트에서는 길이와 무관하게 최종 HTML을 적용
+            lastRenderedLength = Math.max(lastRenderedLength, finalHtml.length)
+            setStreamingHtml(finalHtml)
 
             const finalResult: ResultData = {
               content,
@@ -1827,7 +1825,19 @@ ${fontFace ? fontFace : ''}
       return
     }
 
-    const sourceHtml = streamingHtml || resultData?.html
+    const sourceHtml = (() => {
+      const resultHtml = resultData?.html || ''
+      const streamHtml = streamingHtml || ''
+      // 완료 시점에는 항상 완료본(resultHtml) 우선
+      if (streamingFinished || !isStreamingActive) {
+        return resultHtml || streamHtml
+      }
+      // 진행 중에는 더 긴 쪽을 우선 (부분 HTML 역전 방지)
+      if (streamHtml && resultHtml) {
+        return streamHtml.length >= resultHtml.length ? streamHtml : resultHtml
+      }
+      return streamHtml || resultHtml
+    })()
     if (!sourceHtml) {
       setParsedMenus([])
       setTotalSubtitles(0)
@@ -2588,6 +2598,8 @@ ${fontFace ? fontFace : ''}
     // iOS Safari는 overscroll-behavior를 무시하는 경우가 있어,
     // 화면 최상단에서 아래로 당기는 제스처만 preventDefault로 차단
     let startY = 0
+    let touchMoveAttached = false
+
     const onTouchStart = (e: TouchEvent) => {
       if (!e.touches || e.touches.length === 0) return
       startY = e.touches[0].clientY
@@ -2595,22 +2607,44 @@ ${fontFace ? fontFace : ''}
 
     const onTouchMove = (e: TouchEvent) => {
       if (!e.touches || e.touches.length === 0) return
+      // 최상단에서 아래로 당길 때만 차단
+      if (window.scrollY > 0) return
       const currentY = e.touches[0].clientY
       const isPullingDown = currentY > startY + 5
-      const atTop = window.scrollY <= 0
-
-      if (atTop && isPullingDown) {
+      if (isPullingDown) {
         e.preventDefault()
       }
     }
 
+    const attachTouchMove = () => {
+      if (touchMoveAttached) return
+      window.addEventListener('touchmove', onTouchMove, { passive: false })
+      touchMoveAttached = true
+    }
+
+    const detachTouchMove = () => {
+      if (!touchMoveAttached) return
+      window.removeEventListener('touchmove', onTouchMove as any)
+      touchMoveAttached = false
+    }
+
+    const syncTouchMoveListener = () => {
+      if (window.scrollY <= 0) {
+        attachTouchMove()
+      } else {
+        detachTouchMove()
+      }
+    }
+
     window.addEventListener('touchstart', onTouchStart, { passive: true })
-    window.addEventListener('touchmove', onTouchMove, { passive: false })
+    window.addEventListener('scroll', syncTouchMoveListener, { passive: true })
+    syncTouchMoveListener()
 
     return () => {
       root.classList.remove('no-pull-to-refresh')
       window.removeEventListener('touchstart', onTouchStart as any)
-      window.removeEventListener('touchmove', onTouchMove as any)
+      window.removeEventListener('scroll', syncTouchMoveListener as any)
+      detachTouchMove()
     }
   }, [])
 
