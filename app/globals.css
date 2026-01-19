@@ -100,7 +100,7 @@ body {
 }
 
 /* 모바일 Pull-to-Refresh 방지 (점사 중에만 html에 클래스 토글) */
-html.no-pull-to-refresh,
+/* 스크롤 컨테이너(body)에만 적용해서 부작용 최소화 */
 html.no-pull-to-refresh body {
   overscroll-behavior-y: none; /* Android Chrome 등 */
 }

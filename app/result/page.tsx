@@ -2588,63 +2588,50 @@ ${fontFace ? fontFace : ''}
   // requestKey가 있으면 점사를 시작할 예정이므로 resultData 체크를 건너뜀
   const isRealtimeStreaming = isRealtime || requestKey || isStreaming || isStreamingActive
 
-  // 모바일 Pull-to-Refresh 방지 (리절트 페이지에서는 항상 차단)
+  // 모바일 Pull-to-Refresh 방지 (우선순위: 스크롤 자연스러움 > 차단 강도)
+  // - Android/대부분 브라우저: CSS(overscroll-behavior)만으로 차단 (스크롤 개입 없음)
+  // - iOS Safari: CSS만으로는 부족할 수 있어, "최상단에서 아래로 당김"만 매우 좁게 JS로 차단
   useEffect(() => {
     if (typeof window === 'undefined') return
 
     const root = document.documentElement
     root.classList.add('no-pull-to-refresh')
 
-    // iOS Safari는 overscroll-behavior를 무시하는 경우가 있어,
-    // 화면 최상단에서 아래로 당기는 제스처만 preventDefault로 차단
-    let startY = 0
-    let touchMoveAttached = false
+    const ua = navigator.userAgent || ''
+    const isIOS = /iP(hone|ad|od)/.test(ua)
+    const isWebKit = /WebKit/.test(ua)
+    const isSafari = isIOS && isWebKit && !/CriOS|FxiOS|EdgiOS/.test(ua)
 
+    // Android(Chrome 등)은 overscroll-behavior로 충분히 막히는 경우가 많고,
+    // non-passive touchmove는 스크롤을 끈적이게 만들 수 있으므로 아예 사용하지 않는다.
+    if (!isSafari) {
+      return () => {
+        root.classList.remove('no-pull-to-refresh')
+      }
+    }
+
+    // iOS Safari 전용: 화면 최상단에서 아래로 당기는 제스처만 preventDefault로 차단
+    let startY = 0
     const onTouchStart = (e: TouchEvent) => {
       if (!e.touches || e.touches.length === 0) return
       startY = e.touches[0].clientY
     }
-
     const onTouchMove = (e: TouchEvent) => {
       if (!e.touches || e.touches.length === 0) return
-      // 최상단에서 아래로 당길 때만 차단
       if (window.scrollY > 0) return
       const currentY = e.touches[0].clientY
-      const isPullingDown = currentY > startY + 5
-      if (isPullingDown) {
+      if (currentY > startY + 5) {
         e.preventDefault()
       }
     }
 
-    const attachTouchMove = () => {
-      if (touchMoveAttached) return
-      window.addEventListener('touchmove', onTouchMove, { passive: false })
-      touchMoveAttached = true
-    }
-
-    const detachTouchMove = () => {
-      if (!touchMoveAttached) return
-      window.removeEventListener('touchmove', onTouchMove as any)
-      touchMoveAttached = false
-    }
-
-    const syncTouchMoveListener = () => {
-      if (window.scrollY <= 0) {
-        attachTouchMove()
-      } else {
-        detachTouchMove()
-      }
-    }
-
     window.addEventListener('touchstart', onTouchStart, { passive: true })
-    window.addEventListener('scroll', syncTouchMoveListener, { passive: true })
-    syncTouchMoveListener()
+    window.addEventListener('touchmove', onTouchMove, { passive: false })
 
     return () => {
       root.classList.remove('no-pull-to-refresh')
       window.removeEventListener('touchstart', onTouchStart as any)
-      window.removeEventListener('scroll', syncTouchMoveListener as any)
-      detachTouchMove()
+      window.removeEventListener('touchmove', onTouchMove as any)
     }
   }, [])
 
