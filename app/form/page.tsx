@@ -1952,6 +1952,21 @@ function FormContent() {
         } catch (error) {
         }
       }
+
+      // ✅ 비노출 컨텐츠는 프론트에서 직접 접근(세션스토리지/URL 등) 모두 차단
+      // (기본값: 비노출, 운영자가 노출 체크 후 저장해야만 접근 가능)
+      if (foundContent) {
+        const exposed = foundContent?.is_exposed === true || foundContent?.is_exposed === 'true' || foundContent?.is_exposed === 1
+        if (!exposed) {
+          setContent(null)
+          setLoading(false)
+          try {
+            alert('비노출 컨텐츠입니다. 관리자에서 노출로 저장된 상품만 이용할 수 있습니다.')
+          } catch (e) {}
+          router.replace('/')
+          return
+        }
+      }
       
       setContent(foundContent || null)
 

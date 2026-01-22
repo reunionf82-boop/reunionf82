@@ -79,6 +79,7 @@ export interface ContentData {
     }>
   }>
   is_new?: boolean
+  is_exposed?: boolean
   tts_speaker?: string // TTS 화자 (nara, jinho, mijin, nhajun, ndain)
   tts_provider?: 'naver' | 'typecast' // TTS 제공자
   typecast_voice_id?: string // Typecast voice id (tc_...)

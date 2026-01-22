@@ -44,8 +44,14 @@ export default function Home() {
       const result = await response.json()
       const data = result.success && result.data ? result.data : []
       
+      // ✅ 노출 컨텐츠만 프론트 메뉴에 표시 (기본값: 비노출)
+      const exposedOnly = (data || []).filter((content: any) => {
+        const v = content?.is_exposed
+        return v === true || v === 'true' || v === 1
+      })
+      
       // Supabase 데이터를 ServiceCard 형식으로 변환
-      const convertedServices = (data || []).map((content: any) => ({
+      const convertedServices = (exposedOnly || []).map((content: any) => ({
         id: content.id,
         title: content.content_name || '이름 없음',
         description: content.introduction || '',

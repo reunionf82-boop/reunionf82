@@ -34,6 +34,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     isNew: false,
     isFree: false,
     showNew: false,
+    showExposed: false,
     contentName: '',
     thumbnailImageUrl: '', // 이미지 썸네일 (JPG)
     thumbnailVideoUrl: '', // 동영상 썸네일 (WebM 파일명, 확장자 제외)
@@ -437,6 +438,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           }))
         })),
         is_new: formData.showNew,
+        is_exposed: formData.showExposed,
         tts_speaker: formData.ttsSpeaker || 'nara',
         tts_provider: formData.ttsProvider === 'typecast' ? 'typecast' : 'naver',
         typecast_voice_id: (formData.typecastVoiceId || '').trim(),
@@ -500,6 +502,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         body_color: initialData.body_color || '',
         menu_items: initialData.menu_items || [],
         is_new: initialData.is_new || false,
+        is_exposed: initialData.is_exposed || false,
         tts_speaker: initialData.tts_speaker || 'nara',
         tts_provider: (initialData.tts_provider === 'typecast') ? 'typecast' : 'naver',
         typecast_voice_id: String(initialData.typecast_voice_id || '').trim(),
@@ -597,6 +600,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         isNew: data.content_type === 'saju',
         isFree: data.content_type === 'gonghap',
         showNew: data.is_new || false,
+        showExposed: data.is_exposed || false,
         contentName: data.content_name || '',
         thumbnailImageUrl: (data.thumbnail_url && data.thumbnail_url.trim()) ? data.thumbnail_url.trim() : '',
         thumbnailVideoUrl: (data.thumbnail_video_url && data.thumbnail_video_url.trim()) ? data.thumbnail_video_url.trim() : '',
@@ -871,6 +875,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         isNew: data.content_type === 'saju',
         isFree: data.content_type === 'gonghap',
         showNew: data.is_new || false,
+        showExposed: data.is_exposed || false,
         contentName: duplicatedContentName,
         // 컨텐츠명 썸네일: 이미지 썸네일이 없고 동영상 썸네일만 있으면 동적 생성 (대메뉴/소메뉴와 동일한 Fallback 로직)
         thumbnailImageUrl: (() => {
@@ -1202,6 +1207,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           }))
         })),
         is_new: formData.showNew,
+        is_exposed: formData.showExposed,
         tts_speaker: formData.ttsSpeaker || 'nara',
         tts_provider: formData.ttsProvider === 'typecast' ? 'typecast' : 'naver',
         typecast_voice_id: (formData.typecastVoiceId || '').trim(),
@@ -2039,6 +2045,19 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             />
             <label htmlFor="showNew" className="text-sm font-medium text-gray-300">
               NEW
+            </label>
+          </div>
+          <div className="flex items-center gap-2 border border-green-500 rounded-lg px-4 py-2">
+            <input
+              type="checkbox"
+              id="showExposed"
+              name="showExposed"
+              checked={formData.showExposed}
+              onChange={(e) => setFormData(prev => ({ ...prev, showExposed: e.target.checked }))}
+              className="w-5 h-5 text-green-500 bg-gray-700 border-2 border-green-500 rounded focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-gray-800"
+            />
+            <label htmlFor="showExposed" className="text-sm font-medium text-gray-300">
+              노출
             </label>
           </div>
         </div>
