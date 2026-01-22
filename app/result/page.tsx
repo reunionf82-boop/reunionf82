@@ -56,6 +56,44 @@ ThumbnailDisplay.displayName = 'ThumbnailDisplay'
 // HTML 길이 제한 상수 (10만자)
 const MAX_HTML_LENGTH = 100000
 
+/**
+ * 스트리밍 chunk가 "증분(delta)"이 아니라 이전에 보낸 텍스트 일부를 포함(겹침/재전송)하는 경우가 있어,
+ * 단순 += 누적 시 HTML 앞부분(특히 첫 대메뉴 title)이 중복되는 문제가 간헐적으로 발생한다.
+ *
+ * 해결: prev(누적) suffix와 next(chunk) prefix의 최대 겹침(overlap)을 찾아 겹치는 부분을 제거하고 append한다.
+ * 또한 next가 "누적 전체 HTML"처럼 보이는 경우(동일 prefix를 공유하며 더 길다)는 prev를 next로 교체한다.
+ */
+function appendStreamChunk(prev: string, next: string): string {
+  const chunk = next || ''
+  if (!chunk) return prev || ''
+  if (!prev) return chunk
+
+  // ✅ chunk가 누적 전체 HTML(또는 그에 준하는 재전송)인 케이스: 동일 prefix를 공유하며 더 길면 교체
+  if (chunk.length > prev.length) {
+    const headLen = Math.min(200, prev.length, chunk.length)
+    if (headLen > 0 && prev.slice(0, headLen) === chunk.slice(0, headLen)) {
+      return chunk
+    }
+    if (chunk.startsWith(prev)) {
+      return chunk
+    }
+  }
+
+  // ✅ chunk가 이미 포함된 경우(큰 조각 재전송 등): 무시
+  if (chunk.length >= 200 && prev.includes(chunk)) {
+    return prev
+  }
+
+  // ✅ suffix/prefix overlap 제거
+  const maxCheck = Math.min(4096, prev.length, chunk.length)
+  for (let i = maxCheck; i >= 1; i--) {
+    if (prev.endsWith(chunk.slice(0, i))) {
+      return prev + chunk.slice(i)
+    }
+  }
+  return prev + chunk
+}
+
 function ResultContent() {
   const searchParams = useSearchParams()
   
@@ -693,7 +731,7 @@ function ResultContent() {
             if (data.html && data.html.length >= accumulatedHtml.length) {
               accumulatedHtml = data.html
             } else {
-              accumulatedHtml += chunkText
+              accumulatedHtml = appendStreamChunk(accumulatedHtml, chunkText)
             }
 
             // 점사 결과 HTML의 모든 테이블 앞 줄바꿈 정리 (반 줄만 띄우기)
@@ -984,7 +1022,7 @@ function ResultContent() {
                 if (nextData.html && nextData.html.length >= menuAccumulated.length) {
                   menuAccumulated = nextData.html
                 } else {
-                  menuAccumulated += newChunk
+                  menuAccumulated = appendStreamChunk(menuAccumulated, newChunk)
                 }
                 
                 // HTML 정리 (테이블 중첩 방지 포함)
