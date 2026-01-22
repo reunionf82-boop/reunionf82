@@ -99,6 +99,46 @@ body {
   background: linear-gradient(to bottom, #f8f9fa, #ffffff);
 }
 
+/* =========================
+ * Admin custom scrollbar
+ * - Scope: /admin only (wrapped by app/admin/layout.tsx -> .admin-theme)
+ * - Tone: dark gray + subtle pink accent
+ * ========================= */
+.admin-theme {
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: #374151 #111827; /* thumb / track */
+}
+
+/* WebKit (Chrome/Edge/Safari) */
+.admin-theme::-webkit-scrollbar,
+.admin-theme *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.admin-theme::-webkit-scrollbar-track,
+.admin-theme *::-webkit-scrollbar-track {
+  background: #111827; /* gray-900 */
+}
+
+.admin-theme::-webkit-scrollbar-thumb,
+.admin-theme *::-webkit-scrollbar-thumb {
+  background-color: #374151; /* gray-700 */
+  border-radius: 9999px;
+  border: 2px solid #111827; /* create padding gap */
+}
+
+.admin-theme::-webkit-scrollbar-thumb:hover,
+.admin-theme *::-webkit-scrollbar-thumb:hover {
+  background-color: #4b5563; /* gray-600 */
+}
+
+.admin-theme::-webkit-scrollbar-corner,
+.admin-theme *::-webkit-scrollbar-corner {
+  background: #111827;
+}
+
 /* 모바일 Pull-to-Refresh 방지 (점사 중에만 html에 클래스 토글) */
 /* Android Chrome 등: 실제 스크롤 컨테이너가 html/body 중 어디로 잡히든 차단되도록 둘 다 적용 */
 html.no-pull-to-refresh,
