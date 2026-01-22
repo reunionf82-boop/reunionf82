@@ -2047,7 +2047,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               NEW
             </label>
           </div>
-          <div className="flex items-center gap-2 border border-green-500 rounded-lg px-4 py-2">
+          <div className="flex items-center gap-2 border border-green-500 rounded-lg px-4 py-2 ml-auto">
             <input
               type="checkbox"
               id="showExposed"
