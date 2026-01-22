@@ -2057,7 +2057,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               className="w-5 h-5 text-green-500 bg-gray-700 border-2 border-green-500 rounded focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-gray-800"
             />
             <label htmlFor="showExposed" className="text-sm font-medium text-gray-300">
-              노출
+              배포
             </label>
           </div>
         </div>

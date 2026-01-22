@@ -1180,7 +1180,18 @@ export default function AdminPage() {
                 className="bg-gray-800 rounded-lg p-4 cursor-pointer hover:bg-gray-700 transition-colors border border-gray-700"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-white">{content.content_name || '이름 없음'}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {(content?.is_exposed === true || content?.is_exposed === 'true' || content?.is_exposed === 1) ? (
+                      <span className="shrink-0 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded">
+                        배포됨
+                      </span>
+                    ) : (
+                      <span className="shrink-0 bg-gray-600 text-white text-xs font-bold px-2 py-1 rounded">
+                        미배포
+                      </span>
+                    )}
+                    <span className="text-white truncate">{content.content_name || '이름 없음'}</span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={(e) => handleOpenReviewModal(e, content.id)}
