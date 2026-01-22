@@ -9,13 +9,13 @@ export async function GET() {
     const supabase = getAdminSupabaseClient()
     const { data, error } = await supabase
       .from('app_settings')
-      .select('id, home_html')
+      .select('id, home_html, home_bg_color')
       .eq('id', 1)
       .maybeSingle()
 
     if (error || !data) {
       return NextResponse.json(
-        { home_html: '' },
+        { home_html: '', home_bg_color: '' },
         {
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -27,7 +27,10 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { home_html: String((data as any).home_html || '') },
+      {
+        home_html: String((data as any).home_html || ''),
+        home_bg_color: String((data as any).home_bg_color || ''),
+      },
       {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -38,7 +41,7 @@ export async function GET() {
     )
   } catch {
     return NextResponse.json(
-      { home_html: '' },
+      { home_html: '', home_bg_color: '' },
       {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',

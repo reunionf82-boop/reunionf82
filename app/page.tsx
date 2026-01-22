@@ -13,6 +13,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [homeHtml, setHomeHtml] = useState<string>('')
   const [homeHtmlLoading, setHomeHtmlLoading] = useState(true)
+  const [homeBgColor, setHomeBgColor] = useState<string>('')
   const [iframeLoaded, setIframeLoaded] = useState(false)
   const [showTermsPopup, setShowTermsPopup] = useState(false)
   const [showPrivacyPopup, setShowPrivacyPopup] = useState(false)
@@ -81,7 +82,9 @@ export default function Home() {
       }
       const data = await res.json()
       const html = typeof data?.home_html === 'string' ? data.home_html : ''
+      const bgColor = typeof data?.home_bg_color === 'string' ? data.home_bg_color : ''
       setHomeHtml(html)
+      setHomeBgColor(bgColor)
       // HTML이 없으면 바로 메뉴 표시
       if (!html || html.trim() === '') {
         setHomeHtmlLoading(false)
@@ -98,6 +101,7 @@ export default function Home() {
     } catch (e) {
       console.error('[home-html] load error:', e)
       setHomeHtml('')
+      setHomeBgColor('')
       setHomeHtmlLoading(false)
       setIframeLoaded(true) // 에러 발생 시 바로 메뉴 표시
     }
@@ -142,7 +146,10 @@ export default function Home() {
   }, [homeHtml, iframeLoaded])
 
   return (
-    <div className="min-h-screen bg-black flex flex-col">
+    <div
+      className="min-h-screen bg-black flex flex-col"
+      style={{ backgroundColor: homeBgColor && homeBgColor.trim() ? homeBgColor : undefined }}
+    >
       {/* 슬라이드 메뉴바 */}
       <SlideMenuBar isOpen={showSlideMenu} onClose={() => setShowSlideMenu(false)} />
 

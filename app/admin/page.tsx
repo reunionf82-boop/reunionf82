@@ -21,6 +21,8 @@ export default function AdminPage() {
   const [homeHtmlPreviewMode, setHomeHtmlPreviewMode] = useState<'pc' | 'mobile'>('pc')
   const homeHtmlPreviewIframeRef = useRef<HTMLIFrameElement>(null)
   const [homeHtmlDraft, setHomeHtmlDraft] = useState<string>('')
+  const [homeBgColor, setHomeBgColor] = useState<string>('')
+  const [homeBgColorDraft, setHomeBgColorDraft] = useState<string>('')
   const [homeHtmlImages, setHomeHtmlImages] = useState<string[]>(['']) // 최소 1개
   const [uploadingImageIndex, setUploadingImageIndex] = useState<number | null>(null)
 
@@ -55,8 +57,11 @@ export default function AdminPage() {
       if (response.ok) {
         const data = await response.json()
         const loadedHomeHtml = typeof data.home_html === 'string' ? data.home_html : ''
+        const loadedHomeBgColor = typeof data.home_bg_color === 'string' ? data.home_bg_color : ''
         setHomeHtml(loadedHomeHtml)
         setHomeHtmlDraft(loadedHomeHtml)
+        setHomeBgColor(loadedHomeBgColor)
+        setHomeBgColorDraft(loadedHomeBgColor)
         
         // HTML에서 이미지 URL 추출 (기존 이미지가 있으면)
         const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
@@ -786,6 +791,7 @@ export default function AdminPage() {
                   type="button"
                   onClick={() => {
                     setHomeHtmlDraft(homeHtml)
+                    setHomeBgColorDraft(homeBgColor)
                     // 이미지 배열도 초기화 (최소 1개 유지)
                     const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
                     const extractedImages: string[] = []
@@ -803,6 +809,33 @@ export default function AdminPage() {
               </div>
 
               <div className="p-4 space-y-4">
+                {/* 홈 배경색 설정 */}
+                <div>
+                  <label className="block text-sm font-semibold text-white mb-2">
+                    홈화면 배경색 지정
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={homeBgColorDraft}
+                      onChange={(e) => setHomeBgColorDraft(e.target.value)}
+                      placeholder="#000000"
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-pink-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setHomeBgColorDraft('')}
+                      className="bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-2 rounded-lg"
+                      title="배경색 초기화(기본값 사용)"
+                    >
+                      초기화
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">
+                    예: #000000 (비우면 기본 배경색을 사용합니다)
+                  </p>
+                </div>
+
                 {/* HTML 편집 섹션 */}
                 <div>
                   <label className="block text-sm font-semibold text-white mb-2">
@@ -1087,7 +1120,7 @@ export default function AdminPage() {
                         const response = await fetch('/api/admin/home-html', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ action: 'save', home_html: homeHtmlDraft }),
+                          body: JSON.stringify({ action: 'save', home_html: homeHtmlDraft, home_bg_color: homeBgColorDraft }),
                         })
                         if (!response.ok) {
                           const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }))
@@ -1095,8 +1128,11 @@ export default function AdminPage() {
                         }
                         const result = await response.json()
                         const saved = typeof result.home_html === 'string' ? result.home_html : ''
+                        const savedBgColor = typeof result.home_bg_color === 'string' ? result.home_bg_color : ''
                         setHomeHtml(saved)
                         setHomeHtmlDraft(saved)
+                        setHomeBgColor(savedBgColor)
+                        setHomeBgColorDraft(savedBgColor)
                         
                         // 저장된 HTML에서 이미지 추출하여 이미지 배열 업데이트 (참고용)
                         const imgRegex2 = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
@@ -1117,7 +1153,7 @@ export default function AdminPage() {
                       } catch (e: any) {
                         const errorMsg = e?.message || '홈 HTML 저장에 실패했습니다.'
                         console.error('[홈 HTML 저장 에러]', e)
-                        alert(`홈 HTML 저장 실패: ${errorMsg}\n\nDB에 home_html 컬럼이 없을 수 있습니다. supabase-add-home-html.sql을 실행해주세요.`)
+                        alert(`홈 HTML 저장 실패: ${errorMsg}\n\nDB에 home_html/home_bg_color 컬럼이 없을 수 있습니다. supabase-add-home-html.sql 및 supabase-add-home-bg-color.sql을 실행해주세요.`)
                       }
                     }}
                     className="bg-pink-500 hover:bg-pink-600 text-white text-sm font-semibold px-4 py-2 rounded-lg"

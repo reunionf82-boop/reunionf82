@@ -10,16 +10,17 @@ async function handleRequest() {
   // app_settings에서 home_html 조회
   const { data, error } = await supabase
     .from('app_settings')
-    .select('home_html')
+    .select('home_html, home_bg_color')
     .maybeSingle()
 
   if (error) {
     console.error('[HomeHtml] 조회 에러:', error)
-    return { home_html: '' }
+    return { home_html: '', home_bg_color: '' }
   }
 
   const homeHtml = typeof data?.home_html === 'string' ? data.home_html : ''
-  return { home_html: homeHtml }
+  const homeBgColor = typeof (data as any)?.home_bg_color === 'string' ? String((data as any).home_bg_color) : ''
+  return { home_html: homeHtml, home_bg_color: homeBgColor }
 }
 
 // ✅ POST 방식으로 조회 (캐시 우회)
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
       const supabase = getAdminSupabaseClient()
       const { error: updateError } = await supabase
         .from('app_settings')
-        .update({ home_html: body.home_html })
+        .update({ home_html: body.home_html, home_bg_color: body.home_bg_color ?? null })
         .eq('id', 1) // app_settings는 단일 행
 
       if (updateError) {
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json(
-        { success: true, home_html: body.home_html },
+        { success: true, home_html: body.home_html, home_bg_color: body.home_bg_color ?? '' },
         {
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
