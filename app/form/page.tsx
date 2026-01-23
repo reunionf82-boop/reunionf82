@@ -4563,7 +4563,14 @@ function FormContent() {
       <main className="container mx-auto px-4 sm:px-6 py-8 max-w-4xl w-full">
         {/* 상단 썸네일 영역 */}
         {(thumbnailImageUrl || hasVideo) && !thumbnailError && (
-          <div className="relative mb-8 overflow-hidden shadow-sm">
+          <div
+            className="relative mb-8 overflow-hidden shadow-sm"
+            style={{
+              width: '100vw',
+              marginLeft: 'calc(50% - 50vw)',
+              marginRight: 'calc(50% - 50vw)',
+            }}
+          >
             <div className="relative h-96">
               {hasVideo && thumbnailImageUrl ? (
                 <SupabaseVideo
@@ -4618,7 +4625,7 @@ function FormContent() {
         </h1>
 
         {/* 단일 배경 라운드박스 (소개, 추천, 상품 메뉴 구성, 본인 정보) */}
-        <div className="bg-gray-100 rounded-xl p-6 md:p-8 mb-8">
+        <div className="bg-gray-100 rounded-xl p-6 md:p-8 mb-8 mx-[-12px] sm:mx-[-18px]">
           {/* 소개 섹션 */}
           {content?.introduction && (
             <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
