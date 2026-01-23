@@ -74,7 +74,13 @@ export default function Home() {
     setHomeHtmlLoading(true)
     setIframeLoaded(false)
     try {
-      const res = await fetch('/api/settings/home-html', { cache: 'no-store' })
+      // ✅ 프로덕션 CDN 캐시 우회: POST로 조회(대부분의 캐시는 POST를 캐싱하지 않음)
+      const res = await fetch('/api/settings/home-html', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({}),
+      })
       if (!res.ok) {
         setHomeHtmlLoading(false)
         setIframeLoaded(true) // HTML이 없으면 바로 메뉴 표시
