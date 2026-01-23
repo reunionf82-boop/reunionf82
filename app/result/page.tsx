@@ -2144,6 +2144,28 @@ ${fontFace ? fontFace : ''}
         .replace(/^[\d\-\.\s]+/, '').trim() // 추가: 앞부분의 모든 숫자, 하이픈, 점, 공백 제거
     }
 
+    // ✅ 방어 로직(중복 제목 제거):
+    // 간헐적으로 LLM/스트리밍/병합 과정에서 "첫 대메뉴 제목"이 subtitle-content 내부로 섞여 들어가
+    // UI에서 대메뉴 제목이 2번(한 번은 React 렌더, 한 번은 contentHtml 내부) 출력되는 경우가 있다.
+    // subtitle-content/detail-menu-content 내부에 있는 menu-title은 제거한다.
+    const stripMenuTitlesFromContentHtml = (html: string, menuTitle: string): string => {
+      if (!html) return ''
+      let out = html
+
+      // 1) menu-title 클래스를 가진 요소 자체 제거 (h2/div 등 태그 무관)
+      out = out.replace(/<[^>]*class=["'][^"']*\bmenu-title\b[^"']*["'][^>]*>[\s\S]*?<\/[^>]+>/gi, '')
+
+      // 2) 혹시 class가 없고 텍스트로만 반복되는 케이스: "현재 메뉴 제목"과 동일한 heading만 제거
+      const safeTitle = (menuTitle || '').trim()
+      if (safeTitle) {
+        const escaped = safeTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        out = out.replace(new RegExp(`<h2[^>]*>\\s*${escaped}\\s*<\\/h2>`, 'gi'), '')
+        out = out.replace(new RegExp(`<div[^>]*>\\s*${escaped}\\s*<\\/div>`, 'gi'), '')
+      }
+
+      return out.trim()
+    }
+
     // [추가] 상세메뉴 파싱 및 매핑 로직 개선을 위한 헬퍼 함수
     const extractSections = (html: string, className: string) => {
       const regex = new RegExp(`<div[^>]*class="[^"]*${className}[^"]*"[^>]*>`, 'gi')
@@ -2395,6 +2417,9 @@ ${fontFace ? fontFace : ''}
             .replace(/\s*해석도구\s*/gi, '')
             .trim()
         }
+
+        // ✅ 중복 대메뉴 제목 방지: contentHtml 내부에 섞여 들어온 menu-title 제거
+        cleanedContentHtml = stripMenuTitlesFromContentHtml(cleanedContentHtml, titleText)
 
         return {
           title: expectedTitle || `항목 ${expectedIdx + 1}`,
