@@ -551,14 +551,17 @@ export async function getSelectedModel(): Promise<string> {
       .from('app_settings')
       .select('selected_model')
       .eq('id', 1)
-      .single()
+      // ✅ id=1 중복 행이 있어도 single-coercion 에러를 피하고 최신값을 쓰도록 정렬+limit
+      .order('updated_at', { ascending: false })
+      .limit(1)
     
     if (error) {
       // 테이블이 없거나 레코드가 없으면 기본값 반환
       return 'gemini-3-flash-preview'
     }
     
-    return data?.selected_model || 'gemini-3-flash-preview'
+    const row = Array.isArray(data) ? data[0] : null
+    return (row as any)?.selected_model || 'gemini-3-flash-preview'
   } catch (e) {
     return 'gemini-3-flash-preview'
   }
@@ -568,11 +571,13 @@ export async function getSelectedModel(): Promise<string> {
 export async function saveSelectedModel(model: string) {
   try {
     // 먼저 레코드가 있는지 확인
-    const { data: existing } = await supabase
+    const { data: existingRows } = await supabase
       .from('app_settings')
       .select('id')
       .eq('id', 1)
-      .single()
+      .limit(1)
+    
+    const existing = Array.isArray(existingRows) ? existingRows[0] : null
     
     if (existing) {
       // 업데이트
@@ -615,14 +620,16 @@ export async function getSelectedSpeaker(): Promise<string> {
       .from('app_settings')
       .select('selected_speaker')
       .eq('id', 1)
-      .single()
+      .order('updated_at', { ascending: false })
+      .limit(1)
     
     if (error) {
       // 테이블이 없거나 레코드가 없으면 기본값 반환
       return 'nara'
     }
     
-    return data?.selected_speaker || 'nara'
+    const row = Array.isArray(data) ? data[0] : null
+    return (row as any)?.selected_speaker || 'nara'
   } catch (e) {
     return 'nara'
   }
@@ -632,11 +639,13 @@ export async function getSelectedSpeaker(): Promise<string> {
 export async function saveSelectedSpeaker(speaker: string) {
   try {
     // 먼저 레코드가 있는지 확인
-    const { data: existing } = await supabase
+    const { data: existingRows } = await supabase
       .from('app_settings')
       .select('id')
       .eq('id', 1)
-      .single()
+      .limit(1)
+    
+    const existing = Array.isArray(existingRows) ? existingRows[0] : null
     
     if (existing) {
       // 업데이트
@@ -679,13 +688,15 @@ export async function getFortuneViewMode(): Promise<'batch' | 'realtime'> {
       .from('app_settings')
       .select('fortune_view_mode')
       .eq('id', 1)
-      .single()
+      .order('updated_at', { ascending: false })
+      .limit(1)
 
     if (error) {
       return 'batch'
     }
 
-    const mode = (data as any)?.fortune_view_mode
+    const row = Array.isArray(data) ? data[0] : null
+    const mode = (row as any)?.fortune_view_mode
     return mode === 'realtime' ? 'realtime' : 'batch'
   } catch (e) {
     return 'batch'
@@ -695,11 +706,13 @@ export async function getFortuneViewMode(): Promise<'batch' | 'realtime'> {
 // 점사 모드 저장
 export async function saveFortuneViewMode(mode: 'batch' | 'realtime') {
   try {
-    const { data: existing } = await supabase
+    const { data: existingRows } = await supabase
       .from('app_settings')
       .select('id')
       .eq('id', 1)
-      .single()
+      .limit(1)
+    
+    const existing = Array.isArray(existingRows) ? existingRows[0] : null
 
     const payload = {
       fortune_view_mode: mode,
@@ -738,16 +751,18 @@ export async function getUseSequentialFortune(): Promise<boolean> {
       .from('app_settings')
       .select('use_sequential_fortune')
       .eq('id', 1)
-      .single()
+      .order('updated_at', { ascending: false })
+      .limit(1)
 
     if (error) {
-      return false // 기본값: 병렬점사 (false)
+      return true // 기본값: 직렬점사 (true)
     }
 
-    const useSequential = (data as any)?.use_sequential_fortune
+    const row = Array.isArray(data) ? data[0] : null
+    const useSequential = (row as any)?.use_sequential_fortune
     return useSequential === true // true면 직렬점사, false면 병렬점사
   } catch (e) {
-    return false // 기본값: 병렬점사
+    return true // 기본값: 직렬점사
   }
 }
 

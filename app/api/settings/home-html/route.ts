@@ -19,23 +19,24 @@ async function loadHomeHtml() {
     .from('app_settings')
     .select('id, home_html, home_bg_color')
     .eq('id', 1)
-    // ✅ id=1 중복 행이 있어도 안정적으로 1개만 가져오도록 제한
     .limit(1)
-    .maybeSingle()
 
   // ✅ 에러는 숨기지 말고 상위에서 500으로 처리(프로덕션에서 "사라짐" 증상 원인)
   if (error) {
     throw new Error(error.message || 'Failed to load home html')
   }
 
+  // PostgREST single-coercion 에러 방지: 배열로 받고 첫 행만 사용
+  const row = Array.isArray(data) ? data[0] : null
+
   // 데이터가 없는 경우만 "빈 값"으로 간주 (정상 케이스)
-  if (!data) {
+  if (!row) {
     return { home_html: '', home_bg_color: '' }
   }
 
   return {
-    home_html: String((data as any).home_html || ''),
-    home_bg_color: String((data as any).home_bg_color || ''),
+    home_html: String((row as any).home_html || ''),
+    home_bg_color: String((row as any).home_bg_color || ''),
   }
 }
 

@@ -12,15 +12,15 @@ async function handleRequest() {
     .from('app_settings')
     .select('home_html, home_bg_color')
     .eq('id', 1)
-    // ✅ 과거에 id=1 행이 중복 생성된 경우에도 안정적으로 1개만 가져오도록 제한
+    // ✅ id=1 행이 중복이어도 PostgREST의 single-coercion 에러를 피하기 위해 배열로 받고 첫 행만 사용
     .limit(1)
-    .maybeSingle()
 
   // ✅ 에러를 200 + 빈 값으로 숨기면, 프론트/어드민에서 "저장한 코드가 사라짐"처럼 보임
   if (error) throw new Error(error.message || 'Failed to load home html')
 
-  const homeHtml = typeof data?.home_html === 'string' ? data.home_html : ''
-  const homeBgColor = typeof (data as any)?.home_bg_color === 'string' ? String((data as any).home_bg_color) : ''
+  const row = Array.isArray(data) ? data[0] : null
+  const homeHtml = typeof (row as any)?.home_html === 'string' ? String((row as any).home_html) : ''
+  const homeBgColor = typeof (row as any)?.home_bg_color === 'string' ? String((row as any).home_bg_color) : ''
   return { home_html: homeHtml, home_bg_color: homeBgColor }
 }
 
@@ -44,9 +44,9 @@ export async function POST(req: NextRequest) {
         .upsert(payload, { onConflict: 'id' })
         .select('home_html, home_bg_color')
         .limit(1)
-        .maybeSingle()
 
-      savedRow = upsertRes.data
+      // PostgREST single-coercion 에러 방지: 배열로 받고 첫 행만 사용
+      savedRow = Array.isArray(upsertRes.data) ? upsertRes.data[0] : null
       updateError = upsertRes.error
 
       // 2) 만약 app_settings.id에 UNIQUE/PK가 없어서 upsert가 실패하면 update→insert로 fallback
@@ -66,9 +66,8 @@ export async function POST(req: NextRequest) {
             .eq('id', 1)
             .select('home_html, home_bg_color')
             .limit(1)
-            .maybeSingle()
 
-          savedRow = updRes.data
+          savedRow = Array.isArray(updRes.data) ? updRes.data[0] : null
           updateError = updRes.error
 
           // id=1 행이 없어서 update 결과가 없으면 insert 시도
@@ -78,10 +77,10 @@ export async function POST(req: NextRequest) {
               .insert(payload)
               .select('home_html, home_bg_color')
               .limit(1)
-              .maybeSingle()
 
-            savedRow = insRes.data
+            savedRow = Array.isArray(insRes.data) ? insRes.data[0] : null
             updateError = insRes.error
+
           }
         }
       }
