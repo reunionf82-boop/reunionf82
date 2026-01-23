@@ -33,22 +33,71 @@ export async function POST(req: NextRequest) {
     if (body.action === 'save' && body.home_html !== undefined) {
       // 저장 처리
       const supabase = getAdminSupabaseClient()
-      const { data: savedRow, error: updateError } = await supabase
+      const payload = { id: 1, home_html: body.home_html, home_bg_color: body.home_bg_color ?? null }
+
+      // 1) 우선 upsert (정상적으로는 PK/UNIQUE(id) 기반으로 동작)
+      let savedRow: any = null
+      let updateError: any = null
+
+      const upsertRes = await supabase
         .from('app_settings')
-        // ✅ id=1 행이 없으면 생성까지 되도록 upsert 사용
-        // ✅ PK/unique 설정이 애매해도 id 기준으로 충돌 처리되도록 onConflict 지정
-        .upsert(
-          { id: 1, home_html: body.home_html, home_bg_color: body.home_bg_color ?? null },
-          { onConflict: 'id' }
-        )
+        .upsert(payload, { onConflict: 'id' })
         .select('home_html, home_bg_color')
         .limit(1)
         .maybeSingle()
 
+      savedRow = upsertRes.data
+      updateError = upsertRes.error
+
+      // 2) 만약 app_settings.id에 UNIQUE/PK가 없어서 upsert가 실패하면 update→insert로 fallback
       if (updateError) {
+        const msg = String(updateError?.message || '')
+        const isConflictConstraintError =
+          msg.toLowerCase().includes('on conflict') ||
+          msg.toLowerCase().includes('no unique') ||
+          msg.toLowerCase().includes('no unique or exclusion constraint') ||
+          msg.toLowerCase().includes('there is no unique constraint')
+
+        if (isConflictConstraintError) {
+          // update 시도
+          const updRes = await supabase
+            .from('app_settings')
+            .update({ home_html: body.home_html, home_bg_color: body.home_bg_color ?? null })
+            .eq('id', 1)
+            .select('home_html, home_bg_color')
+            .limit(1)
+            .maybeSingle()
+
+          savedRow = updRes.data
+          updateError = updRes.error
+
+          // id=1 행이 없어서 update 결과가 없으면 insert 시도
+          if (!updateError && !savedRow) {
+            const insRes = await supabase
+              .from('app_settings')
+              .insert(payload)
+              .select('home_html, home_bg_color')
+              .limit(1)
+              .maybeSingle()
+
+            savedRow = insRes.data
+            updateError = insRes.error
+          }
+        }
+      }
+
+      if (updateError) {
+        const msg = String(updateError?.message || '')
+        const hint =
+          msg.toLowerCase().includes('column') && msg.toLowerCase().includes('does not exist')
+            ? 'DB에 home_html/home_bg_color 컬럼이 없습니다. supabase-add-home-html.sql 및 supabase-add-home-bg-color.sql을 프로덕션 DB에 실행하세요.'
+            : msg.toLowerCase().includes('on conflict') || msg.toLowerCase().includes('no unique')
+              ? 'app_settings.id에 UNIQUE 또는 PRIMARY KEY가 필요합니다.'
+              : ''
+
         console.error('[HomeHtml] 저장 에러:', updateError)
         return NextResponse.json(
-          { error: '홈 HTML 저장에 실패했습니다.', details: updateError.message },
+          { error: '홈 HTML 저장에 실패했습니다.', details: msg, hint },
           { status: 500 }
         )
       }

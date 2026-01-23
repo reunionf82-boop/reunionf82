@@ -1142,7 +1142,10 @@ export default function AdminPage() {
                         })
                         if (!response.ok) {
                           const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }))
-                          throw new Error(errorData.error || `홈 HTML 저장 실패 (${response.status})`)
+                          const details = typeof errorData?.details === 'string' ? errorData.details : ''
+                          const hint = typeof errorData?.hint === 'string' ? errorData.hint : ''
+                          const msg = String(errorData?.error || `홈 HTML 저장 실패 (${response.status})`)
+                          throw new Error([msg, details, hint].filter(Boolean).join('\n'))
                         }
                         const result = await response.json()
                         const saved = typeof result.home_html === 'string' ? result.home_html : ''
