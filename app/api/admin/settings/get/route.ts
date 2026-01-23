@@ -17,11 +17,12 @@ export async function GET(req: NextRequest) {
     const supabase = getAdminSupabaseClient()
     
     // 직접 모든 필드를 조회하여 실제 DB 값을 확인
-    const { data, error } = await supabase
+    const { data: rows, error } = await supabase
       .from('app_settings')
       .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html, updated_at')
       .eq('id', 1)
-      .maybeSingle() // 레코드가 없어도 에러가 아닌 null 반환
+      // ✅ id=1 행이 중복이어도 single-coercion 에러를 피하기 위해 배열로 받고 첫 행만 사용
+      .limit(1)
     
     // 에러가 발생하면 상세 정보 로깅
     if (error) {
@@ -53,6 +54,8 @@ export async function GET(req: NextRequest) {
     }
 
     // 데이터가 없으면 기본값 반환
+    const data = Array.isArray(rows) ? rows[0] : null
+
     if (!data) {
       console.log('[API] app_settings 데이터가 없음, 기본값 반환')
       return NextResponse.json({

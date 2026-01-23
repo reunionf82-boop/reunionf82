@@ -27,6 +27,47 @@ export default function AdminPage() {
   const [uploadingImageIndex, setUploadingImageIndex] = useState<number | null>(null)
   const showHomeHtmlModalRef = useRef(false)
 
+  // HTML에서 추출한 img src는 &amp; 같은 엔티티가 포함될 수 있음.
+  // iframe(srcDoc)에서는 브라우저가 엔티티를 디코딩하지만,
+  // React <img src={...}>에서는 문자열이 그대로 들어가 URL이 깨질 수 있어 디코딩한다.
+  const decodeHtmlEntities = (value: string) => {
+    return String(value || '')
+      .replace(/&amp;/g, '&')
+      .replace(/&#38;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#34;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+  }
+
+  const extractImageUrlsFromHtml = (html: string): string[] => {
+    const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
+    const extracted: string[] = []
+    let match
+    while ((match = imgRegex.exec(html)) !== null) {
+      const url = decodeHtmlEntities(match[1]).trim()
+      if (url) extracted.push(url)
+    }
+    return extracted
+  }
+
+  const syncHomeHtmlImagesFromDraft = (draft: string) => {
+    const extracted = extractImageUrlsFromHtml(draft)
+    if (extracted.length === 0) return
+
+    // 동일하면 불필요한 setState 방지
+    const current = homeHtmlImages.map((x) => String(x || '').trim()).filter(Boolean)
+    const next = extracted
+    const isSame =
+      current.length === next.length && current.every((v, i) => v === next[i])
+
+    if (!isSame) {
+      setHomeHtmlImages(next.length > 0 ? next : [''])
+    }
+  }
+
   // ✅ 다른 탭에서 URL 복사 후 돌아오면 focus 이벤트가 발생하는데,
   // 이때 DB값으로 draft를 덮어쓰면 "기존 코딩이 사라짐"처럼 보임.
   // 모달이 열려있는 동안엔 draft를 절대 덮어쓰지 않도록 ref로 보호한다.
@@ -81,7 +122,7 @@ export default function AdminPage() {
       const extractedImages: string[] = []
       let match
       while ((match = imgRegex.exec(loadedHomeHtml)) !== null) {
-        extractedImages.push(match[1])
+          extractedImages.push(decodeHtmlEntities(match[1]).trim())
       }
 
       // ✅ 편집 중(모달 오픈)에는 draft/image 입력을 덮어쓰지 않는다.
@@ -369,7 +410,11 @@ export default function AdminPage() {
       })
 
       if (!response.ok) {
-        throw new Error('점사 방식 저장 실패')
+        const err = await response.json().catch(() => ({} as any))
+        const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
+        const details = typeof err?.details === 'string' ? err.details : ''
+        const hint = typeof err?.hint === 'string' ? err.hint : ''
+        throw new Error([msg, details, hint].filter(Boolean).join('\n'))
       }
 
       const result = await response.json()
@@ -377,7 +422,8 @@ export default function AdminPage() {
         setUseSequentialFortune(result.use_sequential_fortune)
       }
     } catch (error) {
-      alert('점사 방식 저장에 실패했습니다. 콘솔을 확인해주세요.')
+      const msg = (error as any)?.message ? String((error as any).message) : '점사 방식 저장에 실패했습니다.'
+      alert(msg)
     }
   }
 
@@ -815,7 +861,7 @@ export default function AdminPage() {
                     const extractedImages: string[] = []
                     let match
                     while ((match = imgRegex.exec(homeHtml)) !== null) {
-                      extractedImages.push(match[1])
+                      extractedImages.push(decodeHtmlEntities(match[1]).trim())
                     }
                     setHomeHtmlImages(extractedImages.length > 0 ? extractedImages : [''])
                     setShowHomeHtmlModal(false)
@@ -861,7 +907,18 @@ export default function AdminPage() {
                   </label>
                   <textarea
                     value={homeHtmlDraft}
-                    onChange={(e) => setHomeHtmlDraft(e.target.value)}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      setHomeHtmlDraft(next)
+                      // ✅ 입력/붙여넣기 즉시 HTML에서 이미지 URL 추출 → 이미지 섹션 미리보기 갱신
+                      syncHomeHtmlImagesFromDraft(next)
+                    }}
+                    onPaste={() => {
+                      // paste 직후 textarea 값이 반영된 다음 프레임에서 파싱
+                      requestAnimationFrame(() => {
+                        syncHomeHtmlImagesFromDraft(homeHtmlDraft)
+                      })
+                    }}
                     placeholder="<div>여기에 HTML을 입력하세요</div>"
                     className="w-full h-80 bg-gray-800 border border-gray-700 rounded-lg p-3 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-pink-500"
                   />
@@ -1160,7 +1217,7 @@ export default function AdminPage() {
                         const savedImages: string[] = []
                         let match
                         while ((match = imgRegex2.exec(saved)) !== null) {
-                          savedImages.push(match[1])
+                          savedImages.push(decodeHtmlEntities(match[1]).trim())
                         }
                         // 저장된 이미지가 없거나 현재 업로드된 이미지와 다를 수 있으므로, 업로드된 이미지는 유지
                         const uploadedImages = homeHtmlImages.filter(url => url.trim() !== '')

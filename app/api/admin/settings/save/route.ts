@@ -19,15 +19,18 @@ export async function POST(req: NextRequest) {
     const { model, speaker, fortune_view_mode, use_sequential_fortune, tts_provider, typecast_voice_id, home_html } = body
 
     // 기존 레코드 조회
-    const { data: existing, error: existingError } = await supabase
+    const { data: existingRows, error: existingError } = await supabase
       .from('app_settings')
       .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html')
       .eq('id', 1)
-      .maybeSingle()
+      // ✅ id=1 행이 중복이어도 single-coercion 에러를 피하기 위해 배열로 받고 첫 행만 사용
+      .limit(1)
 
     if (existingError) {
       throw existingError
     }
+    
+    const existing = Array.isArray(existingRows) ? existingRows[0] : null
 
     // 업데이트할 데이터 준비
     const updateData: {
@@ -165,11 +168,21 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('[admin/settings/save] error:', error)
     const errorMessage = error?.message || error?.code || '설정을 저장하는데 실패했습니다.'
-    const errorHint = error?.code === '42703' || error?.message?.includes('column')
-      ? ' (DB 컬럼이 없을 수 있습니다. supabase-add-home-html.sql을 실행해주세요.)'
-      : ''
+    const msgLower = String(error?.message || '').toLowerCase()
+    let errorHint = ''
+    if (error?.code === '42703' || msgLower.includes('column') || msgLower.includes('does not exist')) {
+      if (msgLower.includes('use_sequential_fortune')) {
+        errorHint = ' (DB 컬럼이 없을 수 있습니다. supabase-add-use-sequential-fortune-column.sql을 실행해주세요.)'
+      } else if (msgLower.includes('fortune_view_mode')) {
+        errorHint = ' (DB 컬럼이 없을 수 있습니다. supabase-add-fortune-view-mode.sql을 실행해주세요.)'
+      } else if (msgLower.includes('home_html')) {
+        errorHint = ' (DB 컬럼이 없을 수 있습니다. supabase-add-home-html.sql을 실행해주세요.)'
+      } else {
+        errorHint = ' (DB 컬럼이 없을 수 있습니다. 관련 supabase-add-*.sql을 확인해주세요.)'
+      }
+    }
     return NextResponse.json(
-      { error: errorMessage + errorHint },
+      { error: errorMessage + errorHint, details: errorMessage, hint: errorHint.replace(/^\s*/, '') },
       { status: 500 }
     )
   }
