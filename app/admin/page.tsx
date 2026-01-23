@@ -25,6 +25,14 @@ export default function AdminPage() {
   const [homeBgColorDraft, setHomeBgColorDraft] = useState<string>('')
   const [homeHtmlImages, setHomeHtmlImages] = useState<string[]>(['']) // 최소 1개
   const [uploadingImageIndex, setUploadingImageIndex] = useState<number | null>(null)
+  const showHomeHtmlModalRef = useRef(false)
+
+  // ✅ 다른 탭에서 URL 복사 후 돌아오면 focus 이벤트가 발생하는데,
+  // 이때 DB값으로 draft를 덮어쓰면 "기존 코딩이 사라짐"처럼 보임.
+  // 모달이 열려있는 동안엔 draft를 절대 덮어쓰지 않도록 ref로 보호한다.
+  useEffect(() => {
+    showHomeHtmlModalRef.current = showHomeHtmlModal
+  }, [showHomeHtmlModal])
 
   // 리뷰 관리 상태
   const [showReviewModal, setShowReviewModal] = useState(false)
@@ -59,9 +67,7 @@ export default function AdminPage() {
         const loadedHomeHtml = typeof data.home_html === 'string' ? data.home_html : ''
         const loadedHomeBgColor = typeof data.home_bg_color === 'string' ? data.home_bg_color : ''
         setHomeHtml(loadedHomeHtml)
-        setHomeHtmlDraft(loadedHomeHtml)
         setHomeBgColor(loadedHomeBgColor)
-        setHomeBgColorDraft(loadedHomeBgColor)
         
         // HTML에서 이미지 URL 추출 (기존 이미지가 있으면)
         const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
@@ -70,7 +76,13 @@ export default function AdminPage() {
         while ((match = imgRegex.exec(loadedHomeHtml)) !== null) {
           extractedImages.push(match[1])
         }
-        setHomeHtmlImages(extractedImages.length > 0 ? extractedImages : [''])
+
+        // ✅ 편집 중(모달 오픈)에는 draft/image 입력을 덮어쓰지 않는다.
+        if (!showHomeHtmlModalRef.current) {
+          setHomeHtmlDraft(loadedHomeHtml)
+          setHomeBgColorDraft(loadedHomeBgColor)
+          setHomeHtmlImages(extractedImages.length > 0 ? extractedImages : [''])
+        }
       }
     } catch (error) {
       console.error('[홈html 조회 에러]', error)

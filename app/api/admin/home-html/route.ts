@@ -14,10 +14,8 @@ async function handleRequest() {
     .eq('id', 1)
     .maybeSingle()
 
-  if (error) {
-    console.error('[HomeHtml] 조회 에러:', error)
-    return { home_html: '', home_bg_color: '' }
-  }
+  // ✅ 에러를 200 + 빈 값으로 숨기면, 프론트/어드민에서 "저장한 코드가 사라짐"처럼 보임
+  if (error) throw new Error(error.message || 'Failed to load home html')
 
   const homeHtml = typeof data?.home_html === 'string' ? data.home_html : ''
   const homeBgColor = typeof (data as any)?.home_bg_color === 'string' ? String((data as any).home_bg_color) : ''
@@ -70,7 +68,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error('[HomeHtml][POST] 서버 내부 에러:', e)
     return NextResponse.json(
-      { home_html: '', error: e.message },
+      { error: '홈 HTML 조회에 실패했습니다.', details: e?.message || '' },
       { status: 500 }
     )
   }

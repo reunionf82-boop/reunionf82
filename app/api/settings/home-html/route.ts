@@ -21,7 +21,13 @@ async function loadHomeHtml() {
     .eq('id', 1)
     .maybeSingle()
 
-  if (error || !data) {
+  // ✅ 에러는 숨기지 말고 상위에서 500으로 처리(프로덕션에서 "사라짐" 증상 원인)
+  if (error) {
+    throw new Error(error.message || 'Failed to load home html')
+  }
+
+  // 데이터가 없는 경우만 "빈 값"으로 간주 (정상 케이스)
+  if (!data) {
     return { home_html: '', home_bg_color: '' }
   }
 
@@ -35,8 +41,11 @@ export async function GET() {
   try {
     const result = await loadHomeHtml()
     return NextResponse.json(result, { headers: noStoreHeaders })
-  } catch {
-    return NextResponse.json({ home_html: '', home_bg_color: '' }, { headers: noStoreHeaders })
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: '홈 HTML 조회에 실패했습니다.' },
+      { status: 500, headers: noStoreHeaders }
+    )
   }
 }
 
@@ -45,8 +54,11 @@ export async function POST(_req: NextRequest) {
   try {
     const result = await loadHomeHtml()
     return NextResponse.json(result, { headers: noStoreHeaders })
-  } catch {
-    return NextResponse.json({ home_html: '', home_bg_color: '' }, { headers: noStoreHeaders })
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: '홈 HTML 조회에 실패했습니다.' },
+      { status: 500, headers: noStoreHeaders }
+    )
   }
 }
 
