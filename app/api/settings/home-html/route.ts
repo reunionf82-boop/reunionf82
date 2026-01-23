@@ -19,6 +19,8 @@ async function loadHomeHtml() {
     .from('app_settings')
     .select('id, home_html, home_bg_color')
     .eq('id', 1)
+    // ✅ id=1 중복 행이 있어도 안정적으로 1개만 가져오도록 제한
+    .limit(1)
     .maybeSingle()
 
   // ✅ 에러는 숨기지 말고 상위에서 500으로 처리(프로덕션에서 "사라짐" 증상 원인)

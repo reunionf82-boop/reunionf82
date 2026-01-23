@@ -12,6 +12,8 @@ async function handleRequest() {
     .from('app_settings')
     .select('home_html, home_bg_color')
     .eq('id', 1)
+    // ✅ 과거에 id=1 행이 중복 생성된 경우에도 안정적으로 1개만 가져오도록 제한
+    .limit(1)
     .maybeSingle()
 
   // ✅ 에러를 200 + 빈 값으로 숨기면, 프론트/어드민에서 "저장한 코드가 사라짐"처럼 보임
@@ -31,10 +33,17 @@ export async function POST(req: NextRequest) {
     if (body.action === 'save' && body.home_html !== undefined) {
       // 저장 처리
       const supabase = getAdminSupabaseClient()
-      const { error: updateError } = await supabase
+      const { data: savedRow, error: updateError } = await supabase
         .from('app_settings')
         // ✅ id=1 행이 없으면 생성까지 되도록 upsert 사용
-        .upsert({ id: 1, home_html: body.home_html, home_bg_color: body.home_bg_color ?? null })
+        // ✅ PK/unique 설정이 애매해도 id 기준으로 충돌 처리되도록 onConflict 지정
+        .upsert(
+          { id: 1, home_html: body.home_html, home_bg_color: body.home_bg_color ?? null },
+          { onConflict: 'id' }
+        )
+        .select('home_html, home_bg_color')
+        .limit(1)
+        .maybeSingle()
 
       if (updateError) {
         console.error('[HomeHtml] 저장 에러:', updateError)
@@ -44,8 +53,13 @@ export async function POST(req: NextRequest) {
         )
       }
 
+      const resultHomeHtml =
+        typeof (savedRow as any)?.home_html === 'string' ? String((savedRow as any).home_html) : String(body.home_html || '')
+      const resultHomeBgColor =
+        typeof (savedRow as any)?.home_bg_color === 'string' ? String((savedRow as any).home_bg_color) : String(body.home_bg_color ?? '')
+
       return NextResponse.json(
-        { success: true, home_html: body.home_html, home_bg_color: body.home_bg_color ?? '' },
+        { success: true, home_html: resultHomeHtml, home_bg_color: resultHomeBgColor },
         {
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',

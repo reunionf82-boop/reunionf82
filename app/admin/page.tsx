@@ -62,27 +62,33 @@ export default function AdminPage() {
         cache: 'no-store',
         body: JSON.stringify({})
       })
-      if (response.ok) {
-        const data = await response.json()
-        const loadedHomeHtml = typeof data.home_html === 'string' ? data.home_html : ''
-        const loadedHomeBgColor = typeof data.home_bg_color === 'string' ? data.home_bg_color : ''
-        setHomeHtml(loadedHomeHtml)
-        setHomeBgColor(loadedHomeBgColor)
-        
-        // HTML에서 이미지 URL 추출 (기존 이미지가 있으면)
-        const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
-        const extractedImages: string[] = []
-        let match
-        while ((match = imgRegex.exec(loadedHomeHtml)) !== null) {
-          extractedImages.push(match[1])
-        }
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({} as any))
+        const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
+        console.error('[홈html 조회 실패]', msg, err)
+        alert(`홈 HTML 불러오기 실패: ${msg}\n\n(프로덕션에서 저장/조회 환경변수 또는 DB 상태를 확인해야 합니다.)`)
+        return
+      }
 
-        // ✅ 편집 중(모달 오픈)에는 draft/image 입력을 덮어쓰지 않는다.
-        if (!showHomeHtmlModalRef.current) {
-          setHomeHtmlDraft(loadedHomeHtml)
-          setHomeBgColorDraft(loadedHomeBgColor)
-          setHomeHtmlImages(extractedImages.length > 0 ? extractedImages : [''])
-        }
+      const data = await response.json()
+      const loadedHomeHtml = typeof data.home_html === 'string' ? data.home_html : ''
+      const loadedHomeBgColor = typeof data.home_bg_color === 'string' ? data.home_bg_color : ''
+      setHomeHtml(loadedHomeHtml)
+      setHomeBgColor(loadedHomeBgColor)
+        
+      // HTML에서 이미지 URL 추출 (기존 이미지가 있으면)
+      const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
+      const extractedImages: string[] = []
+      let match
+      while ((match = imgRegex.exec(loadedHomeHtml)) !== null) {
+        extractedImages.push(match[1])
+      }
+
+      // ✅ 편집 중(모달 오픈)에는 draft/image 입력을 덮어쓰지 않는다.
+      if (!showHomeHtmlModalRef.current) {
+        setHomeHtmlDraft(loadedHomeHtml)
+        setHomeBgColorDraft(loadedHomeBgColor)
+        setHomeHtmlImages(extractedImages.length > 0 ? extractedImages : [''])
       }
     } catch (error) {
       console.error('[홈html 조회 에러]', error)
