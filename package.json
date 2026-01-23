@@ -9,17 +9,21 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@google/genai": "^0.14.1",
     "@google/generative-ai": "^0.24.1",
     "@neosapience/typecast-js": "^0.1.4",
     "@supabase/supabase-js": "^2.39.0",
+    "eventemitter3": "^5.0.4",
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.4",
     "kor-lunar": "^1.4.0",
+    "lodash": "^4.17.23",
     "next": "^14.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@types/lodash": "^4.17.23",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
