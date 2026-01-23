@@ -4628,8 +4628,8 @@ function FormContent() {
         <div className="bg-gray-100 rounded-xl p-6 md:p-8 mb-8 mx-[-12px] sm:mx-[-18px]">
           {/* 소개 섹션 */}
           {content?.introduction && (
-            <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
-              <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">
+            <div className="mb-[18px] pb-[18px] border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
+              <h2 className="text-2xl font-extrabold text-pink-500 mb-[18px] relative pl-4 border-l-4 border-pink-500">
                 소개
               </h2>
               <div className="w-full p-0 m-0 border-0 overflow-hidden" style={{ height: 'auto', minHeight: '1px' }}>
@@ -4684,8 +4684,8 @@ function FormContent() {
 
           {/* 추천 섹션 */}
           {content?.recommendation && (
-            <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
-              <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">
+            <div className="mb-[18px] pb-[18px] border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
+              <h2 className="text-2xl font-extrabold text-pink-500 mb-[18px] relative pl-4 border-l-4 border-pink-500">
                 이런 분께 추천해요
               </h2>
               <div className="w-full p-0 m-0 border-0 overflow-hidden" style={{ height: 'auto', minHeight: '1px' }}>
@@ -4740,8 +4740,8 @@ function FormContent() {
 
           {/* 상품 메뉴 구성 */}
           {content?.menu_composition && content.menu_composition.trim() !== '' ? (
-            <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
-              <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">상품 메뉴 구성</h2>
+            <div className="mb-[18px] pb-[18px] border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
+              <h2 className="text-2xl font-extrabold text-pink-500 mb-[18px] relative pl-4 border-l-4 border-pink-500">상품 메뉴 구성</h2>
               <div className="w-full p-0 m-0 border-0 overflow-hidden" style={{ height: 'auto', minHeight: '1px' }}>
                 <iframe
                   ref={menuItemsIframeRef}
@@ -4793,8 +4793,8 @@ function FormContent() {
           ) : (
             // 하위 호환성: menu_composition이 없으면 기존 menu_items 방식 사용
             content?.menu_items && content.menu_items.length > 0 && (
-              <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
-                <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">상품 메뉴 구성</h2>
+              <div className="mb-[18px] pb-[18px] border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
+                <h2 className="text-2xl font-extrabold text-pink-500 mb-[18px] relative pl-4 border-l-4 border-pink-500">상품 메뉴 구성</h2>
                 <div className="w-full p-0 m-0 border-0 overflow-hidden" style={{ height: 'auto', minHeight: '1px' }}>
                   <iframe
                     ref={menuItemsIframeRef}

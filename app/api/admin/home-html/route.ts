@@ -11,6 +11,7 @@ async function handleRequest() {
   const { data, error } = await supabase
     .from('app_settings')
     .select('home_html, home_bg_color')
+    .eq('id', 1)
     .maybeSingle()
 
   if (error) {
@@ -34,8 +35,8 @@ export async function POST(req: NextRequest) {
       const supabase = getAdminSupabaseClient()
       const { error: updateError } = await supabase
         .from('app_settings')
-        .update({ home_html: body.home_html, home_bg_color: body.home_bg_color ?? null })
-        .eq('id', 1) // app_settings는 단일 행
+        // ✅ id=1 행이 없으면 생성까지 되도록 upsert 사용
+        .upsert({ id: 1, home_html: body.home_html, home_bg_color: body.home_bg_color ?? null })
 
       if (updateError) {
         console.error('[HomeHtml] 저장 에러:', updateError)
