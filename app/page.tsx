@@ -170,7 +170,7 @@ export default function Home() {
 
       {/* 헤더 */}
       <header className="w-full bg-white border-b-2 border-pink-500">
-        <div className="container mx-auto px-4 h-14 flex items-center justify-between">
+        <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 h-14 flex items-center justify-between">
           <a 
             href="/"
             className="text-2xl font-bold tracking-tight text-pink-600 hover:text-pink-700 transition-colors cursor-pointer"
@@ -204,7 +204,7 @@ export default function Home() {
 
       {/* 헤더 아래 HTML 뷰 (padding/border/margin 0, iframe으로 완전 격리) */}
       {homeHtml && homeHtml.trim() !== '' && (
-        <div className="w-full p-0 m-0 border-0 relative z-10" style={{ height: 'auto', minHeight: '1px' }}>
+        <div className="mx-auto w-full max-w-4xl p-0 border-0 relative z-10" style={{ height: 'auto', minHeight: '1px' }}>
           <iframe
             ref={iframeRef}
             srcDoc={homeHtml}
@@ -245,13 +245,13 @@ export default function Home() {
 
       {/* 기존 메뉴(컨텐츠) 리스트 - iframe 완전히 로드된 후 표시 */}
       {iframeLoaded && (
-        <main className="container mx-auto px-4 py-8 flex-1 relative z-20">
+        <main className="mx-auto w-full max-w-4xl px-4 sm:px-6 py-8 flex-1 relative z-20">
           {loading ? (
             <div className="text-center text-gray-400 py-12">로딩 중...</div>
           ) : services.length === 0 ? (
             <div className="text-center text-gray-400 py-12">컨텐츠가 없습니다.</div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="w-full grid grid-cols-1 gap-6 justify-items-stretch">
               {services.map((service) => (
                 <ServiceCard key={service.id} service={service} />
               ))}
@@ -263,7 +263,7 @@ export default function Home() {
       {/* 푸터 - HTML view와 메뉴가 로드된 후에만 표시 */}
       {iframeLoaded && (
         <footer className="bg-gray-800 text-white py-6 mt-auto relative z-0">
-        <div className="container mx-auto px-4">
+        <div className="mx-auto w-full max-w-4xl px-4 sm:px-6">
           <div className="text-xs space-y-1 leading-relaxed">
             <div>
               <button

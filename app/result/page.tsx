@@ -5103,7 +5103,7 @@ ${fontFace ? fontFace : ''}
 
       {/* 헤더 */}
       <header className="w-full bg-white border-b-2 border-pink-500">
-        <div className="container mx-auto px-4 h-14 flex items-center justify-between">
+        <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 h-14 flex items-center justify-between">
           <a 
             href="/"
             className="text-2xl font-bold tracking-tight text-pink-600 hover:text-pink-700 transition-colors cursor-pointer"

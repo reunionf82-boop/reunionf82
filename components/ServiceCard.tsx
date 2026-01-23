@@ -101,7 +101,7 @@ export default function ServiceCard({ service }: ServiceCardProps) {
           handleReunionClick()
         }
       }}
-      className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden border-2 border-pink-500 flex flex-col cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500"
+      className="w-full bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow duration-300 overflow-hidden border-2 border-pink-500 flex flex-col cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500"
       aria-label={`${service.title} 폼으로 이동`}
     >
       {/* 일러스트레이션 영역 */}

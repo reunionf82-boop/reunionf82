@@ -4155,7 +4155,7 @@ function FormContent() {
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex flex-col">
       {/* 헤더 */}
       <header className="w-full bg-white border-b-2 border-pink-500 relative z-[1]">
-        <div className="container mx-auto px-4 h-14 flex items-center justify-between">
+        <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 h-14 flex items-center justify-between">
           <a 
             href="/"
             className="text-2xl font-bold tracking-tight text-pink-600 hover:text-pink-700 transition-colors cursor-pointer"
@@ -4564,12 +4564,10 @@ function FormContent() {
         {/* 상단 썸네일 영역 */}
         {(thumbnailImageUrl || hasVideo) && !thumbnailError && (
           <div
-            className="relative mb-8 overflow-hidden shadow-sm"
-            style={{
-              width: '100vw',
-              marginLeft: 'calc(50% - 50vw)',
-              marginRight: 'calc(50% - 50vw)',
-            }}
+            // ✅ 상단 썸네일: 컨테이너 폭(빨간 박스) 안에 표시 + 라운드 없음
+            // ✅ 썸네일 폭을 '소개 컨테이너(회색 라운드박스)'와 동일하게 맞춤
+            // NOTE: `w-full`을 주면 width가 고정(100%)되어 음수 margin이 폭 확장에 반영되지 않아 오른쪽이 짧아짐.
+            className="relative mb-8 overflow-hidden shadow-sm mx-[-12px] sm:mx-[-18px]"
           >
             <div className="relative h-96">
               {hasVideo && thumbnailImageUrl ? (
