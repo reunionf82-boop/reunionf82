@@ -153,8 +153,8 @@ export default function Home() {
 
   return (
     <div
-      className="min-h-screen bg-black flex flex-col"
-      style={{ backgroundColor: homeBgColor && homeBgColor.trim() ? homeBgColor : undefined }}
+      className="min-h-screen bg-white flex flex-col"
+      style={{ backgroundColor: homeBgColor && homeBgColor.trim() ? homeBgColor : '#ffffff' }}
     >
       {/* 슬라이드 메뉴바 */}
       <SlideMenuBar isOpen={showSlideMenu} onClose={() => setShowSlideMenu(false)} />
