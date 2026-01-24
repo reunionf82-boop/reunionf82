@@ -5,6 +5,14 @@ import { assertAdminSession, isVoiceMvpEnabled } from '@/lib/voice-mvp/auth'
 
 export const dynamic = 'force-dynamic'
 
+function formatProfileLine(p: any, label: string) {
+  if (!p || typeof p !== 'object') return `${label}: (없음)`
+  const name = String(p.name || '').trim() || '(이름 없음)'
+  const genderRaw = String(p.gender || '').trim()
+  const gender = genderRaw === 'male' ? '남성' : genderRaw === 'female' ? '여성' : genderRaw ? genderRaw : '(성별 없음)'
+  return `${label}: ${name} / ${gender}`
+}
+
 function getGeminiApiKey(): string {
   // Reuse existing env if present; do NOT modify existing service behavior.
   return (
@@ -79,6 +87,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         ? String(
             mode === 'saju'
               ? cfg.persona_saju || ''
+              : mode === 'shinjeom'
+              ? (cfg as any).persona_shinjeom || ''
               : mode === 'fortune'
               ? (cfg as any).persona_fortune || ''
               : mode === 'gunghap'
@@ -87,6 +97,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           ).trim()
         : '')
     const voiceStyle =
+      (session?.routing_config_snapshot?.voice_presets_by_mode &&
+        typeof session.routing_config_snapshot.voice_presets_by_mode?.[mode]?.style === 'string' &&
+        String(session.routing_config_snapshot.voice_presets_by_mode?.[mode]?.style || '').trim()) ||
       (session?.routing_config_snapshot?.voice_style && String(session.routing_config_snapshot.voice_style).trim()) ||
       (cfg?.voice_style && String(cfg.voice_style).trim()) ||
       'calm'
@@ -103,6 +116,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const manseSelfText = String(session?.manse_self?.manse_text || '').slice(0, 4000)
     const mansePartnerText = String(session?.manse_partner?.manse_text || '').slice(0, 3000)
     const situation = String(session.situation || '').slice(0, 1500)
+    const profileSelfLine = formatProfileLine(session?.profile_self, '본인')
+    const profilePartnerLine = formatProfileLine(session?.profile_partner, '상대')
 
     const systemPrompt = `당신은 한국어로 대답하는 "실시간 음성 상담사"입니다.
 - 아래 [페르소나]를 최우선으로 따르세요.
@@ -112,16 +127,17 @@ ${persona || '(미설정)'}
 
 - ${styleLine}
 - 상담 종류: ${mode}
-- 목표: 사용자가 선택한 상담 종류(사주/궁합/재회)에 맞춰, 공감 + 구체적 조언 + 다음 질문 1개를 제공합니다.
+- 목표: 사용자가 선택한 상담 종류(사주/신점/운세/궁합/재회)에 맞춰, 공감 + 구체적 조언 + 다음 질문 1개를 제공합니다.
 - 금지: 과도한 단정, 비방, 혐오, 폭력 조장.
 - 출력: 6~12문장, 말투는 자연스럽게. 마지막에 질문 1개로 마무리.
 `
 
     const contextBlock = `### 만세력(본인)
+${profileSelfLine}
 ${manseSelfText || '(없음)'}
 
 ### 만세력(상대/파트너)
-${mode === 'gunghap' ? mansePartnerText || '(없음)' : '(해당 없음)'}
+${mode === 'gunghap' ? `${profilePartnerLine}\n${mansePartnerText || '(없음)'}` : '(해당 없음)'}
 
 ### 상황(재회형이면 중요)
 ${mode === 'reunion' ? situation || '(없음)' : '(해당 없음)'}

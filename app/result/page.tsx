@@ -423,21 +423,37 @@ function ResultContent() {
           throw new Error('저장된 결과에 내용이 없습니다. 관리자에게 문의해주세요.')
         }
 
-        // content가 없으면 title로 찾기
+        // content가 없거나 menu_items가 없으면 title로 찾기
+        // (저장 시 content가 불완전하게 저장된 경우 대비)
         let finalContent = savedResult.content
-        if (!finalContent && savedResult.title) {
+        const needsFetchContent = !finalContent || !finalContent.menu_items || !Array.isArray(finalContent.menu_items) || finalContent.menu_items.length === 0
+        
+        if (needsFetchContent && savedResult.title) {
           try {
+            console.log('[결과 로드] content 불완전, title로 다시 가져오기 시도:', {
+              hasContent: !!savedResult.content,
+              hasMenuItems: !!savedResult.content?.menu_items,
+              title: savedResult.title
+            })
             const findResponse = await fetch(`/api/contents/find-by-title?title=${encodeURIComponent(savedResult.title)}`)
             if (findResponse.ok) {
               const findData = await findResponse.json().catch(() => ({}))
               if (findData.success && findData.content_id) {
-                // content_id로 전체 content 정보 가져오기
-                const contentResponse = await fetch(`/api/content/${findData.content_id}`)
+                // content_id로 전체 content 정보 가져오기 (full=true로 전체 데이터 요청)
+                const contentResponse = await fetch(`/api/content/${findData.content_id}?full=true`)
                 if (contentResponse.ok) {
                   const contentData = await contentResponse.json()
-                  if (contentData) {
-                    finalContent = contentData
-                    console.log('[결과 로드] title로 content 찾기 성공:', findData.content_id)
+                  if (contentData && contentData.menu_items) {
+                    // 기존 저장된 content의 user_info는 유지 (점사 시 입력한 정보)
+                    finalContent = {
+                      ...contentData,
+                      user_info: savedResult.content?.user_info || contentData.user_info
+                    }
+                    console.log('[결과 로드] title로 content 찾기 성공:', {
+                      content_id: findData.content_id,
+                      hasMenuItems: !!contentData.menu_items,
+                      menuItemsCount: contentData.menu_items?.length || 0
+                    })
                   }
                 }
               }
@@ -859,8 +875,6 @@ function ResultContent() {
             setTimeout(() => {
               setShowRealtimePopup(false)
             }, 500)
-            setStreamingHtml(finalHtml)
-            setResultData(finalResult)
             // 완료 처리 후 추가 이벤트 무시
             streamLocked = true
             
@@ -1877,9 +1891,12 @@ ${fontFace ? fontFace : ''}
       return streamHtml || resultHtml
     })()
     if (!sourceHtml) {
-      setParsedMenus([])
-      setTotalSubtitles(0)
-      setRevealedCount(0)
+      // ✅ 버그 수정: sourceHtml이 비어있어도 이전 파싱 결과를 유지
+      // 스트리밍 완료 후 빈 HTML로 인해 화면이 비어지는 문제 방지
+      // 이전에 파싱된 결과가 있으면 유지하고, 없으면 초기화
+      // setParsedMenus([]) - 제거: 이전 결과 유지
+      // setTotalSubtitles(0) - 제거: 이전 결과 유지
+      // setRevealedCount(0) - 제거: 이전 결과 유지
       setShowRealtimeLoading(false) // 팝업 없이 바로 화면 유지
       // 타임아웃 정리
       if (parsingTimeoutRef.current) {
@@ -2464,29 +2481,9 @@ ${fontFace ? fontFace : ''}
         return parsed
       }
       
-      // ✅ 추가 조치: 스트리밍 중 이미 표시된 대메뉴는 중복 추가 방지
-      // 대메뉴 제목은 절대 중복될 수 없으므로 제목 기준으로 필터링
-      if (prevParsedMenus.length > 0) {
-        const existingMenuTitles = new Set(
-          prevParsedMenus.map(menu => (menu.title || '').trim())
-        )
-        
-        // parsed에서 이미 표시된 대메뉴 제목을 가진 항목 필터링
-        const filteredParsed = parsed.filter(menu => {
-          const menuTitle = (menu.title || '').trim()
-          // 이미 표시된 제목이 아니거나, 빈 제목이 아니면 포함
-          return !existingMenuTitles.has(menuTitle) || menuTitle === ''
-        })
-        
-        // 필터링된 결과가 있으면 기존 배열에 추가
-        if (filteredParsed.length > 0) {
-          // 기존 메뉴 유지 + 새로운 메뉴만 추가
-          return [...prevParsedMenus, ...filteredParsed]
-        }
-        
-        // 필터링된 결과가 없으면 기존 메뉴만 유지 (파싱 결과가 이미 모두 포함됨)
-        // 이 경우 아래 로직으로 넘어가서 기존 메뉴의 내용만 업데이트
-      }
+      // ✅ 버그 수정: 기존 필터링 로직 제거
+      // parsed는 항상 전체 HTML에서 파싱되므로, 필터링하면 업데이트된 내용이 반영되지 않음
+      // 대신 parsed를 기준으로 하되, 이전 완성된 소제목 내용은 유지하는 방식으로 변경
       
       // 첫 번째 파싱이거나 메뉴 개수가 변경된 경우 새로 설정
       if (prevParsedMenus.length === 0 || prevParsedMenus.length !== parsed.length) {
@@ -3889,7 +3886,7 @@ ${fontFace ? fontFace : ''}
   }
 
   // 저장된 결과 보기
-  const viewSavedResult = (resultId: string) => {
+  const viewSavedResult = async (resultId: string) => {
     if (typeof window === 'undefined') return
     
     try {
@@ -3905,6 +3902,23 @@ ${fontFace ? fontFace : ''}
             contentObj = saved.content
           }
         } else {
+        }
+        
+        // menu_items가 없거나 불완전한 경우 API에서 완전한 content 가져오기
+        const contentId = contentObj?.id || saved.content_id
+        if (contentId && (!contentObj?.menu_items || contentObj.menu_items.length === 0)) {
+          try {
+            const fullContentRes = await fetch(`/api/content/${contentId}?full=true`, { cache: 'no-store' })
+            if (fullContentRes.ok) {
+              const fullContent = await fullContentRes.json()
+              if (fullContent && fullContent.menu_items) {
+                // 기존 contentObj에 menu_items와 다른 필드 병합
+                contentObj = { ...contentObj, ...fullContent }
+              }
+            }
+          } catch (e) {
+            // API 호출 실패 시 기존 데이터 사용
+          }
         }
         
         // userName을 안전하게 처리 (템플릿 리터럴 중첩 방지)
@@ -4218,29 +4232,163 @@ ${fontFace ? fontFace : ''}
         } catch (e) {
         }
         
-        // 북커버 추출 (HTML에서 북커버를 찾아서 추출하고 제거)
-        let bookCoverHtml = ''
-        const bookCoverThumbnail = contentObj?.book_cover_thumbnail || ''
-        if (bookCoverThumbnail) {
-          try {
+        // 대메뉴 썸네일 추가 (새 창에서도 다시보기와 동일하게 표시)
+        try {
+          if (menuItems.length > 0) {
             const parser = new DOMParser()
             const doc = parser.parseFromString(htmlContent, 'text/html')
-            const bookCoverEl = doc.querySelector('.book-cover-thumbnail-container')
-            if (bookCoverEl) {
-              // 북커버 이미지의 alt 태그 제거
-              const bookCoverImgs = bookCoverEl.querySelectorAll('img')
-              bookCoverImgs.forEach((img) => {
-                img.setAttribute('alt', '')
-                img.style.opacity = '0'
-                img.onload = function() {
-                  img.style.opacity = '1'
+            const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+            const bucketUrl = supabaseUrl ? supabaseUrl + '/storage/v1/object/public/thumbnails' : ''
+            
+            menuSections.forEach((section, menuIndex) => {
+              const menuItem = menuItems[menuIndex]
+              if (!menuItem) return
+              
+              const thumbnailImageUrl = menuItem?.thumbnail_image_url || menuItem?.thumbnail || ''
+              const thumbnailVideoUrl = menuItem?.thumbnail_video_url || ''
+              
+              if (thumbnailImageUrl || thumbnailVideoUrl) {
+                const menuTitle = section.querySelector('.menu-title')
+                if (menuTitle) {
+                  const thumbnailDiv = doc.createElement('div')
+                  thumbnailDiv.className = 'menu-thumbnail-container'
+                  
+                  if (thumbnailVideoUrl && thumbnailImageUrl) {
+                    const containerDiv = doc.createElement('div')
+                    containerDiv.style.cssText = 'position: relative; width: 100%; height: 100%;'
+                    
+                    const imgEl = doc.createElement('img')
+                    imgEl.src = thumbnailImageUrl
+                    imgEl.alt = ''
+                    imgEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 8px;'
+                    containerDiv.appendChild(imgEl)
+                    
+                    const videoEl = doc.createElement('video')
+                    videoEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; display: none; border-radius: 8px;'
+                    videoEl.setAttribute('autoplay', '')
+                    videoEl.setAttribute('muted', '')
+                    videoEl.setAttribute('loop', '')
+                    videoEl.setAttribute('playsinline', '')
+                    videoEl.poster = thumbnailImageUrl
+                    
+                    const sourceWebm = doc.createElement('source')
+                    sourceWebm.src = bucketUrl + '/' + thumbnailVideoUrl + '.webm'
+                    sourceWebm.type = 'video/webm'
+                    videoEl.appendChild(sourceWebm)
+                    
+                    const sourceMp4 = doc.createElement('source')
+                    sourceMp4.src = bucketUrl + '/' + thumbnailVideoUrl + '.mp4'
+                    sourceMp4.type = 'video/mp4'
+                    videoEl.appendChild(sourceMp4)
+                    
+                    containerDiv.appendChild(videoEl)
+                    thumbnailDiv.appendChild(containerDiv)
+                  } else if (thumbnailImageUrl) {
+                    const imgEl = doc.createElement('img')
+                    imgEl.src = thumbnailImageUrl
+                    imgEl.alt = ''
+                    imgEl.style.cssText = 'width: 100%; height: 100%; object-fit: contain; border-radius: 8px;'
+                    thumbnailDiv.appendChild(imgEl)
+                  }
+                  
+                  menuTitle.insertAdjacentElement('afterend', thumbnailDiv)
                 }
-                img.onerror = function() {
-                  img.style.display = 'none'
+              }
+            })
+            
+            // 엔딩북커버 추가 (마지막 menu-section에)
+            const endingBookCoverThumbnail = contentObj?.ending_book_cover_thumbnail || ''
+            const endingBookCoverThumbnailVideo = contentObj?.ending_book_cover_thumbnail_video || ''
+            if (endingBookCoverThumbnail || endingBookCoverThumbnailVideo) {
+              const lastSection = menuSections[menuSections.length - 1]
+              if (lastSection) {
+                const endingBookCoverDiv = doc.createElement('div')
+                endingBookCoverDiv.className = 'ending-book-cover-thumbnail-container'
+                
+                if (endingBookCoverThumbnailVideo && endingBookCoverThumbnail) {
+                  const containerDiv = doc.createElement('div')
+                  containerDiv.style.cssText = 'position: relative; width: 100%; height: 100%;'
+                  
+                  const imgEl = doc.createElement('img')
+                  imgEl.src = endingBookCoverThumbnail
+                  imgEl.alt = ''
+                  imgEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 8px;'
+                  containerDiv.appendChild(imgEl)
+                  
+                  const videoEl = doc.createElement('video')
+                  videoEl.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; display: none; border-radius: 8px;'
+                  videoEl.setAttribute('autoplay', '')
+                  videoEl.setAttribute('muted', '')
+                  videoEl.setAttribute('loop', '')
+                  videoEl.setAttribute('playsinline', '')
+                  videoEl.poster = endingBookCoverThumbnail
+                  
+                  const sourceWebm = doc.createElement('source')
+                  sourceWebm.src = bucketUrl + '/' + endingBookCoverThumbnailVideo + '.webm'
+                  sourceWebm.type = 'video/webm'
+                  videoEl.appendChild(sourceWebm)
+                  
+                  const sourceMp4 = doc.createElement('source')
+                  sourceMp4.src = bucketUrl + '/' + endingBookCoverThumbnailVideo + '.mp4'
+                  sourceMp4.type = 'video/mp4'
+                  videoEl.appendChild(sourceMp4)
+                  
+                  containerDiv.appendChild(videoEl)
+                  endingBookCoverDiv.appendChild(containerDiv)
+                } else if (endingBookCoverThumbnail) {
+                  const imgEl = doc.createElement('img')
+                  imgEl.src = endingBookCoverThumbnail
+                  imgEl.alt = ''
+                  imgEl.style.cssText = 'width: 100%; height: 100%; object-fit: contain; border-radius: 8px;'
+                  endingBookCoverDiv.appendChild(imgEl)
                 }
-              })
-              bookCoverHtml = bookCoverEl.outerHTML
-              bookCoverEl.remove()
+                
+                lastSection.appendChild(endingBookCoverDiv)
+              }
+            }
+            
+            const bodyMatch = doc.documentElement.outerHTML.match(/<body[^>]*>([\s\S]*)<\/body>/i)
+            if (bodyMatch) {
+              htmlContent = bodyMatch[1]
+            } else {
+              htmlContent = doc.body.innerHTML
+            }
+          }
+        } catch (e) {
+        }
+        
+        // 북커버 HTML 생성 (2/3 비율로)
+        let bookCoverHtml = ''
+        const bookCoverThumbnail = contentObj?.book_cover_thumbnail || ''
+        const bookCoverThumbnailVideo = contentObj?.book_cover_thumbnail_video || ''
+        if (bookCoverThumbnail || bookCoverThumbnailVideo) {
+          try {
+            const supabaseUrlForCover = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+            const bucketUrlForCover = supabaseUrlForCover ? supabaseUrlForCover + '/storage/v1/object/public/thumbnails' : ''
+            
+            if (bookCoverThumbnailVideo && bookCoverThumbnail) {
+              bookCoverHtml = '<div class="book-cover-thumbnail-container">' +
+                '<div style="position: relative; width: 100%; height: 100%;">' +
+                '<img src="' + bookCoverThumbnail + '" alt="" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 8px;" />' +
+                '<video style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; display: none; border-radius: 8px;" autoplay muted loop playsinline poster="' + bookCoverThumbnail + '">' +
+                '<source src="' + bucketUrlForCover + '/' + bookCoverThumbnailVideo + '.webm" type="video/webm" />' +
+                '<source src="' + bucketUrlForCover + '/' + bookCoverThumbnailVideo + '.mp4" type="video/mp4" />' +
+                '</video>' +
+                '</div>' +
+                '</div>'
+            } else if (bookCoverThumbnail) {
+              bookCoverHtml = '<div class="book-cover-thumbnail-container">' +
+                '<img src="' + bookCoverThumbnail + '" alt="" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;" />' +
+                '</div>'
+            }
+            
+            // HTML에서 기존 북커버 제거 (중복 방지)
+            const parser = new DOMParser()
+            const doc = parser.parseFromString(htmlContent, 'text/html')
+            const existingBookCover = doc.querySelector('.book-cover-thumbnail-container')
+            if (existingBookCover) {
+              existingBookCover.remove()
               const bodyMatch = doc.documentElement.outerHTML.match(/<body[^>]*>([\s\S]*)<\/body>/i)
               if (bodyMatch) {
                 htmlContent = bodyMatch[1]
@@ -4408,6 +4556,49 @@ ${fontFace ? fontFace : ''}
                   color: #555;
                   line-height: 1.8;
                   white-space: pre-line;
+                }
+                .book-cover-thumbnail-container {
+                  width: 100%;
+                  aspect-ratio: 2/3;
+                  margin-bottom: 2.5rem;
+                  display: flex;
+                  justify-content: center;
+                  align-items: center;
+                }
+                .book-cover-thumbnail-container img,
+                .book-cover-thumbnail-container video {
+                  width: 100%;
+                  height: 100%;
+                  object-fit: contain;
+                  border-radius: 8px;
+                }
+                .ending-book-cover-thumbnail-container {
+                  width: 100%;
+                  aspect-ratio: 2/3;
+                  margin-top: 1rem;
+                }
+                .ending-book-cover-thumbnail-container img,
+                .ending-book-cover-thumbnail-container video {
+                  width: 100%;
+                  height: 100%;
+                  object-fit: contain;
+                  border-radius: 8px;
+                }
+                .menu-thumbnail-container {
+                  width: 100%;
+                  aspect-ratio: 1/1;
+                  margin-top: 8px;
+                  margin-bottom: 16px;
+                  display: flex;
+                  justify-content: center;
+                  align-items: center;
+                }
+                .menu-thumbnail-container img,
+                .menu-thumbnail-container video {
+                  width: 100%;
+                  height: 100%;
+                  object-fit: contain;
+                  border-radius: 8px;
                 }
                 .subtitle-thumbnail-container {
                   display: flex;
@@ -5322,7 +5513,7 @@ ${fontFace ? fontFace : ''}
 
         {/* 북커버 썸네일 (점사 전에 바로 표시) */}
         {(content?.book_cover_thumbnail || content?.book_cover_thumbnail_video) && (
-          <div className="book-cover-thumbnail-container w-full mb-10" style={{ aspectRatio: '9/16' }}>
+          <div className="book-cover-thumbnail-container w-full mb-10" style={{ aspectRatio: '2/3' }}>
             {content?.book_cover_thumbnail_video && content?.book_cover_thumbnail ? (
               <SupabaseVideo
                 thumbnailImageUrl={content.book_cover_thumbnail}
@@ -5555,7 +5746,7 @@ ${fontFace ? fontFace : ''}
                   
                   {/* 엔딩북커버 썸네일 (마지막 대제목 라운드 박스 안, 소제목들 아래) */}
                   {menuIndex === parsedMenus.length - 1 && (content?.ending_book_cover_thumbnail || content?.ending_book_cover_thumbnail_video) && (
-                    <div className="ending-book-cover-thumbnail-container w-full mt-4" style={{ aspectRatio: '9/16' }}>
+                    <div className="ending-book-cover-thumbnail-container w-full mt-4" style={{ aspectRatio: '2/3' }}>
                       {content?.ending_book_cover_thumbnail_video && content?.ending_book_cover_thumbnail ? (
                         <SupabaseVideo
                           thumbnailImageUrl={content.ending_book_cover_thumbnail}
@@ -6005,7 +6196,7 @@ ${fontFace ? fontFace : ''}
                         const lastSection = menuSections[menuSections.length - 1]
                         const endingBookCoverDiv = doc.createElement('div')
                         endingBookCoverDiv.className = 'ending-book-cover-thumbnail-container'
-                        endingBookCoverDiv.style.cssText = 'width: 100%; margin-top: 1rem; aspect-ratio: 9/16;'
+                        endingBookCoverDiv.style.cssText = 'width: 100%; margin-top: 1rem; aspect-ratio: 2/3;'
                         if (endingBookCoverThumbnailVideoUrl && endingBookCoverThumbnailImageUrl) {
                           const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
                           const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''

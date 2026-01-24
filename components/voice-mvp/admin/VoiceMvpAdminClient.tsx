@@ -5,27 +5,63 @@ import { useRouter } from 'next/navigation'
 
 type Config = {
   base_model: string
-  voice_gender?: 'female' | 'male'
-  voice_style?: 'calm' | 'bright' | 'firm' | 'empathetic' | 'warm'
-  voice_name_female?: string
-  voice_name_male?: string
+  voice_gender_saju?: 'female' | 'male'
+  voice_style_saju?: 'calm' | 'bright' | 'firm' | 'empathetic' | 'warm'
+  voice_name_saju?: string
+  voice_gender_shinjeom?: 'female' | 'male'
+  voice_style_shinjeom?: 'calm' | 'bright' | 'firm' | 'empathetic' | 'warm'
+  voice_name_shinjeom?: string
+  voice_gender_fortune?: 'female' | 'male'
+  voice_style_fortune?: 'calm' | 'bright' | 'firm' | 'empathetic' | 'warm'
+  voice_name_fortune?: string
+  voice_gender_gunghap?: 'female' | 'male'
+  voice_style_gunghap?: 'calm' | 'bright' | 'firm' | 'empathetic' | 'warm'
+  voice_name_gunghap?: string
+  voice_gender_reunion?: 'female' | 'male'
+  voice_style_reunion?: 'calm' | 'bright' | 'firm' | 'empathetic' | 'warm'
+  voice_name_reunion?: string
   persona_saju?: string
+  persona_shinjeom?: string
   persona_fortune?: string
   persona_gunghap?: string
   persona_reunion?: string
 }
 
+const DEFAULT_SHINJEOM_PERSONA = `핵심은 "신내림 30일된 애기동자 컨셉으로 해보려교." 입니다.
+- 당신은 방금 신내림을 받은 지 30일 정도 된 ‘애기동자’로, 아직 서툴지만 솔직하고 예의 바르게 점사를 봅니다.
+- 말투: 공손하고 담백하게. 과장/허세/공포 조장 금지.
+- 방식: 사용자의 질문과 상황을 먼저 확인한 뒤, “지금 보이는 기운/흐름”을 짧게 말하고, 현실적인 조언 2~3개를 제시합니다.
+- 제한: 의학/법률/투자/정치 등 전문 영역은 단정 금지. 위험/자해/범죄 관련은 거절하고 안전 안내.
+- 점사 구성:
+  1) 인사 1문장 + 오늘 점사의 초점 1문장
+  2) 보이는 흐름(길/흉을 단정하지 말고 ‘경향’으로) 3~5문장
+  3) 조심할 것 2개 / 하면 좋은 것 2개(구체 행동)
+  4) 마지막에 확인 질문 1개(기간/상대/상황 등)`
+
 export default function VoiceMvpAdminClient() {
   const router = useRouter()
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
   const [enabled, setEnabled] = useState<boolean>(false)
+  const [supabaseProjectRef, setSupabaseProjectRef] = useState<string>('')
   const [config, setConfig] = useState<Config>({
     base_model: 'gemini-2.0-flash-001',
-    voice_gender: 'female',
-    voice_style: 'calm',
-    voice_name_female: 'Aoede',
-    voice_name_male: 'Fenrir',
+    voice_gender_saju: 'female',
+    voice_style_saju: 'calm',
+    voice_name_saju: 'Charon',
+    voice_gender_shinjeom: 'female',
+    voice_style_shinjeom: 'warm',
+    voice_name_shinjeom: 'Aoede',
+    voice_gender_fortune: 'female',
+    voice_style_fortune: 'bright',
+    voice_name_fortune: 'Aoede',
+    voice_gender_gunghap: 'female',
+    voice_style_gunghap: 'warm',
+    voice_name_gunghap: 'Aoede',
+    voice_gender_reunion: 'female',
+    voice_style_reunion: 'empathetic',
+    voice_name_reunion: 'Aoede',
     persona_saju: '',
+    persona_shinjeom: '',
     persona_fortune: '',
     persona_gunghap: '',
     persona_reunion: '',
@@ -60,16 +96,41 @@ export default function VoiceMvpAdminClient() {
       if (cfgRes.ok) {
         setEnabled(true)
         const cfg = await cfgRes.json().catch(() => ({} as any))
+        setSupabaseProjectRef(String(cfg?.meta?.supabase_project_ref || ''))
         if (cfg?.success && cfg?.data) {
+          const shinjeom =
+            typeof cfg.data.persona_shinjeom === 'string' && cfg.data.persona_shinjeom.trim()
+              ? cfg.data.persona_shinjeom
+              : DEFAULT_SHINJEOM_PERSONA
           setConfig({
             base_model: cfg.data.base_model || 'gemini-2.0-flash-001',
-            voice_gender: (cfg.data.voice_gender === 'male' ? 'male' : 'female') as any,
-            voice_style: (['calm', 'bright', 'firm', 'empathetic', 'warm'].includes(cfg.data.voice_style)
-              ? cfg.data.voice_style
+            voice_gender_saju: (cfg.data.voice_gender_saju === 'male' ? 'male' : 'female') as any,
+            voice_style_saju: (['calm', 'bright', 'firm', 'empathetic', 'warm'].includes(cfg.data.voice_style_saju)
+              ? cfg.data.voice_style_saju
               : 'calm') as any,
-            voice_name_female: typeof cfg.data.voice_name_female === 'string' && cfg.data.voice_name_female ? cfg.data.voice_name_female : 'Aoede',
-            voice_name_male: typeof cfg.data.voice_name_male === 'string' && cfg.data.voice_name_male ? cfg.data.voice_name_male : 'Fenrir',
+            voice_name_saju: typeof cfg.data.voice_name_saju === 'string' ? cfg.data.voice_name_saju : 'Charon',
+            voice_gender_shinjeom: (cfg.data.voice_gender_shinjeom === 'male' ? 'male' : 'female') as any,
+            voice_style_shinjeom: (['calm', 'bright', 'firm', 'empathetic', 'warm'].includes(cfg.data.voice_style_shinjeom)
+              ? cfg.data.voice_style_shinjeom
+              : 'warm') as any,
+            voice_name_shinjeom: typeof cfg.data.voice_name_shinjeom === 'string' ? cfg.data.voice_name_shinjeom : 'Aoede',
+            voice_gender_fortune: (cfg.data.voice_gender_fortune === 'male' ? 'male' : 'female') as any,
+            voice_style_fortune: (['calm', 'bright', 'firm', 'empathetic', 'warm'].includes(cfg.data.voice_style_fortune)
+              ? cfg.data.voice_style_fortune
+              : 'bright') as any,
+            voice_name_fortune: typeof cfg.data.voice_name_fortune === 'string' ? cfg.data.voice_name_fortune : 'Aoede',
+            voice_gender_gunghap: (cfg.data.voice_gender_gunghap === 'male' ? 'male' : 'female') as any,
+            voice_style_gunghap: (['calm', 'bright', 'firm', 'empathetic', 'warm'].includes(cfg.data.voice_style_gunghap)
+              ? cfg.data.voice_style_gunghap
+              : 'warm') as any,
+            voice_name_gunghap: typeof cfg.data.voice_name_gunghap === 'string' ? cfg.data.voice_name_gunghap : 'Aoede',
+            voice_gender_reunion: (cfg.data.voice_gender_reunion === 'male' ? 'male' : 'female') as any,
+            voice_style_reunion: (['calm', 'bright', 'firm', 'empathetic', 'warm'].includes(cfg.data.voice_style_reunion)
+              ? cfg.data.voice_style_reunion
+              : 'empathetic') as any,
+            voice_name_reunion: typeof cfg.data.voice_name_reunion === 'string' ? cfg.data.voice_name_reunion : 'Aoede',
             persona_saju: typeof cfg.data.persona_saju === 'string' ? cfg.data.persona_saju : '',
+            persona_shinjeom: shinjeom,
             persona_fortune: typeof cfg.data.persona_fortune === 'string' ? cfg.data.persona_fortune : '',
             persona_gunghap: typeof cfg.data.persona_gunghap === 'string' ? cfg.data.persona_gunghap : '',
             persona_reunion: typeof cfg.data.persona_reunion === 'string' ? cfg.data.persona_reunion : '',
@@ -105,7 +166,8 @@ export default function VoiceMvpAdminClient() {
       })
       const data = await res.json().catch(() => ({} as any))
       if (!res.ok || !data?.success) {
-        alert(`저장 실패: ${data?.error || `HTTP ${res.status}`}`)
+        const extra = data?.action_required ? `\n\n[조치]\n${data.action_required}` : ''
+        alert(`저장 실패: ${data?.error || `HTTP ${res.status}`}${extra}`)
         return
       }
       alert('저장 완료')
@@ -127,6 +189,11 @@ export default function VoiceMvpAdminClient() {
           <div>
             <h1 className="text-3xl font-bold mb-2">Voice MVP (내부)</h1>
             <p className="text-gray-300 text-sm">기존 재회 서비스와 완전 분리된 테스트 영역</p>
+            {supabaseProjectRef ? (
+              <p className="text-gray-400 text-xs mt-1">
+                연결된 Supabase 프로젝트(ref): <span className="font-mono">{supabaseProjectRef}</span>
+              </p>
+            ) : null}
           </div>
           <div className="flex gap-2">
             <a
@@ -169,58 +236,77 @@ export default function VoiceMvpAdminClient() {
             ) : (
               <div className="space-y-4">
                 <Field label="기본 모델(Flash)" value={config.base_model} onChange={(v) => setConfig((c) => ({ ...c, base_model: v }))} />
-                <SelectField
-                  label="음성 성별(프리셋)"
-                  value={config.voice_gender || 'female'}
-                  options={[
-                    { value: 'female', label: '여성' },
-                    { value: 'male', label: '남성' },
-                  ]}
-                  onChange={(v) => setConfig((c) => ({ ...c, voice_gender: v as any }))}
-                />
-                <SelectField
-                  label="말투/감정 프리셋"
-                  value={config.voice_style || 'calm'}
-                  options={[
-                    { value: 'calm', label: '차분하게' },
-                    { value: 'bright', label: '밝게' },
-                    { value: 'firm', label: '단호하게' },
-                    { value: 'empathetic', label: '공감적으로' },
-                    { value: 'warm', label: '다정하게' },
-                  ]}
-                  onChange={(v) => setConfig((c) => ({ ...c, voice_style: v as any }))}
-                />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <SelectField
-                    label="여성 톤"
-                    value={config.voice_name_female || 'Aoede'}
-                    options={VOICE_NAME_FEMALE_OPTIONS}
-                    onChange={(v) => setConfig((c) => ({ ...c, voice_name_female: v }))}
-                  />
-                  <SelectField
-                    label="남성 톤"
-                    value={config.voice_name_male || 'Fenrir'}
-                    options={VOICE_NAME_MALE_OPTIONS}
-                    onChange={(v) => setConfig((c) => ({ ...c, voice_name_male: v }))}
-                  />
-                </div>
 
                 <div className="pt-2 border-t border-gray-700" />
                 <div className="font-semibold text-gray-200">페르소나 (유형별)</div>
+                <PersonaVoiceRow
+                  title="사주"
+                  gender={config.voice_gender_saju || 'female'}
+                  style={config.voice_style_saju || 'calm'}
+                  voiceName={config.voice_name_saju || 'Charon'}
+                  onGender={(v) => setConfig((c) => ({ ...c, voice_gender_saju: v as any }))}
+                  onStyle={(v) => setConfig((c) => ({ ...c, voice_style_saju: v as any }))}
+                  onVoiceName={(v) => setConfig((c) => ({ ...c, voice_name_saju: v }))}
+                />
                 <TextArea
                   label="사주 페르소나"
                   value={config.persona_saju || ''}
                   onChange={(v) => setConfig((c) => ({ ...c, persona_saju: v }))}
+                />
+                <div className="border-t border-gray-700/70 pt-4" />
+                <PersonaVoiceRow
+                  title="신점"
+                  gender={config.voice_gender_shinjeom || 'female'}
+                  style={config.voice_style_shinjeom || 'warm'}
+                  voiceName={config.voice_name_shinjeom || 'Aoede'}
+                  onGender={(v) => setConfig((c) => ({ ...c, voice_gender_shinjeom: v as any }))}
+                  onStyle={(v) => setConfig((c) => ({ ...c, voice_style_shinjeom: v as any }))}
+                  onVoiceName={(v) => setConfig((c) => ({ ...c, voice_name_shinjeom: v }))}
+                />
+                <TextArea
+                  label="신점 페르소나"
+                  value={config.persona_shinjeom || ''}
+                  onChange={(v) => setConfig((c) => ({ ...c, persona_shinjeom: v }))}
+                />
+                <div className="border-t border-gray-700/70 pt-4" />
+                <PersonaVoiceRow
+                  title="운세"
+                  gender={config.voice_gender_fortune || 'female'}
+                  style={config.voice_style_fortune || 'bright'}
+                  voiceName={config.voice_name_fortune || 'Aoede'}
+                  onGender={(v) => setConfig((c) => ({ ...c, voice_gender_fortune: v as any }))}
+                  onStyle={(v) => setConfig((c) => ({ ...c, voice_style_fortune: v as any }))}
+                  onVoiceName={(v) => setConfig((c) => ({ ...c, voice_name_fortune: v }))}
                 />
                 <TextArea
                   label="운세 페르소나"
                   value={config.persona_fortune || ''}
                   onChange={(v) => setConfig((c) => ({ ...c, persona_fortune: v }))}
                 />
+                <div className="border-t border-gray-700/70 pt-4" />
+                <PersonaVoiceRow
+                  title="궁합"
+                  gender={config.voice_gender_gunghap || 'female'}
+                  style={config.voice_style_gunghap || 'warm'}
+                  voiceName={config.voice_name_gunghap || 'Aoede'}
+                  onGender={(v) => setConfig((c) => ({ ...c, voice_gender_gunghap: v as any }))}
+                  onStyle={(v) => setConfig((c) => ({ ...c, voice_style_gunghap: v as any }))}
+                  onVoiceName={(v) => setConfig((c) => ({ ...c, voice_name_gunghap: v }))}
+                />
                 <TextArea
                   label="궁합 페르소나"
                   value={config.persona_gunghap || ''}
                   onChange={(v) => setConfig((c) => ({ ...c, persona_gunghap: v }))}
+                />
+                <div className="border-t border-gray-700/70 pt-4" />
+                <PersonaVoiceRow
+                  title="재회"
+                  gender={config.voice_gender_reunion || 'female'}
+                  style={config.voice_style_reunion || 'empathetic'}
+                  voiceName={config.voice_name_reunion || 'Aoede'}
+                  onGender={(v) => setConfig((c) => ({ ...c, voice_gender_reunion: v as any }))}
+                  onStyle={(v) => setConfig((c) => ({ ...c, voice_style_reunion: v as any }))}
+                  onVoiceName={(v) => setConfig((c) => ({ ...c, voice_name_reunion: v }))}
                 />
                 <TextArea
                   label="재회 페르소나"
@@ -296,16 +382,6 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
   )
 }
 
-const VOICE_NAME_FEMALE_OPTIONS = [
-  { value: 'Aoede', label: '차분한 여성 톤' },
-  { value: 'Kore', label: '맑은 여성 톤' },
-]
-
-const VOICE_NAME_MALE_OPTIONS = [
-  { value: 'Fenrir', label: '차분한 남성 톤' },
-  { value: 'Charon', label: '중저음 남성 톤' },
-]
-
 function SelectField({
   label,
   value,
@@ -331,6 +407,67 @@ function SelectField({
           </option>
         ))}
       </select>
+    </div>
+  )
+}
+
+// Available voice names for Google GenAI Live
+const VOICE_NAME_OPTIONS = [
+  { value: 'Aoede', label: 'Aoede (여성, 밝음)' },
+  { value: 'Charon', label: 'Charon (남성, 묵직함)' },
+  { value: 'Fenrir', label: 'Fenrir (남성, 부드러움)' },
+  { value: 'Kore', label: 'Kore (여성, 차분함)' },
+  { value: 'Puck', label: 'Puck (중성, 활발함)' },
+]
+
+function PersonaVoiceRow({
+  title,
+  gender,
+  style,
+  voiceName,
+  onGender,
+  onStyle,
+  onVoiceName,
+}: {
+  title: string
+  gender: 'female' | 'male'
+  style: 'calm' | 'bright' | 'firm' | 'empathetic' | 'warm'
+  voiceName: string
+  onGender: (v: string) => void
+  onStyle: (v: string) => void
+  onVoiceName: (v: string) => void
+}) {
+  return (
+    <div className="bg-gray-900/40 border border-gray-700 rounded-lg p-3 space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <SelectField
+          label={`${title} 음성 성별(프리셋)`}
+          value={gender}
+          options={[
+            { value: 'female', label: '여성' },
+            { value: 'male', label: '남성' },
+          ]}
+          onChange={onGender}
+        />
+        <SelectField
+          label={`${title} 말투/감정 프리셋`}
+          value={style}
+          options={[
+            { value: 'calm', label: '차분하게' },
+            { value: 'bright', label: '밝게' },
+            { value: 'firm', label: '단호하게' },
+            { value: 'empathetic', label: '공감적으로' },
+            { value: 'warm', label: '다정하게' },
+          ]}
+          onChange={onStyle}
+        />
+      </div>
+      <SelectField
+        label={`${title} 음성 이름`}
+        value={voiceName}
+        options={VOICE_NAME_OPTIONS}
+        onChange={onVoiceName}
+      />
     </div>
   )
 }

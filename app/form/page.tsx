@@ -6408,7 +6408,7 @@ function FormContent() {
                                     const lastSection = menuSections[menuSections.length - 1];
                                     const endingBookCoverDiv = doc.createElement('div');
                                     endingBookCoverDiv.className = 'ending-book-cover-thumbnail-container';
-                                    endingBookCoverDiv.style.cssText = 'width: 100%; margin-top: 1rem; aspect-ratio: 9/16;';
+                                    endingBookCoverDiv.style.cssText = 'width: 100%; margin-top: 1rem; aspect-ratio: 2/3;';
                                     if (endingBookCoverThumbnailVideoUrl && endingBookCoverThumbnailImageUrl) {
                                       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
                                       const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''
@@ -6554,7 +6554,7 @@ function FormContent() {
                                       const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''
                                       if (bookCoverThumbnailVideoUrl && bookCoverThumbnailImageUrl) {
                                         bookCoverHtml = `
-                                          <div class="book-cover-thumbnail-container" style="width: 100%; margin-bottom: 2.5rem; aspect-ratio: 9/16;">
+                                          <div class="book-cover-thumbnail-container" style="width: 100%; margin-bottom: 2.5rem; aspect-ratio: 2/3;">
                                             <div style="position: relative; width: 100%; height: 100%;">
                                               <img src="${bookCoverThumbnailImageUrl}" alt="북커버 썸네일" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 8px;" id="book-cover-thumbnail-img-form" />
                                               <video style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 8px; display: none;" id="book-cover-thumbnail-video-form" poster="${bookCoverThumbnailImageUrl}" autoPlay muted loop playsInline preload="auto">
@@ -6565,7 +6565,7 @@ function FormContent() {
                                         `
                                       } else if (bookCoverThumbnailImageUrl) {
                                         bookCoverHtml = `
-                                          <div class="book-cover-thumbnail-container" style="width: 100%; margin-bottom: 2.5rem; aspect-ratio: 9/16;">
+                                          <div class="book-cover-thumbnail-container" style="width: 100%; margin-bottom: 2.5rem; aspect-ratio: 2/3;">
                                             <img src="${bookCoverThumbnailImageUrl}" alt="북커버 썸네일" style="width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 8px;" />
                                           </div>
                                         `

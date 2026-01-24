@@ -30,15 +30,13 @@ export function getPaymentTypeDisplayName(paymentType: 'card' | 'mobile'): strin
 }
 
 /**
- * 현재 시간을 KST(한국 표준시, UTC+9)로 변환하여 ISO 문자열로 반환
- * payments 테이블의 created_at, completed_at 저장 시 사용
+ * 현재 시간을 ISO 문자열로 반환 (UTC)
+ * Supabase timestamptz는 자동으로 UTC로 저장/반환하므로 변환 불필요
+ * 표시할 때 KST로 변환하면 됨
  */
 export function getKSTNow(): string {
-  const now = new Date()
-  // KST는 UTC+9이므로, UTC 시간에 9시간을 더함
-  const kstOffset = 9 * 60 * 60 * 1000 // 9시간을 밀리초로
-  const kstTime = new Date(now.getTime() + kstOffset)
-  return kstTime.toISOString()
+  // UTC 시간을 그대로 반환 (Supabase가 자동으로 처리)
+  return new Date().toISOString()
 }
 
 /**

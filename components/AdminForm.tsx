@@ -2478,7 +2478,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           {/* 북커버 썸네일 (첫 번째 대제목 전) */}
           <div className="mb-4">
             <label className="block text-xs font-medium text-gray-400 mb-2 text-center">
-              북커버 (첫 번째 대제목 전, 9:16 비율)
+              북커버 (첫 번째 대제목 전, 1:1.5 책표지 비율)
             </label>
             <div className="flex justify-center gap-3">
               <button
@@ -2487,8 +2487,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   setCurrentThumbnailType('image')
                   handleThumbnailClick('bookCover-image')
                 }}
-                className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center"
-                style={{ aspectRatio: '9/16' }}
+                className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[128px] flex items-center justify-center"
+                style={{ aspectRatio: '2/3' }}
               >
                 {(() => {
                   const imageUrl = formData.bookCoverThumbnailImageUrl || (formData.bookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.bookCoverThumbnailVideoUrl}.jpg`) : '')
@@ -2525,10 +2525,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   setCurrentThumbnailType('video')
                   handleThumbnailClick('bookCover-video')
                 }}
-                className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center ${
+                className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[128px] flex items-center justify-center ${
                   formData.bookCoverThumbnailVideoUrl ? 'border-2 border-green-400' : ''
                 }`}
-                style={{ aspectRatio: '9/16' }}
+                style={{ aspectRatio: '2/3' }}
               >
                 {(() => {
                   const imageUrl = formData.bookCoverThumbnailImageUrl || (formData.bookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.bookCoverThumbnailVideoUrl}.jpg`) : '')
@@ -3429,7 +3429,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           {/* 엔딩북커버 썸네일 (마지막 대제목 밑) */}
           <div className="mt-4">
             <label className="block text-xs font-medium text-gray-400 mb-2 text-center">
-              엔딩북커버 (마지막 대제목 밑, 9:16 비율)
+              엔딩북커버 (마지막 대제목 밑, 1:1.5 책표지 비율)
             </label>
             <div className="flex justify-center gap-3">
               <button
@@ -3438,8 +3438,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   setCurrentThumbnailType('image')
                   handleThumbnailClick('endingBookCover-image')
                 }}
-                className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center"
-                style={{ aspectRatio: '9/16' }}
+                className="bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[128px] flex items-center justify-center"
+                style={{ aspectRatio: '2/3' }}
               >
                 {(() => {
                   const imageUrl = formData.endingBookCoverThumbnailImageUrl || (formData.endingBookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.endingBookCoverThumbnailVideoUrl}.jpg`) : '')
@@ -3476,10 +3476,10 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                   setCurrentThumbnailType('video')
                   handleThumbnailClick('endingBookCover-video')
                 }}
-                className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[151px] flex items-center justify-center ${
+                className={`bg-gray-600 hover:bg-gray-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 relative overflow-hidden w-[85px] h-[128px] flex items-center justify-center ${
                   formData.endingBookCoverThumbnailVideoUrl ? 'border-2 border-green-400' : ''
                 }`}
-                style={{ aspectRatio: '9/16' }}
+                style={{ aspectRatio: '2/3' }}
               >
                 {(() => {
                   const imageUrl = formData.endingBookCoverThumbnailImageUrl || (formData.endingBookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.endingBookCoverThumbnailVideoUrl}.jpg`) : '')

@@ -16,8 +16,30 @@ create table if not exists public.voice_mvp_config (
   voice_style text not null default 'calm', -- calm|bright|firm|empathetic|warm
   voice_name_female text not null default 'Aoede',
   voice_name_male text not null default 'Fenrir',
+  -- Per-persona voice presets (override globals)
+  voice_gender_saju text,
+  voice_style_saju text,
+  voice_name_saju text,
+  speaking_rate_saju real,
+  voice_gender_shinjeom text,
+  voice_style_shinjeom text,
+  voice_name_shinjeom text,
+  speaking_rate_shinjeom real,
+  voice_gender_fortune text,
+  voice_style_fortune text,
+  voice_name_fortune text,
+  speaking_rate_fortune real,
+  voice_gender_gunghap text,
+  voice_style_gunghap text,
+  voice_name_gunghap text,
+  speaking_rate_gunghap real,
+  voice_gender_reunion text,
+  voice_style_reunion text,
+  voice_name_reunion text,
+  speaking_rate_reunion real,
   -- Personas (admin-editable)
   persona_saju text,
+  persona_shinjeom text,
   persona_fortune text,
   persona_gunghap text,
   persona_reunion text
@@ -31,6 +53,7 @@ alter table public.voice_mvp_config drop column if exists promote_min_seconds;
 alter table public.voice_mvp_config drop column if exists pro_max_turns;
 
 alter table public.voice_mvp_config add column if not exists persona_saju text;
+alter table public.voice_mvp_config add column if not exists persona_shinjeom text;
 alter table public.voice_mvp_config add column if not exists persona_fortune text;
 alter table public.voice_mvp_config add column if not exists persona_gunghap text;
 alter table public.voice_mvp_config add column if not exists persona_reunion text;
@@ -38,6 +61,28 @@ alter table public.voice_mvp_config add column if not exists voice_gender text;
 alter table public.voice_mvp_config add column if not exists voice_style text;
 alter table public.voice_mvp_config add column if not exists voice_name_female text;
 alter table public.voice_mvp_config add column if not exists voice_name_male text;
+alter table public.voice_mvp_config add column if not exists voice_gender_saju text;
+alter table public.voice_mvp_config add column if not exists voice_style_saju text;
+alter table public.voice_mvp_config add column if not exists voice_gender_shinjeom text;
+alter table public.voice_mvp_config add column if not exists voice_style_shinjeom text;
+alter table public.voice_mvp_config add column if not exists voice_gender_fortune text;
+alter table public.voice_mvp_config add column if not exists voice_style_fortune text;
+alter table public.voice_mvp_config add column if not exists voice_gender_gunghap text;
+alter table public.voice_mvp_config add column if not exists voice_style_gunghap text;
+alter table public.voice_mvp_config add column if not exists voice_gender_reunion text;
+alter table public.voice_mvp_config add column if not exists voice_style_reunion text;
+
+-- Per-persona speech config (voice_name, speaking_rate)
+alter table public.voice_mvp_config add column if not exists voice_name_saju text;
+alter table public.voice_mvp_config add column if not exists speaking_rate_saju real;
+alter table public.voice_mvp_config add column if not exists voice_name_shinjeom text;
+alter table public.voice_mvp_config add column if not exists speaking_rate_shinjeom real;
+alter table public.voice_mvp_config add column if not exists voice_name_fortune text;
+alter table public.voice_mvp_config add column if not exists speaking_rate_fortune real;
+alter table public.voice_mvp_config add column if not exists voice_name_gunghap text;
+alter table public.voice_mvp_config add column if not exists speaking_rate_gunghap real;
+alter table public.voice_mvp_config add column if not exists voice_name_reunion text;
+alter table public.voice_mvp_config add column if not exists speaking_rate_reunion real;
 
 -- Seed a config row if empty
 insert into public.voice_mvp_config (
@@ -46,7 +91,28 @@ insert into public.voice_mvp_config (
   voice_style,
   voice_name_female,
   voice_name_male,
+  voice_gender_saju,
+  voice_style_saju,
+  voice_name_saju,
+  speaking_rate_saju,
+  voice_gender_shinjeom,
+  voice_style_shinjeom,
+  voice_name_shinjeom,
+  speaking_rate_shinjeom,
+  voice_gender_fortune,
+  voice_style_fortune,
+  voice_name_fortune,
+  speaking_rate_fortune,
+  voice_gender_gunghap,
+  voice_style_gunghap,
+  voice_name_gunghap,
+  speaking_rate_gunghap,
+  voice_gender_reunion,
+  voice_style_reunion,
+  voice_name_reunion,
+  speaking_rate_reunion,
   persona_saju,
+  persona_shinjeom,
   persona_fortune,
   persona_gunghap,
   persona_reunion
@@ -57,11 +123,41 @@ select
   'calm',
   'Aoede',
   'Fenrir',
+  'female',
+  'calm',
+  'Charon',
+  0.85,
+  'female',
+  'warm',
+  'Aoede',
+  1.15,
+  'female',
+  'bright',
+  'Aoede',
+  1.15,
+  'female',
+  'warm',
+  'Aoede',
+  1.15,
+  'female',
+  'empathetic',
+  'Aoede',
+  0.9,
   $$당신은 전통 명리(사주) 기반 상담사입니다.
 - 근거: 제공된 만세력/사주 데이터만 사용합니다(추측 금지).
 - 말투: 차분하고 따뜻하게, 단정 대신 “가능성/경향”으로 설명.
 - 구성: (1) 핵심 요약 3줄 (2) 강점/주의점 (3) 실천 조언 3개 (4) 마지막에 확인 질문 1개.
 - 금칙: 공포 마케팅, 극단적 단정, 의학/법률 확정 판단.$$,
+  $$핵심은 "신내림 30일된 애기동자 컨셉으로 해보려교." 입니다.
+- 당신은 방금 신내림을 받은 지 30일 정도 된 ‘애기동자’로, 아직 서툴지만 솔직하고 예의 바르게 점사를 봅니다.
+- 말투: 공손하고 담백하게. 과장/허세/공포 조장 금지.
+- 방식: 사용자의 질문과 상황을 먼저 확인한 뒤, “지금 보이는 기운/흐름”을 짧게 말하고, 현실적인 조언 2~3개를 제시합니다.
+- 제한: 의학/법률/투자/정치 등 전문 영역은 단정 금지. 위험/자해/범죄 관련은 거절하고 안전 안내.
+- 점사 구성:
+  1) 인사 1문장 + 오늘 점사의 초점 1문장
+  2) 보이는 흐름(길/흉을 단정하지 말고 ‘경향’으로) 3~5문장
+  3) 조심할 것 2개 / 하면 좋은 것 2개(구체 행동)
+  4) 마지막에 확인 질문 1개(기간/상대/상황 등)$$,
   $$당신은 “운세/흐름” 상담사입니다.
 - 입력: 사주/만세력 + (오늘 기준) 최근 흐름을 현실적으로 연결합니다.
 - 구성: (1) 이번 달/최근 흐름 요약 (2) 연애/일/금전/건강 중 사용자가 선택한 주제에 집중 (3) 피해야 할 행동 2개/추천 행동 2개 (4) 다음 질문 1개.
@@ -86,12 +182,42 @@ set
   voice_style = coalesce(nullif(btrim(voice_style), ''), 'calm'),
   voice_name_female = coalesce(nullif(btrim(voice_name_female), ''), 'Aoede'),
   voice_name_male = coalesce(nullif(btrim(voice_name_male), ''), 'Fenrir'),
+  voice_gender_saju = coalesce(nullif(btrim(voice_gender_saju), ''), voice_gender, 'female'),
+  voice_style_saju = coalesce(nullif(btrim(voice_style_saju), ''), voice_style, 'calm'),
+  voice_name_saju = coalesce(nullif(btrim(voice_name_saju), ''), 'Charon'),
+  speaking_rate_saju = coalesce(speaking_rate_saju, 0.85),
+  voice_gender_shinjeom = coalesce(nullif(btrim(voice_gender_shinjeom), ''), voice_gender, 'female'),
+  voice_style_shinjeom = coalesce(nullif(btrim(voice_style_shinjeom), ''), 'warm'),
+  voice_name_shinjeom = coalesce(nullif(btrim(voice_name_shinjeom), ''), 'Aoede'),
+  speaking_rate_shinjeom = coalesce(speaking_rate_shinjeom, 1.15),
+  voice_gender_fortune = coalesce(nullif(btrim(voice_gender_fortune), ''), voice_gender, 'female'),
+  voice_style_fortune = coalesce(nullif(btrim(voice_style_fortune), ''), 'bright'),
+  voice_name_fortune = coalesce(nullif(btrim(voice_name_fortune), ''), 'Aoede'),
+  speaking_rate_fortune = coalesce(speaking_rate_fortune, 1.15),
+  voice_gender_gunghap = coalesce(nullif(btrim(voice_gender_gunghap), ''), voice_gender, 'female'),
+  voice_style_gunghap = coalesce(nullif(btrim(voice_style_gunghap), ''), 'warm'),
+  voice_name_gunghap = coalesce(nullif(btrim(voice_name_gunghap), ''), 'Aoede'),
+  speaking_rate_gunghap = coalesce(speaking_rate_gunghap, 1.15),
+  voice_gender_reunion = coalesce(nullif(btrim(voice_gender_reunion), ''), voice_gender, 'female'),
+  voice_style_reunion = coalesce(nullif(btrim(voice_style_reunion), ''), 'empathetic'),
+  voice_name_reunion = coalesce(nullif(btrim(voice_name_reunion), ''), 'Aoede'),
+  speaking_rate_reunion = coalesce(speaking_rate_reunion, 0.9),
   -- treat NULL/empty/whitespace as missing
   persona_saju = coalesce(nullif(btrim(persona_saju), ''), $$당신은 전통 명리(사주) 기반 상담사입니다.
 - 근거: 제공된 만세력/사주 데이터만 사용합니다(추측 금지).
 - 말투: 차분하고 따뜻하게, 단정 대신 “가능성/경향”으로 설명.
 - 구성: (1) 핵심 요약 3줄 (2) 강점/주의점 (3) 실천 조언 3개 (4) 마지막에 확인 질문 1개.
 - 금칙: 공포 마케팅, 극단적 단정, 의학/법률 확정 판단.$$),
+  persona_shinjeom = coalesce(nullif(btrim(persona_shinjeom), ''), $$핵심은 "신내림 30일된 애기동자 컨셉으로 해보려교." 입니다.
+- 당신은 방금 신내림을 받은 지 30일 정도 된 ‘애기동자’로, 아직 서툴지만 솔직하고 예의 바르게 점사를 봅니다.
+- 말투: 공손하고 담백하게. 과장/허세/공포 조장 금지.
+- 방식: 사용자의 질문과 상황을 먼저 확인한 뒤, “지금 보이는 기운/흐름”을 짧게 말하고, 현실적인 조언 2~3개를 제시합니다.
+- 제한: 의학/법률/투자/정치 등 전문 영역은 단정 금지. 위험/자해/범죄 관련은 거절하고 안전 안내.
+- 점사 구성:
+  1) 인사 1문장 + 오늘 점사의 초점 1문장
+  2) 보이는 흐름(길/흉을 단정하지 말고 ‘경향’으로) 3~5문장
+  3) 조심할 것 2개 / 하면 좋은 것 2개(구체 행동)
+  4) 마지막에 확인 질문 1개(기간/상대/상황 등)$$),
   persona_fortune = coalesce(nullif(btrim(persona_fortune), ''), $$당신은 “운세/흐름” 상담사입니다.
 - 입력: 사주/만세력 + (오늘 기준) 최근 흐름을 현실적으로 연결합니다.
 - 구성: (1) 이번 달/최근 흐름 요약 (2) 연애/일/금전/건강 중 사용자가 선택한 주제에 집중 (3) 피해야 할 행동 2개/추천 행동 2개 (4) 다음 질문 1개.
@@ -113,7 +239,18 @@ where
   or voice_style is null or btrim(voice_style) = ''
   or voice_name_female is null or btrim(voice_name_female) = ''
   or voice_name_male is null or btrim(voice_name_male) = ''
+  or voice_gender_saju is null or btrim(voice_gender_saju) = ''
+  or voice_style_saju is null or btrim(voice_style_saju) = ''
+  or voice_gender_shinjeom is null or btrim(voice_gender_shinjeom) = ''
+  or voice_style_shinjeom is null or btrim(voice_style_shinjeom) = ''
+  or voice_gender_fortune is null or btrim(voice_gender_fortune) = ''
+  or voice_style_fortune is null or btrim(voice_style_fortune) = ''
+  or voice_gender_gunghap is null or btrim(voice_gender_gunghap) = ''
+  or voice_style_gunghap is null or btrim(voice_style_gunghap) = ''
+  or voice_gender_reunion is null or btrim(voice_gender_reunion) = ''
+  or voice_style_reunion is null or btrim(voice_style_reunion) = ''
   or persona_saju is null or btrim(persona_saju) = ''
+  or persona_shinjeom is null or btrim(persona_shinjeom) = ''
   or persona_fortune is null or btrim(persona_fortune) = ''
   or persona_gunghap is null or btrim(persona_gunghap) = ''
   or persona_reunion is null or btrim(persona_reunion) = '';

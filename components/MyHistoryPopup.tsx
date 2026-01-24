@@ -1866,9 +1866,19 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
     // 현재는 팝업이 자동으로 닫히므로 특별한 작업 없음
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    // 한국 시간(KST, Asia/Seoul, UTC+9)으로 변환
+  const toDateAssumingUtcIfNoTz = (raw: string) => {
+    const s = String(raw || '').trim()
+    if (!s) return new Date(NaN)
+    // If timezone/offset is missing, treat as UTC
+    // Supabase timestamptz는 UTC로 저장/반환됨
+    const hasTz = /([zZ]|[+-]\d{2}:\d{2})$/.test(s)
+    if (hasTz) return new Date(s)
+    // e.g. "2026-01-24 22:11:26" or "2026-01-24T22:11:26"
+    const iso = s.includes('T') ? s : s.replace(' ', 'T')
+    return new Date(`${iso}Z`)
+  }
+
+  const getKstParts = (d: Date) => {
     const kstOptions: Intl.DateTimeFormatOptions = {
       timeZone: 'Asia/Seoul',
       year: 'numeric',
@@ -1877,38 +1887,38 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      hour12: false
+      hour12: false,
     }
-    
-    // 한국 시간대로 변환된 날짜 문자열 생성
-    const formatter = new Intl.DateTimeFormat('en-US', kstOptions)
-    const parts = formatter.formatToParts(date)
-    
-    const year = parts.find(p => p.type === 'year')?.value || ''
-    const month = parts.find(p => p.type === 'month')?.value || ''
-    const day = parts.find(p => p.type === 'day')?.value || ''
-    const hours = parts.find(p => p.type === 'hour')?.value || ''
-    const minutes = parts.find(p => p.type === 'minute')?.value || ''
-    const seconds = parts.find(p => p.type === 'second')?.value || ''
-    
-    return `${year}년 ${month}월 ${day}일 ${hours}:${minutes}:${seconds}`
+    const parts = new Intl.DateTimeFormat('en-US', kstOptions).formatToParts(d)
+    const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value || ''
+    return {
+      year: get('year'),
+      month: get('month'),
+      day: get('day'),
+      hour: get('hour'),
+      minute: get('minute'),
+      second: get('second'),
+    }
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = toDateAssumingUtcIfNoTz(dateString)
+    const p = getKstParts(date)
+    return `${p.year}년 ${p.month}월 ${p.day}일 ${p.hour}:${p.minute}:${p.second}`
   }
 
   const getRemainingViewDays = (savedAt: string, totalDays: number = 60) => {
-    const saved = new Date(savedAt)
+    const saved = toDateAssumingUtcIfNoTz(savedAt)
     const now = new Date()
-    
-    // 날짜만 비교 (시간 제외)
-    const savedDate = new Date(saved.getFullYear(), saved.getMonth(), saved.getDate())
-    const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    
-    // 경과 일수 계산
-    const elapsedDays = Math.floor((nowDate.getTime() - savedDate.getTime()) / (1000 * 60 * 60 * 24))
-    
-    // 잔여일 계산 (결제일로부터 60일까지)
+
+    // KST 날짜(연/월/일) 기준으로 잔여일 계산
+    const s = getKstParts(saved)
+    const n = getKstParts(now)
+    const savedDayUtc = Date.UTC(Number(s.year), Number(s.month) - 1, Number(s.day))
+    const nowDayUtc = Date.UTC(Number(n.year), Number(n.month) - 1, Number(n.day))
+    const elapsedDays = Math.floor((nowDayUtc - savedDayUtc) / (1000 * 60 * 60 * 24))
+
     const remaining = totalDays - elapsedDays
-    
-    // 최대 60일, 최소 0일
     if (remaining > totalDays) return totalDays
     if (remaining < 0) return 0
     return remaining

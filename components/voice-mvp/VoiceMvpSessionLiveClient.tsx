@@ -35,6 +35,65 @@ function pickVoiceName(snapshot: any) {
   return gender === 'male' ? male : female
 }
 
+// Mode key mapping for DB columns
+const MODE_KEY_MAP: Record<string, string> = {
+  saju: 'saju',
+  shinjeom: 'shinjeom',
+  fortune: 'fortune',
+  gunghap: 'gunghap',
+  reunion: 'reunion',
+}
+
+// Default speaking rates per mode
+const DEFAULT_SPEAKING_RATES: Record<string, number> = {
+  saju: 0.85,
+  shinjeom: 1.15,
+  fortune: 1.15,
+  gunghap: 1.15,
+  reunion: 0.9,
+}
+
+// Default voice names per mode
+const DEFAULT_VOICE_NAMES: Record<string, string> = {
+  saju: 'Charon',
+  shinjeom: 'Aoede',
+  fortune: 'Aoede',
+  gunghap: 'Aoede',
+  reunion: 'Aoede',
+}
+
+function getModeVoicePreset(snapshot: any, mode: string) {
+  const modeKey = MODE_KEY_MAP[mode] || mode
+  
+  // Get mode-specific values from snapshot (DB config)
+  const genderKey = `voice_gender_${modeKey}`
+  const styleKey = `voice_style_${modeKey}`
+  const voiceNameKey = `voice_name_${modeKey}`
+  const speakingRateKey = `speaking_rate_${modeKey}`
+  
+  const gender = String(snapshot?.[genderKey] || snapshot?.voice_gender || 'female').trim()
+  const style = String(snapshot?.[styleKey] || snapshot?.voice_style || 'calm').trim()
+  const voiceName = String(snapshot?.[voiceNameKey] || DEFAULT_VOICE_NAMES[modeKey] || 'Aoede').trim()
+  const speakingRate = typeof snapshot?.[speakingRateKey] === 'number' 
+    ? snapshot[speakingRateKey] 
+    : DEFAULT_SPEAKING_RATES[modeKey] || 1.0
+  
+  return {
+    gender: gender === 'male' ? 'male' : 'female',
+    style: style || 'calm',
+    voiceName: voiceName || 'Aoede',
+    speakingRate: Math.max(0.5, Math.min(2.0, speakingRate)), // Clamp between 0.5 and 2.0
+  }
+}
+
+function profileLine(p: any, label: string) {
+  if (!p || typeof p !== 'object') return `${label}: (없음)`
+  const name = String(p.name || '').trim() || '(이름 없음)'
+  const genderRaw = String(p.gender || '').trim()
+  const gender = genderRaw === 'male' ? '남성' : genderRaw === 'female' ? '여성' : genderRaw ? genderRaw : '(성별 없음)'
+  return `${label}: ${name} / ${gender}`
+}
+
 function styleLabel(style: string) {
   switch (style) {
     case 'bright':
@@ -239,26 +298,31 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
           typeof session.routing_config_snapshot.personas?.[mode] === 'string' &&
           String(session.routing_config_snapshot.personas?.[mode] || '').trim()) ||
         ''
-      const voiceStyle = String(session?.routing_config_snapshot?.voice_style || 'calm').trim()
-      const voiceName = pickVoiceName(session?.routing_config_snapshot)
+      const preset = getModeVoicePreset(session?.routing_config_snapshot, mode)
+      // Use mode-specific voiceName from preset (from DB config)
+      const voiceName = preset.voiceName
+      // 참고: speakingRate는 현재 GenAI Live API에서 미지원 (preset.speakingRate는 향후 지원 시 사용)
+      const selfLine = profileLine(session?.profile_self, '본인')
+      const partnerLine = profileLine(session?.profile_partner, '상대')
       const manseSelfText = String(session?.manse_self?.manse_text || '').slice(0, 4000)
       const mansePartnerText = String(session?.manse_partner?.manse_text || '').slice(0, 3000)
       const situation = String(session?.situation || '').slice(0, 1500)
 
       const systemText = `당신은 한국어로 대답하는 실시간 음성 상담사입니다.
 ${persona ? `\n[페르소나]\n${persona}\n` : ''}
-- ${styleInstruction(voiceStyle)}
+- ${styleInstruction(preset.style)}
 - 상담 종류: ${mode}
 - 목표: 공감 + 구체적 조언 + 마지막에 질문 1개
 - 길이: 6~12문장
 `
-      const contextText = `### 만세력(본인)\n${manseSelfText || '(없음)'}\n\n### 만세력(상대)\n${
-        mode === 'gunghap' ? mansePartnerText || '(없음)' : '(해당 없음)'
+      const contextText = `### 만세력(본인)\n${selfLine}\n${manseSelfText || '(없음)'}\n\n### 만세력(상대)\n${
+        mode === 'gunghap' ? `${partnerLine}\n${mansePartnerText || '(없음)'}` : '(해당 없음)'
       }\n\n### 상황\n${mode === 'reunion' ? situation || '(없음)' : '(해당 없음)'}\n`
 
       const config: LiveConnectConfig = {
         responseModalities: [Modality.AUDIO],
-        // voiceName은 레퍼런스가 "Aoede"를 사용. (한국어 최적 voice는 추후 선택 UI로 교체 가능)
+        // voiceName은 캐릭터(모드)별로 DB에서 설정된 값을 사용
+        // 참고: speakingRate는 현재 GenAI Live API의 SpeechConfig에서 지원되지 않음
         speechConfig: {
           voiceConfig: { prebuiltVoiceConfig: { voiceName } },
         },

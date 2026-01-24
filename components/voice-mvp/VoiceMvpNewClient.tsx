@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 
 type CalendarType = 'solar' | 'lunar' | 'lunar-leap'
 type Gender = 'male' | 'female'
-type Mode = 'saju' | 'fortune' | 'gunghap' | 'reunion'
+type Mode = 'saju' | 'fortune' | 'gunghap' | 'reunion' | 'shinjeom'
 
 type BirthForm = {
   name: string
@@ -80,7 +80,7 @@ export default function VoiceMvpNewClient() {
       const nextPartner = parsed?.partner
       const nextSituation = parsed?.situation
 
-      if (nextMode && ['saju', 'fortune', 'gunghap', 'reunion'].includes(nextMode)) {
+      if (nextMode && ['saju', 'fortune', 'gunghap', 'reunion', 'shinjeom'].includes(nextMode)) {
         setMode(nextMode)
       }
       if (nextSelf && typeof nextSelf === 'object') {
@@ -196,7 +196,7 @@ export default function VoiceMvpNewClient() {
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
           <div className="font-semibold text-gray-900 mb-3">상담 유형</div>
           <div className="flex gap-2">
-            {(['saju', 'fortune', 'gunghap', 'reunion'] as Mode[]).map((m) => (
+            {(['saju', 'fortune', 'gunghap', 'reunion', 'shinjeom'] as Mode[]).map((m) => (
               <button
                 key={m}
                 type="button"
@@ -205,7 +205,15 @@ export default function VoiceMvpNewClient() {
                   mode === m ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-gray-700 border-gray-300 hover:border-pink-400'
                 }`}
               >
-                {m === 'saju' ? '사주' : m === 'fortune' ? '운세' : m === 'gunghap' ? '궁합' : '재회'}
+                {m === 'saju'
+                  ? '사주'
+                  : m === 'fortune'
+                  ? '운세'
+                  : m === 'gunghap'
+                  ? '궁합'
+                  : m === 'reunion'
+                  ? '재회'
+                  : '신점'}
               </button>
             ))}
           </div>
