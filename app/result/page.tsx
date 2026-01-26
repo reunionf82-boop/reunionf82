@@ -2152,6 +2152,42 @@ ${fontFace ? fontFace : ''}
         break
       }
     }
+    
+    // ✅ 중복 대메뉴 제거 (같은 제목의 대메뉴가 연속으로 있으면 하나만 유지)
+    // 간헐적으로 스트리밍 완료 시 첫번째 대메뉴가 다시 HTML에 포함되는 문제 방어
+    const seenMenuTitles = new Set<string>()
+    const deduplicatedMenuSections: Element[] = []
+    for (const section of cleanedMenuSections) {
+      const titleEl = section.querySelector('.menu-title')
+      const titleText = (titleEl?.textContent?.trim() || '').replace(/^\d+(?:-\d+)*(?:-\d+)?\.\s*/, '').trim()
+      
+      // 같은 제목의 대메뉴가 이미 있으면 건너뛰기 (단, 내용이 더 많은 것을 유지)
+      if (seenMenuTitles.has(titleText) && titleText !== '') {
+        // 기존에 추가된 섹션과 비교하여 내용이 더 많은 것을 유지
+        const existingIndex = deduplicatedMenuSections.findIndex(s => {
+          const t = s.querySelector('.menu-title')?.textContent?.trim().replace(/^\d+(?:-\d+)*(?:-\d+)?\.\s*/, '').trim()
+          return t === titleText
+        })
+        if (existingIndex >= 0) {
+          const existingSection = deduplicatedMenuSections[existingIndex]
+          const existingContentLength = existingSection.querySelectorAll('.subtitle-content, .detail-menu-content').length
+          const newContentLength = section.querySelectorAll('.subtitle-content, .detail-menu-content').length
+          
+          // 새 섹션이 더 많은 내용을 가지면 교체
+          if (newContentLength > existingContentLength) {
+            deduplicatedMenuSections[existingIndex] = section
+          }
+        }
+        continue
+      }
+      
+      seenMenuTitles.add(titleText)
+      deduplicatedMenuSections.push(section)
+    }
+    
+    // cleanedMenuSections를 중복 제거된 배열로 교체
+    cleanedMenuSections.length = 0
+    cleanedMenuSections.push(...deduplicatedMenuSections)
 
     // 숫자 접두사 제거 함수 (예: "1. " → "", "1-1. " → "", "1-1-1. " → "")
     const removeNumberPrefix = (text: string): string => {
@@ -2159,6 +2195,102 @@ ${fontFace ? fontFace : ''}
       // "1. ", "1-1. ", "1-1-1. " 등의 패턴 제거 (더 강력한 패턴)
       return text.replace(/^\d+(?:-\d+)*(?:-\d+)?\.\s*/, '').trim()
         .replace(/^[\d\-\.\s]+/, '').trim() // 추가: 앞부분의 모든 숫자, 하이픈, 점, 공백 제거
+    }
+
+    // 만세력 HTML에 오행 스타일 적용 함수 (DOM 직접 수정 대신 HTML 문자열 변환)
+    const applyManseStyles = (html: string): string => {
+      if (!html) return ''
+      
+      // 오행별 천간/지지 매핑
+      const elementMap: Record<string, string> = {
+        // 천간 (天干)
+        '甲': 'wood', '乙': 'wood', '갑': 'wood', '을': 'wood',
+        '丙': 'fire', '丁': 'fire', '병': 'fire', '정': 'fire',
+        '戊': 'earth', '己': 'earth', '무': 'earth', '기': 'earth',
+        '庚': 'metal', '辛': 'metal', '경': 'metal', '신': 'metal',
+        '壬': 'water', '癸': 'water', '임': 'water', '계': 'water',
+        // 지지 (地支)
+        '寅': 'wood', '卯': 'wood', '인': 'wood', '묘': 'wood',
+        '巳': 'fire', '午': 'fire', '사': 'fire', '오': 'fire',
+        '辰': 'earth', '戌': 'earth', '丑': 'earth', '未': 'earth',
+        '진': 'earth', '술': 'earth', '축': 'earth', '미': 'earth',
+        '申': 'metal', '酉': 'metal', '유': 'metal',
+        '子': 'water', '亥': 'water', '자': 'water', '해': 'water',
+        // 오행 글자 자체
+        '木': 'wood', '목': 'wood',
+        '火': 'fire', '화': 'fire',
+        '土': 'earth', '토': 'earth',
+        '金': 'metal', '금': 'metal',
+        '水': 'water', '수': 'water',
+      }
+      
+      // 천간/지지 문자 목록 (크기 확대 적용 대상)
+      const ganziChars = new Set([
+        '甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸',
+        '子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥',
+        '갑', '을', '병', '정', '무', '기', '경', '신', '임', '계',
+        '자', '축', '인', '묘', '진', '사', '오', '미', '유', '술', '해'
+      ])
+      
+      // 일반 폰트 적용 행 (오행 색상 적용 안 함)
+      const normalFontRows = ['십성', '지장간', '십이운성']
+      
+      // DOMParser로 HTML 파싱
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(html, 'text/html')
+      const table = doc.querySelector('table')
+      if (!table) return html
+      
+      const rows = table.querySelectorAll('tr')
+      rows.forEach((row) => {
+        const cells = row.querySelectorAll('td')
+        if (cells.length === 0) return
+        
+        // 첫 번째 셀(구분 컬럼)의 텍스트 확인
+        const firstCellText = cells[0]?.textContent?.trim() || ''
+        
+        // 십성, 지장간, 십이운성 행은 일반 폰트 (오행 색상 적용 안 함)
+        const isNormalFontRow = normalFontRows.some(keyword => firstCellText.includes(keyword))
+        
+        cells.forEach((cell, cellIndex) => {
+          const text = cell.textContent?.trim() || ''
+          if (!text) return
+          
+          // 첫 번째 컬럼(구분 컬럼)은 스타일 변경 안 함
+          if (cellIndex === 0) return
+          
+          // 일반 폰트 행은 스타일 적용 안 함
+          if (isNormalFontRow) {
+            return
+          }
+          
+          // 셀 전체 내용에 오행 색상 적용 (셀 전체를 하나의 span으로 감싸기)
+          // 주요 오행 찾기 (첫 번째로 발견된 오행 사용)
+          let mainElement: string | null = null
+          let hasGanzi = false
+          
+          for (const char of text) {
+            const element = elementMap[char]
+            const isGanzi = ganziChars.has(char)
+            
+            if (element && !mainElement) {
+              mainElement = element
+            }
+            if (isGanzi) {
+              hasGanzi = true
+            }
+          }
+          
+          // 오행이 있으면 셀 전체를 하나의 span으로 감싸기
+          if (mainElement || hasGanzi) {
+            const elementClass = mainElement ? `manse-element-${mainElement}` : ''
+            const ganziClass = hasGanzi ? 'manse-ganzi-char' : ''
+            cell.innerHTML = `<span class="${elementClass} ${ganziClass}">${text}</span>`
+          }
+        })
+      })
+      
+      return table.outerHTML
     }
 
     // ✅ 방어 로직(중복 제목 제거):
@@ -2248,14 +2380,16 @@ ${fontFace ? fontFace : ''}
         }
       }
 
-      // 만세력: 캐시에 있으면 재사용, 없으면 새로 추출 후 캐시에 저장
+      // 만세력: 캐시에 있으면 재사용, 없으면 새로 추출 후 스타일 적용하여 캐시에 저장
       let manseHtml: string | undefined = undefined
       if (manseHtmlCacheRef.current.has(index)) {
         manseHtml = manseHtmlCacheRef.current.get(index)
       } else {
         const manseEl = section.querySelector('.manse-ryeok-table')
         if (manseEl) {
-          manseHtml = manseEl.outerHTML
+          // 만세력 HTML에 오행 스타일 미리 적용 (DOM 직접 수정 방지)
+          const styledManseHtml = applyManseStyles(manseEl.outerHTML)
+          manseHtml = styledManseHtml
           manseHtmlCacheRef.current.set(index, manseHtml)
         }
       }
@@ -2644,6 +2778,65 @@ ${fontFace ? fontFace : ''}
   // 점사 완료 시에는 진행 위치(activePos)로 UI를 제한하지 않는다.
   const shouldGateByActivePos = fortuneViewMode === 'realtime' && !streamingFinished
 
+  // 실시간 점사에서 완료된 소제목/상세메뉴 내 테이블 폭 조정 (너무 좁은 테이블만 화면폭에 맞춤)
+  // 점사 중에는 실행하지 않고, 점사 완료 후 또는 배치 모드에서만 실행 (깜빡임 방지)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!parsedMenus || parsedMenus.length === 0) return
+    
+    // 실시간 점사 중인지 확인
+    const isRealtimeStreamingNow = isRealtime || requestKey || isStreaming || isStreamingActive
+    
+    // 실시간 점사 중에는 실행하지 않음 (깜빡임 방지)
+    if (isRealtimeStreamingNow && !streamingFinished) return
+    
+    // debounce: 짧은 시간 내 연속 실행 방지
+    const timeoutId = setTimeout(() => {
+      // 스크롤 위치 저장
+      const scrollY = window.scrollY
+      
+      // requestAnimationFrame으로 DOM 렌더링 후 실행
+      const rafId = requestAnimationFrame(() => {
+        // 완료된 소제목/상세메뉴 섹션 내의 테이블 찾기 (만세력 테이블 제외)
+        const contentElements = document.querySelectorAll('.jeminai-results .subtitle-content, .jeminai-results .detail-menu-content')
+        
+        let hasAdjustment = false
+        
+        contentElements.forEach((contentEl) => {
+          const tables = contentEl.querySelectorAll('table:not(.manse-ryeok-table)')
+          
+          tables.forEach((table) => {
+            const tableEl = table as HTMLTableElement
+            // 이미 처리된 테이블은 건너뛰기
+            if (tableEl.dataset.widthAdjusted === 'true') return
+            
+            const containerWidth = (contentEl as HTMLElement).offsetWidth
+            const tableWidth = tableEl.offsetWidth
+            
+            // 테이블이 컨테이너 폭의 60% 미만인 경우에만 조정
+            if (containerWidth > 0 && tableWidth < containerWidth * 0.6) {
+              // table-layout: auto로 콘텐츠에 맞게 열 너비 자동 조정
+              tableEl.style.width = '100%'
+              tableEl.style.tableLayout = 'auto'
+              tableEl.style.wordBreak = 'break-word'
+              tableEl.dataset.widthAdjusted = 'true'
+              hasAdjustment = true
+            }
+          })
+        })
+        
+        // 표 너비 조정이 있었고, 스크롤 위치가 변경되었다면 복원
+        if (hasAdjustment && Math.abs(window.scrollY - scrollY) > 10) {
+          requestAnimationFrame(() => {
+            window.scrollTo(0, scrollY)
+          })
+        }
+      })
+    }, 300) // 300ms debounce
+    
+    return () => clearTimeout(timeoutId)
+  }, [parsedMenus, streamingFinished, isRealtime, requestKey, isStreaming, isStreamingActive])
+
   // isRealtime이고 점사 진행 중이면 resultData가 없어도 허용 (점사 시작 전)
   // requestKey가 있으면 점사를 시작할 예정이므로 resultData 체크를 건너뜀
   const isRealtimeStreaming = isRealtime || requestKey || isStreaming || isStreamingActive
@@ -2695,7 +2888,11 @@ ${fontFace ? fontFace : ''}
     }
   }, [])
 
+  // 만세력 테이블 스타일은 이제 applyManseStyles 함수에서 HTML 문자열 단계에서 적용됨
+  // DOM 직접 수정으로 인한 깜빡임 문제 해결
+
   // 점사 "완료" 시 엔딩북커버로 이동 + 완료 팝업 표시
+  // ✅ 단순화: streamingFinished가 true가 되면 딜레이 후 강제로 팝업 표시
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!isRealtimeStreaming) return
@@ -2709,28 +2906,41 @@ ${fontFace ? fontFace : ''}
         completionPopupShownRef.current = true
         return
       }
-      sessionStorage.setItem(storageKey, '1')
     } catch {
       // sessionStorage 불가 환경이면 ref만으로 방지
     }
 
-    completionPopupShownRef.current = true
-
-    // ✅ 점사율이 100%가 아니면 100%까지 애니메이션 후 팝업 표시
-    const currentProgress = totalSubtitles > 0 ? Math.min(100, Math.round((revealedCount / totalSubtitles) * 100)) : 100
-    if (currentProgress < 100) {
-      // 점사율을 100%로 애니메이션
-      setRevealedCount(totalSubtitles)
+    // ✅ 핵심 수정: 딜레이를 주어 파싱이 완료될 시간을 확보
+    // streamingFinished가 true가 되면 800ms 후에 강제로 점사율 100% 설정 및 팝업 표시
+    const timeoutId = setTimeout(() => {
+      if (completionPopupShownRef.current) return
       
-      // 애니메이션 완료 후 팝업 표시 (0.5초 후)
+      try {
+        sessionStorage.setItem(storageKey, '1')
+      } catch {
+        // sessionStorage 불가 환경 무시
+      }
+      
+      completionPopupShownRef.current = true
+      
+      // 최신 parsedMenus에서 실제 소제목 수 계산
+      // (이 시점에서는 파싱이 완료되었을 것)
+      const actualTotalSubtitles = parsedMenus.reduce((sum, menu) => sum + menu.subtitles.length, 0)
+      
+      // 점사율을 100%로 강제 설정
+      if (actualTotalSubtitles > 0) {
+        setTotalSubtitles(actualTotalSubtitles)
+        setRevealedCount(actualTotalSubtitles)
+      }
+      
+      // 애니메이션 완료 후 팝업 표시 (0.3초 후)
       setTimeout(() => {
         setShowCompletionPopup(true)
-      }, 500)
-    } else {
-      // 이미 100%이면 즉시 팝업 표시
-      setShowCompletionPopup(true)
-    }
-  }, [isRealtimeStreaming, streamingFinished, requestKey, savedId])
+      }, 300)
+    }, 800)
+    
+    return () => clearTimeout(timeoutId)
+  }, [isRealtimeStreaming, streamingFinished, requestKey, savedId, parsedMenus])
 
   if (loading) {
     return (
@@ -2927,6 +3137,244 @@ ${fontFace ? fontFace : ''}
     @keyframes dot-bounce {
       0%, 80%, 100% { transform: translateY(0); opacity: 0.3; }
       40% { transform: translateY(-4px); opacity: 1; }
+    }
+    
+    /* 만세력(사주명식) 테이블 고급 스타일 */
+    .manse-ryeok-table,
+    .manse-ryeok-container .manse-ryeok-table,
+    .manse-ryeok-container table {
+      width: 100% !important;
+      border-collapse: separate !important;
+      border-spacing: 0 !important;
+      background: linear-gradient(135deg, #fefbf3 0%, #faf6eb 50%, #f5efe0 100%) !important;
+      border-radius: 16px !important;
+      overflow: hidden !important;
+      box-shadow: 
+        0 4px 20px rgba(139, 90, 43, 0.12),
+        0 2px 8px rgba(139, 90, 43, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+      border: 2px solid transparent !important;
+      background-clip: padding-box !important;
+      position: relative !important;
+      margin: 1.5rem 0 !important;
+    }
+    
+    .manse-ryeok-table::before,
+    .manse-ryeok-container .manse-ryeok-table::before,
+    .manse-ryeok-container table::before {
+      content: '' !important;
+      position: absolute !important;
+      inset: -2px !important;
+      background: linear-gradient(135deg, #d4a853 0%, #c9956c 25%, #8b5a2b 50%, #c9956c 75%, #d4a853 100%) !important;
+      border-radius: 18px !important;
+      z-index: -1 !important;
+    }
+    
+    .manse-ryeok-table th,
+    .manse-ryeok-container .manse-ryeok-table th,
+    .manse-ryeok-container table th {
+      background: linear-gradient(180deg, #8b5a2b 0%, #6d4422 100%) !important;
+      color: #fef8e8 !important;
+      font-weight: 700 !important;
+      padding: 12px 8px !important;
+      text-align: center !important;
+      font-size: 0.8rem !important;
+      letter-spacing: 0.05em !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+      border-bottom: 2px solid #d4a853 !important;
+      white-space: nowrap !important;
+      vertical-align: middle !important;
+    }
+    
+    .manse-ryeok-table th:first-child,
+    .manse-ryeok-container .manse-ryeok-table th:first-child,
+    .manse-ryeok-container table th:first-child {
+      border-top-left-radius: 14px !important;
+    }
+    
+    /* 헤더 행의 "구분" 셀만 시주/일주와 동일한 그라데이션 (더 구체적인 선택자) */
+    .manse-ryeok-table thead th:first-child,
+    .manse-ryeok-container .manse-ryeok-table thead th:first-child,
+    .manse-ryeok-container table thead th:first-child,
+    .manse-ryeok-table tr:first-child th:first-child,
+    .manse-ryeok-container .manse-ryeok-table tr:first-child th:first-child,
+    .manse-ryeok-container table tr:first-child th:first-child {
+      background: linear-gradient(180deg, #8b5a2b 0%, #6d4422 100%) !important;
+      color: #fef8e8 !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+    }
+    
+    .manse-ryeok-table th:last-child,
+    .manse-ryeok-container .manse-ryeok-table th:last-child,
+    .manse-ryeok-container table th:last-child {
+      border-top-right-radius: 14px !important;
+    }
+    
+    .manse-ryeok-table td,
+    .manse-ryeok-container .manse-ryeok-table td,
+    .manse-ryeok-container table td {
+      padding: 12px 8px !important;
+      text-align: center !important;
+      font-size: 0.9rem !important;
+      font-weight: 600 !important;
+      color: #4a3520 !important;
+      border-bottom: 1px solid rgba(139, 90, 43, 0.15) !important;
+      background: transparent !important;
+      position: relative !important;
+      white-space: nowrap !important;
+      vertical-align: middle !important;
+    }
+    
+    .manse-ryeok-table tr:last-child td,
+    .manse-ryeok-container .manse-ryeok-table tr:last-child td,
+    .manse-ryeok-container table tr:last-child td {
+      border-bottom: none !important;
+    }
+    
+    .manse-ryeok-table tr:last-child td:first-child,
+    .manse-ryeok-container .manse-ryeok-table tr:last-child td:first-child,
+    .manse-ryeok-container table tr:last-child td:first-child {
+      border-bottom-left-radius: 14px !important;
+    }
+    
+    .manse-ryeok-table tr:last-child td:last-child,
+    .manse-ryeok-container .manse-ryeok-table tr:last-child td:last-child,
+    .manse-ryeok-container table tr:last-child td:last-child {
+      border-bottom-right-radius: 14px !important;
+    }
+    
+    
+    .manse-ryeok-table td:not(:last-child),
+    .manse-ryeok-container .manse-ryeok-table td:not(:last-child),
+    .manse-ryeok-container table td:not(:last-child) {
+      border-right: 1px solid rgba(139, 90, 43, 0.12) !important;
+    }
+    
+    .manse-ryeok-table th:not(:last-child),
+    .manse-ryeok-container .manse-ryeok-table th:not(:last-child),
+    .manse-ryeok-container table th:not(:last-child) {
+      border-right: 1px solid rgba(254, 248, 232, 0.2) !important;
+    }
+    
+    /* 천간/지지 글자 스타일 - 한자 강조 */
+    .manse-ryeok-table td span,
+    .manse-ryeok-container .manse-ryeok-table td span,
+    .manse-ryeok-container table td span {
+      display: block !important;
+      line-height: 1.4 !important;
+    }
+    
+    /* 만세력 컨테이너 스타일 */
+    .manse-ryeok-container {
+      padding: 8px !important;
+      background: linear-gradient(135deg, rgba(212, 168, 83, 0.05) 0%, rgba(139, 90, 43, 0.03) 100%) !important;
+      border-radius: 20px !important;
+    }
+    
+    /* 인라인 만세력 (결과 내) */
+    .jeminai-results .manse-ryeok-table {
+      margin-top: 1rem !important;
+      margin-bottom: 1.5rem !important;
+    }
+    
+    /* 오행별 색상 (천간/지지) */
+    /* 목(木): 갑, 을, 인, 묘 - 고급 청색 */
+    .manse-element-wood {
+      color: #1e40af !important;
+      text-shadow: 0 1px 2px rgba(30, 64, 175, 0.2) !important;
+    }
+    /* 화(火): 병, 정, 사, 오 - 고급 적색 (더 진하게) */
+    .manse-element-fire {
+      color: #991b1b !important;
+      text-shadow: 0 1px 2px rgba(153, 27, 27, 0.2) !important;
+    }
+    /* 토(土): 무, 기, 진, 술, 축, 미 - 약간 짙은 고급 노란색 */
+    .manse-element-earth {
+      color: #d97706 !important;
+      text-shadow: 0 1px 2px rgba(217, 119, 6, 0.2) !important;
+    }
+    /* 금(金): 경, 신, 신, 유 - 고급 회색 */
+    .manse-element-metal {
+      color: #6b7280 !important;
+      text-shadow: 0 1px 2px rgba(107, 114, 128, 0.2) !important;
+    }
+    /* 수(水): 임, 계, 자, 해 - 고급 검정색 */
+    .manse-element-water {
+      color: #1f2937 !important;
+      text-shadow: 0 1px 2px rgba(31, 41, 55, 0.3) !important;
+    }
+    
+    /* 천간/지지 폰트 크기 */
+    .manse-ganzi-char {
+      font-size: 1.2em !important;
+      font-weight: 700 !important;
+    }
+    
+    /* 만세력 테이블 기본 스타일 - 적절한 패딩, 가운데 정렬, 줄바꿈 방지 */
+    .manse-ryeok-container td,
+    .manse-ryeok-table td {
+      padding: 12px 8px !important;
+      font-size: 0.9rem !important;
+      text-align: center !important;
+      vertical-align: middle !important;
+      white-space: nowrap !important;
+    }
+    .manse-ryeok-container th,
+    .manse-ryeok-table th {
+      padding: 12px 8px !important;
+      font-size: 0.8rem !important;
+      text-align: center !important;
+      vertical-align: middle !important;
+      white-space: nowrap !important;
+    }
+    
+    /* 만세력 테이블 너비 자동 조절 */
+    .manse-ryeok-container table,
+    .manse-ryeok-table {
+      table-layout: auto !important;
+      width: 100% !important;
+    }
+    
+    /* 첫 번째 컬럼(범례) 스타일 - 조금 짙은 단색 배경 */
+    .manse-ryeok-container td:first-child,
+    .manse-ryeok-table td:first-child {
+      font-weight: 700 !important;
+      color: #5a4a32 !important;
+      background: #d4c4a8 !important;
+    }
+    
+    
+    /* 모바일에서 만세력 테이블 폰트 조절 */
+    @media (max-width: 480px) {
+      .manse-ryeok-container td,
+      .manse-ryeok-table td {
+        padding: 8px 4px !important;
+        font-size: 0.8rem !important;
+      }
+      .manse-ryeok-container th,
+      .manse-ryeok-table th {
+        padding: 8px 4px !important;
+        font-size: 0.7rem !important;
+      }
+      .manse-ganzi-char {
+        font-size: 1.1em !important;
+      }
+    }
+    
+    @media (max-width: 360px) {
+      .manse-ryeok-container td,
+      .manse-ryeok-table td {
+        padding: 6px 3px !important;
+        font-size: 0.75rem !important;
+      }
+      .manse-ryeok-container th,
+      .manse-ryeok-table th {
+        padding: 6px 3px !important;
+        font-size: 0.65rem !important;
+      }
+      .manse-ganzi-char {
+        font-size: 1em !important;
+      }
     }
   `
 
@@ -3939,8 +4387,42 @@ ${fontFace ? fontFace : ''}
           htmlContent = htmlContent.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
         }
         
-        // 소제목 썸네일 추가 (저장된 결과) - batch 모드와 동일한 방식
+        // 소제목 썸네일 및 만세력 테이블 추가 (저장된 결과) - batch 모드와 동일한 방식
         const menuItems = contentObj?.menu_items || []
+        // 만세력 테이블 가져오기 (여러 경로에서 시도)
+        let manseRyeokTable = contentObj?.manse_ryeok_table || ''
+        
+        // HTML에서 만세력 테이블이 이미 있는지 확인
+        if (htmlContent) {
+          // 먼저 HTML에서 만세력 컨테이너 찾기
+          const parser = new DOMParser()
+          const tempDoc = parser.parseFromString(htmlContent, 'text/html')
+          const existingManse = tempDoc.querySelector('.manse-ryeok-container, .manse-ryeok-wrapper, .manse-ryeok-table')
+          
+          if (existingManse) {
+            // HTML에 이미 만세력이 포함되어 있음
+            const wrapper = existingManse.closest('.manse-ryeok-wrapper') || existingManse.closest('.manse-ryeok-container')
+            if (wrapper) {
+              manseRyeokTable = wrapper.outerHTML
+            } else if (existingManse.classList.contains('manse-ryeok-table')) {
+              // 테이블만 있는 경우
+              manseRyeokTable = '<div class="manse-ryeok-container">' + existingManse.outerHTML + '</div>'
+            } else {
+              manseRyeokTable = existingManse.outerHTML
+            }
+          } else if (!manseRyeokTable) {
+            // 정규식으로도 시도 (DOMParser가 실패한 경우)
+            const manseMatch = htmlContent.match(/<div[^>]*class="[^"]*manse-ryeok-container[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/i)
+            if (manseMatch) {
+              manseRyeokTable = manseMatch[0]
+            } else {
+              const tableMatch = htmlContent.match(/<table[^>]*class="[^"]*manse-ryeok-table[^"]*"[^>]*>([\s\S]*?)<\/table>/i)
+              if (tableMatch) {
+                manseRyeokTable = '<div class="manse-ryeok-container">' + tableMatch[0] + '</div>'
+              }
+            }
+          }
+        }
         
         if (menuItems.length > 0 && htmlContent) {
           try {
@@ -3956,6 +4438,130 @@ ${fontFace ? fontFace : ''}
               
               // menu-section에 id 추가 (목차에서 스크롤하기 위해)
               ;(section as HTMLElement).id = `menu-${menuIndex}`
+              
+              // 대메뉴 썸네일 추가 (아직 없는 경우에만)
+              if (menuItem) {
+                const menuThumbnailImageUrl = menuItem.thumbnail_image_url || menuItem.thumbnail || ''
+                if (menuThumbnailImageUrl && !section.querySelector('.menu-thumbnail-container')) {
+                  const menuTitle = section.querySelector('.menu-title')
+                  if (menuTitle) {
+                    const thumbnailDiv = doc.createElement('div')
+                    thumbnailDiv.className = 'menu-thumbnail-container'
+                    thumbnailDiv.style.cssText = 'width: 100%; margin-bottom: 32px; margin-top: 8px;'
+                    
+                    const imgEl = doc.createElement('img')
+                    imgEl.src = menuThumbnailImageUrl
+                    imgEl.alt = ''
+                    imgEl.style.cssText = 'width: 100%; height: auto; object-fit: contain; border-radius: 8px; display: block;'
+                    thumbnailDiv.appendChild(imgEl)
+                    
+                    menuTitle.insertAdjacentElement('afterend', thumbnailDiv)
+                  }
+                }
+              }
+              
+              // 첫 번째 대메뉴에 만세력 테이블 추가 (아직 없는 경우에만)
+              if (menuIndex === 0 && manseRyeokTable && !section.querySelector('.manse-ryeok-table, .manse-ryeok-container, .manse-ryeok-wrapper')) {
+                const menuTitle = section.querySelector('.menu-title')
+                if (menuTitle) {
+                  // manseRyeokTable이 이미 완전한 HTML 구조인지 확인
+                  const tempParser = new DOMParser()
+                  const tempDoc = tempParser.parseFromString(manseRyeokTable, 'text/html')
+                  const existingContainer = tempDoc.querySelector('.manse-ryeok-container')
+                  
+                  const manseDiv = doc.createElement('div')
+                  manseDiv.className = 'manse-ryeok-wrapper'
+                  const containerDiv = doc.createElement('div')
+                  containerDiv.className = 'manse-ryeok-container'
+                  
+                  if (existingContainer) {
+                    // 이미 컨테이너가 포함되어 있으면 innerHTML만 복사
+                    containerDiv.innerHTML = existingContainer.innerHTML
+                  } else {
+                    // 컨테이너가 없으면 새로 생성
+                    containerDiv.innerHTML = manseRyeokTable
+                  }
+                  
+                  manseDiv.appendChild(containerDiv)
+                  
+                  // 오행 판별 함수 (목, 화, 토, 금, 수 글자 포함)
+                  const getElement = (char: string): string | null => {
+                    if (['갑', '을', '甲', '乙', '인', '묘', '寅', '卯', '목', '木'].includes(char)) return 'wood'
+                    if (['병', '정', '丙', '丁', '사', '오', '巳', '午', '화', '火'].includes(char)) return 'fire'
+                    if (['무', '기', '戊', '己', '진', '술', '축', '미', '辰', '戌', '丑', '未', '토', '土'].includes(char)) return 'earth'
+                    if (['경', '신', '庚', '辛', '유', '申', '酉', '금', '金'].includes(char)) return 'metal'
+                    if (['임', '계', '壬', '癸', '자', '해', '子', '亥', '수', '水'].includes(char)) return 'water'
+                    return null
+                  }
+                  
+                  // 천간/지지 판별 (크기 확대 대상)
+                  const cheonganJiji = ['갑', '을', '병', '정', '무', '기', '경', '신', '임', '계',
+                    '甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸',
+                    '자', '축', '인', '묘', '진', '사', '오', '미', '신', '유', '술', '해',
+                    '子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
+                  
+                  // 일반 폰트 적용 행 (오행 색상 적용 안 함)
+                  const normalFontRows = ['십성', '지장간', '십이운성']
+                  
+                  // 만세력 테이블 셀에 오행 클래스 적용
+                  const rows = containerDiv.querySelectorAll('tr')
+                  rows.forEach((row: Element) => {
+                    const cells = row.querySelectorAll('td')
+                    if (cells.length === 0) return
+                    
+                    // 첫 번째 셀(구분 컬럼)의 텍스트 확인
+                    const firstCellText = cells[0]?.textContent?.trim() || ''
+                    
+                    // 십성, 지장간, 십이운성 행은 일반 폰트 (오행 색상 적용 안 함)
+                    const isNormalFontRow = normalFontRows.some(keyword => firstCellText.includes(keyword))
+                    
+                    cells.forEach((cell: Element, cellIndex: number) => {
+                      const text = cell.textContent?.trim() || ''
+                      if (!text) return
+                      
+                      // 첫 번째 컬럼(구분 컬럼)은 스타일 변경 안 함
+                      if (cellIndex === 0) return
+                      
+                      // 일반 폰트 행은 스타일 적용 안 함
+                      if (isNormalFontRow) {
+                        return
+                      }
+                      
+                      // 셀 전체 내용에 오행 색상 적용 (셀 전체를 하나의 span으로 감싸기)
+                      // 주요 오행 찾기 (첫 번째로 발견된 오행 사용)
+                      let mainElement: string | null = null
+                      let hasGanzi = false
+                      
+                      for (const char of text) {
+                        const element = getElement(char)
+                        const isGanzi = cheonganJiji.includes(char)
+                        
+                        if (element && !mainElement) {
+                          mainElement = element
+                        }
+                        if (isGanzi) {
+                          hasGanzi = true
+                        }
+                      }
+                      
+                      // 오행이 있으면 셀 전체를 하나의 span으로 감싸기
+                      if (mainElement || hasGanzi) {
+                        const elementClass = mainElement ? `manse-element-${mainElement}` : ''
+                        const ganziClass = hasGanzi ? 'manse-ganzi-char' : ''
+                        cell.innerHTML = `<span class="${elementClass} ${ganziClass}">${text}</span>`
+                      }
+                    })
+                  })
+                  
+                  // 대메뉴 썸네일 다음에 삽입 (없으면 대메뉴 제목 다음에)
+                  const menuThumbnail = section.querySelector('.menu-thumbnail-container')
+                  if (menuThumbnail) {
+                    menuThumbnail.insertAdjacentElement('afterend', manseDiv)
+                  } else {
+                    menuTitle.insertAdjacentElement('afterend', manseDiv)
+                  }
+                }
+              }
               
               if (menuItem?.subtitles) {
                 const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'))
@@ -4215,13 +4821,39 @@ ${fontFace ? fontFace : ''}
         } catch (e) {
         }
         
-        // 플로팅 배너 HTML 생성
+        // 플로팅 배너 HTML 생성 (나의 사주명식 보기 + 목차로 이동)
         let bannerHtml = ''
         try {
           if (menuItems.length > 0) {
-            bannerHtml = '<div style="position: fixed; bottom: 24px; right: 24px; z-index: 40;">'
-            const bannerButtonHtml = '<button onclick="document.getElementById(\'table-of-contents\').scrollIntoView({ behavior: \'smooth\', block: \'start\' })" style="background: linear-gradient(to right, #ec4899, #db2777); color: white; font-weight: 600; padding: 12px 24px; border-radius: 9999px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); transition: all 0.3s; display: flex; align-items: center; gap: 8px; border: none; cursor: pointer; opacity: 0.8;" onmouseover="this.style.opacity=\'1\'; this.style.boxShadow=\'0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)\';" onmouseout="this.style.opacity=\'0.8\'; this.style.boxShadow=\'0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)\';">'
-            bannerHtml += bannerButtonHtml
+            bannerHtml = '<div style="position: fixed; bottom: 24px; right: 24px; z-index: 40; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">'
+            
+            // 나의 사주명식 보기 버튼 (만세력이 있을 때만 표시)
+            if (manseRyeokTable) {
+              const mansePopupId = 'manse-popup-' + Date.now()
+              const manseButtonHtml = '<button onclick="document.getElementById(\'' + mansePopupId + '\').style.display=\'flex\';" style="background: rgba(236, 72, 153, 0.8); color: white; font-weight: 600; padding: 10px 20px; border-radius: 9999px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); transition: all 0.3s; border: none; cursor: pointer; opacity: 0.8; font-size: 14px;" onmouseover="this.style.opacity=\'1\'; this.style.boxShadow=\'0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)\';" onmouseout="this.style.opacity=\'0.8\'; this.style.boxShadow=\'0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)\';">나의 사주명식 보기</button>'
+              bannerHtml += manseButtonHtml
+              
+              // 만세력 팝업 HTML 추가
+              const mansePopupHtml = '<div id="' + mansePopupId + '" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); align-items: center; justify-content: center; z-index: 100; padding: 16px;">' +
+                '<div style="background: white; border-radius: 16px; max-width: 896px; width: 100%; max-height: 90vh; overflow: auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); position: relative; display: flex; flex-direction: column;">' +
+                '<button onclick="document.getElementById(\'' + mansePopupId + '\').style.display=\'none\';" style="position: absolute; top: 16px; right: 16px; color: #ec4899; background: none; border: none; cursor: pointer; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background 0.2s; z-index: 10;" onmouseover="this.style.background=\'rgba(236, 72, 153, 0.1)\';" onmouseout="this.style.background=\'transparent\';">' +
+                '<svg style="width: 24px; height: 24px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>' +
+                '</button>' +
+                '<div style="padding: 24px; padding-top: 64px;">' +
+                '<h2 style="font-size: 24px; font-weight: 700; color: #111827; margin-bottom: 24px; text-align: center; background: linear-gradient(to right, #ec4899, #db2777); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">나의 사주명식 (만세력)</h2>' +
+                '<div class="manse-ryeok-popup-container">' + manseRyeokTable.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${') + '</div>' +
+                '</div>' +
+                '<div style="padding: 16px; border-top: 1px solid #e5e7eb; display: flex; justify-content: center;">' +
+                '<button onclick="document.getElementById(\'' + mansePopupId + '\').style.display=\'none\';" style="background: linear-gradient(to right, #ec4899, #db2777); color: white; font-weight: 600; padding: 12px 32px; border-radius: 9999px; border: none; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.transform=\'scale(1.05)\';" onmouseout="this.style.transform=\'scale(1)\';">닫기</button>' +
+                '</div>' +
+                '</div>' +
+                '</div>'
+              bannerHtml += mansePopupHtml
+            }
+            
+            // 목차로 이동 버튼
+            const tocButtonHtml = '<button onclick="document.getElementById(\'table-of-contents\').scrollIntoView({ behavior: \'smooth\', block: \'start\' })" style="background: linear-gradient(to right, #ec4899, #db2777); color: white; font-weight: 600; padding: 12px 24px; border-radius: 9999px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); transition: all 0.3s; display: flex; align-items: center; gap: 8px; border: none; cursor: pointer; opacity: 0.8;" onmouseover="this.style.opacity=\'1\'; this.style.boxShadow=\'0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)\';" onmouseout="this.style.opacity=\'0.8\'; this.style.boxShadow=\'0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)\';">'
+            bannerHtml += tocButtonHtml
             bannerHtml += '<svg xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 20px;" fill="none" viewBox="0 0 24 24" stroke="currentColor">'
             bannerHtml += '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />'
             bannerHtml += '</svg>'
@@ -4588,7 +5220,7 @@ ${fontFace ? fontFace : ''}
                   width: 100%;
                   aspect-ratio: 1/1;
                   margin-top: 8px;
-                  margin-bottom: 16px;
+                  margin-bottom: 32px;
                   display: flex;
                   justify-content: center;
                   align-items: center;
@@ -4620,6 +5252,168 @@ ${fontFace ? fontFace : ''}
                   height: 100%;
                   display: block;
                   object-fit: contain;
+                }
+                
+                /* 만세력 테이블 스타일 */
+                .manse-ryeok-wrapper {
+                  margin: 1.5rem 0 2rem 0;
+                }
+                .manse-ryeok-container {
+                  position: relative;
+                  padding: 2px;
+                  border-radius: 18px;
+                  background: linear-gradient(135deg, #d4a853 0%, #c9956c 25%, #8b5a2b 50%, #c9956c 75%, #d4a853 100%);
+                  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(212, 168, 83, 0.5);
+                  margin-bottom: 2.5rem;
+                }
+                .manse-ryeok-container table,
+                .manse-ryeok-table {
+                  width: 100%;
+                  border-collapse: separate;
+                  border-spacing: 0;
+                  background: linear-gradient(180deg, #fefbf3 0%, #f5efe0 100%);
+                  border-radius: 16px;
+                  overflow: hidden;
+                  position: relative;
+                  z-index: 1;
+                }
+                .manse-ryeok-container th,
+                .manse-ryeok-table th {
+                  background: linear-gradient(180deg, #8b5a2b 0%, #6d4422 100%);
+                  color: #fef8e8;
+                  font-weight: 700;
+                  padding: 6px 4px;
+                  text-align: center;
+                  font-size: 0.8rem;
+                  letter-spacing: 0.05em;
+                  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+                  border-bottom: 2px solid #d4a853;
+                  white-space: nowrap;
+                  vertical-align: middle;
+                }
+                .manse-ryeok-container td,
+                .manse-ryeok-table td {
+                  background: transparent;
+                  padding: 12px 8px;
+                  text-align: center;
+                  border-bottom: 1px solid rgba(212, 196, 168, 0.3);
+                  white-space: nowrap;
+                  vertical-align: middle;
+                }
+                .manse-ryeok-container tr:last-child td,
+                .manse-ryeok-table tr:last-child td {
+                  border-bottom: none;
+                }
+                
+                /* 오행별 색상 (천간/지지) */
+                /* 목(木): 갑, 을, 인, 묘 - 고급 청색 */
+                .manse-element-wood {
+                  color: #1e40af;
+                  text-shadow: 0 1px 2px rgba(30, 64, 175, 0.2);
+                }
+                /* 화(火): 병, 정, 사, 오 - 고급 적색 (더 진하게) */
+                .manse-element-fire {
+                  color: #991b1b;
+                  text-shadow: 0 1px 2px rgba(153, 27, 27, 0.2);
+                }
+                /* 토(土): 무, 기, 진, 술, 축, 미 - 약간 짙은 고급 노란색 */
+                .manse-element-earth {
+                  color: #d97706;
+                  text-shadow: 0 1px 2px rgba(217, 119, 6, 0.2);
+                }
+                /* 금(金): 경, 신, 신, 유 - 고급 회색 */
+                .manse-element-metal {
+                  color: #6b7280;
+                  text-shadow: 0 1px 2px rgba(107, 114, 128, 0.2);
+                }
+                /* 수(水): 임, 계, 자, 해 - 고급 검정색 */
+                .manse-element-water {
+                  color: #1f2937;
+                  text-shadow: 0 1px 2px rgba(31, 41, 55, 0.2);
+                }
+                
+                /* 천간/지지 폰트 크기 */
+                .manse-ganzi-char {
+                  font-size: 1.2em;
+                  font-weight: 700;
+                }
+                
+                /* 만세력 테이블 기본 스타일 - 패딩 최소화, 가운데 정렬, 줄바꿈 방지 */
+                .manse-ryeok-container td,
+                .manse-ryeok-table td {
+                  padding: 4px 2px;
+                  font-size: 0.85rem;
+                  text-align: center;
+                  vertical-align: middle;
+                  white-space: nowrap;
+                }
+                .manse-ryeok-container th,
+                .manse-ryeok-table th {
+                  padding: 12px 8px;
+                  font-size: 0.8rem;
+                  text-align: center;
+                  vertical-align: middle;
+                  white-space: nowrap;
+                }
+                
+                /* 만세력 테이블 너비 자동 조절 */
+                .manse-ryeok-container table,
+                .manse-ryeok-table {
+                  table-layout: auto;
+                  width: 100%;
+                }
+                
+                /* 첫 번째 컬럼(범례) 스타일 - 조금 짙은 단색 배경 */
+                .manse-ryeok-container td:first-child,
+                .manse-ryeok-table td:first-child {
+                  font-weight: 700;
+                  color: #5a4a32;
+                  background: #d4c4a8;
+                }
+                
+                /* 헤더 행의 "구분" 셀만 시주/일주와 동일한 그라데이션 (더 구체적인 선택자) */
+                .manse-ryeok-table thead th:first-child,
+                .manse-ryeok-container .manse-ryeok-table thead th:first-child,
+                .manse-ryeok-container table thead th:first-child,
+                .manse-ryeok-table tr:first-child th:first-child,
+                .manse-ryeok-container .manse-ryeok-table tr:first-child th:first-child,
+                .manse-ryeok-container table tr:first-child th:first-child {
+                  background: linear-gradient(180deg, #8b5a2b 0%, #6d4422 100%);
+                  color: #fef8e8;
+                  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+                }
+                
+                /* 모바일에서 만세력 테이블 폰트 조절 */
+                @media (max-width: 480px) {
+                  .manse-ryeok-container td,
+                  .manse-ryeok-table td {
+                    padding: 8px 4px;
+                    font-size: 0.8rem;
+                  }
+                  .manse-ryeok-container th,
+                  .manse-ryeok-table th {
+                    padding: 8px 4px;
+                    font-size: 0.7rem;
+                  }
+                  .manse-ganzi-char {
+                    font-size: 1.1em;
+                  }
+                }
+                
+                @media (max-width: 360px) {
+                  .manse-ryeok-container td,
+                  .manse-ryeok-table td {
+                    padding: 6px 3px;
+                    font-size: 0.75rem;
+                  }
+                  .manse-ryeok-container th,
+                  .manse-ryeok-table th {
+                    padding: 6px 3px;
+                    font-size: 0.65rem;
+                  }
+                  .manse-ganzi-char {
+                    font-size: 1em;
+                  }
                 }
               </style>
             </head>
@@ -5345,7 +6139,8 @@ ${fontFace ? fontFace : ''}
       {parsedMenus.length > 0 && (
         <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
           {/* 점사율 로딩바 (목차로 이동 버튼 위에 수직 배치, 시작 위치 맞춤) */}
-          {!streamingFinished && isStreamingActive && totalSubtitles > 0 && (
+          {/* ✅ 조건 강화: streamingFinished가 true이거나 점사율이 100%이면 숨김 */}
+          {!streamingFinished && isStreamingActive && totalSubtitles > 0 && revealedCount < totalSubtitles && (
             <div 
               className="relative overflow-visible py-0.5" 
               style={{ width: tocButtonWidth ? `${tocButtonWidth}px` : 'fit-content', minWidth: '120px' }}
@@ -5400,12 +6195,12 @@ ${fontFace ? fontFace : ''}
       
       {/* 나의 사주명식 보기 팝업 */}
       {showMansePopup && parsedMenus.length > 0 && parsedMenus[0].manseHtml && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-auto shadow-2xl relative flex flex-col">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-auto shadow-2xl relative flex flex-col">
             {/* 닫기 버튼 (우측 상단) */}
             <button
               onClick={() => setShowMansePopup(false)}
-              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 transition-colors w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 z-10"
+              className="absolute top-4 right-4 text-pink-500 hover:text-pink-600 transition-colors w-10 h-10 flex items-center justify-center rounded-full hover:bg-pink-50 z-10"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -5413,8 +6208,18 @@ ${fontFace ? fontFace : ''}
             </button>
             
             {/* 만세력 표시 */}
-            <div className="p-6 pt-12 flex-1">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">나의 사주명식</h2>
+            <div className="p-8 pt-10 flex-1">
+              {/* 제목 영역 */}
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center gap-3">
+                  <span className="text-2xl">☯️</span>
+                  <h2 className="text-2xl font-bold text-gray-900">
+                    나의 사주명식
+                  </h2>
+                  <span className="text-2xl">☯️</span>
+                </div>
+              </div>
+              
               <div 
                 className="manse-ryeok-container"
                 dangerouslySetInnerHTML={{ __html: parsedMenus[0].manseHtml || '' }}
@@ -5422,10 +6227,10 @@ ${fontFace ? fontFace : ''}
             </div>
             
             {/* 하단 닫기 버튼 */}
-            <div className="p-6 border-t border-gray-200">
+            <div className="p-6 border-t border-gray-100">
               <button
                 onClick={() => setShowMansePopup(false)}
-                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-300 shadow-lg shadow-pink-500/25 hover:shadow-pink-600/30"
               >
                 닫기
               </button>
@@ -5612,7 +6417,7 @@ ${fontFace ? fontFace : ''}
                     const menuThumbnailVideoUrl = menuItem?.thumbnail_video_url || ''
                     if (menuThumbnailImageUrl || menuThumbnailVideoUrl) {
                       return (
-                        <div className="w-full mb-4">
+                        <div className="w-full" style={{ marginBottom: '32px' }}>
                           {menuThumbnailVideoUrl && menuThumbnailImageUrl ? (
                             <SupabaseVideo
                               thumbnailImageUrl={menuThumbnailImageUrl}
@@ -5642,12 +6447,12 @@ ${fontFace ? fontFace : ''}
                   {/* 첫 번째 대제목 아래 만세력 테이블 (1-1 소제목 준비 이후에만 표시) */}
                   {menuIndex === 0 && menu.manseHtml && firstSubtitleReady && (
                     <div
-                      className="mt-4"
+                      className="mt-4 mb-8"
                       dangerouslySetInnerHTML={{ __html: menu.manseHtml }}
                     />
                   )}
 
-                  <div className="space-y-4">
+                  <div className="space-y-4" style={{ marginTop: (menuIndex === 0 && menu.manseHtml && firstSubtitleReady) ? '0' : '32px' }}>
                     {menu.subtitles.map((sub, subIndex) => {
                       // 활성 항목까지만 표시 (이후 항목은 숨김)
                       if (shouldGateByActivePos && activePos && menuIndex === activePos.menuIndex && subIndex > activePos.subIndex) return null
@@ -5743,33 +6548,6 @@ ${fontFace ? fontFace : ''}
                       )
                     })}
                   </div>
-                  
-                  {/* 엔딩북커버 썸네일 (마지막 대제목 라운드 박스 안, 소제목들 아래) */}
-                  {menuIndex === parsedMenus.length - 1 && (content?.ending_book_cover_thumbnail || content?.ending_book_cover_thumbnail_video) && (
-                    <div className="ending-book-cover-thumbnail-container w-full mt-4" style={{ aspectRatio: '2/3' }}>
-                      {content?.ending_book_cover_thumbnail_video && content?.ending_book_cover_thumbnail ? (
-                        <SupabaseVideo
-                          thumbnailImageUrl={content.ending_book_cover_thumbnail}
-                          videoBaseName={content.ending_book_cover_thumbnail_video}
-                          className="w-full h-full rounded-lg"
-                          objectFit="contain"
-                        />
-                      ) : content?.ending_book_cover_thumbnail ? (
-                        <img 
-                          src={content.ending_book_cover_thumbnail} 
-                          alt=""
-                          className="w-full h-full object-contain rounded-lg"
-                          style={{ opacity: 0 }}
-                          onLoad={(e) => {
-                            (e.target as HTMLImageElement).style.opacity = '1'
-                          }}
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none'
-                          }}
-                        />
-                      ) : null}
-                    </div>
-                  )}
                 </div>
                 )
               })}
@@ -6270,6 +7048,33 @@ ${fontFace ? fontFace : ''}
                 : '' 
             }}
           />
+        )}
+
+        {/* 엔딩 북커버 썸네일 (점사가 모두 완료된 후에만 표시) */}
+        {(content?.ending_book_cover_thumbnail || content?.ending_book_cover_thumbnail_video) && (!isRealtimeStreaming || streamingFinished) && (
+          <div className="ending-book-cover-thumbnail-container w-full mt-10" style={{ aspectRatio: '2/3' }}>
+            {content?.ending_book_cover_thumbnail_video && content?.ending_book_cover_thumbnail ? (
+              <SupabaseVideo
+                thumbnailImageUrl={content.ending_book_cover_thumbnail}
+                videoBaseName={content.ending_book_cover_thumbnail_video}
+                className="w-full h-full rounded-lg"
+                objectFit="contain"
+              />
+            ) : content?.ending_book_cover_thumbnail ? (
+              <img 
+                src={content.ending_book_cover_thumbnail} 
+                alt=""
+                className="w-full h-full object-contain rounded-lg"
+                style={{ opacity: 0 }}
+                onLoad={(e) => {
+                  (e.target as HTMLImageElement).style.opacity = '1'
+                }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none'
+                }}
+              />
+            ) : null}
+          </div>
         )}
       </main>
 

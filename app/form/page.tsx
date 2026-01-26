@@ -2182,7 +2182,7 @@ function FormContent() {
         return
       }
       
-      // 결제정보 팝업 즉시 닫기 (최대한 빠른 리절트 화면 이동을 위해)
+      // 결제 완료 - 팝업 닫고 리절트로 이동
       setShowPaymentPopup(false)
       setSubmitting(false)
       setPaymentProcessingMethod(null)
@@ -2298,7 +2298,6 @@ function FormContent() {
             isProcessing = false
             setSubmitting(false)
             setPaymentProcessingMethod(null)
-            setShowPaymentPopup(false)
             // 에러 메시지 표시
             showAlertMessage(error instanceof Error ? error.message : '점사 시작 중 오류가 발생했습니다.')
           }
@@ -2308,7 +2307,6 @@ function FormContent() {
           isProcessing = false
           setSubmitting(false)
           setPaymentProcessingMethod(null)
-          setShowPaymentPopup(false)
         }
       } catch (error) {
         console.error('[결제 성공] 컨텐츠 로드 오류:', error)
@@ -2316,7 +2314,6 @@ function FormContent() {
         isProcessing = false
         setSubmitting(false)
         setPaymentProcessingMethod(null)
-        setShowPaymentPopup(false)
       }
     }
     
@@ -3347,9 +3344,7 @@ function FormContent() {
             new Promise((resolve) => setTimeout(resolve, 3000))
           ])
           
-          setSubmitting(false)
-          setShowPaymentPopup(false) // 팝업 닫기
-          setPaymentProcessingMethod(null)
+          // 리절트로 이동
           router.push('/result')
           return
         }
@@ -3365,12 +3360,7 @@ function FormContent() {
           // 오류가 발생해도 페이지 이동은 진행
         }
         
-        // 페이지 이동은 항상 실행 (비동기 작업 성공/실패와 무관)
-        // 결제 완료 후 최대한 빠르게 리절트 화면으로 이동
-        setSubmitting(false)
-        // 결제정보 팝업 닫기 (최대한 빠른 이동을 위해)
-        setShowPaymentPopup(false)
-        setPaymentProcessingMethod(null)
+        // 리절트로 이동
         router.push('/result')
         return
       }
@@ -4222,6 +4212,8 @@ function FormContent() {
           className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
           onClick={(e) => {
+            // 결제 진행 중에는 닫기 불가
+            if (paymentProcessingMethod) return
             // 오버레이 클릭 시 팝업 닫기 (팝업 내용 클릭 시에는 닫지 않음)
             if (e.target === e.currentTarget) {
               setShowPaymentPopup(false)
@@ -4249,6 +4241,7 @@ function FormContent() {
               <button
                 type="button"
                 onClick={() => {
+                  if (paymentProcessingMethod) return // 결제 진행 중에는 닫기 불가
                   setShowPaymentPopup(false)
                   setPaymentProcessingMethod(null)
                   setPhoneNumber1('010')
@@ -4257,6 +4250,7 @@ function FormContent() {
                   setPassword('')
                 }}
                 className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
+                disabled={!!paymentProcessingMethod}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

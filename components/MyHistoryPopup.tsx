@@ -693,8 +693,106 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
         }
       }
       
-      // DOMParser로 썸네일 추가 ("보기" 버튼과 동일)
-      // ... (기존 코드)
+      // DOMParser로 대메뉴/소메뉴 썸네일 추가 ("보기" 버튼과 동일)
+      try {
+        if (menuItems.length > 0) {
+          const parser = new DOMParser()
+          const doc = parser.parseFromString(htmlContent, 'text/html')
+          const menuSections = Array.from(doc.querySelectorAll('.menu-section'))
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+          const bucketUrl = supabaseUrl ? supabaseUrl + '/storage/v1/object/public/thumbnails' : ''
+          
+          menuSections.forEach((section, menuIndex) => {
+            const menuItem = menuItems[menuIndex]
+            if (!menuItem) return
+            
+            // 대메뉴 썸네일 추가
+            const menuThumbnailImageUrl = menuItem?.thumbnail_image_url || menuItem?.thumbnail || ''
+            if (menuThumbnailImageUrl) {
+              const menuTitle = section.querySelector('.menu-title')
+              if (menuTitle) {
+                const thumbnailDiv = doc.createElement('div')
+                thumbnailDiv.className = 'menu-thumbnail-container'
+                thumbnailDiv.style.cssText = 'width: 100%; margin-bottom: 16px; margin-top: 8px;'
+                
+                const imgEl = doc.createElement('img')
+                imgEl.src = menuThumbnailImageUrl
+                imgEl.alt = ''
+                imgEl.style.cssText = 'width: 100%; height: auto; object-fit: contain; border-radius: 8px; display: block;'
+                thumbnailDiv.appendChild(imgEl)
+                
+                menuTitle.insertAdjacentElement('afterend', thumbnailDiv)
+              }
+            }
+            
+            // 소메뉴 썸네일 추가
+            if (menuItem?.subtitles) {
+              const subtitleSections = Array.from(section.querySelectorAll('.subtitle-section'))
+              const subtitles = menuItem.subtitles
+              
+              subtitleSections.forEach((subtitleSection, subIndex) => {
+                const subtitle = subtitles[subIndex]
+                if (!subtitle) return
+                
+                const subtitleThumbnailImageUrl = subtitle?.thumbnail_image_url || subtitle?.thumbnail || ''
+                if (subtitleThumbnailImageUrl) {
+                  const subtitleTitle = subtitleSection.querySelector('.subtitle-title')
+                  if (subtitleTitle) {
+                    const thumbnailDiv = doc.createElement('div')
+                    thumbnailDiv.className = 'subtitle-thumbnail-container'
+                    thumbnailDiv.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #f3f4f6; border-radius: 8px; overflow: hidden;'
+                    
+                    const imgEl = doc.createElement('img')
+                    imgEl.src = subtitleThumbnailImageUrl
+                    imgEl.alt = ''
+                    imgEl.style.cssText = 'width: 100%; height: 100%; object-fit: contain; display: block;'
+                    thumbnailDiv.appendChild(imgEl)
+                    
+                    subtitleTitle.insertAdjacentElement('afterend', thumbnailDiv)
+                  }
+                }
+                
+                // 상세메뉴 썸네일 추가
+                const detailMenuSections = Array.from(subtitleSection.querySelectorAll('.detail-menu-section'))
+                const detailMenus = subtitle?.detailMenus || []
+                
+                detailMenuSections.forEach((detailMenuSection, dmIndex) => {
+                  const detailMenu = detailMenus[dmIndex]
+                  if (!detailMenu) return
+                  
+                  const detailMenuThumbnailImageUrl = detailMenu?.thumbnail_image_url || detailMenu?.thumbnail || ''
+                  if (detailMenuThumbnailImageUrl) {
+                    const detailMenuTitle = detailMenuSection.querySelector('.detail-menu-title')
+                    if (detailMenuTitle) {
+                      const thumbnailDiv = doc.createElement('div')
+                      thumbnailDiv.className = 'detail-menu-thumbnail-container'
+                      thumbnailDiv.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #f3f4f6; border-radius: 8px; overflow: hidden;'
+                      
+                      const imgEl = doc.createElement('img')
+                      imgEl.src = detailMenuThumbnailImageUrl
+                      imgEl.alt = ''
+                      imgEl.style.cssText = 'width: 100%; height: 100%; object-fit: contain; display: block;'
+                      thumbnailDiv.appendChild(imgEl)
+                      
+                      detailMenuTitle.insertAdjacentElement('afterend', thumbnailDiv)
+                    }
+                  }
+                })
+              })
+            }
+          })
+          
+          // 변경된 HTML 추출
+          const bodyMatch = doc.documentElement.outerHTML.match(/<body[^>]*>([\s\S]*)<\/body>/i)
+          if (bodyMatch) {
+            htmlContent = bodyMatch[1]
+          } else {
+            htmlContent = doc.body.innerHTML
+          }
+        }
+      } catch (e) {
+        console.error('[PDF 생성] 썸네일 삽입 오류:', e)
+      }
 
       console.log('[PDF 생성] 컨텐츠 정보:', {
         hasContent: !!contentObj,
