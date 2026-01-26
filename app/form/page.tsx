@@ -3238,39 +3238,39 @@ function FormContent() {
         
         // Supabase에 임시 요청 데이터 저장 (필수 - 리절트 페이지에서 필요)
         const saveTempRequestTask = fetch('/api/temp-request/save', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            requestKey,
-            payload
-          })
-        }).then(async (saveResponse) => {
-          if (!saveResponse.ok) {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              requestKey,
+              payload
+            })
+          }).then(async (saveResponse) => {
+            if (!saveResponse.ok) {
+              const text = await saveResponse.text()
+              let errorData: any = {}
+              if (text) {
+                try {
+                  errorData = JSON.parse(text)
+                } catch (e) {
+                  errorData = { error: text || '임시 요청 데이터 저장 실패' }
+                }
+              }
+              throw new Error(errorData.error || '임시 요청 데이터 저장 실패')
+            }
             const text = await saveResponse.text()
-            let errorData: any = {}
             if (text) {
               try {
-                errorData = JSON.parse(text)
+                return JSON.parse(text)
               } catch (e) {
-                errorData = { error: text || '임시 요청 데이터 저장 실패' }
+                console.error('응답 파싱 실패:', e)
               }
             }
-            throw new Error(errorData.error || '임시 요청 데이터 저장 실패')
-          }
-          const text = await saveResponse.text()
-          if (text) {
-            try {
-              return JSON.parse(text)
-            } catch (e) {
-              console.error('응답 파싱 실패:', e)
-            }
-          }
-        }).catch((e: any) => {
-          console.error('[결제 처리] 임시 요청 데이터 저장 실패:', e)
-          // 저장 실패해도 페이지 이동은 진행
-        })
+          }).catch((e: any) => {
+            console.error('[결제 처리] 임시 요청 데이터 저장 실패:', e)
+            // 저장 실패해도 페이지 이동은 진행
+          })
 
         // 비동기 작업들은 Promise.allSettled로 병렬 처리하고, 실패해도 페이지 이동은 진행
         const asyncTasks = [saveTempRequestTask]

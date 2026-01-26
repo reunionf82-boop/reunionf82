@@ -328,6 +328,42 @@ function ResultContent() {
   const [shouldStop, setShouldStop] = useState(false) // 재생 중지 플래그 (UI 업데이트용)
   const [ttsStatus, setTtsStatus] = useState<string | null>(null) // TTS 상태 메시지 (음성 생성 중, 재생 시작 등)
 
+  // 결과 제목(예: [김슬기 : 양력 2000년 1월 20일 (음력 1999년 12월 14일) 丑시(01:30 ~ 03:29)])을 보기 좋게 분해
+  const parsePrettyResultTitle = (rawTitle: string) => {
+    const raw = (rawTitle || '').trim()
+    if (!raw) return null
+
+    // 바깥 대괄호 제거
+    const unwrapped = raw.replace(/^\s*\[/, '').replace(/\]\s*$/, '').trim()
+
+    // "이름 : ..." 형태
+    const colonIdx = unwrapped.indexOf(':')
+    if (colonIdx < 0) return null
+
+    const name = unwrapped.slice(0, colonIdx).trim()
+    const rest = unwrapped.slice(colonIdx + 1).trim()
+
+    const solarMatch = rest.match(/양력\s*([0-9]{4}년\s*\d{1,2}월\s*\d{1,2}일)/)
+    const lunarMatch = rest.match(/음력\s*([0-9]{4}년\s*\d{1,2}월\s*\d{1,2}일)/)
+
+    // 예: 丑시(01:30 ~ 03:29) / 子시(09:30~11:29)
+    const timeMatch = rest.match(/([子丑寅卯辰巳午未申酉戌亥])\s*시\s*\(([^)]+)\)/)
+    const branch = timeMatch?.[1] || ''
+    const timeRange = timeMatch?.[2]?.replace(/\s+/g, ' ').trim() || ''
+
+    // ✅ 사람 정보 헤더로 확실히 보이는 경우에만 카드 렌더링 (컨텐츠 제목 오인 방지)
+    if (!name || !solarMatch || !lunarMatch) return null
+
+    return {
+      name,
+      solar: solarMatch?.[1] || '',
+      lunar: lunarMatch?.[1] || '',
+      branch,
+      timeRange,
+      raw: rawTitle,
+    }
+  }
+
   // 오디오 중지 함수 (여러 곳에서 재사용)
   const stopAndResetAudio = () => {
     shouldStopRef.current = true // ref 업데이트 (즉시 반영)
@@ -765,22 +801,51 @@ function ResultContent() {
               if (firstMenuSectionMatch) {
                 const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
 
+                // ✅ 만세력 바로 위 1줄(사주명식 정보 라인)만 예쁘게 감싸기
+                // - 점사 본문 전체를 파싱/변경하지 않기 위해, "맨 앞"의 해당 라인만 추출하여 만세력 앞에 배치한다.
+                let headerLineHtml = ''
+                try {
+                  const headerLineMatch = cleanedChunkHtml.match(/\[[^\]]*양력[^\]]*음력[^\]]*\]/)
+                  if (headerLineMatch) {
+                    const parsed = parsePrettyResultTitle(headerLineMatch[0])
+                    if (parsed) {
+                      const timeLabel = parsed.branch ? `${parsed.branch}시` : '시간'
+                      const timeText = parsed.timeRange ? `(${parsed.timeRange})` : ''
+                      headerLineHtml =
+                        `<div class="manse-header-line">` +
+                        `<div class="manse-header-name">${parsed.name}</div>` +
+                        `<div class="manse-header-badges">` +
+                        `<span class="manse-header-badge"><strong>양력</strong> ${parsed.solar}</span>` +
+                        `<span class="manse-header-badge"><strong>음력</strong> ${parsed.lunar}</span>` +
+                        `<span class="manse-header-badge"><strong>${timeLabel}</strong> ${timeText}</span>` +
+                        `</div>` +
+                        `</div>`
+                    }
+                    // 해당 라인은 본문에서 제거 (중복 방지)
+                    cleanedChunkHtml = cleanedChunkHtml.replace(headerLineMatch[0], '')
+                  }
+                } catch {
+                  // 실패 시 무시
+                }
+
+                const manseBlock = `${headerLineHtml}${manseRyeokTable}`
+
                 if (thumbnailMatch) {
                   cleanedChunkHtml = cleanedChunkHtml.replace(
                     /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
-                    `$1\n${manseRyeokTable}`
+                    `$1\n${manseBlock}`
                   )
                 } else {
                   const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
                   if (menuTitleMatch) {
                     cleanedChunkHtml = cleanedChunkHtml.replace(
                       /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
-                      `$1\n${manseRyeokTable}`
+                      `$1\n${manseBlock}`
                     )
                   } else {
                     cleanedChunkHtml = cleanedChunkHtml.replace(
                       /(<div class="menu-section">)\s*/,
-                      `$1\n${manseRyeokTable}`
+                      `$1\n${manseBlock}`
                     )
                   }
                 }
@@ -855,7 +920,7 @@ function ResultContent() {
 
             // 직렬점사: 완료 이벤트에서는 길이와 무관하게 최종 HTML을 적용
             lastRenderedLength = Math.max(lastRenderedLength, finalHtml.length)
-            setStreamingHtml(finalHtml)
+              setStreamingHtml(finalHtml)
 
             const finalResult: ResultData = {
               content,
@@ -2233,7 +2298,9 @@ ${fontFace ? fontFace : ''}
       ])
       
       // 일반 폰트 적용 행 (오행 색상 적용 안 함)
-      const normalFontRows = ['십성', '지장간', '십이운성']
+      const normalFontRows = ['십성', '지장간', '십이운성', '십이신살']
+      // 2줄 표시 행: 1줄(한글) + 2줄(괄호 포함 한문)
+      const twoLineRows = ['십성', '지장간', '십이신살']
       
       // DOMParser로 HTML 파싱
       const parser = new DOMParser()
@@ -2249,8 +2316,9 @@ ${fontFace ? fontFace : ''}
         // 첫 번째 셀(구분 컬럼)의 텍스트 확인
         const firstCellText = cells[0]?.textContent?.trim() || ''
         
-        // 십성, 지장간, 십이운성 행은 일반 폰트 (오행 색상 적용 안 함)
+        // 십성, 지장간, 십이운성, 십이신살 행은 일반 폰트 (오행 색상 적용 안 함)
         const isNormalFontRow = normalFontRows.some(keyword => firstCellText.includes(keyword))
+        const isTwoLineRow = twoLineRows.some(keyword => firstCellText.includes(keyword))
         
         cells.forEach((cell, cellIndex) => {
           const text = cell.textContent?.trim() || ''
@@ -2261,6 +2329,17 @@ ${fontFace ? fontFace : ''}
           
           // 일반 폰트 행은 스타일 적용 안 함
           if (isNormalFontRow) {
+            // ✅ 십성/지장간/십이신살은 2줄 표시로 가독성 개선
+            if (isTwoLineRow) {
+              const idx = text.indexOf('(')
+              if (idx > 0 && text.endsWith(')')) {
+                const kor = text.slice(0, idx).trim()
+                const hanja = text.slice(idx).trim() // (偏印) 같은 형태 포함
+                cell.innerHTML = `<span class="manse-two-line"><span class="manse-two-line-kor">${kor}</span><span class="manse-two-line-hanja">${hanja}</span></span>`
+              } else {
+                cell.textContent = text
+              }
+            }
             return
           }
           
@@ -2892,12 +2971,14 @@ ${fontFace ? fontFace : ''}
   // DOM 직접 수정으로 인한 깜빡임 문제 해결
 
   // 점사 "완료" 시 엔딩북커버로 이동 + 완료 팝업 표시
-  // ✅ 단순화: streamingFinished가 true가 되면 딜레이 후 강제로 팝업 표시
+  // ✅ 개선: streamingFinished가 true가 되면 실제 점사 완료 여부를 확인한 후 팝업 표시
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!isRealtimeStreaming) return
     if (!streamingFinished) return
     if (completionPopupShownRef.current) return
+    // 에러가 발생한 경우 팝업 표시 안 함
+    if (error) return
 
     // 새로고침/뒤로가기 등으로 중복 표시 방지 (requestKey 우선)
     const storageKey = `result_completion_popup_shown_${requestKey || savedId || 'unknown'}`
@@ -2911,9 +2992,40 @@ ${fontFace ? fontFace : ''}
     }
 
     // ✅ 핵심 수정: 딜레이를 주어 파싱이 완료될 시간을 확보
-    // streamingFinished가 true가 되면 800ms 후에 강제로 점사율 100% 설정 및 팝업 표시
+    // streamingFinished가 true가 되면 800ms 후에 실제 점사 완료 여부 확인 후 팝업 표시
     const timeoutId = setTimeout(() => {
       if (completionPopupShownRef.current) return
+      // 에러가 발생한 경우 팝업 표시 안 함 (타임아웃 내에 에러 발생 가능)
+      if (error) return
+      
+      // 실제 점사 완료 여부 확인
+      // 1. parsedMenus가 비어있으면 아직 파싱 중이거나 점사가 완료되지 않음
+      if (parsedMenus.length === 0) {
+        console.log('[완료 팝업] parsedMenus가 비어있음, 팝업 표시 안 함')
+        return
+      }
+      
+      // 2. resultData의 content.menu_items와 parsedMenus.length 비교
+      const expectedMenuCount = resultData?.content?.menu_items?.length || 0
+      const actualMenuCount = parsedMenus.length
+      
+      // 예상 대메뉴 개수가 있고, 실제 파싱된 대메뉴 개수가 예상보다 적으면 점사가 완료되지 않음
+      if (expectedMenuCount > 0 && actualMenuCount < expectedMenuCount) {
+        console.log('[완료 팝업] 점사가 완료되지 않음', {
+          expectedMenuCount,
+          actualMenuCount,
+          parsedMenus: parsedMenus.map(m => m.title)
+        })
+        return
+      }
+      
+      // 3. streamingHtml이 비어있거나 너무 짧으면 점사가 완료되지 않음
+      if (!streamingHtml || streamingHtml.length < 100) {
+        console.log('[완료 팝업] streamingHtml이 비어있거나 너무 짧음', {
+          htmlLength: streamingHtml?.length || 0
+        })
+        return
+      }
       
       try {
         sessionStorage.setItem(storageKey, '1')
@@ -2935,12 +3047,12 @@ ${fontFace ? fontFace : ''}
       
       // 애니메이션 완료 후 팝업 표시 (0.3초 후)
       setTimeout(() => {
-        setShowCompletionPopup(true)
+    setShowCompletionPopup(true)
       }, 300)
     }, 800)
     
     return () => clearTimeout(timeoutId)
-  }, [isRealtimeStreaming, streamingFinished, requestKey, savedId, parsedMenus])
+  }, [isRealtimeStreaming, streamingFinished, requestKey, savedId, parsedMenus, error, resultData, streamingHtml])
 
   if (loading) {
     return (
@@ -2980,6 +3092,8 @@ ${fontFace ? fontFace : ''}
   // 가드 통과 후 안전 분해 (가드에서 resultData 존재 확인했지만 안전을 위해 optional chaining 사용)
   const content = resultData?.content
   const html = resultData?.html || ''
+  // ✅ 상단 제목 영역에서는 점사 HTML 전체를 파싱하지 않는다 (오탐/부작용 방지)
+  // 만세력 블록 "바로 위 1줄"만 별도로 스타일링한다 (만세력 삽입/파싱 단계에서 처리)
   const startTime = resultData?.startTime
   const model = resultData?.model
 
@@ -3052,6 +3166,100 @@ ${fontFace ? fontFace : ''}
   
   const dynamicStyles = `
     ${Array.from(fontFaces).join('\n')}
+    /* ✅ 가로 오버플로우(화면 넘어감) 강제 차단 + 긴 텍스트 줄바꿈 */
+    html, body {
+      max-width: 100% !important;
+      overflow-x: hidden !important;
+    }
+    /* Tailwind container/레이아웃 조합에서 드물게 100vw 요소가 밖으로 튀는 경우 방지 */
+    main {
+      max-width: 100% !important;
+      overflow-x: hidden !important;
+    }
+    /* 결과 상단 제목/본문에서 긴 한 줄 텍스트가 화면 밖으로 나가지 않게 */
+    .result-title,
+    .jeminai-results .menu-title,
+    .jeminai-results .subtitle-title,
+    .jeminai-results .detail-menu-title,
+    .jeminai-results h1,
+    .jeminai-results h2,
+    .jeminai-results h3,
+    .jeminai-results p,
+    .jeminai-results div {
+      overflow-wrap: anywhere !important;
+      word-break: break-word !important;
+      white-space: normal !important;
+      max-width: 100% !important;
+    }
+    /* 만세력은 컨테이너 안에서만 가로 스크롤 */
+    .manse-ryeok-container {
+      overflow-x: auto !important;
+    }
+    /* 만세력 테이블 위 1줄(사주명식 정보) 예쁘게 */
+    .manse-header-line {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 6px !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      padding: 10px 12px !important;
+      margin: 0 0 10px 0 !important;
+      border-radius: 14px !important;
+      border: 1px solid rgba(245, 158, 11, 0.25) !important;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 251, 235, 0.9) 100%) !important;
+      max-width: 100% !important;
+    }
+    .manse-header-name {
+      font-size: 1.35rem !important;
+      font-weight: 800 !important;
+      color: #111827 !important;
+      line-height: 1.2 !important;
+    }
+    .manse-header-badges {
+      display: flex !important;
+      flex-wrap: wrap !important;
+      gap: 6px !important;
+      justify-content: center !important;
+      align-items: center !important;
+      max-width: 100% !important;
+    }
+    .manse-header-badge {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      padding: 6px 10px !important;
+      border-radius: 9999px !important;
+      border: 1px solid rgba(209, 213, 219, 0.8) !important;
+      background: rgba(255, 255, 255, 0.75) !important;
+      color: #374151 !important;
+      font-size: 0.85rem !important;
+      line-height: 1 !important;
+      max-width: 100% !important;
+      white-space: nowrap !important;
+    }
+    .manse-header-badge strong {
+      color: #111827 !important;
+      font-weight: 800 !important;
+    }
+    /* 십성/지장간/십이신살: 2줄 표시 */
+    .manse-two-line {
+      display: inline-block !important;
+      white-space: normal !important;
+      line-height: 1.15 !important;
+    }
+    .manse-two-line-kor {
+      display: block !important;
+      font-weight: 700 !important;
+      line-height: 1.15 !important;
+    }
+    .manse-two-line-hanja {
+      display: block !important;
+      font-weight: 600 !important;
+      opacity: 0.9 !important;
+      line-height: 1.15 !important;
+      margin-top: 2px !important;
+    }
     ${menuFontFamilyName ? `
     .result-title {
       font-family: '${menuFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
@@ -3269,12 +3477,89 @@ ${fontFace ? fontFace : ''}
       padding: 8px !important;
       background: linear-gradient(135deg, rgba(212, 168, 83, 0.05) 0%, rgba(139, 90, 43, 0.03) 100%) !important;
       border-radius: 20px !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      overflow-x: auto !important;
+      overflow-y: visible !important;
+      -webkit-overflow-scrolling: touch !important;
+      box-sizing: border-box !important;
+      display: block !important;
     }
     
     /* 인라인 만세력 (결과 내) */
     .jeminai-results .manse-ryeok-table {
       margin-top: 1rem !important;
       margin-bottom: 1.5rem !important;
+    }
+    
+    /* 만세력이 포함된 부모 컨테이너 overflow 처리 */
+    .jeminai-results,
+    .menu-section,
+    .subtitle-section {
+      overflow-x: visible !important;
+      max-width: 100% !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    
+    /* 메인 컨테이너 내 만세력 처리 - 부모 컨테이너가 overflow를 처리하도록 */
+    main,
+    main .container,
+    main .jeminai-results {
+      overflow-x: visible !important;
+    }
+    
+    main .manse-ryeok-container {
+      max-width: 100% !important;
+      width: 100% !important;
+      overflow-x: auto !important;
+    }
+    
+    main .manse-ryeok-container table,
+    main .manse-ryeok-container .manse-ryeok-table,
+    main .manse-ryeok-container table {
+      width: auto !important;
+      min-width: 600px !important;
+      max-width: none !important;
+    }
+    
+    /* 만세력 팝업 컨테이너 */
+    .manse-ryeok-popup-container .manse-ryeok-container {
+      max-width: 100% !important;
+      max-width: calc(100vw - 64px) !important;
+      overflow-x: auto !important;
+      overflow-y: visible !important;
+      -webkit-overflow-scrolling: touch !important;
+      box-sizing: border-box !important;
+    }
+    
+    .manse-ryeok-popup-container .manse-ryeok-container table,
+    .manse-ryeok-popup-container .manse-ryeok-table {
+      max-width: calc(100vw - 64px) !important;
+      min-width: 600px !important;
+      box-sizing: border-box !important;
+    }
+    
+    @media (max-width: 768px) {
+      .manse-ryeok-popup-container .manse-ryeok-container {
+        max-width: calc(100vw - 32px) !important;
+      }
+      .manse-ryeok-popup-container .manse-ryeok-container table,
+      .manse-ryeok-popup-container .manse-ryeok-table {
+        max-width: calc(100vw - 32px) !important;
+        min-width: 500px !important;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .manse-ryeok-popup-container .manse-ryeok-container {
+        max-width: calc(100vw - 16px) !important;
+      }
+      .manse-ryeok-popup-container .manse-ryeok-container table,
+      .manse-ryeok-popup-container .manse-ryeok-table {
+        max-width: calc(100vw - 16px) !important;
+        min-width: 400px !important;
+      }
     }
     
     /* 오행별 색상 (천간/지지) */
@@ -3328,11 +3613,14 @@ ${fontFace ? fontFace : ''}
       white-space: nowrap !important;
     }
     
-    /* 만세력 테이블 너비 자동 조절 */
+    /* 만세력 테이블: 화면폭 내에서 실제로 줄어들 수 있게 (가로 넘침 방지) */
     .manse-ryeok-container table,
-    .manse-ryeok-table {
-      table-layout: auto !important;
+    .manse-ryeok-container .manse-ryeok-table,
+    .manse-ryeok-container table {
+      table-layout: fixed !important;
       width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
     }
     
     /* 첫 번째 컬럼(범례) 스타일 - 조금 짙은 단색 배경 */
@@ -3344,33 +3632,36 @@ ${fontFace ? fontFace : ''}
     }
     
     
-    /* 모바일에서 만세력 테이블 폰트 조절 */
+    /* 모바일에서 만세력 테이블 폰트/패딩 조절 (폭 안에 들어오게) */
     @media (max-width: 480px) {
+      .manse-ryeok-container {
+        padding: 4px !important;
+      }
       .manse-ryeok-container td,
       .manse-ryeok-table td {
-        padding: 8px 4px !important;
-        font-size: 0.8rem !important;
+        padding: 6px 2px !important;
+        font-size: 0.72rem !important;
       }
       .manse-ryeok-container th,
       .manse-ryeok-table th {
-        padding: 8px 4px !important;
-        font-size: 0.7rem !important;
+        padding: 6px 2px !important;
+        font-size: 0.62rem !important;
       }
       .manse-ganzi-char {
-        font-size: 1.1em !important;
+        font-size: 1.05em !important;
       }
     }
     
     @media (max-width: 360px) {
       .manse-ryeok-container td,
       .manse-ryeok-table td {
-        padding: 6px 3px !important;
-        font-size: 0.75rem !important;
+        padding: 4px 1px !important;
+        font-size: 0.68rem !important;
       }
       .manse-ryeok-container th,
       .manse-ryeok-table th {
-        padding: 6px 3px !important;
-        font-size: 0.65rem !important;
+        padding: 4px 1px !important;
+        font-size: 0.58rem !important;
       }
       .manse-ganzi-char {
         font-size: 1em !important;
@@ -4423,6 +4714,34 @@ ${fontFace ? fontFace : ''}
             }
           }
         }
+
+        // ✅ 저장된 결과(보기)에서는 만세력 "바로 위 1줄"만 별도 예쁘게 렌더링하도록 추출
+        let manseHeaderHtml = ''
+        try {
+          if (htmlContent) {
+            const headerLineMatch = htmlContent.match(/\[[^\]]*양력[^\]]*음력[^\]]*\]/)
+            if (headerLineMatch) {
+              const parsed = parsePrettyResultTitle(headerLineMatch[0])
+              if (parsed) {
+                const timeLabel = parsed.branch ? `${parsed.branch}시` : '시간'
+                const timeText = parsed.timeRange ? `(${parsed.timeRange})` : ''
+                manseHeaderHtml =
+                  `<div class="manse-header-line">` +
+                  `<div class="manse-header-name">${parsed.name}</div>` +
+                  `<div class="manse-header-badges">` +
+                  `<span class="manse-header-badge"><strong>양력</strong> ${parsed.solar}</span>` +
+                  `<span class="manse-header-badge"><strong>음력</strong> ${parsed.lunar}</span>` +
+                  `<span class="manse-header-badge"><strong>${timeLabel}</strong> ${timeText}</span>` +
+                  `</div>` +
+                  `</div>`
+              }
+              // 본문에서는 해당 1줄 제거 (중복 방지)
+              htmlContent = htmlContent.replace(headerLineMatch[0], '')
+            }
+          }
+        } catch {
+          // 무시
+        }
         
         if (menuItems.length > 0 && htmlContent) {
           try {
@@ -4482,6 +4801,15 @@ ${fontFace ? fontFace : ''}
                     containerDiv.innerHTML = manseRyeokTable
                   }
                   
+                  // 만세력 헤더(1줄) 추가
+                  if (manseHeaderHtml) {
+                    const headerDiv = doc.createElement('div')
+                    headerDiv.innerHTML = manseHeaderHtml
+                    // headerDiv.innerHTML은 wrapper가 생기므로 첫 요소만 append
+                    const first = headerDiv.firstElementChild
+                    if (first) manseDiv.appendChild(first as HTMLElement)
+                  }
+
                   manseDiv.appendChild(containerDiv)
                   
                   // 오행 판별 함수 (목, 화, 토, 금, 수 글자 포함)
@@ -4501,7 +4829,9 @@ ${fontFace ? fontFace : ''}
                     '子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
                   
                   // 일반 폰트 적용 행 (오행 색상 적용 안 함)
-                  const normalFontRows = ['십성', '지장간', '십이운성']
+                  const normalFontRows = ['십성', '지장간', '십이운성', '십이신살']
+                  // 2줄 표시 행: 1줄(한글) + 2줄(괄호 포함 한문)
+                  const twoLineRows = ['십성', '지장간', '십이신살']
                   
                   // 만세력 테이블 셀에 오행 클래스 적용
                   const rows = containerDiv.querySelectorAll('tr')
@@ -4512,8 +4842,9 @@ ${fontFace ? fontFace : ''}
                     // 첫 번째 셀(구분 컬럼)의 텍스트 확인
                     const firstCellText = cells[0]?.textContent?.trim() || ''
                     
-                    // 십성, 지장간, 십이운성 행은 일반 폰트 (오행 색상 적용 안 함)
+                    // 십성, 지장간, 십이운성, 십이신살 행은 일반 폰트 (오행 색상 적용 안 함)
                     const isNormalFontRow = normalFontRows.some(keyword => firstCellText.includes(keyword))
+                    const isTwoLineRow = twoLineRows.some(keyword => firstCellText.includes(keyword))
                     
                     cells.forEach((cell: Element, cellIndex: number) => {
                       const text = cell.textContent?.trim() || ''
@@ -4522,8 +4853,19 @@ ${fontFace ? fontFace : ''}
                       // 첫 번째 컬럼(구분 컬럼)은 스타일 변경 안 함
                       if (cellIndex === 0) return
                       
-                      // 일반 폰트 행은 스타일 적용 안 함
+                      // 일반 폰트 행은 오행/크기 스타일 적용 안 함
                       if (isNormalFontRow) {
+                        // ✅ 십성/지장간/십이신살은 2줄 표시로 가독성 개선
+                        if (isTwoLineRow) {
+                          const idx = text.indexOf('(')
+                          if (idx > 0 && text.endsWith(')')) {
+                            const kor = text.slice(0, idx).trim()
+                            const hanja = text.slice(idx).trim()
+                            cell.innerHTML = `<span class="manse-two-line"><span class="manse-two-line-kor">${kor}</span><span class="manse-two-line-hanja">${hanja}</span></span>`
+                          } else {
+                            cell.textContent = text
+                          }
+                        }
                         return
                       }
                       
@@ -4865,7 +5207,7 @@ ${fontFace ? fontFace : ''}
         }
         
         // 대메뉴 썸네일 추가 (새 창에서도 다시보기와 동일하게 표시)
-        try {
+          try {
           if (menuItems.length > 0) {
             const parser = new DOMParser()
             const doc = parser.parseFromString(htmlContent, 'text/html')
@@ -5265,10 +5607,18 @@ ${fontFace ? fontFace : ''}
                   background: linear-gradient(135deg, #d4a853 0%, #c9956c 25%, #8b5a2b 50%, #c9956c 75%, #d4a853 100%);
                   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(212, 168, 83, 0.5);
                   margin-bottom: 2.5rem;
+                  width: 100%;
+                  max-width: 100%;
+                  overflow-x: auto;
+                  overflow-y: visible;
+                  -webkit-overflow-scrolling: touch;
+                  box-sizing: border-box;
+                  display: block;
                 }
                 .manse-ryeok-container table,
                 .manse-ryeok-table {
                   width: 100%;
+                  max-width: 100%;
                   border-collapse: separate;
                   border-spacing: 0;
                   background: linear-gradient(180deg, #fefbf3 0%, #f5efe0 100%);
@@ -5276,6 +5626,7 @@ ${fontFace ? fontFace : ''}
                   overflow: hidden;
                   position: relative;
                   z-index: 1;
+                  box-sizing: border-box;
                 }
                 .manse-ryeok-container th,
                 .manse-ryeok-table th {
@@ -5356,11 +5707,14 @@ ${fontFace ? fontFace : ''}
                   white-space: nowrap;
                 }
                 
-                /* 만세력 테이블 너비 자동 조절 */
+                /* 만세력 테이블 너비 자동 조절 (화면폭 내) */
                 .manse-ryeok-container table,
-                .manse-ryeok-table {
-                  table-layout: auto;
+                .manse-ryeok-container .manse-ryeok-table,
+                .manse-ryeok-container table {
+                  table-layout: fixed;
                   width: 100%;
+                  max-width: 100%;
+                  box-sizing: border-box;
                 }
                 
                 /* 첫 번째 컬럼(범례) 스타일 - 조금 짙은 단색 배경 */
@@ -5383,33 +5737,70 @@ ${fontFace ? fontFace : ''}
                   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
                 }
                 
-                /* 모바일에서 만세력 테이블 폰트 조절 */
+                /* 만세력 팝업 컨테이너 */
+                .manse-ryeok-popup-container .manse-ryeok-container {
+                  width: 100%;
+                  max-width: 100%;
+                  overflow-x: auto;
+                  overflow-y: visible;
+                  -webkit-overflow-scrolling: touch;
+                  box-sizing: border-box;
+                  display: block;
+                }
+                
+                .manse-ryeok-popup-container .manse-ryeok-container table,
+                .manse-ryeok-popup-container .manse-ryeok-table {
+                  width: auto;
+                  min-width: 600px;
+                  max-width: none;
+                  box-sizing: border-box;
+                  display: table;
+                }
+                
+                @media (max-width: 768px) {
+                  .manse-ryeok-popup-container .manse-ryeok-container table,
+                  .manse-ryeok-popup-container .manse-ryeok-table {
+                    min-width: 500px;
+                  }
+                }
+                
                 @media (max-width: 480px) {
+                  .manse-ryeok-popup-container .manse-ryeok-container table,
+                  .manse-ryeok-popup-container .manse-ryeok-table {
+                    min-width: 400px;
+                  }
+                }
+                
+                /* 모바일에서 만세력 테이블 폰트/패딩 조절 (폭 안에 들어오게) */
+                @media (max-width: 480px) {
+                  .manse-ryeok-container {
+                    padding: 4px;
+                  }
                   .manse-ryeok-container td,
                   .manse-ryeok-table td {
-                    padding: 8px 4px;
-                    font-size: 0.8rem;
+                    padding: 6px 2px;
+                    font-size: 0.72rem;
                   }
                   .manse-ryeok-container th,
                   .manse-ryeok-table th {
-                    padding: 8px 4px;
-                    font-size: 0.7rem;
+                    padding: 6px 2px;
+                    font-size: 0.62rem;
                   }
                   .manse-ganzi-char {
-                    font-size: 1.1em;
+                    font-size: 1.05em;
                   }
                 }
                 
                 @media (max-width: 360px) {
                   .manse-ryeok-container td,
                   .manse-ryeok-table td {
-                    padding: 6px 3px;
-                    font-size: 0.75rem;
+                    padding: 4px 1px;
+                    font-size: 0.68rem;
                   }
                   .manse-ryeok-container th,
                   .manse-ryeok-table th {
-                    padding: 6px 3px;
-                    font-size: 0.65rem;
+                    padding: 4px 1px;
+                    font-size: 0.58rem;
                   }
                   .manse-ganzi-char {
                     font-size: 1em;
@@ -6170,7 +6561,7 @@ ${fontFace ? fontFace : ''}
           <div className="flex items-center gap-2">
             {/* 나의 사주명식 보기 버튼 (목차로 이동 버튼 왼쪽) */}
             {parsedMenus.length > 0 && parsedMenus[0].manseHtml && (
-              <button
+          <button
                 onClick={() => setShowMansePopup(true)}
                 className="bg-pink-500/80 hover:bg-pink-500/90 text-white font-semibold px-5 py-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 text-sm"
               >
@@ -6181,14 +6572,14 @@ ${fontFace ? fontFace : ''}
             {/* 목차로 이동 버튼 (타이틀 내용에 맞게 너비 자동 조정) */}
             <button
               ref={tocButtonRef}
-              onClick={scrollToTableOfContents}
+            onClick={scrollToTableOfContents}
               className="bg-pink-500/80 hover:bg-pink-500/90 text-white font-semibold px-4 py-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2 whitespace-nowrap text-sm"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-              <span>목차로 이동</span>
-            </button>
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            <span>목차로 이동</span>
+          </button>
           </div>
         </div>
       )}
@@ -6285,6 +6676,8 @@ ${fontFace ? fontFace : ''}
           <h1 className="result-title text-3xl md:text-4xl font-bold text-gray-900 mb-4 text-center">
             {content?.content_name || '결과 생성 중...'}
           </h1>
+
+          {/* ✅ 만세력 위 1줄(사주명식 정보 라인)은 만세력 블록 내부에서만 별도 스타일로 표시 */}
           
           {html && (
             <div className="mb-4 flex flex-col items-center gap-2">
