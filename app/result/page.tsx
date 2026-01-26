@@ -3242,6 +3242,35 @@ ${fontFace ? fontFace : ''}
       color: #111827 !important;
       font-weight: 800 !important;
     }
+
+    /* ✅ 팝업에서는 최대 폭 + 음양오행 등 텍스트가 셀 밖으로 튀지 않도록 폰트/패딩을 조금 낮춤 */
+    .manse-ryeok-popup-container {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+    .manse-ryeok-popup-container .manse-ryeok-container {
+      width: 100% !important;
+      max-width: 100% !important;
+      overflow-x: auto !important;
+    }
+    .manse-ryeok-popup-container .manse-ryeok-container table,
+    .manse-ryeok-popup-container .manse-ryeok-table {
+      width: 100% !important;
+      max-width: 100% !important;
+      table-layout: fixed !important;
+    }
+    .manse-ryeok-popup-container .manse-ryeok-table td,
+    .manse-ryeok-popup-container .manse-ryeok-table th {
+      padding: 10px 6px !important;
+      font-size: 0.86rem !important;
+    }
+    @media (max-width: 480px) {
+      .manse-ryeok-popup-container .manse-ryeok-table td,
+      .manse-ryeok-popup-container .manse-ryeok-table th {
+        padding: 8px 4px !important;
+        font-size: 0.76rem !important;
+      }
+    }
     /* 십성/지장간/십이신살: 2줄 표시 */
     .manse-two-line {
       display: inline-block !important;
@@ -6586,8 +6615,9 @@ ${fontFace ? fontFace : ''}
       
       {/* 나의 사주명식 보기 팝업 */}
       {showMansePopup && parsedMenus.length > 0 && parsedMenus[0].manseHtml && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-auto shadow-2xl relative flex flex-col">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-2 sm:p-4">
+          {/* ✅ 최대한 넓게 사용: 모바일에서도 98vw, 데스크탑은 7xl까지 */}
+          <div className="bg-white rounded-2xl w-[98vw] max-w-[98vw] sm:max-w-7xl max-h-[92vh] overflow-auto shadow-2xl relative flex flex-col">
             {/* 닫기 버튼 (우측 상단) */}
             <button
               onClick={() => setShowMansePopup(false)}
@@ -6599,7 +6629,7 @@ ${fontFace ? fontFace : ''}
             </button>
             
             {/* 만세력 표시 */}
-            <div className="p-8 pt-10 flex-1">
+            <div className="p-4 sm:p-8 pt-8 sm:pt-10 flex-1">
               {/* 제목 영역 */}
               <div className="text-center mb-6">
                 <div className="inline-flex items-center gap-3">
@@ -6611,10 +6641,12 @@ ${fontFace ? fontFace : ''}
                 </div>
               </div>
               
-              <div 
-                className="manse-ryeok-container"
-                dangerouslySetInnerHTML={{ __html: parsedMenus[0].manseHtml || '' }}
-              />
+              <div className="manse-ryeok-popup-container w-full">
+                <div
+                  className="manse-ryeok-container w-full"
+                  dangerouslySetInnerHTML={{ __html: parsedMenus[0].manseHtml || '' }}
+                />
+              </div>
             </div>
             
             {/* 하단 닫기 버튼 */}
