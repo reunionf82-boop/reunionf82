@@ -3247,11 +3247,12 @@ ${fontFace ? fontFace : ''}
     .manse-ryeok-popup-container {
       width: 100% !important;
       max-width: 100% !important;
+      overflow-x: hidden !important; /* ✅ 팝업에서 좌우 스크롤 금지 */
     }
     .manse-ryeok-popup-container .manse-ryeok-container {
       width: 100% !important;
       max-width: 100% !important;
-      overflow-x: auto !important;
+      overflow-x: hidden !important; /* ✅ 팝업에서 좌우 스크롤 금지 */
     }
     .manse-ryeok-popup-container .manse-ryeok-container table,
     .manse-ryeok-popup-container .manse-ryeok-table {
@@ -3263,6 +3264,9 @@ ${fontFace ? fontFace : ''}
     .manse-ryeok-popup-container .manse-ryeok-table th {
       padding: 10px 6px !important;
       font-size: 0.86rem !important;
+      white-space: normal !important; /* ✅ 팝업에서는 줄바꿈 허용(넘침 방지) */
+      overflow-wrap: anywhere !important;
+      word-break: break-word !important;
     }
     @media (max-width: 480px) {
       .manse-ryeok-popup-container .manse-ryeok-table td,
@@ -6617,7 +6621,7 @@ ${fontFace ? fontFace : ''}
       {showMansePopup && parsedMenus.length > 0 && parsedMenus[0].manseHtml && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-2 sm:p-4">
           {/* ✅ 최대한 넓게 사용: 모바일에서도 98vw, 데스크탑은 7xl까지 */}
-          <div className="bg-white rounded-2xl w-[98vw] max-w-[98vw] sm:max-w-7xl max-h-[92vh] overflow-auto shadow-2xl relative flex flex-col">
+          <div className="bg-white rounded-2xl w-[98vw] max-w-[98vw] sm:max-w-7xl max-h-[92vh] overflow-y-auto overflow-x-hidden shadow-2xl relative flex flex-col">
             {/* 닫기 버튼 (우측 상단) */}
             <button
               onClick={() => setShowMansePopup(false)}
