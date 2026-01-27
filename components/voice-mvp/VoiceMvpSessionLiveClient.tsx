@@ -184,6 +184,16 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
   const clientRef = useRef<GenAILiveClient | null>(null)
   const recorderRef = useRef<AudioRecorder | null>(null)
   const streamerRef = useRef<AudioStreamer | null>(null)
+  
+  // 효과음 오디오 객체들
+  const t1SoundRef = useRef<HTMLAudioElement | null>(null)
+  const t2SoundRef = useRef<HTMLAudioElement | null>(null)
+  const t3SoundRef = useRef<HTMLAudioElement | null>(null)
+  const t4SoundRef = useRef<HTMLAudioElement | null>(null)
+  const jongSoundRef = useRef<HTMLAudioElement | null>(null)
+  const isAiSpeakingRef = useRef<boolean>(false) // AI가 현재 말하고 있는지 추적
+  const isFirstConnectionRef = useRef<boolean>(true) // 최초 연결 여부 추적
+  const audioTimeoutRef = useRef<NodeJS.Timeout | null>(null) // 오디오 스트림 종료 감지용 타임아웃
 
   const snapshot = session?.routing_config_snapshot
   const voiceStyle = useMemo(() => String(snapshot?.voice_style || 'calm').trim() || 'calm', [snapshot])
@@ -233,6 +243,37 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
     })()
   }, [authenticated, sessionId])
 
+  // 효과음 초기화
+  useEffect(() => {
+    t1SoundRef.current = new Audio('/t1.mp3')
+    t1SoundRef.current.volume = 0.5
+    t1SoundRef.current.preload = 'auto'
+    
+    t2SoundRef.current = new Audio('/t2.mp3')
+    t2SoundRef.current.volume = 0.5
+    t2SoundRef.current.preload = 'auto'
+    
+    t3SoundRef.current = new Audio('/t3.mp3')
+    t3SoundRef.current.volume = 0.5
+    t3SoundRef.current.preload = 'auto'
+    
+    t4SoundRef.current = new Audio('/t4.mp3')
+    t4SoundRef.current.volume = 0.5
+    t4SoundRef.current.preload = 'auto'
+    
+    jongSoundRef.current = new Audio('/jong.mp3')
+    jongSoundRef.current.volume = 0.5
+    jongSoundRef.current.preload = 'auto'
+    
+    return () => {
+      t1SoundRef.current = null
+      t2SoundRef.current = null
+      t3SoundRef.current = null
+      t4SoundRef.current = null
+      jongSoundRef.current = null
+    }
+  }, [])
+
   useEffect(() => {
     if (!authenticated) return
     if (!apiKey) {
@@ -244,18 +285,64 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
     const client = new GenAILiveClient(opts)
     clientRef.current = client
 
-    const onOpen = () => setConnected(true)
-    const onClose = () => setConnected(false)
+    const onOpen = () => {
+      setConnected(true)
+      isAiSpeakingRef.current = false // 연결 시 초기화
+    }
+    const onClose = () => {
+      setConnected(false)
+      isAiSpeakingRef.current = false
+    }
     const onError = (e: any) => setError(e?.message || 'Live 연결 오류')
 
     const onAudio = (data: ArrayBuffer) => {
       try {
+        // 기존 타임아웃 클리어 (오디오가 계속 오고 있음)
+        if (audioTimeoutRef.current) {
+          clearTimeout(audioTimeoutRef.current)
+          audioTimeoutRef.current = null
+        }
+        
+        // AI가 대답을 시작하는 시점 감지 (첫 번째 오디오 청크)
+        if (!isAiSpeakingRef.current) {
+          isAiSpeakingRef.current = true
+          
+          // t1-t4.mp3: 100% 확률로 랜덤 재생
+          const tSounds = [t1SoundRef.current, t2SoundRef.current, t3SoundRef.current, t4SoundRef.current].filter(Boolean)
+          if (tSounds.length > 0) {
+            const randomTSound = tSounds[Math.floor(Math.random() * tSounds.length)]
+            if (randomTSound) {
+              randomTSound.currentTime = 0
+              randomTSound.play().catch(() => {})
+            }
+          }
+          
+          // jong.mp3: 5% 확률로 재생
+          if (Math.random() < 0.05 && jongSoundRef.current) {
+            jongSoundRef.current.currentTime = 0
+            jongSoundRef.current.play().catch(() => {})
+          }
+        }
+        
         streamerRef.current?.addPCM16(new Uint8Array(data))
+        
+        // 오디오 청크가 오지 않으면 스트림이 끝난 것으로 간주 (500ms 후 초기화)
+        audioTimeoutRef.current = setTimeout(() => {
+          isAiSpeakingRef.current = false
+          audioTimeoutRef.current = null
+        }, 500)
       } catch {
         // ignore
       }
     }
-    const onInterrupted = () => streamerRef.current?.stop()
+    const onInterrupted = () => {
+      streamerRef.current?.stop()
+      isAiSpeakingRef.current = false // 끼어들기 시 초기화
+      if (audioTimeoutRef.current) {
+        clearTimeout(audioTimeoutRef.current)
+        audioTimeoutRef.current = null
+      }
+    }
     const onContent = (c: any) => {
       // 모델 텍스트도 받을 수 있음 (AUDIO 모드여도 텍스트 part가 올 수 있음)
       const parts = c?.modelTurn?.parts || c?.serverContent?.modelTurn?.parts || []
@@ -263,7 +350,9 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
         .map((p: any) => (typeof p?.text === 'string' ? p.text : ''))
         .filter(Boolean)
         .join('\n')
-      if (texts.trim()) setMessages((prev) => [...prev, { role: 'assistant', text: texts.trim() }])
+      if (texts.trim()) {
+        setMessages((prev) => [...prev, { role: 'assistant', text: texts.trim() }])
+      }
     }
 
     client.on('open', onOpen).on('close', onClose).on('error', onError).on('audio', onAudio).on('interrupted', onInterrupted).on('content', onContent)
@@ -273,6 +362,10 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
       client.disconnect()
       recorderRef.current?.stop()
       streamerRef.current?.stop()
+      if (audioTimeoutRef.current) {
+        clearTimeout(audioTimeoutRef.current)
+        audioTimeoutRef.current = null
+      }
     }
   }, [authenticated, apiKey])
 
@@ -333,6 +426,23 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
 
       await clientRef.current.connect(model, config)
 
+      // ✅ 연결 시 jong.mp3 재생 (500ms 지연)
+      // 최초 연결 시: 100% 확률, 이후 연결 시: 5% 확률
+      const shouldPlayJong = isFirstConnectionRef.current ? true : Math.random() < 0.05
+      if (shouldPlayJong && jongSoundRef.current) {
+        setTimeout(() => {
+          if (jongSoundRef.current) {
+            jongSoundRef.current.currentTime = 0
+            jongSoundRef.current.play().catch(() => {})
+          }
+        }, 500)
+      }
+      
+      // 최초 연결 후 플래그 해제
+      if (isFirstConnectionRef.current) {
+        isFirstConnectionRef.current = false
+      }
+
       // start mic recorder once connected
       if (!recorderRef.current) recorderRef.current = new AudioRecorder(16000)
       const recorder = recorderRef.current
@@ -344,6 +454,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
       if (!muted) recorder.on('data', onData as any).on('volume', setInVolume as any).start()
 
       setMessages([{ role: 'system', text: '연결됨. 마이크로 말하면 모델이 오디오로 응답합니다.' }])
+      isAiSpeakingRef.current = false // 연결 시 초기화
     } catch (e: any) {
       setError(e?.message || 'connect 실패')
     }
@@ -354,6 +465,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
     streamerRef.current?.stop()
     clientRef.current?.disconnect()
     setConnected(false)
+    isAiSpeakingRef.current = false // 연결 해제 시 초기화
   }
 
   const toggleMute = () => {
