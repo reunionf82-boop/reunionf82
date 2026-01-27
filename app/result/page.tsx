@@ -3247,12 +3247,14 @@ ${fontFace ? fontFace : ''}
     .manse-ryeok-popup-container {
       width: 100% !important;
       max-width: 100% !important;
-      overflow: hidden !important; /* ✅ 팝업에서 상하/좌우 스크롤 금지 */
+      overflow-x: hidden !important; /* ✅ 가로 스크롤 금지 */
+      overflow-y: visible !important; /* ✅ 세로 스크롤은 팝업 패널에서 처리 */
     }
     .manse-ryeok-popup-container .manse-ryeok-container {
       width: 100% !important;
       max-width: 100% !important;
-      overflow: hidden !important; /* ✅ 팝업에서 상하/좌우 스크롤 금지 */
+      overflow-x: hidden !important; /* ✅ 가로 스크롤 금지 */
+      overflow-y: visible !important;
     }
     .manse-ryeok-popup-container .manse-ryeok-container table,
     .manse-ryeok-popup-container .manse-ryeok-table {
@@ -3268,16 +3270,7 @@ ${fontFace ? fontFace : ''}
       overflow-wrap: anywhere !important;
       word-break: break-word !important;
     }
-    /* 스크롤바 자체 숨김 (브라우저별) */
-    .manse-ryeok-popup-container::-webkit-scrollbar,
-    .manse-ryeok-popup-container .manse-ryeok-container::-webkit-scrollbar {
-      width: 0 !important;
-      height: 0 !important;
-    }
-    .manse-ryeok-popup-container,
-    .manse-ryeok-popup-container .manse-ryeok-container {
-      scrollbar-width: none !important;
-    }
+    /* (팝업은 세로 스크롤 허용) */
     @media (max-width: 480px) {
       .manse-ryeok-popup-container .manse-ryeok-table td,
       .manse-ryeok-popup-container .manse-ryeok-table th {
@@ -6592,7 +6585,7 @@ ${fontFace ? fontFace : ''}
       {showMansePopup && parsedMenus.length > 0 && parsedMenus[0].manseHtml && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-2 sm:p-4">
           {/* ✅ 최대한 넓게 사용: 모바일에서도 98vw, 데스크탑은 7xl까지 */}
-          <div className="bg-white rounded-2xl w-[98vw] max-w-[98vw] sm:max-w-7xl h-[92vh] overflow-hidden shadow-2xl relative flex flex-col">
+          <div className="bg-white rounded-2xl w-[98vw] max-w-[98vw] sm:max-w-7xl h-[92vh] overflow-y-auto overflow-x-hidden shadow-2xl relative flex flex-col">
             {/* 닫기 버튼 (우측 상단) */}
             <button
               onClick={() => setShowMansePopup(false)}
@@ -6604,7 +6597,7 @@ ${fontFace ? fontFace : ''}
             </button>
             
             {/* 만세력 표시 */}
-            <div className="p-4 sm:p-8 pt-8 sm:pt-10 flex-1 overflow-hidden">
+            <div className="p-4 sm:p-8 pt-8 sm:pt-10 flex-1">
               {/* 제목 영역 */}
               <div className="text-center mb-6">
                 <div className="inline-flex items-center gap-3">
@@ -6616,7 +6609,7 @@ ${fontFace ? fontFace : ''}
                 </div>
               </div>
               
-              <div className="manse-ryeok-popup-container w-full overflow-hidden">
+              <div className="manse-ryeok-popup-container w-full">
                 <div
                   className="manse-ryeok-container w-full"
                   dangerouslySetInnerHTML={{ __html: parsedMenus[0].manseHtml || '' }}
