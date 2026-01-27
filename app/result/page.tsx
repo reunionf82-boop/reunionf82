@@ -2300,7 +2300,7 @@ ${fontFace ? fontFace : ''}
       // 일반 폰트 적용 행 (오행 색상 적용 안 함)
       const normalFontRows = ['십성', '지장간', '십이운성', '십이신살']
       // 2줄 표시 행: 1줄(한글) + 2줄(괄호 포함 한문)
-      const twoLineRows = ['십성', '지장간', '십이신살']
+      const twoLineRows = ['십성', '지장간', '십이운성', '십이신살']
       
       // DOMParser로 HTML 파싱
       const parser = new DOMParser()
@@ -4828,7 +4828,7 @@ ${fontFace ? fontFace : ''}
                   // 일반 폰트 적용 행 (오행 색상 적용 안 함)
                   const normalFontRows = ['십성', '지장간', '십이운성', '십이신살']
                   // 2줄 표시 행: 1줄(한글) + 2줄(괄호 포함 한문)
-                  const twoLineRows = ['십성', '지장간', '십이신살']
+                  const twoLineRows = ['십성', '지장간', '십이운성', '십이신살']
                   
                   // 만세력 테이블 셀에 오행 클래스 적용
                   const rows = containerDiv.querySelectorAll('tr')
