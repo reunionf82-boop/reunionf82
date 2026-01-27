@@ -53,11 +53,65 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // DB에 저장 (KST 기준)
+    const normalizedRequestKey = requestKey ? String(requestKey).trim() : ''
+    const hasRequestKey = normalizedRequestKey.length > 0
+
+    if (hasRequestKey) {
+      // ✅ request_key가 이미 존재하면 업데이트로 처리 (중복 생성 방지)
+      const { data: existingRows, error: existingError } = await supabase
+        .from('user_credentials')
+        .select('id, request_key, saved_id')
+        .eq('request_key', normalizedRequestKey)
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (existingError) {
+        return NextResponse.json(
+          { error: '인증 정보 조회에 실패했습니다.', details: existingError.message },
+          { status: 500 }
+        )
+      }
+
+      if (existingRows && existingRows.length > 0) {
+        const existing = existingRows[0]
+        const updatePayload: Record<string, any> = {
+          encrypted_phone: encryptedPhone,
+          encrypted_password: encryptedPassword,
+          expires_at: expiresAt.toISOString()
+        }
+        if (savedId) {
+          updatePayload.saved_id = savedId
+        }
+
+        const { data: updated, error: updateError } = await supabase
+          .from('user_credentials')
+          .update(updatePayload)
+          .eq('id', existing.id)
+          .select()
+          .single()
+
+        if (updateError) {
+          return NextResponse.json(
+            { error: '인증 정보 업데이트에 실패했습니다.', details: updateError.message },
+            { status: 500 }
+          )
+        }
+
+        return NextResponse.json({
+          success: true,
+          id: updated.id,
+          requestKey: updated.request_key,
+          savedId: updated.saved_id,
+          updated: true
+        })
+      }
+    }
+
+    // DB에 저장 (KST 기준) - 신규 생성
     const { data, error } = await supabase
       .from('user_credentials')
       .insert({
-        request_key: requestKey || null,
+        request_key: hasRequestKey ? normalizedRequestKey : null,
         saved_id: savedId || null,
         encrypted_phone: encryptedPhone,
         encrypted_password: encryptedPassword,

@@ -3236,9 +3236,33 @@ function FormContent() {
         // 비동기 작업들은 Promise.allSettled로 병렬 처리하고, 실패해도 페이지 이동은 진행
         const asyncTasks = [saveTempRequestTask]
         
-        // ✅ user_credentials는 점사 완료 후에만 생성 (결제 성공 시점에는 savedId가 없으므로 생성하지 않음)
-        // 점사 완료 후 result/page.tsx의 saveResultToLocal에서 user_credentials를 생성/업데이트함
-        // 이렇게 하면 중복 생성 방지 및 savedId가 있는 레코드만 생성됨
+        // ✅ 결제 성공 시 requestKey 기반으로 user_credentials 레코드 생성 (savedId는 나중에 update)
+        // - result/page.tsx의 saveResultToLocal에서 saved_id 업데이트
+        // - save API는 request_key 기준으로 idempotent하게 동작하도록 처리됨
+        if (typeof window !== 'undefined') {
+          const paymentPhone = sessionStorage.getItem('payment_phone') || ''
+          const paymentPassword = sessionStorage.getItem('payment_password') || ''
+          const fullPhoneNumber = paymentPhone || `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+          const userPassword = paymentPassword || password
+          const credsKey = `user_credentials_saved_${requestKey}`
+          
+          if (!sessionStorage.getItem(credsKey)) {
+            sessionStorage.setItem(credsKey, '1')
+            asyncTasks.push(
+              fetch('/api/user-credentials/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  requestKey: requestKey,
+                  phone: fullPhoneNumber,
+                  password: userPassword
+                })
+              }).catch(() => {
+                // 저장 실패해도 페이지 이동은 진행
+              })
+            )
+          }
+        }
         
         // 결제 성공으로 인한 이동인 경우, temp-request 저장만 완료될 때까지 기다린 후 페이지 이동
         if (isPaymentSuccess) {
@@ -3253,8 +3277,10 @@ function FormContent() {
 
           })
           
-          // ✅ user_credentials는 점사 완료 후에만 생성되므로 여기서는 실행하지 않음
-          // asyncTasks에는 saveTempRequestTask만 포함되어 있음
+          // 나머지 비동기 작업들은 백그라운드에서 실행 (user_credentials 저장 포함)
+          Promise.allSettled(asyncTasks.slice(1)).catch(() => {
+            // 실패해도 페이지 이동은 진행
+          })
           
           // temp-request 저장 완료를 기다린 후 페이지 이동 (최대 3초)
           await Promise.race([

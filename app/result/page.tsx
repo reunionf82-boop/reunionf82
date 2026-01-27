@@ -963,6 +963,8 @@ function ResultContent() {
       let allAccumulatedHtml = ''
       // ✅ 보장: 화면에 표시되는 HTML은 길이가 줄어들지 않게 단조 증가
       let lastRenderedLength = 0
+      // ✅ 마지막 메뉴 partial_done 이후 지연되는 done 방지
+      let hasCompletedAllMenus = false
       
       // 중복 요청 방지: 각 대메뉴별로 요청 중/완료 상태 추적
       const menuProcessingState: { [key: number]: 'idle' | 'processing' | 'done' } = {}
@@ -1139,6 +1141,57 @@ function ResultContent() {
               if (allAccumulatedHtml.length >= lastRenderedLength) {
                 lastRenderedLength = allAccumulatedHtml.length
                 setStreamingHtml(allAccumulatedHtml)
+              }
+
+              // ✅ 마지막 대메뉴에서 partial_done만 오고 done이 지연되는 경우 즉시 완료 처리
+              const isLastMenuPartial = menuIdx >= allMenuGroups.length - 1
+              if (isLastMenuPartial && !hasCompletedAllMenus) {
+                hasCompletedAllMenus = true
+                menuProcessingState[menuIdx] = 'done'
+                isProcessingDone = true
+                hasRequestedNextMenu = true
+
+                // 모든 대메뉴 완료 - 스트리밍 종료 처리 (done 지연 방지)
+                setStreamingHtml(allAccumulatedHtml)
+                const finalResult: ResultData = {
+                  content,
+                  html: allAccumulatedHtml,
+                  startTime,
+                  model,
+                  userName,
+                }
+                setResultData(finalResult)
+                setIsStreamingActive(false)
+                setStreamingFinished(true)
+                setStreamingProgress(100)
+                setLoading(false)
+                setTimeout(() => {
+                  setShowRealtimePopup(false)
+                }, 500)
+
+                // 즉시 점사율 100% 설정
+                const expectedMenuItems = content?.menu_items || []
+                const estimatedTotalSubtitles = expectedMenuItems.reduce((sum: number, menu: any) => {
+                  const subtitles = menu?.subtitles || []
+                  return sum + subtitles.length
+                }, 0)
+                if (estimatedTotalSubtitles > 0) {
+                  setTotalSubtitles(estimatedTotalSubtitles)
+                  setRevealedCount(estimatedTotalSubtitles)
+                }
+
+                // 결과 저장 (user_credentials 업데이트 포함)
+                if (!autoSavedRef.current) {
+                  autoSavedRef.current = true
+                  ;(async () => {
+                    try {
+                      await saveResultToLocal(false, allAccumulatedHtml, content, model, startTime, userName)
+                    } catch (err) {
+                      autoSavedRef.current = false
+                    }
+                  })()
+                }
+                return
               }
               
               // partial_done을 받은 경우, done 이벤트에서 다음 대메뉴를 요청하지 않도록 플래그 설정
