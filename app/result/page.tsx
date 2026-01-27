@@ -442,7 +442,13 @@ function ResultContent() {
         }
 
         // 저장된 HTML 확인
-        const savedHtml = savedResult.html || ''
+        const savedHtmlRaw = savedResult.html || ''
+        // ✅ 저장된 결과 HTML에 과거 스타일(<style>)이 포함된 경우, 현재 리절트 GUI(만세력 포함)를 덮어쓰는 문제가 있다.
+        // - @font-face는 유지하고 나머지 스타일은 제거하여 현재 화면의 dynamicStyles가 항상 우선하도록 한다.
+        const savedHtml = savedHtmlRaw.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_m: string, css: string) => {
+          const fontFaceBlocks = (css || '').match(/@font-face\s*\{[\s\S]*?\}/gi) || []
+          return fontFaceBlocks.length > 0 ? `<style>${fontFaceBlocks.join('\n')}</style>` : ''
+        })
         console.log('[결과 로드] 저장된 결과 HTML 확인:', {
           savedId,
           htmlLength: savedHtml.length,
@@ -748,6 +754,18 @@ function ResultContent() {
             }, 500)
             // 완료 처리 후 추가 이벤트 무시
             streamLocked = true
+            
+            // ✅ 즉시 점사율을 100%로 설정 (parsedMenus 업데이트를 기다리지 않음)
+            // resultData의 content.menu_items에서 예상 소제목 수 계산
+            const expectedMenuItems = content?.menu_items || []
+            const estimatedTotalSubtitles = expectedMenuItems.reduce((sum: number, menu: any) => {
+              const subtitles = menu?.subtitles || []
+              return sum + subtitles.length
+            }, 0)
+            if (estimatedTotalSubtitles > 0) {
+              setTotalSubtitles(estimatedTotalSubtitles)
+              setRevealedCount(estimatedTotalSubtitles)
+            }
             
             // 직렬점사(partial_done) 완료 시 즉시 결과 저장 (지연 없이)
             if (!autoSavedRef.current) {
@@ -1278,6 +1296,18 @@ function ResultContent() {
                   setShowRealtimePopup(false)
                 }, 500)
                 console.log('[병렬점사] 모든 대메뉴 완료, 스트리밍 종료')
+                
+                // ✅ 즉시 점사율을 100%로 설정 (parsedMenus 업데이트를 기다리지 않음)
+                // content.menu_items에서 예상 소제목 수 계산
+                const expectedMenuItems = content?.menu_items || []
+                const estimatedTotalSubtitles = expectedMenuItems.reduce((sum: number, menu: any) => {
+                  const subtitles = menu?.subtitles || []
+                  return sum + subtitles.length
+                }, 0)
+                if (estimatedTotalSubtitles > 0) {
+                  setTotalSubtitles(estimatedTotalSubtitles)
+                  setRevealedCount(estimatedTotalSubtitles)
+                }
                 
                 // 병렬점사 완료 시 즉시 결과 저장 (지연 없이)
                 if (!autoSavedRef.current) {
@@ -2970,6 +3000,26 @@ ${fontFace ? fontFace : ''}
   // 만세력 테이블 스타일은 이제 applyManseStyles 함수에서 HTML 문자열 단계에서 적용됨
   // DOM 직접 수정으로 인한 깜빡임 문제 해결
 
+  // ✅ streamingFinished가 true가 되면 즉시 점사율을 100%로 설정 (parsedMenus 업데이트를 기다리지 않음)
+  useEffect(() => {
+    if (!isRealtimeStreaming) return
+    if (!streamingFinished) return
+    if (!resultData?.content?.menu_items) return
+    
+    // resultData의 content.menu_items에서 정확한 소제목 수 계산
+    const menuItems = resultData.content.menu_items || []
+    const totalSubtitlesCount = menuItems.reduce((sum: number, menu: any) => {
+      const subtitles = menu?.subtitles || []
+      return sum + subtitles.length
+    }, 0)
+    
+    // 점사율을 즉시 100%로 설정
+    if (totalSubtitlesCount > 0) {
+      setTotalSubtitles(totalSubtitlesCount)
+      setRevealedCount(totalSubtitlesCount)
+    }
+  }, [isRealtimeStreaming, streamingFinished, resultData?.content?.menu_items])
+
   // 점사 "완료" 시 엔딩북커버로 이동 + 완료 팝업 표시
   // ✅ 개선: streamingFinished가 true가 되면 실제 점사 완료 여부를 확인한 후 팝업 표시
   useEffect(() => {
@@ -2991,42 +3041,40 @@ ${fontFace ? fontFace : ''}
       // sessionStorage 불가 환경이면 ref만으로 방지
     }
 
-    // ✅ 핵심 수정: 딜레이를 주어 파싱이 완료될 시간을 확보
-    // streamingFinished가 true가 되면 800ms 후에 실제 점사 완료 여부 확인 후 팝업 표시
-    const timeoutId = setTimeout(() => {
+    // ✅ 핵심 수정: streamingHtml과 resultData를 직접 확인하여 점사 완료 여부 판단
+    // parsedMenus는 파싱이 완료될 때까지 기다리지 않고, streamingHtml과 resultData로 판단
+    const checkAndShowPopup = () => {
       if (completionPopupShownRef.current) return
-      // 에러가 발생한 경우 팝업 표시 안 함 (타임아웃 내에 에러 발생 가능)
       if (error) return
       
-      // 실제 점사 완료 여부 확인
-      // 1. parsedMenus가 비어있으면 아직 파싱 중이거나 점사가 완료되지 않음
-      if (parsedMenus.length === 0) {
-        console.log('[완료 팝업] parsedMenus가 비어있음, 팝업 표시 안 함')
-        return
+      // 1. streamingHtml 또는 resultData.html이 충분히 길면 점사 완료로 간주
+      const finalHtml = resultData?.html || streamingHtml || ''
+      if (!finalHtml || finalHtml.length < 100) {
+        console.log('[완료 팝업] HTML이 비어있거나 너무 짧음, 재시도', {
+          htmlLength: finalHtml?.length || 0,
+          hasResultData: !!resultData?.html,
+          hasStreamingHtml: !!streamingHtml
+        })
+        // HTML이 아직 준비되지 않았으면 500ms 후 재시도 (최대 10회)
+        return false
       }
       
-      // 2. resultData의 content.menu_items와 parsedMenus.length 비교
+      // 2. resultData의 content.menu_items가 있으면 예상 대메뉴 개수 확인
       const expectedMenuCount = resultData?.content?.menu_items?.length || 0
-      const actualMenuCount = parsedMenus.length
       
-      // 예상 대메뉴 개수가 있고, 실제 파싱된 대메뉴 개수가 예상보다 적으면 점사가 완료되지 않음
-      if (expectedMenuCount > 0 && actualMenuCount < expectedMenuCount) {
-        console.log('[완료 팝업] 점사가 완료되지 않음', {
+      // 3. parsedMenus가 있으면 개수 비교, 없어도 HTML이 충분하면 완료로 간주
+      const actualMenuCount = parsedMenus.length
+      if (expectedMenuCount > 0 && actualMenuCount > 0 && actualMenuCount < expectedMenuCount) {
+        console.log('[완료 팝업] 점사가 완료되지 않음 (재시도)', {
           expectedMenuCount,
           actualMenuCount,
           parsedMenus: parsedMenus.map(m => m.title)
         })
-        return
+        // parsedMenus가 아직 업데이트되지 않았을 수 있으므로 재시도
+        return false
       }
       
-      // 3. streamingHtml이 비어있거나 너무 짧으면 점사가 완료되지 않음
-      if (!streamingHtml || streamingHtml.length < 100) {
-        console.log('[완료 팝업] streamingHtml이 비어있거나 너무 짧음', {
-          htmlLength: streamingHtml?.length || 0
-        })
-        return
-      }
-      
+      // ✅ 모든 조건 통과: 팝업 표시
       try {
         sessionStorage.setItem(storageKey, '1')
       } catch {
@@ -3035,11 +3083,20 @@ ${fontFace ? fontFace : ''}
       
       completionPopupShownRef.current = true
       
-      // 최신 parsedMenus에서 실제 소제목 수 계산
-      // (이 시점에서는 파싱이 완료되었을 것)
-      const actualTotalSubtitles = parsedMenus.reduce((sum, menu) => sum + menu.subtitles.length, 0)
+      // 최신 parsedMenus에서 실제 소제목 수 계산 (있으면 사용, 없으면 resultData에서 계산)
+      let actualTotalSubtitles = 0
+      if (parsedMenus.length > 0) {
+        actualTotalSubtitles = parsedMenus.reduce((sum, menu) => sum + menu.subtitles.length, 0)
+      } else if (resultData?.content?.menu_items) {
+        // parsedMenus가 아직 없으면 resultData의 content.menu_items에서 정확한 소제목 수 계산
+        const menuItems = resultData.content.menu_items || []
+        actualTotalSubtitles = menuItems.reduce((sum: number, menu: any) => {
+          const subtitles = menu?.subtitles || []
+          return sum + subtitles.length
+        }, 0)
+      }
       
-      // 점사율을 100%로 강제 설정
+      // 점사율을 100%로 강제 설정 (이미 설정되었을 수 있지만, parsedMenus가 업데이트되면 재설정)
       if (actualTotalSubtitles > 0) {
         setTotalSubtitles(actualTotalSubtitles)
         setRevealedCount(actualTotalSubtitles)
@@ -3047,11 +3104,32 @@ ${fontFace ? fontFace : ''}
       
       // 애니메이션 완료 후 팝업 표시 (0.3초 후)
       setTimeout(() => {
-    setShowCompletionPopup(true)
+        setShowCompletionPopup(true)
       }, 300)
-    }, 800)
+      
+      return true
+    }
     
-    return () => clearTimeout(timeoutId)
+    // 즉시 확인 시도
+    if (checkAndShowPopup()) {
+      return
+    }
+    
+    // 실패 시 재시도 로직 (최대 20회, 총 10초)
+    let retryCount = 0
+    const maxRetries = 20
+    const retryInterval = 500 // 500ms마다 재시도
+    
+    const retryTimeoutId = setInterval(() => {
+      retryCount++
+      if (checkAndShowPopup() || retryCount >= maxRetries) {
+        clearInterval(retryTimeoutId)
+      }
+    }, retryInterval)
+    
+    return () => {
+      clearInterval(retryTimeoutId)
+    }
   }, [isRealtimeStreaming, streamingFinished, requestKey, savedId, parsedMenus, error, resultData, streamingHtml])
 
   if (loading) {
@@ -3525,7 +3603,7 @@ ${fontFace ? fontFace : ''}
     /* 인라인 만세력 (결과 내) */
     .jeminai-results .manse-ryeok-table {
       margin-top: 1rem !important;
-      margin-bottom: 1.5rem !important;
+      margin-bottom: 6rem !important; /* 96px (1.5rem → 6rem) */
     }
     
     /* 만세력이 포함된 부모 컨테이너 overflow 처리 */
@@ -4763,7 +4841,7 @@ ${fontFace ? fontFace : ''}
                   if (menuTitle) {
                     const thumbnailDiv = doc.createElement('div')
                     thumbnailDiv.className = 'menu-thumbnail-container'
-                    thumbnailDiv.style.cssText = 'width: 100%; margin-bottom: 32px; margin-top: 8px;'
+                    thumbnailDiv.style.cssText = 'width: 100%; margin-bottom: 96px; margin-top: 8px;'
                     
                     const imgEl = doc.createElement('img')
                     imgEl.src = menuThumbnailImageUrl
@@ -4787,6 +4865,7 @@ ${fontFace ? fontFace : ''}
                   
                   const manseDiv = doc.createElement('div')
                   manseDiv.className = 'manse-ryeok-wrapper'
+                  manseDiv.style.cssText = 'margin-bottom: 96px;'
                   const containerDiv = doc.createElement('div')
                   containerDiv.className = 'manse-ryeok-container'
                   
@@ -4917,7 +4996,7 @@ ${fontFace ? fontFace : ''}
                     if (titleDiv) {
                       const thumbnailImg = doc.createElement('div')
                       thumbnailImg.className = 'subtitle-thumbnail-container'
-                      thumbnailImg.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #f3f4f6; border-radius: 8px; overflow: hidden;'
+                      thumbnailImg.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; aspect-ratio: 1/1; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #ffffff; border-radius: 8px; overflow: hidden;'
                       if (thumbnailVideoUrl && thumbnailImageUrl) {
                         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
                         const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''
@@ -5012,7 +5091,7 @@ ${fontFace ? fontFace : ''}
                           if (detailMenuTitle) {
                             const thumbnailImg = doc.createElement('div')
                             thumbnailImg.className = 'subtitle-thumbnail-container'
-                            thumbnailImg.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #f3f4f6; border-radius: 8px; overflow: hidden;'
+                            thumbnailImg.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; aspect-ratio: 1/1; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #ffffff; border-radius: 8px; overflow: hidden;'
                             if (detailMenuThumbnailVideoUrl && detailMenuThumbnailImageUrl) {
                               const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
                               const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''
@@ -5559,7 +5638,7 @@ ${fontFace ? fontFace : ''}
                   width: 100%;
                   aspect-ratio: 1/1;
                   margin-top: 8px;
-                  margin-bottom: 32px;
+                  margin-bottom: 96px;
                   display: flex;
                   justify-content: center;
                   align-items: center;
@@ -5577,11 +5656,12 @@ ${fontFace ? fontFace : ''}
                   align-items: center;
                   width: 300px;
                   height: 300px;
+                  aspect-ratio: 1/1;
                   margin-left: auto;
                   margin-right: auto;
                   margin-top: 8px;
                   margin-bottom: 8px;
-                  background: #f3f4f6;
+                  background: #ffffff;
                   border-radius: 8px;
                   overflow: hidden;
                 }
@@ -6810,7 +6890,7 @@ ${fontFace ? fontFace : ''}
                     const menuThumbnailVideoUrl = menuItem?.thumbnail_video_url || ''
                     if (menuThumbnailImageUrl || menuThumbnailVideoUrl) {
                       return (
-                        <div className="w-full" style={{ marginBottom: '32px' }}>
+                        <div className="w-full" style={{ marginBottom: '96px' }}>
                           {menuThumbnailVideoUrl && menuThumbnailImageUrl ? (
                             <SupabaseVideo
                               thumbnailImageUrl={menuThumbnailImageUrl}
@@ -6840,12 +6920,13 @@ ${fontFace ? fontFace : ''}
                   {/* 첫 번째 대제목 아래 만세력 테이블 (1-1 소제목 준비 이후에만 표시) */}
                   {menuIndex === 0 && menu.manseHtml && firstSubtitleReady && (
                     <div
-                      className="mt-4 mb-8"
+                      className="mt-4"
+                      style={{ marginBottom: '96px' }}
                       dangerouslySetInnerHTML={{ __html: menu.manseHtml }}
                     />
                   )}
 
-                  <div className="space-y-4" style={{ marginTop: (menuIndex === 0 && menu.manseHtml && firstSubtitleReady) ? '0' : '32px' }}>
+                  <div className="space-y-4" style={{ marginTop: (menuIndex === 0 && menu.manseHtml && firstSubtitleReady) ? '0' : '96px' }}>
                     {menu.subtitles.map((sub, subIndex) => {
                       // 활성 항목까지만 표시 (이후 항목은 숨김)
                       if (shouldGateByActivePos && activePos && menuIndex === activePos.menuIndex && subIndex > activePos.subIndex) return null
@@ -7100,7 +7181,7 @@ ${fontFace ? fontFace : ''}
                               if (subtitleTitle) {
                                 const thumbnailImg = doc.createElement('div')
                                 thumbnailImg.className = 'subtitle-thumbnail-container'
-                                thumbnailImg.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #f3f4f6; border-radius: 8px; overflow: hidden;'
+                                thumbnailImg.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; aspect-ratio: 1/1; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #ffffff; border-radius: 8px; overflow: hidden;'
                                 if (thumbnailVideoUrl && thumbnailImageUrl) {
                                   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
                                   const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''
@@ -7173,7 +7254,7 @@ ${fontFace ? fontFace : ''}
                                     if (detailMenuTitle) {
                                       const thumbnailImg = doc.createElement('div')
                                       thumbnailImg.className = 'subtitle-thumbnail-container'
-                                      thumbnailImg.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #f3f4f6; border-radius: 8px; overflow: hidden;'
+                                      thumbnailImg.style.cssText = 'display: flex; justify-content: center; align-items: center; width: 300px; height: 300px; aspect-ratio: 1/1; margin-left: auto; margin-right: auto; margin-top: 8px; margin-bottom: 8px; background: #ffffff; border-radius: 8px; overflow: hidden;'
                                       if (detailMenuThumbnailVideoUrl && detailMenuThumbnailImageUrl) {
                                         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
                                         const bucketUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/thumbnails` : ''

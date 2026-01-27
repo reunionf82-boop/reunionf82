@@ -37,6 +37,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
   const [reviewEventBannersByContentId, setReviewEventBannersByContentId] = useState<Record<number, { basic: string; details: string[] }>>({})
   const [showDetailBannersModal, setShowDetailBannersModal] = useState<{ contentId: number; details: string[] } | null>(null)
   const [showPdfConfirmPopup, setShowPdfConfirmPopup] = useState<SavedResult | null>(null) // PDF 생성 확인 팝업
+  const [showDeleteConfirmPopup, setShowDeleteConfirmPopup] = useState<number | null>(null) // 삭제 확인 팝업 (resultId)
   const [pdfGeneratingMap, setPdfGeneratingMap] = useState<Record<number, boolean>>({}) // PDF 생성 중 상태 (result.id별)
   const [pdfProgressMap, setPdfProgressMap] = useState<Record<number, number>>({}) // PDF 생성 진행률 (result.id별, 0-100)
   
@@ -483,8 +484,15 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
     }
   }
 
-  const handleDelete = async (resultId: number) => {
-    if (!confirm('정말 삭제하시겠습니까?')) return
+  const handleDeleteClick = (resultId: number) => {
+    setShowDeleteConfirmPopup(resultId)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!showDeleteConfirmPopup) return
+    
+    const resultId = showDeleteConfirmPopup
+    setShowDeleteConfirmPopup(null)
 
     try {
       const response = await fetch(`/api/saved-results/delete?id=${resultId}`, {
@@ -1083,7 +1091,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
 
           // ✅ 긴 PDF에서 실패가 나기 쉬워 북커버는 최대 해상도를 제한한다(용량/메모리 폭증 방지)
           const MAX_W = 1200
-          const MAX_H = 2133 // 대략 9:16 기준
+          const MAX_H = 1800 // 1:1.5 (2:3) 비율 기준 (1200 * 1.5 = 1800)
           const bw = bitmap.width || 1
           const bh = bitmap.height || 1
           const scale = Math.min(1, MAX_W / bw, MAX_H / bh)
@@ -1161,7 +1169,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
       // ✅ 여러 장(배열)인 경우에도 모두 포함한다.
       const bookCoverHtml = bookCoverSrcs.filter(Boolean).length > 0
         ? `
-          <div id="pdf-top-book-cover" class="book-cover-thumbnail-container" style="width: 100%; height: 1592px; margin-bottom: 40px; display: block !important; page-break-inside: avoid; background: #f3f4f6; overflow: hidden; border-radius: 8px;">
+          <div id="pdf-top-book-cover" class="book-cover-thumbnail-container" style="width: 100%; aspect-ratio: 2/3; margin-bottom: 40px; display: block !important; page-break-inside: avoid; background: #f3f4f6; overflow: hidden; border-radius: 8px;">
             ${bookCoverSrcs
               .filter(Boolean)
               .map((src, idx, arr) => `
@@ -1179,7 +1187,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
 
       const endingBookCoverHtml = endingBookCoverSrcs.filter(Boolean).length > 0
         ? `
-          <div id="pdf-ending-book-cover" class="ending-book-cover-thumbnail-container" style="width: 100%; height: 1592px; margin-top: 24px; display: block !important; page-break-inside: avoid; background: #f3f4f6; overflow: hidden; border-radius: 8px;">
+          <div id="pdf-ending-book-cover" class="ending-book-cover-thumbnail-container" style="width: 100%; aspect-ratio: 2/3; margin-top: 24px; display: block !important; page-break-inside: avoid; background: #f3f4f6; overflow: hidden; border-radius: 8px;">
             ${endingBookCoverSrcs
               .filter(Boolean)
               .map((src, idx, arr) => `
@@ -1468,6 +1476,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
           #${tempContainerId} .ending-book-cover-thumbnail-container {
             display: block !important;
             width: 100% !important;
+            aspect-ratio: 2/3 !important;
             position: relative !important;
             opacity: 1 !important;
             visibility: visible !important;
@@ -1477,6 +1486,141 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
             width: 100% !important;
             height: auto !important;
             object-fit: contain !important;
+          }
+          /* 만세력(사주명식) 테이블 고급 스타일 */
+          #${tempContainerId} .manse-ryeok-table,
+          #${tempContainerId} .manse-ryeok-container .manse-ryeok-table,
+          #${tempContainerId} .manse-ryeok-container table {
+            width: 100% !important;
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+            background: linear-gradient(135deg, #fefbf3 0%, #faf6eb 50%, #f5efe0 100%) !important;
+            border-radius: 16px !important;
+            overflow: hidden !important;
+            box-shadow: 
+              0 4px 20px rgba(139, 90, 43, 0.12),
+              0 2px 8px rgba(139, 90, 43, 0.08),
+              inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+            border: 2px solid transparent !important;
+            background-clip: padding-box !important;
+            position: relative !important;
+            margin: 1.5rem 0 !important;
+            table-layout: fixed !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+          }
+          #${tempContainerId} .manse-ryeok-table::before,
+          #${tempContainerId} .manse-ryeok-container .manse-ryeok-table::before,
+          #${tempContainerId} .manse-ryeok-container table::before {
+            display: none !important;
+          }
+          #${tempContainerId} .manse-ryeok-table th,
+          #${tempContainerId} .manse-ryeok-container .manse-ryeok-table th,
+          #${tempContainerId} .manse-ryeok-container table th {
+            background: linear-gradient(180deg, #8b5a2b 0%, #6d4422 100%) !important;
+            color: #fef8e8 !important;
+            font-weight: 700 !important;
+            padding: 12px 8px !important;
+            text-align: center !important;
+            font-size: 0.8rem !important;
+            letter-spacing: 0.05em !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+            border-bottom: 2px solid #d4a853 !important;
+            white-space: nowrap !important;
+            vertical-align: middle !important;
+          }
+          #${tempContainerId} .manse-ryeok-table thead th:first-child,
+          #${tempContainerId} .manse-ryeok-container .manse-ryeok-table thead th:first-child,
+          #${tempContainerId} .manse-ryeok-container table thead th:first-child {
+            background: linear-gradient(180deg, #8b5a2b 0%, #6d4422 100%) !important;
+            color: #fef8e8 !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+          }
+          #${tempContainerId} .manse-ryeok-table td,
+          #${tempContainerId} .manse-ryeok-container .manse-ryeok-table td,
+          #${tempContainerId} .manse-ryeok-container table td {
+            padding: 12px 8px !important;
+            text-align: center !important;
+            font-size: 0.9rem !important;
+            font-weight: 600 !important;
+            color: #4a3520 !important;
+            border-bottom: 1px solid rgba(139, 90, 43, 0.15) !important;
+            background: transparent !important;
+            position: relative !important;
+            white-space: nowrap !important;
+            vertical-align: middle !important;
+          }
+          #${tempContainerId} .manse-ryeok-container td:first-child,
+          #${tempContainerId} .manse-ryeok-table td:first-child {
+            font-weight: 700 !important;
+            color: #5a4a32 !important;
+            background: #d4c4a8 !important;
+          }
+          #${tempContainerId} .manse-ryeok-container {
+            padding: 8px !important;
+            background: linear-gradient(135deg, rgba(212, 168, 83, 0.05) 0%, rgba(139, 90, 43, 0.03) 100%) !important;
+            border-radius: 20px !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            overflow-x: auto !important;
+            overflow-y: visible !important;
+            box-sizing: border-box !important;
+            display: block !important;
+          }
+          /* 오행별 색상 */
+          #${tempContainerId} .manse-element-wood {
+            color: #1e40af !important;
+            text-shadow: 0 1px 2px rgba(30, 64, 175, 0.2) !important;
+            display: inline !important;
+            white-space: nowrap !important;
+          }
+          #${tempContainerId} .manse-element-fire {
+            color: #991b1b !important;
+            text-shadow: 0 1px 2px rgba(153, 27, 27, 0.2) !important;
+            display: inline !important;
+            white-space: nowrap !important;
+          }
+          #${tempContainerId} .manse-element-earth {
+            color: #d97706 !important;
+            text-shadow: 0 1px 2px rgba(217, 119, 6, 0.2) !important;
+            display: inline !important;
+            white-space: nowrap !important;
+          }
+          #${tempContainerId} .manse-element-metal {
+            color: #6b7280 !important;
+            text-shadow: 0 1px 2px rgba(107, 114, 128, 0.2) !important;
+            display: inline !important;
+            white-space: nowrap !important;
+          }
+          #${tempContainerId} .manse-element-water {
+            color: #1f2937 !important;
+            text-shadow: 0 1px 2px rgba(31, 41, 55, 0.3) !important;
+            display: inline !important;
+            white-space: nowrap !important;
+          }
+          #${tempContainerId} .manse-ganzi-char {
+            font-size: 1.2em !important;
+            font-weight: 700 !important;
+            display: inline !important;
+            white-space: nowrap !important;
+          }
+          /* 십성/지장간/십이신살/십이운성: 2줄 표시 */
+          #${tempContainerId} .manse-two-line {
+            display: inline-block !important;
+            white-space: normal !important;
+            line-height: 1.15 !important;
+          }
+          #${tempContainerId} .manse-two-line-kor {
+            display: block !important;
+            font-weight: 700 !important;
+            line-height: 1.15 !important;
+          }
+          #${tempContainerId} .manse-two-line-hanja {
+            display: block !important;
+            font-weight: 600 !important;
+            opacity: 0.9 !important;
+            line-height: 1.15 !important;
+            margin-top: 2px !important;
           }
         `;
         tempContainer.appendChild(scopedStyle);
@@ -1783,9 +1927,9 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
 
             const format = 'JPEG'
 
-            // ✅ 북커버는 서비스 규칙상 9:16(세로) 비율이므로 비율 고정으로 계산
+            // ✅ 북커버는 1:1.5 (2:3) 비율이므로 비율 고정으로 계산
             const pdfImgWidth = pdfPageWidth - (pdfMargin * 2)
-            const pdfImgHeight = (pdfImgWidth * 16) / 9
+            const pdfImgHeight = (pdfImgWidth * 3) / 2
 
             if (currentPdfY + pdfImgHeight > maxPdfPageHeight - pdfMargin) {
               pdf.addPage([pdfPageWidth, maxPdfPageHeight])
@@ -1815,14 +1959,9 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
           return added
         }
         
-        // ✅ 1) 상단 북커버 먼저 삽입
-        if (topCoverEl) {
-          const topInserted = await addCoverImagesDirectly(bookCoverSrcs)
-          // ✅ 상단 북커버가 실패하면(긴 PDF에서만 발생) html2canvas 경로로 한 번 더 시도해서
-          // "상단이라도" 보이게 한다.
-          if (!topInserted) {
-            await captureElement(topCoverEl as HTMLElement)
-          }
+        // ✅ 1) 상단 북커버 먼저 삽입 (항상 직접 삽입, captureElement로 분절 방지)
+        if (topCoverEl && bookCoverSrcs.length > 0) {
+          await addCoverImagesDirectly(bookCoverSrcs)
         }
 
         for (let i = 0; i < blocks.length; i++) {
@@ -2434,7 +2573,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                           다시보기
                         </button>
                         <button
-                          onClick={() => handleDelete(result.id)}
+                          onClick={() => handleDeleteClick(result.id)}
                           className="inline-flex items-center justify-center whitespace-nowrap bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200"
                         >
                           삭제
@@ -2568,6 +2707,54 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                 className="w-full mt-6 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
               >
                 돌아가기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 삭제 확인 팝업 */}
+      {showDeleteConfirmPopup && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000] p-4 transition-opacity duration-200"
+          onClick={() => setShowDeleteConfirmPopup(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full transition-transform duration-200 scale-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="p-6 border-b border-gray-200">
+              <h3 className="text-xl font-bold text-gray-900 text-center">
+                삭제 확인
+              </h3>
+            </div>
+            
+            {/* 내용 */}
+            <div className="p-6">
+              <div className="mb-4">
+                <p className="text-base text-gray-700 text-center leading-relaxed">
+                  정말로 삭제하시겠습니까?
+                </p>
+                <p className="text-sm text-gray-500 text-center mt-2">
+                  삭제된 결과는 복구할 수 없습니다.
+                </p>
+              </div>
+            </div>
+            
+            {/* 버튼 */}
+            <div className="px-6 pb-6 flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirmPopup(null)}
+                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 px-6 rounded-xl transition-colors duration-200"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors duration-200"
+              >
+                삭제
               </button>
             </div>
           </div>
