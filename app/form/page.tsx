@@ -3236,46 +3236,9 @@ function FormContent() {
         // 비동기 작업들은 Promise.allSettled로 병렬 처리하고, 실패해도 페이지 이동은 진행
         const asyncTasks = [saveTempRequestTask]
         
-        // 휴대폰 번호와 비밀번호를 DB에 저장 (savedId 없이)
-        // 결제 성공으로 인한 이동인 경우 sessionStorage에서 가져오기
-        if (typeof window !== 'undefined') {
-          const paymentPhone = sessionStorage.getItem('payment_phone') || ''
-          const paymentPassword = sessionStorage.getItem('payment_password') || ''
-          const fullPhoneNumber = paymentPhone || `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
-          const userPassword = paymentPassword || password
-
-          asyncTasks.push(
-            fetch('/api/user-credentials/save', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                requestKey: requestKey,
-                // savedId는 점사 완료 후 저장 시점에 생성됨
-                phone: fullPhoneNumber,
-                password: userPassword
-              })
-            }).then(async (response) => {
-              if (response.ok) {
-                const text = await response.text()
-                if (text) {
-                  try {
-                    const result = JSON.parse(text)
-
-                    return result
-                  } catch (e) {
-
-                  }
-                }
-              } else {
-                const errorText = await response.text()
-                throw new Error(errorText || 'user_credentials 저장 실패')
-              }
-            }).catch((e) => {
-              // 저장 실패해도 페이지 이동은 진행
-
-            })
-          )
-        }
+        // ✅ user_credentials는 점사 완료 후에만 생성 (결제 성공 시점에는 savedId가 없으므로 생성하지 않음)
+        // 점사 완료 후 result/page.tsx의 saveResultToLocal에서 user_credentials를 생성/업데이트함
+        // 이렇게 하면 중복 생성 방지 및 savedId가 있는 레코드만 생성됨
         
         // 결제 성공으로 인한 이동인 경우, temp-request 저장만 완료될 때까지 기다린 후 페이지 이동
         if (isPaymentSuccess) {
@@ -3290,12 +3253,8 @@ function FormContent() {
 
           })
           
-          // 나머지 비동기 작업들은 백그라운드에서 실행
-          Promise.allSettled(asyncTasks.slice(1)).then(() => {
-
-          }).catch((e) => {
-
-          })
+          // ✅ user_credentials는 점사 완료 후에만 생성되므로 여기서는 실행하지 않음
+          // asyncTasks에는 saveTempRequestTask만 포함되어 있음
           
           // temp-request 저장 완료를 기다린 후 페이지 이동 (최대 3초)
           await Promise.race([
@@ -3629,27 +3588,9 @@ function FormContent() {
                     if (saved.data?.id) {
                       setSavedResults(prev => [saved.data, ...prev])
                       
-                      // 휴대폰 번호와 비밀번호를 DB에 저장 (savedId 포함)
-                      const fullPhoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
-                      try {
-                        const credResponse = await fetch('/api/user-credentials/save', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            savedId: saved.data.id,
-                            phone: fullPhoneNumber,
-                            password: password
-                          })
-                        })
-                        if (!credResponse.ok) {
-                          const errorText = await credResponse.text()
-
-                        } else {
-
-                        }
-                      } catch (e) {
-
-                      }
+                      // ✅ user_credentials는 result/page.tsx의 saveResultToLocal에서 처리됨
+                      // batch 모드에서는 result 페이지로 이동하지 않으므로 여기서는 저장하지 않음
+                      // realtime 모드에서만 result/page.tsx의 saveResultToLocal이 호출되어 user_credentials가 생성/업데이트됨
                     } else {
 
                     }
@@ -3958,35 +3899,9 @@ function FormContent() {
                 // sessionStorage에 데이터 저장 (URL 파라미터 대신)
                 if (typeof window !== 'undefined') {
                   sessionStorage.setItem('result_savedId', String(savedId))
-                  // 휴대폰 번호와 비밀번호를 DB에 저장
-                  const fullPhoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
-                  try {
-                    const response = await fetch('/api/user-credentials/save', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        savedId: savedId,
-                        phone: fullPhoneNumber,
-                        password: password
-                      })
-                    })
-                    if (response.ok) {
-                      const text = await response.text()
-                      if (text) {
-                        try {
-                          const result = JSON.parse(text)
-
-                        } catch (e) {
-
-                        }
-                      }
-                    } else {
-                      const errorText = await response.text()
-
-                    }
-                  } catch (e) {
-
-                  }
+                  // ✅ user_credentials는 result/page.tsx의 saveResultToLocal에서 처리됨
+                  // 직렬점사 모드에서는 result 페이지로 이동하지 않으므로 여기서는 저장하지 않음
+                  // realtime 모드에서만 result/page.tsx의 saveResultToLocal이 호출되어 user_credentials가 생성/업데이트됨
                 }
                 setShowLoadingPopup(false)
                 setSubmitting(false)
