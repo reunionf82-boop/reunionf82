@@ -188,7 +188,6 @@ export async function saveContent(contentData: ContentData) {
     menu_items: menu_items ? JSON.stringify(menu_items) : null,
     updated_at: new Date().toISOString(),
   }
-  
 
   if (contentData.id) {
     // 업데이트
@@ -765,5 +764,4 @@ export async function getUseSequentialFortune(): Promise<boolean> {
     return true // 기본값: 직렬점사
   }
 }
-
 

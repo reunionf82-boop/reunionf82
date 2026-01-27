@@ -407,8 +407,7 @@ export async function callJeminaiAPIStream(
                     
                     const remainingSubtitles = remainingIndices.map((index: number) => request.menu_subtitles[index])
                     const completedSubtitles = data.completedSubtitleIndices.map((index: number) => request.menu_subtitles[index])
-                    
-                    
+
                     // 재요청 준비
                     const retryRequest: JeminaiRequest = {
                       ...request,

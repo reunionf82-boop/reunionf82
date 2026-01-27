@@ -67,7 +67,6 @@ export async function POST(req: NextRequest) {
       .single()
     
     if (error) {
-      console.error('[admin/content/get] Supabase error:', error)
       return NextResponse.json(
         { error: error.message || '컨텐츠를 가져오는데 실패했습니다.' },
         { 
@@ -131,7 +130,6 @@ export async function POST(req: NextRequest) {
       }
     )
   } catch (error: any) {
-    console.error('[admin/content/get] Exception:', error)
     return NextResponse.json(
       { error: error.message || '컨텐츠를 가져오는 중 오류가 발생했습니다.' },
       { 

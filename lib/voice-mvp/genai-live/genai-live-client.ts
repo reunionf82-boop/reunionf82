@@ -90,7 +90,6 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     try {
       this._session = await this.client.live.connect({ model, config, callbacks })
     } catch (e) {
-      console.error('Error connecting to GenAI Live:', e)
       this._status = 'disconnected'
       return false
     }

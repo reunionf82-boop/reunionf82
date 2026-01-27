@@ -23,15 +23,13 @@ export async function GET(request: NextRequest) {
     const { count: totalCount } = await supabase
       .from('saved_results')
       .select('*', { count: 'exact', head: true })
-    
-    
+
     // 전체 데이터 조회 (명시적으로 limit 제거)
     const { data, error, count } = await supabase
       .from('saved_results')
       .select('*', { count: 'exact' })
       .order('saved_at', { ascending: false })
       .limit(1000) // Supabase 기본 limit은 1000개이지만 명시적으로 설정
-    
 
     if (error) {
       return NextResponse.json(
@@ -39,8 +37,7 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       )
     }
-    
-    
+
     // count와 실제 반환된 데이터가 다른 경우 경고
     if (count && count !== (data?.length || 0)) {
     }
@@ -57,7 +54,6 @@ export async function GET(request: NextRequest) {
       }
     } else {
     }
-
 
     // 데이터 형식 변환
     const results = (data || []).map((item: any) => {
@@ -101,7 +97,6 @@ export async function GET(request: NextRequest) {
       return result
     })
 
-
     // 캐싱 방지 헤더 설정 (프로덕션 환경에서 브라우저/CDN 캐싱 방지)
     return NextResponse.json(
       {
@@ -123,10 +118,4 @@ export async function GET(request: NextRequest) {
     )
   }
 }
-
-
-
-
-
-
 

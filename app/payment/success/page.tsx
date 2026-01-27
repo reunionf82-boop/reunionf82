@@ -6,7 +6,7 @@ import { Suspense, useEffect } from 'react'
 function PaymentSuccessContent() {
   // 컴포넌트 렌더링 즉시 로그
   if (typeof window !== 'undefined') {
-    console.log('[결제 성공 페이지] 컴포넌트 렌더링:', window.location.href)
+
   }
   
   const searchParams = useSearchParams()
@@ -14,32 +14,19 @@ function PaymentSuccessContent() {
   
   // oid 확인 로그
   if (typeof window !== 'undefined') {
-    console.log('[결제 성공 페이지] oid 추출:', oid)
+
   }
 
   useEffect(() => {
     // 페이지 로드 확인용 즉시 로그
-    console.log('[결제 성공 페이지] useEffect 실행:', { 
-      hasWindow: typeof window !== 'undefined',
-      oid: oid || '없음',
-      url: typeof window !== 'undefined' ? window.location.href : 'N/A'
-    })
-    
+
     if (typeof window === 'undefined' || !oid) {
-      console.log('[결제 성공 페이지] 초기화 실패: window 또는 oid 없음')
+
       return
     }
 
-    console.log('[결제 성공 페이지] 초기화 시작:', { 
-      oid, 
-      hasOpener: !!window.opener, 
-      openerClosed: window.opener?.closed,
-      origin: window.location.origin,
-      href: window.location.href
-    })
-
     // 1. 먼저 DB 상태를 success로 업데이트 (processPaymentSuccess에서 상태 확인할 수 있도록)
-    console.log('[결제 성공 페이지] DB 업데이트 시작:', oid)
+
     fetch('/api/payment/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -48,13 +35,13 @@ function PaymentSuccessContent() {
       .then(async (res) => {
         const data = await res.json()
         if (res.ok && data.success) {
-          console.log('[결제 성공 페이지] DB 업데이트 성공:', data)
+
         } else {
-          console.error('[결제 성공 페이지] DB 업데이트 실패:', res.status, data)
+
         }
       })
       .catch(e => {
-        console.error('[결제 성공 페이지] DB 업데이트 오류:', e)
+
       })
 
     // 2. opener 함수 직접 호출 (주 방식)
@@ -66,18 +53,18 @@ function PaymentSuccessContent() {
           // 본창에 정의된 함수 직접 호출
           const opener = window.opener as any
           if (typeof opener.handlePaymentSuccess === 'function') {
-            console.log('[결제 성공 페이지] opener.handlePaymentSuccess 호출 시도:', oid)
+
             await opener.handlePaymentSuccess(oid)
-            console.log('[결제 성공 페이지] opener.handlePaymentSuccess 호출 성공')
+
             return true
           } else {
-            console.log('[결제 성공 페이지] opener.handlePaymentSuccess 함수 없음')
+
           }
         } catch (error) {
-          console.error('[결제 성공 페이지] opener 함수 호출 오류:', error)
+
         }
       } else {
-        console.log('[결제 성공 페이지] opener 없음 또는 닫힘')
+
       }
       return false
     }
@@ -98,7 +85,7 @@ function PaymentSuccessContent() {
       callOpenerFunction().then(result => { 
         functionCalled = result
         if (result) {
-          console.log('[결제 성공 페이지] opener 호출 성공, 창 닫기 준비')
+
         }
       })
 
@@ -112,15 +99,12 @@ function PaymentSuccessContent() {
             callOpenerFunction().then(result => { 
               functionCalled = result
               if (result) {
-                console.log('[결제 성공 페이지] opener 호출 성공 (재시도), 창 닫기 준비')
+
               }
             })
           }
         } else {
-          console.log(`[결제 성공 페이지] opener 확인 (${attemptCount}회):`, { 
-            hasOpener: !!window.opener, 
-            isClosed: window.opener?.closed 
-          })
+
         }
         
         // 최대 시도 횟수에 도달하거나 성공적으로 처리되면 창 닫기
@@ -128,7 +112,7 @@ function PaymentSuccessContent() {
           clearInterval(messageInterval)
           // 너무 빨리 닫히면 전달이 씹히는 브라우저가 있어 약간 대기
           setTimeout(() => {
-            console.log('[결제 성공 페이지] 창 닫기 실행')
+
             window.close()
           }, 500)
         }
@@ -137,7 +121,7 @@ function PaymentSuccessContent() {
       // 최대 3초 후에는 무조건 창 닫기
       setTimeout(() => {
         clearInterval(messageInterval)
-        console.log('[결제 성공 페이지] 최대 시간 도달, 창 닫기')
+
         window.close()
       }, 3000)
     }, 300) // DB 업데이트 완료를 위한 딜레이

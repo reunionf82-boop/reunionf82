@@ -51,26 +51,16 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) {
-      console.error('[admin/reviews/update] error:', error)
-      console.error('[admin/reviews/update] error details:', JSON.stringify(error, null, 2))
       return NextResponse.json(
         { error: '리뷰 업데이트에 실패했습니다.', details: error.message },
         { status: 500 }
       )
     }
-
-    console.log('[admin/reviews/update] 업데이트 성공:', {
-      review_id,
-      updateData,
-      updated_review: data
-    })
-
     return NextResponse.json({
       success: true,
       review: data
     })
   } catch (error: any) {
-    console.error('[admin/reviews/update] exception:', error)
     return NextResponse.json(
       { error: error.message || '리뷰 업데이트 중 오류가 발생했습니다.' },
       { status: 500 }

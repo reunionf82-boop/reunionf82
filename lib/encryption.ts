@@ -7,13 +7,11 @@ let ENCRYPTION_KEY: string = process.env.ENCRYPTION_KEY || ''
 if (!ENCRYPTION_KEY) {
   // 개발 환경에서만 임시 키 생성 (경고 로그 출력)
   if (process.env.NODE_ENV !== 'production') {
-    console.warn('⚠️ ENCRYPTION_KEY 환경 변수가 설정되지 않았습니다. 임시 키를 사용합니다.')
     ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex')
   } else {
     // 프로덕션 환경에서는 기본 키 사용 (경고만 출력)
     // 실제 사용 시에는 반드시 환경 변수로 설정해야 함
     const defaultKey = crypto.createHash('sha256').update('default-temp-key-change-in-production').digest('hex')
-    console.warn('⚠️ ENCRYPTION_KEY 환경 변수가 설정되지 않았습니다. 임시 키를 사용합니다. 프로덕션에서는 반드시 환경 변수를 설정하세요.')
     ENCRYPTION_KEY = defaultKey
   }
 }

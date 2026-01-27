@@ -40,13 +40,6 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date(nowKST.getTime() + 24 * 60 * 60 * 1000) // 24시간 후
 
     // 디버그 로그 (saved_id가 NULL로 들어가는지 확인용)
-    console.log('[user-credentials/save] 요청:', {
-      hasRequestKey: !!requestKey,
-      requestKey,
-      hasSavedId: savedId !== undefined && savedId !== null && String(savedId).trim() !== '',
-      savedId,
-    })
-
     // 암호화
     let encryptedPhone: string
     let encryptedPassword: string
@@ -80,14 +73,6 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       )
     }
-
-    console.log('[user-credentials/save] 저장됨:', {
-      id: data.id,
-      request_key: data.request_key,
-      saved_id: data.saved_id,
-      expires_at: data.expires_at,
-    })
-
     return NextResponse.json({
       success: true,
       id: data.id,

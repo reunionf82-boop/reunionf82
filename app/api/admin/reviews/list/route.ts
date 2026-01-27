@@ -35,7 +35,6 @@ export async function GET(req: NextRequest) {
     const { data, error } = await query
 
     if (error) {
-      console.error('[admin/reviews/list] error:', error)
       return NextResponse.json(
         { error: '리뷰 조회에 실패했습니다.', details: error.message },
         { status: 500 }
@@ -47,7 +46,6 @@ export async function GET(req: NextRequest) {
       reviews: data || []
     })
   } catch (error: any) {
-    console.error('[admin/reviews/list] exception:', error)
     return NextResponse.json(
       { error: error.message || '리뷰 조회 중 오류가 발생했습니다.' },
       { status: 500 }

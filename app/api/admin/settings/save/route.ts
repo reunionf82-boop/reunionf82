@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
         .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html')
       
       if (updateError) {
-        console.error('[admin/settings/save] updateError:', updateError)
+
         throw updateError
       }
       
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
         .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html')
       
       if (insertError) {
-        console.error('[admin/settings/save] insertError:', insertError)
+
         throw insertError
       }
       
@@ -166,7 +166,7 @@ export async function POST(req: NextRequest) {
       home_html: String((savedData as any).home_html || updateData.home_html || ''),
     })
   } catch (error: any) {
-    console.error('[admin/settings/save] error:', error)
+
     const errorMessage = error?.message || error?.code || '설정을 저장하는데 실패했습니다.'
     const msgLower = String(error?.message || '').toLowerCase()
     let errorHint = ''

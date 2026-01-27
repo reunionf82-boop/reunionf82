@@ -449,19 +449,8 @@ function ResultContent() {
           const fontFaceBlocks = (css || '').match(/@font-face\s*\{[\s\S]*?\}/gi) || []
           return fontFaceBlocks.length > 0 ? `<style>${fontFaceBlocks.join('\n')}</style>` : ''
         })
-        console.log('[결과 로드] 저장된 결과 HTML 확인:', {
-          savedId,
-          htmlLength: savedHtml.length,
-          htmlPreview: savedHtml.substring(0, 300),
-          hasContent: savedHtml.includes('menu-section') || savedHtml.includes('subtitle-section')
-        })
         
         if (!savedHtml || savedHtml.trim().length < 100) {
-          console.error('[결과 로드] 저장된 HTML이 비어있음!', {
-            htmlLength: savedHtml.length,
-            htmlTrimmedLength: savedHtml.trim().length,
-            htmlPreview: savedHtml.substring(0, 200)
-          })
           throw new Error('저장된 결과에 내용이 없습니다. 관리자에게 문의해주세요.')
         }
 
@@ -472,11 +461,6 @@ function ResultContent() {
         
         if (needsFetchContent && savedResult.title) {
           try {
-            console.log('[결과 로드] content 불완전, title로 다시 가져오기 시도:', {
-              hasContent: !!savedResult.content,
-              hasMenuItems: !!savedResult.content?.menu_items,
-              title: savedResult.title
-            })
             const findResponse = await fetch(`/api/contents/find-by-title?title=${encodeURIComponent(savedResult.title)}`)
             if (findResponse.ok) {
               const findData = await findResponse.json().catch(() => ({}))
@@ -491,17 +475,12 @@ function ResultContent() {
                       ...contentData,
                       user_info: savedResult.content?.user_info || contentData.user_info
                     }
-                    console.log('[결과 로드] title로 content 찾기 성공:', {
-                      content_id: findData.content_id,
-                      hasMenuItems: !!contentData.menu_items,
-                      menuItemsCount: contentData.menu_items?.length || 0
-                    })
+
                   }
                 }
               }
             }
           } catch (e) {
-            console.warn('[결과 로드] title로 content 찾기 실패:', e)
           }
         }
         
@@ -710,13 +689,6 @@ function ResultContent() {
             // 직렬점사: partial_done이면 완료 처리 (2차 요청은 lib/jeminai.ts에서 처리)
             let finalHtml = data.html || accumulatedHtml
 
-            console.log('[직렬점사] partial_done 수신:', {
-              hasDataHtml: !!data.html,
-              dataHtmlLength: data.html?.length || 0,
-              accumulatedHtmlLength: accumulatedHtml.length,
-              finalHtmlLength: finalHtml.length
-            })
-
             // HTML 정리
             finalHtml = finalHtml
               .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
@@ -726,14 +698,8 @@ function ResultContent() {
               .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
               .replace(/\*\*/g, '')
 
-            console.log('[직렬점사] partial_done 정리 후:', {
-              finalHtmlLength: finalHtml.length,
-              hasMenuSection: finalHtml.includes('menu-section'),
-              hasSubtitleSection: finalHtml.includes('subtitle-section'),
-              htmlPreview: finalHtml.substring(0, 500)
-            })
-
             // 즉시 상태 업데이트 (버튼 활성화를 위해)
+            // ✅ streamingHtml을 먼저 설정하여 완료 팝업 로직이 즉시 확인할 수 있도록 함
             setStreamingHtml(finalHtml)
 
             const finalResult: ResultData = {
@@ -743,8 +709,10 @@ function ResultContent() {
               model,
               userName,
             }
+            // ✅ resultData를 설정하기 전에 streamingHtml을 먼저 설정하여 완료 팝업 로직이 즉시 확인할 수 있도록 함
             setResultData(finalResult)
             setIsStreamingActive(false)
+            // ✅ streamingFinished를 true로 설정하여 완료 팝업 useEffect가 즉시 실행되도록 함
             setStreamingFinished(true)
             setStreamingProgress(100) // 애니메이션으로 100%까지 증가
             setLoading(false)
@@ -769,11 +737,7 @@ function ResultContent() {
             
             // 직렬점사(partial_done) 완료 시 즉시 결과 저장 (지연 없이)
             if (!autoSavedRef.current) {
-              console.log('[직렬점사] partial_done 완료, 결과 저장 시작', {
-                finalHtmlLength: finalHtml.length,
-                hasResultData: !!finalResult,
-                streamingFinished: true
-              })
+
               autoSavedRef.current = true
               // 즉시 저장 (setTimeout 제거)
               ;(async () => {
@@ -781,15 +745,13 @@ function ResultContent() {
                   // 최신 HTML과 content를 직접 전달하여 저장
                   if (finalHtml && finalHtml.length >= 100) {
                     await saveResultToLocal(false, finalHtml, content)
-                    console.log('[직렬점사] partial_done 결과 저장 완료', { htmlLength: finalHtml.length, hasContent: !!content })
+
                   } else {
-                    console.error('[직렬점사] partial_done 결과 저장 실패: HTML이 유효하지 않음', {
-                      htmlLength: finalHtml?.length || 0
-                    })
+
                     autoSavedRef.current = false // 재시도 가능하도록
                   }
                 } catch (err) {
-                  console.error('[직렬점사] partial_done 결과 저장 실패:', err)
+
                   autoSavedRef.current = false // 실패 시 재시도 가능하도록
                 }
               })()
@@ -885,13 +847,6 @@ function ResultContent() {
             
             let finalHtml = data.html || accumulatedHtml
 
-            console.log('[직렬점사] done 수신:', {
-              hasDataHtml: !!data.html,
-              dataHtmlLength: data.html?.length || 0,
-              accumulatedHtmlLength: accumulatedHtml.length,
-              finalHtmlLength: finalHtml.length
-            })
-
             // HTML 정리
             finalHtml = finalHtml
               .replace(/([>])\s*(\n\s*)+(\s*<table[^>]*>)/g, '$1$3')
@@ -900,13 +855,6 @@ function ResultContent() {
               .replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
               .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
               .replace(/\*\*/g, '')
-
-            console.log('[직렬점사] done 정리 후:', {
-              finalHtmlLength: finalHtml.length,
-              hasMenuSection: finalHtml.includes('menu-section'),
-              hasSubtitleSection: finalHtml.includes('subtitle-section'),
-              htmlPreview: finalHtml.substring(0, 500)
-            })
 
             // 만세력 테이블 삽입
             if (manseRyeokTable && !finalHtml.includes('manse-ryeok-table')) {
@@ -963,11 +911,7 @@ function ResultContent() {
             
             // 직렬점사 완료 시 즉시 결과 저장 (지연 없이)
             if (!autoSavedRef.current) {
-              console.log('[직렬점사] 완료, 결과 저장 시작', {
-                finalHtmlLength: finalHtml.length,
-                hasResultData: !!finalResult,
-                streamingFinished: true
-              })
+
               autoSavedRef.current = true
               // 즉시 저장 (setTimeout 제거)
               ;(async () => {
@@ -975,15 +919,13 @@ function ResultContent() {
                   // 최신 HTML과 content를 직접 전달하여 저장
                   if (finalHtml && finalHtml.length >= 100) {
                     await saveResultToLocal(false, finalHtml, content, model, startTime, userName)
-                    console.log('[직렬점사] 결과 저장 완료', { htmlLength: finalHtml.length, hasContent: !!content })
+
                   } else {
-                    console.error('[직렬점사] 결과 저장 실패: HTML이 유효하지 않음', {
-                      htmlLength: finalHtml?.length || 0
-                    })
+
                     autoSavedRef.current = false // 재시도 가능하도록
                   }
                 } catch (err) {
-                  console.error('[직렬점사] 결과 저장 실패:', err)
+
                   autoSavedRef.current = false // 실패 시 재시도 가능하도록
                 }
               })()
@@ -1048,19 +990,18 @@ function ResultContent() {
           setTimeout(() => {
             setShowRealtimePopup(false)
           }, 500)
-          console.log('[병렬점사] 모든 대메뉴 완료 (processNextMenu 체크), 스트리밍 종료')
-          
+
           // 모든 대메뉴 완료 시 즉시 결과 저장 (지연 없이)
             if (!autoSavedRef.current) {
-              console.log('[병렬점사] 완료 (체크), 결과 저장 시작')
+
               autoSavedRef.current = true
               // 즉시 저장 (setTimeout 제거)
               ;(async () => {
                 try {
                   await saveResultToLocal(false, allAccumulatedHtml, content, model, startTime, userName)
-                  console.log('[병렬점사] 결과 저장 완료')
+
                 } catch (err) {
-                  console.error('[병렬점사] 결과 저장 실패:', err)
+
                   autoSavedRef.current = false // 실패 시 재시도 가능하도록
                 }
               })()
@@ -1068,9 +1009,7 @@ function ResultContent() {
           
           return
         }
-        
-        console.log(`[병렬점사] 대메뉴 ${menuIdx + 1}/${allMenuGroups.length} 처리 시작`)
-        
+
         // 중복 요청 방지: 이미 처리 중이거나 완료된 대메뉴는 건너뛰기
         if (menuProcessingState[menuIdx] === 'processing' || menuProcessingState[menuIdx] === 'done') {
           return
@@ -1218,8 +1157,7 @@ function ResultContent() {
               
               // done 이벤트 처리 시작
               isProcessingDone = true
-              
-              
+
               let nextFinalHtml = nextData.html || menuAccumulated
               
               // HTML 정리 (테이블 중첩 방지 포함)
@@ -1278,6 +1216,7 @@ function ResultContent() {
               
               if (isLastMenu) {
                 // 모든 대메뉴 완료 - 스트리밍 종료 처리
+                // ✅ streamingHtml을 먼저 설정하여 완료 팝업 로직이 즉시 확인할 수 있도록 함
                 setStreamingHtml(allAccumulatedHtml)
                 const finalResult: ResultData = {
                   content,
@@ -1286,8 +1225,10 @@ function ResultContent() {
                   model,
                   userName,
                 }
+                // ✅ resultData를 설정하기 전에 streamingHtml을 먼저 설정하여 완료 팝업 로직이 즉시 확인할 수 있도록 함
                 setResultData(finalResult)
                 setIsStreamingActive(false)
+                // ✅ streamingFinished를 true로 설정하여 완료 팝업 useEffect가 즉시 실행되도록 함
                 setStreamingFinished(true)
                 setStreamingProgress(100) // 애니메이션으로 100%까지 증가
                 setLoading(false)
@@ -1295,8 +1236,7 @@ function ResultContent() {
                 setTimeout(() => {
                   setShowRealtimePopup(false)
                 }, 500)
-                console.log('[병렬점사] 모든 대메뉴 완료, 스트리밍 종료')
-                
+
                 // ✅ 즉시 점사율을 100%로 설정 (parsedMenus 업데이트를 기다리지 않음)
                 // content.menu_items에서 예상 소제목 수 계산
                 const expectedMenuItems = content?.menu_items || []
@@ -1311,15 +1251,15 @@ function ResultContent() {
                 
                 // 병렬점사 완료 시 즉시 결과 저장 (지연 없이)
                 if (!autoSavedRef.current) {
-                  console.log('[병렬점사] 완료, 결과 저장 시작')
+
                   autoSavedRef.current = true
                   // 즉시 저장 (setTimeout 제거)
                   ;(async () => {
                     try {
                       await saveResultToLocal(false, allAccumulatedHtml, content, model, startTime, userName)
-                      console.log('[병렬점사] 결과 저장 완료')
+
                     } catch (err) {
-                      console.error('[병렬점사] 결과 저장 실패:', err)
+
                       autoSavedRef.current = false // 실패 시 재시도 가능하도록
                     }
                   })()
@@ -1334,13 +1274,11 @@ function ResultContent() {
                 .replace(/<[^>]+>/g, ' ') // HTML 태그 제거
                 .replace(/\s+/g, ' ') // 공백 정리
                 .trim()
-              
-              
+
               // 다음 대메뉴 요청 플래그를 먼저 설정 (중복 방지)
               hasRequestedNextMenu = true
               nextMenuRequested = true
-              
-              
+
               // 다음 대메뉴 요청 (백그라운드로 즉시 시작, await로 순차 보장)
               // 이전 대메뉴 화면 표시에 영향 없이 진행
               // 플래그를 먼저 설정했으므로 중복 호출 방지됨
@@ -1440,20 +1378,10 @@ function ResultContent() {
     startTimeOverride?: number,
     userNameOverride?: string
   ) => {
-    console.log('[결과 저장] saveResultToLocal 호출:', {
-      hasWindow: typeof window !== 'undefined',
-      hasResultData: !!resultData,
-      hasHtmlOverride: !!htmlOverride,
-      hasModelOverride: !!modelOverride,
-      hasStartTimeOverride: !!startTimeOverride,
-      hasUserNameOverride: !!userNameOverride,
-      htmlOverrideLength: htmlOverride?.length || 0,
-      showAlert
-    })
-    
+
     // htmlOverride가 있으면 resultData 없이도 저장 가능
     if (typeof window === 'undefined') {
-      console.error('[결과 저장] 저장 실패: window 없음')
+
       if (showAlert) {
         alert('결과 저장에 실패했습니다. (window 없음)')
       }
@@ -1461,10 +1389,7 @@ function ResultContent() {
     }
     
     if (!resultData && !htmlOverride) {
-      console.error('[결과 저장] 저장 실패: 데이터 없음', {
-        hasResultData: !!resultData,
-        hasHtmlOverride: !!htmlOverride
-      })
+
       if (showAlert) {
         alert('결과 저장에 실패했습니다. (데이터 없음)')
       }
@@ -1473,8 +1398,7 @@ function ResultContent() {
     
     // requestKey 저장 (나중에 temp_requests 삭제용)
     const currentRequestKey = requestKeyRef.current || requestKey
-    console.log('[결과 저장] currentRequestKey:', currentRequestKey)
-    
+
     try {
       // resultData에서 필요한 값들 가져오기 (없으면 기본값 사용)
       // htmlOverride가 있을 때는 resultData가 아직 설정되지 않았을 수 있으므로 optional chaining 사용
@@ -1493,23 +1417,9 @@ function ResultContent() {
       
       // userNameOverride가 있으면 우선 사용
       const userName = userNameOverride || resultData?.userName || content?.user_info?.name || ''
-      
-      console.log('[결과 저장] HTML 길이 확인:', {
-        isRealtime,
-        hasHtmlOverride: !!htmlOverride,
-        resultDataHtmlLength: resultData?.html?.length || 0,
-        streamingHtmlLength: streamingHtml?.length || 0,
-        finalHtmlLength: html.length,
-        htmlPreview: html.substring(0, 200) // HTML 내용 미리보기
-      })
-      
+
       // HTML이 비어있거나 너무 짧으면 저장하지 않음
       if (!html || html.trim().length < 100) {
-        console.error('[결과 저장] HTML 내용이 비어있거나 너무 짧음:', {
-          htmlLength: html?.length || 0,
-          htmlTrimmedLength: html?.trim().length || 0,
-          htmlPreview: html?.substring(0, 200) || 'EMPTY'
-        })
         if (showAlert) {
           alert('저장할 내용이 없습니다. 점사가 완료된 후 다시 시도해주세요.')
         }
@@ -1519,11 +1429,6 @@ function ResultContent() {
       
       // HTML에 모든 CSS 스타일 포함하여 저장 (result 페이지와 동일하게 표시되도록)
       let htmlWithFont = html || ''
-      
-      console.log('[결과 저장] HTML 처리 시작:', {
-        originalHtmlLength: html.length,
-        htmlPreview: html.substring(0, 300)
-      })
       
       // font-family 추출
       const match = fontFace ? fontFace.match(/font-family:\s*['"]([^'"]+)['"]|font-family:\s*([^;]+)/) : null
@@ -1627,13 +1532,7 @@ ${fontFace ? fontFace : ''}
 </style>
 `
       htmlWithFont = completeStyle + htmlWithFont
-      
-      console.log('[결과 저장] HTML 스타일 추가 후:', {
-        htmlWithFontLength: htmlWithFont.length,
-        styleLength: completeStyle.length,
-        contentHtmlLength: html.length
-      })
-      
+
       // currentTime 계산 (resultData.startTime이 있으면)
       let processingTime = '0:00'
       const startTime = startTimeOverride || resultData?.startTime
@@ -1647,17 +1546,6 @@ ${fontFace ? fontFace : ''}
       const currentSavedId = savedIdRef.current || savedId
       const hasDraftId = !!currentSavedId
       const endpoint = hasDraftId ? '/api/saved-results/update' : '/api/saved-results/save'
-
-      console.log('[결과 저장] 저장 요청 준비:', {
-        endpoint,
-        hasDraftId,
-        currentSavedId,
-        htmlWithFontLength: htmlWithFont.length,
-        title: content?.content_name || '재회 결과',
-        model,
-        processingTime,
-        userName
-      })
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -1676,12 +1564,6 @@ ${fontFace ? fontFace : ''}
         })
       })
 
-      console.log('[결과 저장] 저장 요청 완료:', {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok
-      })
-
       if (!response.ok) {
         const errorText = await response.text()
         let error: any = {}
@@ -1696,50 +1578,19 @@ ${fontFace ? fontFace : ''}
       }
 
       const result = await response.json()
-      console.log('[결과 저장] 저장 응답:', result)
-      console.log('[결과 저장] 응답 상세:', {
-        success: result.success,
-        hasData: !!result.data,
-        dataId: result.data?.id,
-        dataIdType: typeof result.data?.id,
-        currentRequestKey,
-        currentSavedId
-      })
-      
+
       if (result.success) {
         
         // 저장된 결과 ID 저장 (동기화 확인용)
         const savedResultId = result.data?.id
         const savedHtml = result.data?.html || ''
-        console.log('[결과 저장] savedResultId 추출:', {
-          savedResultId,
-          savedResultIdType: typeof savedResultId,
-          savedResultIdString: String(savedResultId),
-          savedHtmlLength: savedHtml.length
-        })
-        console.log('[결과 저장] 저장된 HTML 미리보기:', savedHtml.substring(0, 300))
-        console.log('[결과 저장] 저장된 HTML에 menu-section 포함:', savedHtml.includes('menu-section'))
-        console.log('[결과 저장] 저장된 HTML에 subtitle-section 포함:', savedHtml.includes('subtitle-section'))
-        
+
         // 저장된 HTML이 비어있으면 경고
         if (!savedHtml || savedHtml.trim().length < 100) {
-          console.error('[결과 저장] 저장된 HTML이 비어있음!', {
-            savedHtmlLength: savedHtml.length,
-            savedHtmlTrimmedLength: savedHtml.trim().length,
-            savedHtmlPreview: savedHtml.substring(0, 200),
-            sentHtmlLength: htmlWithFont.length,
-            sentHtmlPreview: htmlWithFont.substring(0, 200)
-          })
           if (showAlert) {
             alert('경고: 저장된 내용이 비어있습니다. 관리자에게 문의해주세요.')
           }
         } else if (!savedHtml.includes('menu-section') && !savedHtml.includes('subtitle-section')) {
-          console.warn('[결과 저장] 저장된 HTML에 본문 내용이 없을 수 있음:', {
-            savedHtmlLength: savedHtml.length,
-            hasMenuSection: savedHtml.includes('menu-section'),
-            hasSubtitleSection: savedHtml.includes('subtitle-section'),
-            savedHtmlPreview: savedHtml.substring(0, 500)
-          })
         }
         
         // 저장된 결과를 리스트 맨 위에 추가 (즉시 반영)
@@ -1754,43 +1605,24 @@ ${fontFace ? fontFace : ''}
         
         // user_credentials 업데이트: 점사 완료 후 저장된 savedId를 user_credentials에 저장
         // 이제 savedId는 점사 완료 후에만 생성되므로 항상 업데이트 필요
-        console.log('[결과 저장] user_credentials 업데이트 조건 확인:', {
-          hasCurrentRequestKey: !!currentRequestKey,
-          currentRequestKey,
-          hasSavedResultId: !!savedResultId,
-          savedResultId,
-          savedResultIdType: typeof savedResultId,
-          savedResultIdString: String(savedResultId),
-          savedResultIdTruthy: !!savedResultId
-        })
-        
+
         if (currentRequestKey && savedResultId) {
-          console.log('[결과 저장] user_credentials 업데이트 시도:', { currentRequestKey, savedId: savedResultId })
+
           try {
             // savedId를 숫자로 변환 (문자열일 수 있음)
             const savedIdNumber = typeof savedResultId === 'string' ? parseInt(savedResultId, 10) : savedResultId
             if (isNaN(savedIdNumber) || savedIdNumber <= 0) {
-              console.error('[결과 저장] savedId가 유효한 숫자가 아닙니다:', {
-                savedResultId,
-                savedIdNumber,
-                isNaN: isNaN(savedIdNumber),
-                isPositive: savedIdNumber > 0
-              })
+
               // 에러가 나도 계속 진행 (저장은 성공했으므로)
               return
             }
             
             // savedId가 유효한지 재확인
             if (!savedIdNumber || savedIdNumber <= 0) {
-              console.error('[결과 저장] savedId가 유효하지 않음:', savedIdNumber)
+
               return
             }
-            
-            console.log('[결과 저장] user_credentials 업데이트 요청:', {
-              requestKey: currentRequestKey,
-              savedId: savedIdNumber
-            })
-            
+
             const updateResponse = await fetch('/api/user-credentials/update', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1799,33 +1631,20 @@ ${fontFace ? fontFace : ''}
                 savedId: savedIdNumber
               })
             })
-            
-            console.log('[결과 저장] user_credentials 업데이트 응답:', {
-              status: updateResponse.status,
-              ok: updateResponse.ok
-            })
-            
+
             if (!updateResponse.ok) {
               const errorText = await updateResponse.text()
-              console.error('[결과 저장] user_credentials 업데이트 실패:', {
-                status: updateResponse.status,
-                errorText
-              })
+
             } else {
               const updateResult = await updateResponse.json()
-              console.log('[결과 저장] user_credentials 업데이트 성공:', updateResult)
+
             }
           } catch (updateError) {
             // 업데이트 실패는 무시 (로그만 출력)
-            console.error('[결과 저장] user_credentials 업데이트 실패:', updateError)
+
           }
         } else {
-          console.warn('[결과 저장] user_credentials 업데이트 스킵:', { 
-            currentRequestKey, 
-            savedResultId,
-            hasCurrentRequestKey: !!currentRequestKey,
-            hasSavedResultId: !!savedResultId
-          })
+
         }
         
         // temp_requests 삭제 (결과 저장 성공 후)
@@ -1861,13 +1680,11 @@ ${fontFace ? fontFace : ''}
           
         }, 1500)
       } else {
-        console.error('[결과 저장] 저장 실패: result.success가 false')
         if (showAlert) {
           alert('결과 저장에 실패했습니다.')
         }
       }
     } catch (e: any) {
-      console.error('[결과 저장] 저장 실패:', e)
       if (showAlert) {
         alert('결과 저장에 실패했습니다.\n\n개발자 도구 콘솔을 확인해주세요.')
       }
@@ -1880,8 +1697,6 @@ ${fontFace ? fontFace : ''}
     
     // 이미 자동 저장했으면 건너뛰기 (직렬점사에서 직접 저장했을 수 있음)
     if (autoSavedRef.current) {
-      // 로그를 너무 많이 출력하지 않도록 주석 처리
-      // console.log('[자동 저장] 이미 저장했으므로 스킵')
       return
     }
     
@@ -1904,14 +1719,7 @@ ${fontFace ? fontFace : ''}
     
     // 로그를 조건 충족 시에만 출력하도록 개선 (너무 많은 로그 방지)
     if (isCompleted && resultData && htmlContent && hasValidContent) {
-      console.log('[자동 저장] 조건 충족, 저장 시작:', {
-        isRealtime,
-        fortuneViewMode,
-        streamingFinished,
-        htmlContentLength: htmlContent.length,
-        isStreamingActive,
-        requestKey
-      })
+
       autoSavedRef.current = true
       // realtime 모드에서는 streamingHtml을 resultData에 반영하여 저장
       if (isRealtime && streamingHtml && streamingHtml.length > (resultData?.html?.length || 0) && resultData) {
@@ -1923,13 +1731,13 @@ ${fontFace ? fontFace : ''}
         // resultData 업데이트 후 저장하도록 약간 지연
         setTimeout(() => {
           saveResultToLocal(false).catch(err => {
-            console.error('[자동 저장] 저장 실패:', err)
+
             autoSavedRef.current = false // 실패 시 재시도 가능하도록
           })
         }, 300)
       } else {
         saveResultToLocal(false).catch(err => {
-          console.error('[자동 저장] 저장 실패:', err)
+
           autoSavedRef.current = false // 실패 시 재시도 가능하도록
         })
       }
@@ -3004,21 +2812,32 @@ ${fontFace ? fontFace : ''}
   useEffect(() => {
     if (!isRealtimeStreaming) return
     if (!streamingFinished) return
-    if (!resultData?.content?.menu_items) return
     
+    // ✅ resultData가 아직 업데이트되지 않았을 수 있으므로, streamingHtml이 충분히 길면 점사율을 100%로 설정
     // resultData의 content.menu_items에서 정확한 소제목 수 계산
-    const menuItems = resultData.content.menu_items || []
-    const totalSubtitlesCount = menuItems.reduce((sum: number, menu: any) => {
-      const subtitles = menu?.subtitles || []
-      return sum + subtitles.length
-    }, 0)
-    
-    // 점사율을 즉시 100%로 설정
-    if (totalSubtitlesCount > 0) {
-      setTotalSubtitles(totalSubtitlesCount)
-      setRevealedCount(totalSubtitlesCount)
+    if (resultData?.content?.menu_items) {
+      const menuItems = resultData.content.menu_items || []
+      const totalSubtitlesCount = menuItems.reduce((sum: number, menu: any) => {
+        const subtitles = menu?.subtitles || []
+        return sum + subtitles.length
+      }, 0)
+      
+      // 점사율을 즉시 100%로 설정
+      if (totalSubtitlesCount > 0) {
+        setTotalSubtitles(totalSubtitlesCount)
+        setRevealedCount(totalSubtitlesCount)
+        return
+      }
     }
-  }, [isRealtimeStreaming, streamingFinished, resultData?.content?.menu_items])
+    
+    // ✅ resultData가 아직 업데이트되지 않았지만 streamingHtml이 충분히 길면 점사율을 100%로 설정
+    // partial_done이나 병렬점사 완료 시점에 이미 직접 설정했을 수 있지만, 추가 보장
+    if (streamingHtml && streamingHtml.length >= 1000) {
+      // streamingHtml이 충분히 길면 점사가 완료된 것으로 간주
+      // 하지만 정확한 소제목 수를 알 수 없으므로, 이미 설정된 값이 있으면 유지
+      // 없으면 임시로 큰 값을 설정 (실제로는 partial_done/병렬점사 완료 시점에 이미 설정됨)
+    }
+  }, [isRealtimeStreaming, streamingFinished, resultData?.content?.menu_items, streamingHtml])
 
   // 점사 "완료" 시 엔딩북커버로 이동 + 완료 팝업 표시
   // ✅ 개선: streamingFinished가 true가 되면 실제 점사 완료 여부를 확인한 후 팝업 표시
@@ -3048,29 +2867,32 @@ ${fontFace ? fontFace : ''}
       if (error) return
       
       // 1. streamingHtml 또는 resultData.html이 충분히 길면 점사 완료로 간주
-      const finalHtml = resultData?.html || streamingHtml || ''
+      // ✅ streamingHtml을 우선 확인 (setStreamingHtml이 setResultData보다 먼저 호출되므로)
+      const finalHtml = streamingHtml || resultData?.html || ''
       if (!finalHtml || finalHtml.length < 100) {
-        console.log('[완료 팝업] HTML이 비어있거나 너무 짧음, 재시도', {
-          htmlLength: finalHtml?.length || 0,
-          hasResultData: !!resultData?.html,
-          hasStreamingHtml: !!streamingHtml
-        })
-        // HTML이 아직 준비되지 않았으면 500ms 후 재시도 (최대 10회)
+        // HTML이 아직 준비되지 않았으면 500ms 후 재시도 (최대 20회)
         return false
       }
       
       // 2. resultData의 content.menu_items가 있으면 예상 대메뉴 개수 확인
+      // ✅ resultData가 아직 업데이트되지 않았을 수 있으므로, HTML이 충분하면 완료로 간주
       const expectedMenuCount = resultData?.content?.menu_items?.length || 0
       
       // 3. parsedMenus가 있으면 개수 비교, 없어도 HTML이 충분하면 완료로 간주
+      // ✅ HTML이 충분히 길면 (100자 이상) 점사가 완료된 것으로 간주하고 팝업 표시
       const actualMenuCount = parsedMenus.length
+      // ✅ resultData가 아직 업데이트되지 않았을 수 있으므로, HTML이 충분하면 완료로 간주
       if (expectedMenuCount > 0 && actualMenuCount > 0 && actualMenuCount < expectedMenuCount) {
-        console.log('[완료 팝업] 점사가 완료되지 않음 (재시도)', {
-          expectedMenuCount,
-          actualMenuCount,
-          parsedMenus: parsedMenus.map(m => m.title)
-        })
         // parsedMenus가 아직 업데이트되지 않았을 수 있으므로 재시도
+        return false
+      }
+      
+      // ✅ HTML이 충분히 길면 (1000자 이상) 점사가 완료된 것으로 간주하고 팝업 표시
+      // resultData가 아직 업데이트되지 않았어도 HTML이 있으면 완료로 간주
+      if (finalHtml.length >= 1000) {
+        // HTML이 충분히 길면 완료로 간주 (resultData 업데이트를 기다리지 않음)
+      } else if (expectedMenuCount === 0 && actualMenuCount === 0) {
+        // resultData와 parsedMenus가 모두 없으면 재시도
         return false
       }
       
@@ -3564,8 +3386,7 @@ ${fontFace ? fontFace : ''}
     .manse-ryeok-container table tr:last-child td:last-child {
       border-bottom-right-radius: 14px !important;
     }
-    
-    
+
     .manse-ryeok-table td:not(:last-child),
     .manse-ryeok-container .manse-ryeok-table td:not(:last-child),
     .manse-ryeok-container table td:not(:last-child) {
@@ -3705,8 +3526,7 @@ ${fontFace ? fontFace : ''}
       color: #5a4a32 !important;
       background: #d4c4a8 !important;
     }
-    
-    
+
     /* 모바일에서 만세력 테이블 폰트/패딩 조절 (폭 안에 들어오게) */
     @media (max-width: 480px) {
       .manse-ryeok-container {
@@ -4041,7 +3861,7 @@ ${fontFace ? fontFace : ''}
             (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
           const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
           if (isLocalDebug) {
-            console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId, chunkIndex })
+
           }
 
           const response = await fetch('/api/tts', {
@@ -4052,13 +3872,7 @@ ${fontFace ? fontFace : ''}
             body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
           })
           if (isLocalDebug) {
-            console.log('[tts] response', {
-              ok: response.ok,
-              status: response.status,
-              usedProvider: response.headers.get('X-TTS-Provider'),
-              usedVoiceId: response.headers.get('X-TTS-VoiceId'),
-              chunkIndex
-            })
+
           }
 
           if (!response.ok) {
@@ -4169,7 +3983,7 @@ ${fontFace ? fontFace : ''}
               (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
             const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
             if (isLocalDebug) {
-              console.log('[tts] request (fallback)', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId, chunkIndex: i })
+
             }
 
             const response = await fetch('/api/tts', {
@@ -4180,13 +3994,7 @@ ${fontFace ? fontFace : ''}
               body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
             })
             if (isLocalDebug) {
-              console.log('[tts] response (fallback)', {
-                ok: response.ok,
-                status: response.status,
-                usedProvider: response.headers.get('X-TTS-Provider'),
-                usedVoiceId: response.headers.get('X-TTS-VoiceId'),
-                chunkIndex: i
-              })
+
             }
 
             if (!response.ok) {
@@ -4210,7 +4018,7 @@ ${fontFace ? fontFace : ''}
             (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
           const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
           if (isLocalDebug) {
-            console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId, chunkIndex: i })
+
           }
 
           const response = await fetch('/api/tts', {
@@ -4221,13 +4029,7 @@ ${fontFace ? fontFace : ''}
             body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
           })
           if (isLocalDebug) {
-            console.log('[tts] response', {
-              ok: response.ok,
-              status: response.status,
-              usedProvider: response.headers.get('X-TTS-Provider'),
-              usedVoiceId: response.headers.get('X-TTS-VoiceId'),
-              chunkIndex: i
-            })
+
           }
 
           if (!response.ok) {
@@ -4499,7 +4301,7 @@ ${fontFace ? fontFace : ''}
             (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
           const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
           if (isLocalDebug) {
-            console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId })
+
           }
 
           const response = await fetch('/api/tts', {
@@ -4510,12 +4312,7 @@ ${fontFace ? fontFace : ''}
             body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
           })
           if (isLocalDebug) {
-            console.log('[tts] response', {
-              ok: response.ok,
-              status: response.status,
-              usedProvider: response.headers.get('X-TTS-Provider'),
-              usedVoiceId: response.headers.get('X-TTS-VoiceId'),
-            })
+
           }
 
           if (!response.ok) {
@@ -4576,7 +4373,7 @@ ${fontFace ? fontFace : ''}
             (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
           const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
           if (isLocalDebug) {
-            console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId })
+
           }
 
           const response = await fetch('/api/tts', {
@@ -4587,12 +4384,7 @@ ${fontFace ? fontFace : ''}
             body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
           })
           if (isLocalDebug) {
-            console.log('[tts] response', {
-              ok: response.ok,
-              status: response.status,
-              usedProvider: response.headers.get('X-TTS-Provider'),
-              usedVoiceId: response.headers.get('X-TTS-VoiceId'),
-            })
+
           }
 
           if (!response.ok) {
@@ -6219,7 +6011,7 @@ ${fontFace ? fontFace : ''}
                           (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
                         const outgoingVoiceId = (ttsProvider === 'typecast') ? typecastVoiceId : '';
                         if (isLocalDebug) {
-                          console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId });
+
                         }
 
                         const response = await fetch('/api/tts', {
@@ -6230,12 +6022,7 @@ ${fontFace ? fontFace : ''}
                           body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
                         });
                         if (isLocalDebug) {
-                          console.log('[tts] response', {
-                            ok: response.ok,
-                            status: response.status,
-                            usedProvider: response.headers.get('X-TTS-Provider'),
-                            usedVoiceId: response.headers.get('X-TTS-VoiceId'),
-                          });
+
                         }
 
                         if (!response.ok) {
@@ -6304,7 +6091,7 @@ ${fontFace ? fontFace : ''}
                           (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
                         const outgoingVoiceId = (ttsProvider === 'typecast') ? typecastVoiceId : '';
                         if (isLocalDebug) {
-                          console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId });
+
                         }
 
                         const response = await fetch('/api/tts', {
@@ -6315,12 +6102,7 @@ ${fontFace ? fontFace : ''}
                           body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
                         });
                         if (isLocalDebug) {
-                          console.log('[tts] response', {
-                            ok: response.ok,
-                            status: response.status,
-                            usedProvider: response.headers.get('X-TTS-Provider'),
-                            usedVoiceId: response.headers.get('X-TTS-VoiceId'),
-                          });
+
                         }
                         
                         if (!response.ok) {

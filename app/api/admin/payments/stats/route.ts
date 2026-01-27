@@ -231,7 +231,7 @@ export async function GET(request: NextRequest) {
       }
     })
   } catch (error: any) {
-    console.error('[결제 통계 조회] 오류:', error)
+
     return NextResponse.json(
       { success: false, error: error.message || '결제 통계 조회 중 오류가 발생했습니다.' },
       { status: 500 }

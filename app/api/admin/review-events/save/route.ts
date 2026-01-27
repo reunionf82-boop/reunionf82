@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
       .eq('id', content_id)
 
     if (error) {
-      console.error('Update error:', error)
+
       return NextResponse.json(
         { error: error.message || '리뷰 이벤트 배너 저장에 실패했습니다.' },
         { status: 500 }
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
       review_event_banners: bannerData
     })
   } catch (error: any) {
-    console.error('API Error:', error)
+
     return NextResponse.json(
       { error: error.message || '서버 오류가 발생했습니다.' },
       { status: 500 }

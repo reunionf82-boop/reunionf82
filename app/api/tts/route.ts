@@ -40,7 +40,6 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     let { text, speaker, provider, voiceId } = body
 
-
     if (!text) {
       return NextResponse.json(
         { error: '텍스트가 필요합니다.' },
@@ -60,18 +59,10 @@ export async function POST(req: NextRequest) {
     const logPrefix = '[api/tts]'
     const safeTextLen = typeof text === 'string' ? text.length : 0
     // NOTE: 텍스트 원문은 로그에 남기지 않는다(민감정보/개인정보 가능성).
-    console.log(`${logPrefix} request`, {
-      selectedProvider: finalProvider,
-      hasTypecastKey: !!process.env.TYPECAST_API_KEY,
-      voiceIdStartsWithTc: typeof finalVoiceId === 'string' ? finalVoiceId.startsWith('tc_') : false,
-      textLen: safeTextLen,
-    })
-
     // 화자 설정 (기본값: nara)
     const selectedSpeaker = speaker || 'nara'
     const validSpeakers = ['nara', 'mijin', 'nhajun', 'ndain', 'jinho']
     const finalSpeaker = validSpeakers.includes(selectedSpeaker) ? selectedSpeaker : 'nara'
-    
 
     // 텍스트 정리: HTML 엔티티 디코딩 및 특수 문자 처리
     // HTML 엔티티 디코딩
@@ -157,9 +148,7 @@ export async function POST(req: NextRequest) {
       // 타입캐스트는 voice id가 정상일 때만 시도 (아니면 네이버로 폴백)
       const client = getTypecastClient()
       if (!client) {
-        console.warn(`${logPrefix} typecast disabled: missing TYPECAST_API_KEY -> fallback to naver`)
       } else if (!finalVoiceId.startsWith('tc_')) {
-        console.warn(`${logPrefix} typecast disabled: invalid voiceId -> fallback to naver`, { voiceId: finalVoiceId })
       } else {
         const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -190,9 +179,6 @@ export async function POST(req: NextRequest) {
               const audioData = (audio as any)?.audioData
               if (!audioData) {
                 // 타입캐스트 응답 이상이면 네이버로 폴백
-                console.warn(`${logPrefix} typecast invalid response: missing audioData -> fallback to naver`, {
-                  voiceId: finalVoiceId,
-                })
                 break
               }
 
@@ -214,12 +200,6 @@ export async function POST(req: NextRequest) {
             } catch (err: any) {
               lastErr = err
               const statusCode = err?.statusCode || err?.status
-              console.warn(`${logPrefix} typecast error -> fallback to naver`, {
-                attempt,
-                statusCode,
-                message: err?.message,
-                voiceId: finalVoiceId,
-              })
               // ✅ 요구사항: typecast 서버오류(402 포함)면 네이버로 폴백
               if (statusCode === 429 && attempt < 2) {
                 await sleep(500 * Math.pow(2, attempt))
@@ -232,7 +212,6 @@ export async function POST(req: NextRequest) {
           void lastErr
         } catch {
           // 예외도 네이버로 폴백
-          console.warn(`${logPrefix} typecast exception -> fallback to naver`, { voiceId: finalVoiceId })
         }
       }
     }

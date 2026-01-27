@@ -65,24 +65,3 @@ export default function ServiceList({ services, onDelete }: ServiceListProps) {
   )
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

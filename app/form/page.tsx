@@ -38,7 +38,7 @@ function FormContent() {
           const now = Date.now()
           // 1시간(3600000ms) 이내의 결제 성공 정보만 처리 (사용자가 오래 결제창을 열어놓은 경우 대비)
           if (now - timestamp < 3600000) {
-            console.log('[결제 성공] 페이지 로드 시 localStorage에서 결제 성공 정보 발견:', storedOid)
+
             // content가 로드될 때까지 기다리지 않고 즉시 처리하려고 하면 안됨
             // content 로드 후 useEffect에서 처리됨
           }
@@ -50,7 +50,7 @@ function FormContent() {
       const msg = searchParams.get('msg')
       if (code || msg) {
         // code와 msg는 콘솔에만 표시
-        console.log('[결제 실패]', { code, msg })
+
         // 처리 중 상태 해제
         setSubmitting(false)
         setPaymentProcessingMethod(null)
@@ -697,7 +697,7 @@ function FormContent() {
           (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
         const outgoingVoiceId = ttsProvider === 'typecast' ? typecastVoiceId : ''
         if (isLocalDebug) {
-          console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId })
+
         }
 
         const response = await fetch('/api/tts', {
@@ -708,12 +708,7 @@ function FormContent() {
           body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
         })
         if (isLocalDebug) {
-          console.log('[tts] response', {
-            ok: response.ok,
-            status: response.status,
-            usedProvider: response.headers.get('X-TTS-Provider'),
-            usedVoiceId: response.headers.get('X-TTS-VoiceId'),
-          })
+
         }
 
         if (!response.ok) {
@@ -2027,7 +2022,7 @@ function FormContent() {
         
         // 1시간(3600000ms) 이내의 결제 성공 정보만 처리 (사용자가 오래 결제창을 열어놓은 경우 대비)
         if (timeDiff < 3600000) {
-          console.log('[결제 성공] localStorage에서 결제 성공 정보 발견:', storedOid)
+
           await processPaymentSuccess(storedOid)
           // 처리 후 삭제
           localStorage.removeItem('payment_success_oid')
@@ -2043,25 +2038,23 @@ function FormContent() {
     // 결제 성공 처리 함수 (opener에서 직접 호출)
     // 통화 내용: "함수에서 OID를 받아서 거기서 AGX로 쿼리해서 상태가 Y면 결제로 바로 넘기면 되거든요"
     const processPaymentSuccess = async (oid: string) => {
-      console.log('[결제 성공] processPaymentSuccess 호출됨:', { oid, isProcessing, submitting })
-      
+
       // 중복 처리 방지
       if (isProcessing) {
-        console.log('[결제 성공] 이미 처리 중이므로 무시')
+
         return
       }
       
       isProcessing = true
-      console.log('[결제 성공] 결제 성공 처리 시작:', oid)
-      
+
       // ✅ 결제 창 닫기 (성공 시)
       try {
         if (paymentWindowRef.current && !paymentWindowRef.current.closed) {
           paymentWindowRef.current.close()
-          console.log('[결제 성공] 결제 창 닫기 완료')
+
         }
       } catch (e) {
-        console.warn('[결제 성공] 결제 창 닫기 실패:', e)
+
       }
       
       // 먼저 localStorage 확인 (서버 상태 확인보다 우선)
@@ -2070,16 +2063,7 @@ function FormContent() {
       const timestampDiff = successTimestamp ? Date.now() - parseInt(successTimestamp) : null
       // localStorage에 성공 신호가 있고, oid가 정확히 일치해야만 처리
       const hasLocalStorageSignal = successOid === oid
-      
-      console.log('[결제 성공] localStorage 사전 확인:', {
-        successOid,
-        oid,
-        exactMatch: successOid === oid,
-        hasLocalStorageSignal,
-        successTimestamp,
-        timestampDiff
-      })
-      
+
       // OID로 서버 상태 확인 (한 번만 확인)
       // 성공 페이지가 DB를 업데이트했는지 확인
       let serverStatusConfirmed = false
@@ -2087,48 +2071,41 @@ function FormContent() {
         const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
         if (statusRes.ok) {
           const statusData = await statusRes.json()
-          console.log('[결제 성공] 서버 상태 확인 결과:', statusData)
-          
+
           if (statusData.success && statusData.status === 'success') {
             serverStatusConfirmed = true
-            console.log('[결제 성공] 서버 상태 확인 성공, 결제 처리 진행')
+
           } else {
-            console.log('[결제 성공] 서버 상태가 success가 아님:', statusData)
+
             // pending 상태일 수도 있으므로 잠시 대기 후 재시도
-            console.log('[결제 성공] 서버 상태가 success가 아님, 잠시 대기 후 재시도...')
+
             await new Promise(resolve => setTimeout(resolve, 1000))
             
             const retryRes = await fetch(`/api/payment/status?oid=${oid}`)
             if (retryRes.ok) {
               const retryData = await retryRes.json()
-              console.log('[결제 성공] 서버 상태 재확인 결과:', retryData)
-              
+
               if (retryData.success && retryData.status === 'success') {
                 serverStatusConfirmed = true
-                console.log('[결제 성공] 서버 상태 재확인 성공')
+
               } else {
-                console.log('[결제 성공] 서버 상태 재확인 실패:', retryData)
+
               }
             } else {
-              console.error('[결제 성공] 서버 상태 재확인 HTTP 오류:', retryRes.status)
+
             }
           }
         } else {
-          console.error('[결제 성공] 서버 상태 확인 HTTP 오류:', statusRes.status)
+
         }
       } catch (error) {
-        console.error('[결제 성공] 서버 상태 확인 오류:', error)
+
       }
       
       // 서버 상태 확인이 실패했지만, localStorage에 성공 신호가 있으면 처리 진행
       // localStorage 신호가 있으면 서버 상태 확인 실패해도 무조건 처리
       if (!serverStatusConfirmed && !hasLocalStorageSignal) {
-        console.error('[결제 성공] 서버 상태 확인 실패하고 localStorage에도 성공 신호 없음:', {
-          serverStatusConfirmed,
-          hasLocalStorageSignal,
-          successOid,
-          oid
-        })
+
         isProcessing = false
         setSubmitting(false)
         setPaymentProcessingMethod(null)
@@ -2138,7 +2115,7 @@ function FormContent() {
       
       // localStorage에 성공 신호가 있으면 서버 상태 확인 실패해도 처리 진행
       if (!serverStatusConfirmed && hasLocalStorageSignal) {
-        console.log('[결제 성공] 서버 상태 확인 실패했지만 localStorage에 성공 신호 있음, 처리 진행')
+
         // DB를 직접 업데이트 시도 (성공 페이지가 업데이트하지 않았을 경우)
         try {
           const updateRes = await fetch('/api/payment/complete', {
@@ -2147,17 +2124,17 @@ function FormContent() {
             body: JSON.stringify({ oid: successOid || oid })
           })
           const updateData = await updateRes.json()
-          console.log('[결제 성공] DB 직접 업데이트 시도 완료:', updateData)
+
         } catch (e) {
-          console.error('[결제 성공] DB 직접 업데이트 오류:', e)
+
         }
-        console.log('[결제 성공] localStorage 성공 신호 기반으로 처리 계속 진행')
+
       }
       
       // sessionStorage에서 결제 정보 가져오기
       const paymentContentId = sessionStorage.getItem('payment_content_id')
       if (!paymentContentId) {
-        console.error('[결제 성공] 결제 정보를 찾을 수 없습니다.')
+
         isProcessing = false
         setSubmitting(false)
         setPaymentProcessingMethod(null)
@@ -2175,7 +2152,7 @@ function FormContent() {
       const paymentPartnerName = sessionStorage.getItem('payment_partner_name')
       
       if (!paymentUserName || !paymentUserYear || !paymentUserMonth || !paymentUserDay) {
-        console.error('[결제 성공] 사용자 정보를 찾을 수 없습니다.')
+
         isProcessing = false
         setSubmitting(false)
         setPaymentProcessingMethod(null)
@@ -2217,15 +2194,15 @@ function FormContent() {
               if (saveResponse.ok) {
                 const saveData = await saveResponse.json()
                 if (saveData.success) {
-                  console.log('[결제 성공] 결제 정보 저장 성공:', saveData)
+
                   paymentSaveSuccess = true
                   break
                 } else {
-                  console.error(`[결제 성공] 결제 정보 저장 실패 (${attempt}/${maxRetries}):`, saveData)
+
                 }
               } else {
                 const errorText = await saveResponse.text()
-                console.error(`[결제 성공] 결제 정보 저장 HTTP 오류 (${attempt}/${maxRetries}):`, saveResponse.status, errorText)
+
               }
               
               // 마지막 시도가 아니면 잠시 대기 후 재시도
@@ -2233,7 +2210,7 @@ function FormContent() {
                 await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
               }
             } catch (error) {
-              console.error(`[결제 성공] 결제 정보 저장 오류 (${attempt}/${maxRetries}):`, error)
+
               // 마지막 시도가 아니면 잠시 대기 후 재시도
               if (attempt < maxRetries) {
                 await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
@@ -2243,7 +2220,7 @@ function FormContent() {
           
           // 모든 재시도 실패 시 최소한의 레코드라도 생성 시도
           if (!paymentSaveSuccess) {
-            console.error('[결제 성공] 결제 정보 저장 최종 실패, 최소한의 레코드 생성 시도')
+
             // 최소한의 정보로라도 레코드 생성 시도 (결제는 이미 완료되었으므로)
             try {
               const minimalSaveResponse = await fetch('/api/payment/complete', {
@@ -2254,21 +2231,21 @@ function FormContent() {
               if (minimalSaveResponse.ok) {
                 const minimalSaveData = await minimalSaveResponse.json()
                 if (minimalSaveData.success) {
-                  console.log('[결제 성공] 최소한의 레코드 생성 성공:', minimalSaveData)
+
                 } else {
-                  console.error('[결제 성공] 최소한의 레코드 생성 실패:', minimalSaveData)
+
                 }
               } else {
-                console.error('[결제 성공] 최소한의 레코드 생성 HTTP 오류:', minimalSaveResponse.status)
+
               }
             } catch (e) {
-              console.error('[결제 성공] 최소한의 레코드 생성 오류:', e)
+
             }
             // 저장 실패해도 점사는 계속 진행 (결제는 이미 완료되었으므로)
           }
           
           // 점사 시작 (state 업데이트 없이 파라미터로만 전달)
-          console.log('[결제 성공] 점사 시작 준비 완료, startFortuneTellingWithContent 호출')
+
           const startTime = Date.now()
           try {
             await startFortuneTellingWithContent(
@@ -2292,9 +2269,9 @@ function FormContent() {
               },
               true // 결제 성공으로 인한 이동 플래그
             )
-            console.log('[결제 성공] startFortuneTellingWithContent 완료')
+
           } catch (error) {
-            console.error('[결제 성공] startFortuneTellingWithContent 오류:', error)
+
             isProcessing = false
             setSubmitting(false)
             setPaymentProcessingMethod(null)
@@ -2302,14 +2279,14 @@ function FormContent() {
             showAlertMessage(error instanceof Error ? error.message : '점사 시작 중 오류가 발생했습니다.')
           }
         } else {
-          console.error('[결제 성공] 컨텐츠 정보를 찾을 수 없습니다.')
+
           showAlertMessage('컨텐츠 정보를 찾을 수 없습니다.')
           isProcessing = false
           setSubmitting(false)
           setPaymentProcessingMethod(null)
         }
       } catch (error) {
-        console.error('[결제 성공] 컨텐츠 로드 오류:', error)
+
         showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
         isProcessing = false
         setSubmitting(false)
@@ -2322,22 +2299,21 @@ function FormContent() {
     // "오픈창에서 이 오픈어의 함수를 호출하면 돼요"
     if (typeof window !== 'undefined') {
       (window as any).handlePaymentSuccess = async (oid: string) => {
-        console.log('[결제 성공] window.handlePaymentSuccess 호출됨 (opener 직접 호출):', oid)
+
         await processPaymentSuccess(oid)
       }
       
       // 전역 함수로 결제 오류 처리기 등록 (opener에서 직접 호출용)
       (window as any).handlePaymentError = async (code: string, msg: string) => {
-        console.log('[결제 오류] window.handlePaymentError 호출됨 (opener 직접 호출):', { code, msg })
-        
+
         // ✅ 결제 창 닫기 (실패 시)
         try {
           if (paymentWindowRef.current && !paymentWindowRef.current.closed) {
             paymentWindowRef.current.close()
-            console.log('[결제 오류] 결제 창 닫기 완료')
+
           }
         } catch (e) {
-          console.warn('[결제 오류] 결제 창 닫기 실패:', e)
+
         }
         
         isProcessing = false
@@ -2357,7 +2333,7 @@ function FormContent() {
       
       // PAYMENT_SUCCESS 타입 메시지만 처리
       if (event.data?.type === 'PAYMENT_SUCCESS' && event.data?.oid) {
-        console.log('[결제 성공] postMessage 수신 (fallback):', event.data.oid)
+
         await processPaymentSuccess(event.data.oid)
       }
     }
@@ -2366,7 +2342,7 @@ function FormContent() {
     const handleStorage = async (e: StorageEvent) => {
       if (!e.key) return
       if (e.key === 'payment_success_signal' || e.key === 'payment_success_oid') {
-        console.log('[결제 성공] storage 이벤트 수신 (fallback)')
+
         await checkLocalStorage()
       }
     }
@@ -2376,7 +2352,7 @@ function FormContent() {
     const handleBroadcast = async (event: MessageEvent) => {
       const data: any = (event as any).data
       if (data?.type === 'PAYMENT_SUCCESS' && data?.oid) {
-        console.log('[결제 성공] BroadcastChannel 수신 (fallback):', data.oid)
+
         await processPaymentSuccess(data.oid)
       }
     }
@@ -2431,11 +2407,11 @@ function FormContent() {
       })
       if (reviewsRes.ok) {
         const reviewsData = await reviewsRes.json()
-        console.log('[리뷰 로드] 일반 리뷰:', reviewsData)
+
         setReviews(reviewsData.reviews || [])
       } else {
         const errorData = await reviewsRes.json().catch(() => ({}))
-        console.error('[리뷰 로드 실패] 일반 리뷰:', reviewsRes.status, errorData)
+
       }
       
       // 베스트 리뷰
@@ -2451,14 +2427,14 @@ function FormContent() {
       })
       if (bestRes.ok) {
         const bestData = await bestRes.json()
-        console.log('[리뷰 로드] 베스트 리뷰:', bestData)
+
         setBestReviews(bestData.reviews || [])
       } else {
         const errorData = await bestRes.json().catch(() => ({}))
-        console.error('[리뷰 로드 실패] 베스트 리뷰:', bestRes.status, errorData)
+
       }
     } catch (error) {
-      console.error('[리뷰 로드 에러]', error)
+
     }
   }
 
@@ -2564,16 +2540,16 @@ function FormContent() {
           const pendingSaveData = await pendingSaveResponse.json()
           if (pendingSaveData.success) {
             pendingSaved = true
-            console.log('[결제 처리] pending 상태 저장 성공:', pendingSaveData)
+
           } else {
-            console.error('[결제 처리] pending 상태 저장 실패:', pendingSaveData)
+
           }
         } else {
           const errorText = await pendingSaveResponse.text()
-          console.error('[결제 처리] pending 상태 저장 HTTP 오류:', pendingSaveResponse.status, errorText)
+
         }
       } catch (error) {
-        console.error('[결제 처리] pending 상태 저장 오류:', error)
+
       }
 
       // payments 테이블은 여러 컬럼이 NOT NULL이라 "먼저 pending 레코드 생성"이 필수.
@@ -2585,7 +2561,6 @@ function FormContent() {
         showAlertMessage('결제 정보를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.')
         return
       }
-
 
         // 주문번호 및 사용자 정보를 sessionStorage에 저장 (result 페이지에서 점사 시작 시 사용)
         if (typeof window !== 'undefined') {
@@ -2644,13 +2619,6 @@ function FormContent() {
 
       const { paymentUrl, formData, successUrl, failUrl } = paymentRequestData.data
 
-      console.log('[결제 처리] 결제 서버로 요청:', {
-        paymentUrl,
-        formData,
-        paymentMethod,
-        oid
-      })
-
       // 카드 결제와 휴대폰 결제 모두 실제 결제 서버로 요청 (form submit)
       // 중요: window.open으로 연 "같은 창"에만 submit 해야 postMessage/close가 안정적으로 동작함
       const form = document.createElement('form')
@@ -2683,12 +2651,11 @@ function FormContent() {
         input.name = key
         input.value = String(value)
         form.appendChild(input)
-        console.log(`[결제 처리] form input 추가: ${key} = ${value}`)
+
       })
 
       document.body.appendChild(form)
-      console.log('[결제 처리] form 생성 완료, submit 준비')
-      
+
       // 팝업 차단 방지: 사용자 클릭 이벤트 안에서 "이름 있는 창"을 먼저 연다
       // 이후 form.target을 이 창 이름으로 지정하여 같은 창으로 POST submit
       const paymentWindowName = `payment_${oid}`
@@ -2703,8 +2670,6 @@ function FormContent() {
         return
       }
 
-      console.log('[결제 처리] 결제 창 열림, form submit 시작')
-      
       // form submit (결제 창이 열린 후) - 반드시 위에서 연 결제창으로 submit
       form.target = paymentWindowName
       paymentWindow.focus()
@@ -2713,9 +2678,9 @@ function FormContent() {
       setTimeout(() => {
         try {
           form.submit()
-          console.log('[결제 처리] form submit 완료, paymentUrl:', paymentUrl)
+
         } catch (error) {
-          console.error('[결제 처리] form submit 오류:', error)
+
           // POST 데이터가 포함되어야 하므로 location.href로 대체 이동은 정확한 fallback이 아님
           // (결제창은 그대로 두고, 사용자에게 재시도를 유도)
           try {
@@ -2740,10 +2705,7 @@ function FormContent() {
             checkCount++
             // 10번째마다 로그 출력 (너무 많은 로그 방지)
             if (checkCount % 10 === 0) {
-              console.log(`[결제 처리] 결제 창 상태 확인 (${checkCount}회):`, {
-                closed: paymentWindow.closed,
-                location: paymentWindow.location?.href || 'cross-origin'
-              })
+
             }
             
             // 서버 상태도 주기적으로 확인 (성공 페이지가 로드되었는지 확인)
@@ -2755,12 +2717,12 @@ function FormContent() {
                 
                 // 5초마다 로그 출력 (너무 많은 로그 방지)
                 if (checkCount % 5 === 0) {
-                  console.log(`[결제 처리] 주기적 서버 상태 확인 (${checkCount}회, ${checkCount * 1}초 경과):`, statusData)
+
                 }
                 
                 if (statusData.success && statusData.status === 'success') {
                   clearInterval(checkInterval)
-                  console.log('[결제 처리] 서버 상태 success 확인 (주기적 체크), 처리 시작')
+
                   if (typeof window !== 'undefined' && (window as any).handlePaymentSuccess) {
                     await (window as any).handlePaymentSuccess(oid)
                   }
@@ -2768,7 +2730,7 @@ function FormContent() {
                 }
               } catch (e) {
                 if (checkCount % 5 === 0) {
-                  console.error('[결제 처리] 서버 상태 확인 오류:', e)
+
                 }
               }
             }
@@ -2781,7 +2743,7 @@ function FormContent() {
                 if (errorCode) {
                   clearInterval(checkInterval)
                   const errorMsg = localStorage.getItem('payment_error_msg')
-                  console.log(`[결제 처리] localStorage 오류 신호 확인 (${checkCount}회, ${checkCount * 1}초 경과), 처리 시작`)
+
                   if (typeof window !== 'undefined' && (window as any).handlePaymentError) {
                     await (window as any).handlePaymentError(errorCode, errorMsg || 'Payment failed')
                   }
@@ -2796,7 +2758,7 @@ function FormContent() {
                 // oid가 정확히 일치할 때만 처리
                 if (successOid === oid) {
                   clearInterval(checkInterval)
-                  console.log(`[결제 처리] localStorage 성공 신호 확인 (${checkCount}회, ${checkCount * 1}초 경과), 처리 시작`)
+
                   if (typeof window !== 'undefined' && (window as any).handlePaymentSuccess) {
                     await (window as any).handlePaymentSuccess(oid)
                   }
@@ -2809,24 +2771,23 @@ function FormContent() {
             
             if (paymentWindow.closed) {
               clearInterval(checkInterval)
-              console.log('[결제 처리] 결제 창이 닫힘 감지, 서버 상태 확인')
-              
+
               // 창이 닫혔을 때 서버 상태를 확인 (성공 페이지가 DB를 업데이트했을 수 있음)
               try {
                 const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
                 const statusData = await statusRes.json()
                 
                 if (statusData.success && statusData.status === 'success') {
-                  console.log('[결제 처리] 창 닫힘 후 서버 상태 success 확인, 처리 시작')
+
                   if (typeof window !== 'undefined' && (window as any).handlePaymentSuccess) {
                     await (window as any).handlePaymentSuccess(oid)
                   }
                   return
                 } else {
-                  console.log('[결제 처리] 창 닫힘 후 서버 상태:', statusData)
+
                 }
               } catch (e) {
-                console.error('[결제 처리] 서버 상태 확인 오류:', e)
+
               }
               
               // opener 호출이 실패했을 경우를 대비해 localStorage 확인 (fallback)
@@ -2834,7 +2795,7 @@ function FormContent() {
               const errorCode = localStorage.getItem('payment_error_code')
               const errorMsg = localStorage.getItem('payment_error_msg')
               if (errorCode) {
-                console.log('[결제 처리] 결제 창 닫힘, localStorage 오류 신호 발견 (fallback):', { errorCode, errorMsg })
+
                 if (typeof window !== 'undefined' && (window as any).handlePaymentError) {
                   await (window as any).handlePaymentError(errorCode, errorMsg || 'Payment failed')
                 }
@@ -2848,13 +2809,13 @@ function FormContent() {
               const successOid = localStorage.getItem('payment_success_oid')
               if (!successOid) {
                 // 사용자가 결제창을 닫았거나 실패/취소로 닫힌 경우: 팝업은 유지하고 버튼만 다시 활성화
-                console.log('[결제 처리] 결제 창 닫힘, 성공 신호 없음 - 버튼만 활성화')
+
                 setSubmitting(false)
                 setPaymentProcessingMethod(null)
                 // 결제 재시도를 위해 결제정보 팝업은 닫지 않음
               } else {
                 // localStorage에 성공 신호가 있으면 처리 (opener 호출이 실패했을 경우)
-                console.log('[결제 처리] 결제 창 닫힘, localStorage 성공 신호 발견 (fallback):', successOid)
+
                 if (typeof window !== 'undefined' && (window as any).handlePaymentSuccess) {
                   await (window as any).handlePaymentSuccess(successOid)
                 }
@@ -2876,7 +2837,7 @@ function FormContent() {
       // 실패 시: 에러 페이지에서 창 닫으면 결제정보 팝업도 닫힘
 
     } catch (error: any) {
-      console.error('[결제 처리] 오류:', error)
+
       setSubmitting(false)
       setPaymentProcessingMethod(null)
       showAlertMessage(error?.message || '결제 처리 중 오류가 발생했습니다.')
@@ -2886,7 +2847,7 @@ function FormContent() {
   // 점사 시작 함수 (결제 완료 후 호출)
   const startFortuneTelling = async (startTime: number) => {
     if (!content || !content.id) {
-      console.error('[점사 시작] content가 로드되지 않았습니다.')
+
       return
     }
     await startFortuneTellingWithContent(startTime, content)
@@ -3232,7 +3193,7 @@ function FormContent() {
             sessionStorage.setItem('result_stream', 'true')
           }
         } catch (e) {
-          console.error('[결제 처리] sessionStorage 저장 실패:', e)
+
           // sessionStorage 실패해도 페이지 이동은 진행
         }
         
@@ -3264,11 +3225,11 @@ function FormContent() {
               try {
                 return JSON.parse(text)
               } catch (e) {
-                console.error('응답 파싱 실패:', e)
+
               }
             }
           }).catch((e: any) => {
-            console.error('[결제 처리] 임시 요청 데이터 저장 실패:', e)
+
             // 저장 실패해도 페이지 이동은 진행
           })
 
@@ -3282,8 +3243,7 @@ function FormContent() {
           const paymentPassword = sessionStorage.getItem('payment_password') || ''
           const fullPhoneNumber = paymentPhone || `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
           const userPassword = paymentPassword || password
-          
-          console.log('[결제 처리] user_credentials 저장 시도 (savedId 없음):', { requestKey, phone: fullPhoneNumber })
+
           asyncTasks.push(
             fetch('/api/user-credentials/save', {
               method: 'POST',
@@ -3300,10 +3260,10 @@ function FormContent() {
                 if (text) {
                   try {
                     const result = JSON.parse(text)
-                    console.log('[결제 처리] user_credentials 저장 성공:', result)
+
                     return result
                   } catch (e) {
-                    console.error('[결제 처리] 인증 정보 응답 파싱 실패:', e)
+
                   }
                 }
               } else {
@@ -3312,30 +3272,29 @@ function FormContent() {
               }
             }).catch((e) => {
               // 저장 실패해도 페이지 이동은 진행
-              console.error('[결제 처리] 인증 정보 저장 실패:', e)
+
             })
           )
         }
         
         // 결제 성공으로 인한 이동인 경우, temp-request 저장만 완료될 때까지 기다린 후 페이지 이동
         if (isPaymentSuccess) {
-          console.log('[결제 처리] 결제 성공으로 인한 이동, temp-request 저장 완료 후 리절트 페이지로 이동')
-          
+
           // temp-request 저장은 필수이므로 완료될 때까지 대기 (최대 3초)
           Promise.race([
             saveTempRequestTask,
             new Promise((resolve) => setTimeout(resolve, 3000)) // 최대 3초 대기
           ]).then(() => {
-            console.log('[결제 처리] temp-request 저장 완료 (결제 성공)')
+
           }).catch((e) => {
-            console.error('[결제 처리] temp-request 저장 오류 (결제 성공):', e)
+
           })
           
           // 나머지 비동기 작업들은 백그라운드에서 실행
           Promise.allSettled(asyncTasks.slice(1)).then(() => {
-            console.log('[결제 처리] 백그라운드 비동기 작업 완료 (결제 성공)')
+
           }).catch((e) => {
-            console.error('[결제 처리] 백그라운드 비동기 작업 오류 (결제 성공):', e)
+
           })
           
           // temp-request 저장 완료를 기다린 후 페이지 이동 (최대 3초)
@@ -3356,7 +3315,7 @@ function FormContent() {
             new Promise((resolve) => setTimeout(resolve, 3000))
           ])
         } catch (e) {
-          console.error('[결제 처리] 비동기 작업 오류:', e)
+
           // 오류가 발생해도 페이지 이동은 진행
         }
         
@@ -3421,8 +3380,7 @@ function FormContent() {
             })
           }
         })
-        
-        
+
         if (menuGroups.length === 0) {
           showAlertMessage('대메뉴 정보를 찾을 수 없습니다.')
           setSubmitting(false)
@@ -3478,8 +3436,7 @@ function FormContent() {
             currentMenuIndex: groupIndex,
             totalMenus: menuGroups.length
           }
-          
-          
+
           let menuHtml = ''
           let menuAccumulated = ''
           
@@ -3686,25 +3643,25 @@ function FormContent() {
                         })
                         if (!credResponse.ok) {
                           const errorText = await credResponse.text()
-                          console.error('인증 정보 저장 실패:', errorText)
+
                         } else {
-                          console.log('인증 정보 저장 성공:', saved.data.id)
+
                         }
                       } catch (e) {
-                        console.error('인증 정보 저장 실패:', e)
+
                       }
                     } else {
-                      console.error('결과 저장 응답에 id가 없습니다:', saved)
+
                     }
                   } catch (e) {
-                    console.error('결과 저장 응답 파싱 실패:', e)
+
                   }
                 } else {
-                  console.error('결과 저장 응답이 비어있습니다')
+
                 }
               } else {
                 const errorText = await saveResponse.text()
-                console.error('결과 저장 실패:', errorText)
+
               }
             } catch (error) {
             }
@@ -3986,14 +3943,14 @@ function FormContent() {
                   try {
                     saveResult = JSON.parse(text)
                   } catch (e) {
-                    console.error('결과 저장 응답 파싱 실패:', e)
+
                     throw new Error('결과 저장 응답 파싱 실패')
                   }
                 }
                 const savedId = saveResult.data?.id
                 
                 if (!savedId) {
-                  console.error('결과 저장 응답에 id가 없습니다:', saveResult)
+
                   throw new Error('결과 저장 응답에 id가 없습니다')
                 }
                 
@@ -4018,17 +3975,17 @@ function FormContent() {
                       if (text) {
                         try {
                           const result = JSON.parse(text)
-                          console.log('인증 정보 저장 성공:', savedId)
+
                         } catch (e) {
-                          console.error('인증 정보 응답 파싱 실패:', e)
+
                         }
                       }
                     } else {
                       const errorText = await response.text()
-                      console.error('인증 정보 저장 실패:', errorText)
+
                     }
                   } catch (e) {
-                    console.error('인증 정보 저장 실패:', e)
+
                   }
                 }
                 setShowLoadingPopup(false)
@@ -4275,7 +4232,6 @@ function FormContent() {
                 </div>
               </div>
 
-
               {/* 휴대폰 번호 입력 */}
               <div className="mb-4">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">휴대폰 번호</label>
@@ -4411,7 +4367,7 @@ function FormContent() {
                         true // 결제 성공으로 인한 이동 플래그
                       )
                     } catch (error) {
-                      console.error('[임시 리절트 이동] 오류:', error)
+
                       showAlertMessage(error instanceof Error ? error.message : '리절트 화면 이동 중 오류가 발생했습니다.')
                     }
                   }}
@@ -4425,7 +4381,6 @@ function FormContent() {
         </div>
       )}
 
-      
       {/* 동의 안내 팝업 */}
       {showAgreementAlert && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -7565,7 +7520,7 @@ function FormContent() {
                                           }
                                           window.addEventListener('load', function() { setTimeout(initCovers, 200) })
                                         } catch (e) {
-                                          console.error('동영상 썸네일 추가 실패:', e)
+
                                         }
                                       })()
                                     </script>
@@ -7898,7 +7853,7 @@ function FormContent() {
                                                 (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
                                               const outgoingVoiceId = (ttsProvider === 'typecast') ? typecastVoiceId : '';
                                               if (isLocalDebug) {
-                                                console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId });
+
                                               }
 
                                               const response = await fetch('/api/tts', {
@@ -7909,12 +7864,7 @@ function FormContent() {
                                                 body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
                                               });
                                               if (isLocalDebug) {
-                                                console.log('[tts] response', {
-                                                  ok: response.ok,
-                                                  status: response.status,
-                                                  usedProvider: response.headers.get('X-TTS-Provider'),
-                                                  usedVoiceId: response.headers.get('X-TTS-VoiceId'),
-                                                });
+
                                               }
 
                                               // 응답 받은 후에도 shouldStop 재확인
@@ -8011,7 +7961,7 @@ function FormContent() {
                                                 (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
                                               const outgoingVoiceId = (ttsProvider === 'typecast') ? typecastVoiceId : '';
                                               if (isLocalDebug) {
-                                                console.log('[tts] request', { provider: ttsProvider, speaker, voiceId: outgoingVoiceId });
+
                                               }
 
                                               const response = await fetch('/api/tts', {
@@ -8022,12 +7972,7 @@ function FormContent() {
                                                 body: JSON.stringify({ text: chunk, speaker, provider: ttsProvider, voiceId: (ttsProvider === 'typecast' ? typecastVoiceId : '') }),
                                               });
                                               if (isLocalDebug) {
-                                                console.log('[tts] response', {
-                                                  ok: response.ok,
-                                                  status: response.status,
-                                                  usedProvider: response.headers.get('X-TTS-Provider'),
-                                                  usedVoiceId: response.headers.get('X-TTS-VoiceId'),
-                                                });
+
                                               }
 
                                               if (!response.ok) {

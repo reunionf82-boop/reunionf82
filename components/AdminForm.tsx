@@ -197,7 +197,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const [showDetailMenuColorPopup, setShowDetailMenuColorPopup] = useState(false)
   const [showBodyColorPopup, setShowBodyColorPopup] = useState(false)
 
-
   // 초기 데이터 로드 (수정 모드 또는 복제 모드)
   // 동영상 업로드 시 자동 생성된 썸네일 이미지 URL 수신
   useEffect(() => {
@@ -358,7 +357,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         setNextPaymentCode(result.nextPaymentCode)
       }
     } catch (error) {
-      console.error('[다음 결제 코드 조회 에러]', error)
       // 에러가 발생해도 계속 진행 (서버에서 자동 생성되므로)
     }
   }
@@ -671,17 +669,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       })
       
       // 디버깅: 썸네일 URL 확인
-      console.log('[AdminForm] 로드된 썸네일 URL:', {
-        thumbnailImageUrl: data.thumbnail_url,
-        thumbnailVideoUrl: data.thumbnail_video_url,
-        bookCoverThumbnailImageUrl: data.book_cover_thumbnail,
-        bookCoverThumbnailVideoUrl: data.book_cover_thumbnail_video,
-        endingBookCoverThumbnailImageUrl: data.ending_book_cover_thumbnail,
-        endingBookCoverThumbnailVideoUrl: data.ending_book_cover_thumbnail_video,
-        previewThumbnails: data.preview_thumbnails,
-        firstMenuThumbnail: data.menu_items?.[0]?.thumbnail_image_url || data.menu_items?.[0]?.thumbnail
-      })
-      
       // 동영상 파일 상태 확인
       if (data.thumbnail_video_url) {
       }
@@ -1238,8 +1225,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: '알 수 없는 오류가 발생했습니다.' }))
-        console.error('저장 실패:', errorData)
-        console.error('전송된 데이터:', JSON.stringify(contentData, null, 2))
         throw new Error(errorData.error || '저장에 실패했습니다.')
       }
 
@@ -1323,7 +1308,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       updatedImages[index] = imageUrl
       setContentImages(updatedImages)
     } catch (error: any) {
-      console.error('[이미지 업로드 에러]', error)
       alert(`이미지 업로드 실패: ${error?.message || '알 수 없는 오류'}`)
     } finally {
       setUploadingContentImageIndex(null)
@@ -1358,7 +1342,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       const updatedImages = contentImages.filter((_, i) => i !== index)
       setContentImages(updatedImages)
     } catch (error: any) {
-      console.error('[이미지 삭제 에러]', error)
       alert(`이미지 삭제 실패: ${error?.message || '알 수 없는 오류'}`)
     }
   }
@@ -2134,8 +2117,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             >
               {(() => {
                 const imageUrl = formData.thumbnailImageUrl || (formData.thumbnailVideoUrl ? getThumbnailUrl(`${formData.thumbnailVideoUrl}.jpg`) : '')
-                console.log('[AdminForm] 컨텐츠명 썸네일 버튼 - imageUrl:', imageUrl, 'formData.thumbnailImageUrl:', formData.thumbnailImageUrl, 'formData.thumbnailVideoUrl:', formData.thumbnailVideoUrl)
-                
                 if (!imageUrl) {
                   return (
                     <span className="text-xs leading-tight text-center">
@@ -2148,7 +2129,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                 // URL 정리 (공백 제거, 유효성 검사)
                 const cleanUrl = imageUrl.trim()
                 if (!cleanUrl || !cleanUrl.startsWith('http')) {
-                  console.error('[AdminForm] 유효하지 않은 이미지 URL:', imageUrl)
                   return (
                     <span className="text-xs leading-tight text-center text-red-400">
                       <div>유효하지</div>
@@ -2172,10 +2152,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                           img.setAttribute('data-retry', String(retryCount + 1))
                           const baseUrl = cleanUrl.split('?')[0]
                           img.src = `${baseUrl}?t=${Date.now()}&retry=${retryCount + 1}`
-                          console.log(`[AdminForm] 이미지 재시도 ${retryCount + 1}/3:`, img.src)
                         } else {
                           // 3번 재시도 후에도 실패하면 에러 표시
-                          console.error('[AdminForm] 이미지 로드 실패 (최종):', cleanUrl)
                           img.style.opacity = '0.3'
                           // 에러 메시지 표시
                           if (!img.parentElement?.querySelector('.image-error-message')) {
@@ -2188,7 +2166,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       }}
                       onLoad={(e) => {
                         const img = e.target as HTMLImageElement
-                        console.log('[AdminForm] 컨텐츠명 썸네일 로드 성공:', cleanUrl)
                         // 이미지 로드 성공 시 에러 메시지 제거 및 스타일 복원
                         img.style.opacity = '1'
                         const errorMessage = img.parentElement?.querySelector('.image-error-message')
@@ -3542,7 +3519,6 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             </div>
           </div>
         </div>
-
 
         {/* 폰트 설정 섹션 */}
         <div className="border-t border-gray-600 pt-4 mt-4">

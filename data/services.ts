@@ -262,24 +262,3 @@ export const services: Service[] = [
   },
 ]
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

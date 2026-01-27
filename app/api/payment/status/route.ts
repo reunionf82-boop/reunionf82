@@ -25,12 +25,10 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       // 아직 데이터가 없을 수도 있음
-      console.error('[결제 상태 조회] DB 조회 오류:', error)
       return NextResponse.json({ success: false, status: 'not_found', error: error.message })
     }
 
     if (!data) {
-      console.log('[결제 상태 조회] 데이터 없음:', oid)
       return NextResponse.json({ success: false, status: 'not_found' })
     }
 
@@ -40,7 +38,6 @@ export async function GET(request: NextRequest) {
       contentId: data.content_id 
     })
   } catch (error: any) {
-    console.error('[결제 상태 조회] 예외 발생:', error)
     return NextResponse.json({ success: false, error: error?.message || '서버 오류' }, { status: 500 })
   }
 }

@@ -92,7 +92,6 @@ export async function POST(request: NextRequest) {
     // 2) 만약 DB에 UNIQUE 제약이 없어서 upsert가 실패(42P10)하는 경우:
     //    select → 있으면 update / 없으면 insert 로 우회
     if (error?.code === '42P10') {
-      console.error('[결제 정보 저장] upsert 실패(UNIQUE 제약 없음). fallback insert/update로 전환:', error)
 
       const { data: existingRows, error: existingError } = await supabase
         .from('payments')
@@ -101,7 +100,7 @@ export async function POST(request: NextRequest) {
         .limit(1)
 
       if (existingError) {
-        console.error('[결제 정보 저장] 기존 레코드 조회 실패:', existingError)
+
         return NextResponse.json(
           { success: false, error: existingError.message || '결제 정보 저장에 실패했습니다.' },
           { status: 500 }
@@ -129,7 +128,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (error) {
-      console.error('[결제 정보 저장] 오류:', error)
+
       return NextResponse.json(
         { success: false, error: error.message || '결제 정보 저장에 실패했습니다.' },
         { status: 500 }
@@ -141,7 +140,7 @@ export async function POST(request: NextRequest) {
       data
     })
   } catch (error: any) {
-    console.error('[결제 정보 저장] 오류:', error)
+
     return NextResponse.json(
       { success: false, error: error.message || '결제 정보 저장 중 오류가 발생했습니다.' },
       { status: 500 }

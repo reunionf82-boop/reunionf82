@@ -90,7 +90,6 @@ ${subtitlesText.substring(0, 1500)}${subtitlesText.length > 1500 ? '...' : ''}
 
 답변:`
 
-    
     let answer = ''
     let response: any = null
     let finishReason: string | undefined = undefined
@@ -98,8 +97,7 @@ ${subtitlesText.substring(0, 1500)}${subtitlesText.length > 1500 ? '...' : ''}
     try {
       const result = await model.generateContent(prompt)
       response = result.response
-      
-      
+
       // 응답 객체 전체 구조 로깅 (답변 추출 전)
       if (response.candidates && response.candidates.length > 0) {
       }
@@ -134,8 +132,7 @@ ${subtitlesText.substring(0, 1500)}${subtitlesText.length > 1500 ? '...' : ''}
           } else {
             answer = String(textResult).trim()
           }
-          
-          
+
           if (answer) {
           } else {
           }
@@ -206,8 +203,7 @@ ${subtitlesText.substring(0, 1500)}${subtitlesText.length > 1500 ? '...' : ''}
           }
           
         }
-        
-        
+
         // 클라이언트로 상세 정보 전달
         return NextResponse.json(
           { 

@@ -261,7 +261,6 @@ app.post('/chat', async (req, res) => {
     req.setTimeout(1800000); // 30분
     res.setTimeout(1800000);
 
-    
     try {
         const {
             role_prompt,
@@ -279,7 +278,6 @@ app.post('/chat', async (req, res) => {
             completedSubtitles = [],
             completedSubtitleIndices = []
         } = req.body;
-
 
         if (!role_prompt || !menu_subtitles || !Array.isArray(menu_subtitles) || menu_subtitles.length === 0) {
             return res.status(400).json({ error: 'Invalid request format' });
@@ -366,7 +364,6 @@ app.post('/chat', async (req, res) => {
             finishReason: 'STOP'
         })}\n\n`);
         res.end();
-
 
     } catch (error) {
         

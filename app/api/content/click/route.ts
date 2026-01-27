@@ -26,14 +26,10 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (selectError) {
-      console.error('[content/click] select error:', selectError)
       // click_count 필드가 없을 수도 있으므로 기본값 0으로 처리
-      console.log('[content/click] click_count 필드가 없거나 조회 실패, 기본값 0으로 시작')
     }
 
     const currentCount = (currentData?.click_count || 0) as number
-    console.log('[content/click] 현재 클릭 수:', currentCount, 'content_id:', content_id)
-    
     // 클릭 수 증가
     const { data: updatedData, error: updateError } = await supabase
       .from('contents')
@@ -43,18 +39,13 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (updateError) {
-      console.error('[content/click] update error:', updateError)
       throw updateError
     }
-
-    console.log('[content/click] 업데이트 성공:', updatedData)
-
     return NextResponse.json({
       success: true,
       click_count: updatedData.click_count
     })
   } catch (error: any) {
-    console.error('[content/click] error:', error)
     return NextResponse.json(
       { error: error.message || '클릭 수 증가에 실패했습니다.' },
       { status: 500 }

@@ -18,7 +18,6 @@ export async function POST(req: NextRequest) {
   try {
     // 환경 변수 확인 (프로덕션 환경에서 문제 진단용)
     if (!supabaseUrl) {
-      console.error('[reviews/upload-image] NEXT_PUBLIC_SUPABASE_URL이 설정되지 않았습니다.')
       return NextResponse.json(
         { error: '서버 설정 오류: Supabase URL이 설정되지 않았습니다.' },
         { status: 500 }
@@ -26,7 +25,6 @@ export async function POST(req: NextRequest) {
     }
 
     if (!supabaseServiceKey) {
-      console.error('[reviews/upload-image] Supabase 서비스 키가 설정되지 않았습니다.')
       return NextResponse.json(
         { error: '서버 설정 오류: Supabase 서비스 키가 설정되지 않았습니다.' },
         { status: 500 }
@@ -79,8 +77,6 @@ export async function POST(req: NextRequest) {
       })
 
     if (uploadError) {
-      console.error('[reviews/upload-image] upload error:', uploadError)
-      console.error('[reviews/upload-image] upload error details:', JSON.stringify(uploadError, null, 2))
       return NextResponse.json(
         { 
           error: uploadError.message || '이미지 업로드에 실패했습니다.',
@@ -96,12 +92,10 @@ export async function POST(req: NextRequest) {
       .download(filePath)
       .then(() => true)
       .catch((err) => {
-        console.error('[reviews/upload-image] 파일 검증 실패:', err)
         return false
       })
 
     if (!verifyExists) {
-      console.error('[reviews/upload-image] 업로드된 파일을 검증할 수 없습니다:', filePath)
       return NextResponse.json(
         { 
           error: '업로드된 파일을 검증할 수 없습니다.',
@@ -117,11 +111,6 @@ export async function POST(req: NextRequest) {
       .getPublicUrl(filePath)
 
     if (!urlData?.publicUrl) {
-      console.error('[reviews/upload-image] URL 생성 실패:', {
-        filePath,
-        supabaseUrl,
-        uploadData
-      })
       return NextResponse.json(
         { 
           error: '이미지 URL을 생성할 수 없습니다.',
@@ -134,7 +123,6 @@ export async function POST(req: NextRequest) {
     // URL 유효성 검증 (프로덕션 환경에서 URL 형식 확인)
     const publicUrl = urlData.publicUrl
     if (!publicUrl || !publicUrl.startsWith('http')) {
-      console.error('[reviews/upload-image] 잘못된 URL 형식:', publicUrl)
       return NextResponse.json(
         { 
           error: '생성된 URL이 유효하지 않습니다.',
@@ -143,22 +131,12 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       )
     }
-
-    console.log('[reviews/upload-image] 업로드 성공:', {
-      filePath,
-      publicUrl,
-      fileSize: file.size,
-      fileType: file.type,
-      verified: verifyExists
-    })
-
     return NextResponse.json({
       success: true,
       url: publicUrl,
       path: filePath
     })
   } catch (error: any) {
-    console.error('[reviews/upload-image] exception:', error)
     return NextResponse.json(
       { error: error.message || '이미지 업로드 중 오류가 발생했습니다.' },
       { status: 500 }

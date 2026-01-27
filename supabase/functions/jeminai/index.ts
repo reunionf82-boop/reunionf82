@@ -34,10 +34,6 @@ async function callGeminiStream(
       { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
     ],
   }
-
-  console.log('Gemini API URL:', url.substring(0, 80) + '...')
-  console.log('요청 본문 크기:', JSON.stringify(requestBody).length, 'bytes')
-  
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -45,23 +41,14 @@ async function callGeminiStream(
     },
     body: JSON.stringify(requestBody),
   })
-
-  console.log('Gemini API 응답 상태:', response.status, response.statusText)
-  console.log('Content-Type:', response.headers.get('content-type'))
-
   if (!response.ok) {
     const errorText = await response.text()
-    console.error('Gemini API 에러:', errorText)
     throw new Error(`Gemini API 호출 실패: ${response.status} ${errorText}`)
   }
 
   if (!response.body) {
-    console.error('응답 본문이 없습니다.')
     throw new Error('응답 본문이 없습니다.')
   }
-  
-  console.log('Gemini API 스트림 시작')
-
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
@@ -69,7 +56,6 @@ async function callGeminiStream(
   let totalBytesRead = 0
 
   try {
-    console.log('스트림 리더 시작, 데이터 읽기 시작')
     let readAttempts = 0
     const maxReadAttempts = 100000 // 충분히 큰 값 (실제로는 done이 true가 되면 종료)
     
@@ -78,26 +64,20 @@ async function callGeminiStream(
       
       // 첫 번째 읽기 시도 전에 로그
       if (readAttempts === 1) {
-        console.log('첫 번째 reader.read() 호출 대기 중...')
       }
       
       // 1000번마다 진행 상황 로그
       if (readAttempts % 1000 === 0) {
-        console.log(`읽기 시도 #${readAttempts}, 총 바이트: ${totalBytesRead}, finishReason: ${finishReason || '없음'}`)
       }
       
       const { done, value } = await reader.read()
       
       if (readAttempts === 1) {
-        console.log('첫 번째 reader.read() 완료, done:', done, 'value:', value ? `있음 (${value.length} bytes)` : '없음')
       }
       
       if (done) {
-        console.log('스트림 읽기 완료 (done: true), 총 읽은 바이트:', totalBytesRead, '총 읽기 시도:', readAttempts, 'finishReason:', finishReason || '없음')
-        
         // 버퍼에 남은 데이터 처리
         if (buffer.trim()) {
-          console.log('버퍼에 남은 데이터 처리 중, 버퍼 길이:', buffer.length)
           // 버퍼의 마지막 데이터 처리 시도
           const remainingDataPrefix = 'data: '
           const lastEventStart = buffer.lastIndexOf(remainingDataPrefix)
@@ -118,11 +98,9 @@ async function callGeminiStream(
                   }
                   if (lastCandidate.finishReason && !finishReason) {
                     finishReason = lastCandidate.finishReason
-                    console.log('버퍼에서 Finish Reason 발견:', finishReason)
                   }
                 }
               } catch (e) {
-                console.log('버퍼 마지막 데이터 파싱 실패 (무시 가능):', e)
               }
             }
           }
@@ -131,13 +109,11 @@ async function callGeminiStream(
       }
 
       if (!value || value.length === 0) {
-        console.log('빈 값 수신, 계속 대기...')
         continue
       }
 
       totalBytesRead += value.length
       if (totalBytesRead % 10000 === 0 || totalBytesRead < 1000 || readAttempts <= 5) {
-        console.log(`읽은 바이트: ${totalBytesRead} (시도 #${readAttempts}, 청크 크기: ${value.length})`)
       }
 
       buffer += decoder.decode(value, { stream: true })
@@ -233,37 +209,23 @@ async function callGeminiStream(
               }
               if (candidate.finishReason) {
                 finishReason = candidate.finishReason
-                console.log('Finish Reason 수신:', finishReason)
-                
                 // STOP이 아닌 경우 (MAX_TOKENS 등) 로그 추가
                 if (finishReason !== 'STOP') {
-                  console.warn(`⚠️ Finish Reason이 STOP이 아님: ${finishReason}, 부분 완료 처리 필요할 수 있음`)
                 }
               }
             } else {
-              console.log('후보 데이터 없음, 키:', Object.keys(data))
             }
           } catch (e) {
-            console.error('JSON 파싱 실패:', e, 'JSON 시작:', jsonStr.substring(0, 200))
           }
         }
       }
     }
   } catch (streamError: any) {
-    console.error('=== 스트림 읽기 중 에러 발생 ===')
-    console.error('에러 타입:', typeof streamError)
-    console.error('에러 메시지:', streamError?.message || String(streamError))
-    console.error('에러 스택:', streamError?.stack || 'N/A')
-    console.error('총 읽은 바이트:', totalBytesRead)
-    console.error('버퍼 길이:', buffer.length)
-    console.error('버퍼 시작 부분:', buffer.substring(0, 200))
     throw streamError
   } finally {
     try {
       reader.releaseLock()
-      console.log('스트림 리더 종료')
     } catch (releaseError) {
-      console.error('리더 해제 중 에러:', releaseError)
     }
   }
 
@@ -274,23 +236,13 @@ async function callGeminiStream(
 function parseCompletedSubtitles(html: string, allMenuSubtitles: any[]): { completedSubtitles: number[], completedMenus: number[] } {
   const completedSubtitles: number[] = []
   const completedMenus: number[] = []
-
-  console.log('=== parseCompletedSubtitles 시작 ===')
-  console.log('HTML 길이:', html.length)
-  console.log('전체 소제목 개수:', allMenuSubtitles.length)
-  console.log('HTML 시작 부분 (500자):', html.substring(0, 500))
-  console.log('HTML 끝 부분 (500자):', html.substring(Math.max(0, html.length - 500)))
-
   const subtitleSectionStartRegex = /<div[^>]*class="[^"]*subtitle-section[^"]*"[^>]*>/gi
   const subtitleSectionMatches: RegExpMatchArray[] = []
   let match: RegExpMatchArray | null
   while ((match = subtitleSectionStartRegex.exec(html)) !== null) {
     subtitleSectionMatches.push(match)
   }
-
-  console.log('subtitle-section 시작 태그 매칭 개수:', subtitleSectionMatches.length)
   if (subtitleSectionMatches.length > 0) {
-    console.log('첫 번째 subtitle-section 샘플:', html.substring(subtitleSectionMatches[0].index!, subtitleSectionMatches[0].index! + 500))
   }
 
   const subtitleSections: string[] = []
@@ -328,9 +280,6 @@ function parseCompletedSubtitles(html: string, allMenuSubtitles: any[]): { compl
       subtitleSections.push(section)
     }
   }
-
-  console.log('추출된 subtitle-section 개수:', subtitleSections.length)
-
   allMenuSubtitles.forEach((subtitle: any, index: number) => {
     const match = subtitle.subtitle.match(/^(\d+)-(\d+)/)
     if (!match) return
@@ -345,7 +294,6 @@ function parseCompletedSubtitles(html: string, allMenuSubtitles: any[]): { compl
       if (!h3Match) {
         // h3 태그가 없으면 이 섹션은 건너뛰기
         if (index < 3) { // 처음 3개만 디버깅 로그
-          console.log(`소제목 ${index}: h3 태그를 찾을 수 없음, 섹션 시작: ${section.substring(0, 200)}`)
         }
         continue
       }
@@ -375,7 +323,6 @@ function parseCompletedSubtitles(html: string, allMenuSubtitles: any[]): { compl
       }
 
       if (index < 3) { // 처음 3개만 디버깅 로그
-        console.log(`소제목 ${index} (${subtitle.subtitle}): h3Text="${h3Text}", titleMatches=${titleMatches}`)
       }
 
       // subtitle-content 확인
@@ -397,37 +344,25 @@ function parseCompletedSubtitles(html: string, allMenuSubtitles: any[]): { compl
                 completedMenus.push(menuNumber - 1)
               }
               found = true
-              console.log(`✅ 소제목 ${index} (${subtitle.subtitle}) 완료 감지, 내용 길이: ${textOnly.length}자`)
               break
             }
           } else {
             if (index < 3) {
-              console.log(`소제목 ${index}: 내용이 너무 짧음 (${textOnly.length}자)`)
             }
           }
         } else {
           if (index < 3) {
-            console.log(`소제목 ${index}: content 매칭 실패`)
           }
         }
       } else {
         if (index < 3) {
-          console.log(`소제목 ${index}: titleMatches=${titleMatches}, hasContent=${hasContent}`)
         }
       }
     }
 
     if (!found) {
-      console.log(`소제목 ${index} (${subtitle.subtitle}) 미완료`)
     }
   })
-
-  console.log('=== parseCompletedSubtitles 완료 ===')
-  console.log('완료된 소제목:', completedSubtitles.length, '개')
-  console.log('완료된 소제목 인덱스:', completedSubtitles)
-  console.log('완료된 메뉴:', completedMenus.length, '개')
-  console.log('완료된 메뉴 인덱스:', completedMenus)
-
   return { completedSubtitles, completedMenus }
 }
 
@@ -561,7 +496,6 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
     const tool = menu_subtitles[globalSubIdx]?.interpretation_tool || ''
     const charCount = menu_subtitles[globalSubIdx]?.char_count
     if (!charCount || charCount <= 0) {
-      console.error(`❌ 소제목 "${sub.subtitle}"의 char_count가 설정되지 않았거나 0 이하입니다. char_count: ${charCount}`)
     }
     const thumbnail = menu_subtitles[globalSubIdx]?.thumbnail || ''
     return `
@@ -658,15 +592,7 @@ serve(async (req) => {
       completedSubtitles,
       completedSubtitleIndices
     } = body
-
-    console.log('=== 재미나이 Edge Function 시작 ===')
-    console.log('요청 모델:', model)
-    console.log('메뉴 소제목 개수:', menu_subtitles?.length)
-    console.log('2차 요청 여부:', isSecondRequest || false)
-    console.log('요청 본문 크기:', JSON.stringify(body).length, 'bytes')
-
     if (!role_prompt || !menu_subtitles || !Array.isArray(menu_subtitles) || menu_subtitles.length === 0) {
-      console.error('Invalid request format:', { role_prompt: !!role_prompt, menu_subtitles: menu_subtitles?.length })
       return new Response(
         JSON.stringify({ error: 'Invalid request format' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -674,9 +600,7 @@ serve(async (req) => {
     }
 
     const apiKey = Deno.env.get('GEMINI_API_KEY') || ''
-    console.log('GEMINI_API_KEY 존재 여부:', !!apiKey, '길이:', apiKey.length)
     if (!apiKey) {
-      console.error('GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.')
       return new Response(
         JSON.stringify({ error: 'GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -684,8 +608,6 @@ serve(async (req) => {
     }
 
     const prompt = buildPrompt(body)
-    console.log('프롬프트 길이:', prompt.length)
-
     // Server-Sent Events 스트리밍 응답 생성
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
@@ -698,12 +620,6 @@ serve(async (req) => {
         let hasSentPartialDone = false
 
         try {
-          console.log('=== Gemini API 스트리밍 호출 시작 ===')
-          console.log('API 키 길이:', apiKey.length)
-          console.log('모델:', model)
-          console.log('프롬프트 길이:', prompt.length)
-          console.log(`타임아웃 설정: ${TIMEOUT_PARTIAL/1000}초 (부분 완료), ${MAX_DURATION/1000}초 (최대)`)
-          
           let chunkCount = 0
           let lastCompletionCheckChunk = 0
           const COMPLETION_CHECK_INTERVAL = 50
@@ -717,13 +633,11 @@ serve(async (req) => {
             (chunk: any) => {
               chunkCount++
               if (chunkCount % 10 === 0 || chunkCount === 1) {
-                console.log(`Gemini 청크 #${chunkCount} 수신:`, chunk.text ? chunk.text.substring(0, 50) : '텍스트 없음')
               }
               const elapsed = Date.now() - streamStartTime
 
               // 첫 번째 청크인 경우 시작 신호 전송
               if (isFirstChunk) {
-                console.log('첫 번째 청크 수신, 시작 신호 전송')
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'start' })}\n\n`))
                 isFirstChunk = false
               }
@@ -757,10 +671,6 @@ serve(async (req) => {
                   const allSubtitlesCompleted = completedSubtitles.length === menu_subtitles.length
                   
                   if (allSubtitlesCompleted) {
-                    console.log(`✅ [청크 ${chunkCount}] 모든 소제목이 완료되었습니다! 스트림을 즉시 중단합니다.`)
-                    console.log(`완료된 소제목: ${completedSubtitles.length}/${menu_subtitles.length}개`)
-                    console.log(`fullText 길이: ${fullText.length}자`)
-                    
                     allSubtitlesCompletedEarly = true
                     
                     // HTML 정리
@@ -784,9 +694,6 @@ serve(async (req) => {
                     cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
                     cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
                     cleanHtml = cleanHtml.replace(/\*\*/g, '')
-                    
-                    console.log(`✅ 조기 완료 처리: HTML 길이 ${cleanHtml.length}자`)
-                    
                     // 완료 신호 즉시 전송
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
                       type: 'done',
@@ -796,8 +703,6 @@ serve(async (req) => {
                     })}\n\n`))
                     
                     controller.close()
-                    console.log('✅ 모든 소제목 조기 완료: 스트림 종료')
-                    
                     // 조기 완료 신호 (callGeminiStream 함수에서 체크하여 스트림 종료할 수 있도록)
                     // 하지만 callGeminiStream이 이를 지원하지 않으므로, 콜백에서 완료 처리만 수행
                     // callGeminiStream은 계속 실행되지만 전송은 중단됨
@@ -812,22 +717,11 @@ serve(async (req) => {
           
           // 조기 완료 처리된 경우 이후 로직 건너뛰기
           if (allSubtitlesCompletedEarly) {
-            console.log('✅ 조기 완료 처리 완료, 이후 로직 건너뛰기')
             return
           }
-
-          console.log(`=== Gemini API 스트리밍 완료 ===`)
-          console.log(`총 청크 수: ${chunkCount}`)
-          console.log(`fullText 길이: ${fullText.length}자`)
-          console.log(`Finish Reason: ${finishReason || '없음 (스트림이 중간에 끊김)'}`)
-          
           // Finish Reason이 없거나 STOP이 아닌 경우 경고
           if (!finishReason) {
-            console.warn('⚠️ Finish Reason이 없습니다. 스트림이 완전히 전송되지 않았을 수 있습니다.')
-            console.warn('⚠️ 부분 완료 처리를 시도하거나 2차 요청이 필요할 수 있습니다.')
           } else if (finishReason !== 'STOP') {
-            console.warn(`⚠️ Finish Reason이 STOP이 아닙니다: ${finishReason}`)
-            console.warn('⚠️ 부분 완료 처리를 시도하거나 2차 요청이 필요할 수 있습니다.')
           }
           
           // 스트림 완료 처리
@@ -857,32 +751,16 @@ serve(async (req) => {
           let actualFinishReason = finishReason || 'STOP'
           
           if (finishReason === 'MAX_TOKENS') {
-            console.log('=== MAX_TOKENS 감지: 실제 점사 완료 여부 확인 ===')
             const { completedSubtitles } = parseCompletedSubtitles(cleanHtml, menu_subtitles)
             const allSubtitlesCompleted = completedSubtitles.length === menu_subtitles.length
-            
-            console.log(`전체 소제목: ${menu_subtitles.length}개`)
-            console.log(`완료된 소제목: ${completedSubtitles.length}개`)
-            console.log(`모든 소제목 완료 여부: ${allSubtitlesCompleted ? '✅ 예' : '❌ 아니오'}`)
-            
             if (allSubtitlesCompleted) {
-              console.log('✅ 점사가 모두 완료되었습니다. MAX_TOKENS는 점사 완료 후 추가 생성이 발생한 것으로 보입니다.')
-              console.log('✅ isTruncated를 false로 설정하고 finishReason을 STOP으로 변경합니다.')
               actualIsTruncated = false
               actualFinishReason = 'STOP'
             } else {
-              console.log('❌ 일부 소제목이 미완료 상태입니다. MAX_TOKENS로 인한 잘림으로 처리합니다.')
-              console.log(`미완료 소제목: ${menu_subtitles.length - completedSubtitles.length}개`)
             }
-            console.log('=== MAX_TOKENS 확인 완료 ===')
           }
 
           // 2차 요청 자동 시작 로직 제거됨 - 항상 done 전송
-          console.log('✅ 스트림 완료, done 전송')
-          console.log('원본 Finish Reason:', finishReason)
-          console.log('실제 Finish Reason:', actualFinishReason)
-          console.log('원본 isTruncated:', finishReason === 'MAX_TOKENS' || !finishReason)
-          console.log('실제 isTruncated:', actualIsTruncated)
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'done',
             html: cleanHtml,
@@ -892,14 +770,7 @@ serve(async (req) => {
 
           controller.close()
         } catch (error: any) {
-          console.error('=== 스트리밍 중 에러 발생 ===')
-          console.error('에러 타입:', typeof error)
-          console.error('에러 메시지:', error?.message || String(error))
-          console.error('에러 스택:', error?.stack || 'N/A')
           const elapsed = Date.now() - streamStartTime
-          console.error('경과 시간:', Math.round(elapsed/1000), '초')
-          console.error('fullText 길이:', fullText.length, '자')
-
           // 2차 요청 자동 시작 로직 제거됨 - 에러 발생 시 error 전송
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
             type: 'error',
@@ -920,7 +791,6 @@ serve(async (req) => {
       }
     })
   } catch (error: any) {
-    console.error('Edge Function 오류:', error)
     return new Response(
       JSON.stringify({ 
         error: '서버 오류가 발생했습니다.', 

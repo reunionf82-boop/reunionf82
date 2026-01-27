@@ -57,7 +57,7 @@ export default function AdminReviewEventModal({
         setDetailBanners(banners.details || [])
       }
     } catch (error) {
-      console.error('데이터 로드 실패:', error)
+
       alert('데이터를 불러오는데 실패했습니다.')
     } finally {
       setLoading(false)
@@ -102,7 +102,7 @@ export default function AdminReviewEventModal({
         }
       }
     } catch (error) {
-      console.error('업로드 에러:', error)
+
       alert('이미지 업로드에 실패했습니다.')
     } finally {
       setUploading(false)
@@ -138,7 +138,7 @@ export default function AdminReviewEventModal({
       // alert('성공적으로 저장되었습니다.') // 팝업 제거
       onClose()
     } catch (error) {
-      console.error('저장 에러:', error)
+
       alert('저장에 실패했습니다.')
     } finally {
       setLoading(false)

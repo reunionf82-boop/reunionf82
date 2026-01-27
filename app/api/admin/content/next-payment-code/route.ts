@@ -49,7 +49,6 @@ export async function GET(request: NextRequest) {
       .not('payment_code', 'is', null)
 
     if (error) {
-      console.error('[next-payment-code] Supabase error:', error)
       return NextResponse.json(
         { error: error.message || '결제 코드를 조회하는데 실패했습니다.' },
         { status: 500 }
@@ -99,7 +98,6 @@ export async function GET(request: NextRequest) {
       nextCode
     })
   } catch (error: any) {
-    console.error('[next-payment-code] Exception:', error)
     return NextResponse.json(
       { error: error.message || '결제 코드를 조회하는 중 오류가 발생했습니다.' },
       { status: 500 }

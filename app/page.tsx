@@ -102,10 +102,10 @@ export default function Home() {
       }
       // 디버깅: HTML이 제대로 로드되었는지 확인
       if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-        console.log('[home-html] loaded:', html.length, 'chars', html.substring(0, 100))
+
       }
     } catch (e) {
-      console.error('[home-html] load error:', e)
+
       setHomeHtml('')
       setHomeBgColor('')
       setHomeHtmlLoading(false)

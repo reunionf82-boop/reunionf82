@@ -33,20 +33,14 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
-      console.error('[결제 완료 처리] DB 업데이트 오류:', error)
       return NextResponse.json({ success: false, error: error.message }, { status: 500 })
     }
     
     if (!data) {
-      console.error('[결제 완료 처리] 데이터가 없음:', oid)
       return NextResponse.json({ success: false, error: '결제 정보를 찾을 수 없습니다.' }, { status: 404 })
     }
-    
-    console.log('[결제 완료 처리] DB 업데이트 성공:', { oid, status: data.status, hasContentId: !!data.content_id })
-
     return NextResponse.json({ success: true, data })
   } catch (error: any) {
-    console.error('[결제 완료 처리] 오류:', error)
     return NextResponse.json({ success: false, error: error.message }, { status: 500 })
   }
 }

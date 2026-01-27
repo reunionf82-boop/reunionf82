@@ -16,7 +16,6 @@ const corsHeaders = {
 serve(async (req) => {
   // CORS preflight 요청 처리
   if (req.method === 'OPTIONS') {
-    console.log('OPTIONS 요청 수신, CORS 헤더 반환')
     return new Response(null, { 
       headers: corsHeaders,
       status: 204
@@ -25,39 +24,20 @@ serve(async (req) => {
 
   let browser: any = null
   try {
-    console.log('=== PDF 생성 요청 수신 ===')
-    console.log('요청 메서드:', req.method)
-    console.log('요청 URL:', req.url)
-    
     const requestBody = await req.json()
-    console.log('요청 본문 키:', Object.keys(requestBody))
-    console.log('savedResultId:', requestBody.savedResultId)
-    console.log('html 길이:', requestBody.html?.length || 0)
-    
     const { savedResultId, html, contentName, thumbnailUrl } = requestBody
 
     if (!savedResultId || !html) {
-      console.error('필수 파라미터 누락:', { savedResultId: !!savedResultId, html: !!html })
       return new Response(
         JSON.stringify({ error: 'savedResultId와 html은 필수입니다.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-
-    console.log('=== Supabase Edge Function PDF 생성 시작 ===')
-    console.log('저장된 결과 ID:', savedResultId)
-    console.log('HTML 길이:', html.length)
-
     // Supabase 클라이언트 생성
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-    
-    console.log('Supabase URL 존재:', !!supabaseUrl)
-    console.log('Supabase Service Key 존재:', !!supabaseServiceKey)
-    
     if (!supabaseUrl || !supabaseServiceKey) {
       const errorMsg = `Supabase 환경 변수가 설정되지 않았습니다. URL: ${!!supabaseUrl}, Key: ${!!supabaseServiceKey}`
-      console.error(errorMsg)
       throw new Error(errorMsg)
     }
 
@@ -71,18 +51,14 @@ serve(async (req) => {
     // Puppeteer 동적 로드 (함수 내에서)
     if (!puppeteer) {
       try {
-        console.log('Puppeteer 모듈 로드 시도...')
         const puppeteerModule = await import('https://deno.land/x/puppeteer@16.2.0/mod.ts')
         puppeteer = puppeteerModule.default || puppeteerModule
-        console.log('Puppeteer 모듈 로드 성공')
       } catch (e) {
-        console.error('Puppeteer import 실패:', e)
         throw new Error(`Puppeteer를 로드할 수 없습니다: ${e.message || String(e)}`)
       }
     }
 
     // Puppeteer 브라우저 실행
-    console.log('Puppeteer 브라우저 실행 시도...')
     try {
       browser = await puppeteer.launch({
       headless: true,
@@ -116,32 +92,20 @@ serve(async (req) => {
         '--use-mock-keychain'
       ]
       })
-      console.log('Puppeteer 브라우저 실행 성공')
     } catch (launchError: any) {
-      console.error('Puppeteer 브라우저 실행 실패:', launchError)
       throw new Error(`브라우저 실행 실패: ${launchError.message || String(launchError)}`)
     }
 
     const page = await browser.newPage()
-
-    console.log('원본 HTML 길이:', html.length)
-    console.log('원본 HTML 처음 500자:', html.substring(0, 500))
-    
     // HTML에서 스타일 태그와 본문 분리
     const styleMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/gi)
     const styleContent = styleMatch ? styleMatch.join('\n') : ''
-    console.log('추출된 스타일 길이:', styleContent.length)
-    
     // HTML 본문 추출 (스타일 태그 제거)
     let htmlForPdf = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    console.log('스타일 제거 후 HTML 길이:', htmlForPdf.length)
-    
     // HTML 본문이 비어있는지 확인
     if (!htmlForPdf || htmlForPdf.trim().length < 100) {
-      console.warn('경고: HTML 본문이 너무 짧습니다. 원본 HTML 사용을 고려합니다.')
       // 원본 HTML을 사용하되 스크립트 태그만 제거
       htmlForPdf = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      console.log('원본 HTML 사용 (스크립트만 제거), 길이:', htmlForPdf.length)
     }
     
     // TTS 버튼 완전 제거
@@ -154,14 +118,8 @@ serve(async (req) => {
     
     // 스크립트 태그 제거 (PDF에서 실행될 필요 없음)
     htmlForPdf = htmlForPdf.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    
-    console.log('최종 HTML 본문 길이:', htmlForPdf.length)
-    console.log('최종 HTML 본문 처음 500자:', htmlForPdf.substring(0, 500))
-    
     // 대표 썸네일이 이미 HTML에 포함되어 있는지 확인
     const hasMainThumbnail = htmlForPdf.includes('menu-thumbnail') || htmlForPdf.includes('thumbnail-container')
-    console.log('메인 썸네일 포함 여부:', hasMainThumbnail)
-    
     // 완전한 HTML 문서 생성
     const fullHtml = `
 <!DOCTYPE html>
@@ -287,18 +245,11 @@ serve(async (req) => {
 </body>
 </html>
     `
-
-    console.log('생성된 전체 HTML 길이:', fullHtml.length)
-    console.log('생성된 전체 HTML 처음 1000자:', fullHtml.substring(0, 1000))
-    
     // HTML 콘텐츠 설정
-    console.log('HTML 콘텐츠 설정 시작...')
     await page.setContent(fullHtml, {
       waitUntil: 'networkidle0',
       timeout: 120000
     })
-    console.log('HTML 콘텐츠 설정 완료')
-    
     // 실제 렌더링된 콘텐츠 확인
     const renderedContent = await page.evaluate(() => {
       return {
@@ -307,28 +258,16 @@ serve(async (req) => {
         bodyLength: document.body.innerHTML.length
       }
     })
-    console.log('렌더링된 콘텐츠 정보:', JSON.stringify(renderedContent, null, 2))
-
     // 모든 이미지와 폰트 로드 대기
-    console.log('이미지 및 폰트 로드 대기 시작...')
-    
     // 폰트 로드 대기
     await page.evaluateHandle(() => document.fonts.ready)
-    console.log('폰트 로드 완료')
-    
     // 간단한 이미지 로드 확인 (복잡한 로직 제거, networkidle0이 이미 처리함)
     const imageCount = await page.evaluate(() => {
       return document.querySelectorAll('img').length
     })
-    console.log(`이미지 개수: ${imageCount}개`)
-    
     // networkidle0이 이미 이미지 로드를 처리했으므로 추가 대기만
     await new Promise(resolve => setTimeout(resolve, 2000))
-    
-    console.log('이미지 및 폰트 로드 대기 완료')
-    
     // 스타일 강제 적용
-    console.log('스타일 강제 적용 시작...')
     await page.evaluate(() => {
       const thumbnailContainers = document.querySelectorAll('.thumbnail-container')
       thumbnailContainers.forEach((container: Element) => {
@@ -451,8 +390,6 @@ serve(async (req) => {
         }
       })
     })
-    console.log('스타일 강제 적용 완료')
-
     // 페이지 높이 계산
     const pageHeight = await page.evaluate(() => {
       return Math.max(
@@ -463,9 +400,6 @@ serve(async (req) => {
         document.documentElement.offsetHeight
       )
     })
-    
-    console.log('페이지 높이:', pageHeight, 'px')
-    
     const MAX_PAGE_HEIGHT_PX = 54000
     
     // PDF 생성
@@ -495,10 +429,7 @@ serve(async (req) => {
           setTimeout(() => reject(new Error('PDF 생성 타임아웃 (60초)')), 60000)
         )
       ])
-      console.log('단일 페이지 PDF 생성 성공, 크기:', pdfBuffer.length, 'bytes')
     } catch (error: any) {
-      console.warn('단일 페이지 생성 실패, 페이지 분할 모드로 전환:', error.message)
-      
       pdfBuffer = await Promise.race([
         page.pdf({
           width: '896px',
@@ -517,11 +448,7 @@ serve(async (req) => {
           setTimeout(() => reject(new Error('PDF 생성 타임아웃 (60초)')), 60000)
         )
       ])
-      console.log('페이지 분할 모드 PDF 생성 완료, 크기:', pdfBuffer.length, 'bytes')
     }
-
-    console.log('PDF 생성 완료, 크기:', pdfBuffer.length, 'bytes')
-
     // 브라우저 종료
     await browser.close()
     browser = null
@@ -546,7 +473,6 @@ serve(async (req) => {
       })
 
     if (uploadError) {
-      console.error('Supabase PDF 업로드 에러:', uploadError)
       return new Response(
         JSON.stringify({ error: uploadError.message || 'PDF 업로드에 실패했습니다.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -557,10 +483,6 @@ serve(async (req) => {
     const { data: urlData } = supabase.storage
       .from('pdfs')
       .getPublicUrl(fileName)
-
-    console.log('=== Supabase Edge Function PDF 생성 및 업로드 완료 ===')
-    console.log('PDF URL:', urlData.publicUrl)
-
     return new Response(
       JSON.stringify({
         success: true,
@@ -570,21 +492,11 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error: any) {
-    console.error('=== Supabase Edge Function PDF 생성 오류 ===')
-    console.error('에러 타입:', typeof error)
-    console.error('에러 이름:', error?.name)
-    console.error('에러 메시지:', error?.message || String(error))
-    console.error('에러 스택:', error?.stack || 'N/A')
-    console.error('전체 에러 객체:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
-    
     // 브라우저가 열려있으면 종료
     if (browser) {
       try {
-        console.log('브라우저 종료 시도...')
         await browser.close()
-        console.log('브라우저 종료 완료')
       } catch (closeError) {
-        console.error('브라우저 종료 실패:', closeError)
       }
     }
     

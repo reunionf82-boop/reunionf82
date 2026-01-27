@@ -65,7 +65,6 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
         }
       }
     } catch (error) {
-      console.error('[설백야 localStorage] 로드 실패:', error)
     }
     
     // localStorage에 데이터가 없거나 유효하지 않으면 API로 로드
@@ -81,7 +80,6 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
         }
       } catch (error) {
         // 로그인 확인 실패 시 프리로딩하지 않음 (메뉴 열 때 로드)
-        console.error('[설백야 프리로딩] 로그인 확인 실패:', error)
       } finally {
         setIsPreloading(false)
       }
@@ -166,7 +164,6 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
             localStorage.setItem(STORAGE_KEY, JSON.stringify(paid))
             localStorage.setItem(STORAGE_TIMESTAMP_KEY, Date.now().toString())
           } catch (error) {
-            console.error('[설백야 localStorage] 저장 실패:', error)
           }
         }
       } else {
@@ -177,12 +174,10 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
             localStorage.setItem(STORAGE_KEY, JSON.stringify([]))
             localStorage.setItem(STORAGE_TIMESTAMP_KEY, Date.now().toString())
           } catch (error) {
-            console.error('[설백야 localStorage] 저장 실패:', error)
           }
         }
       }
     } catch (error) {
-      console.error('컨텐츠 로드 실패:', error)
       setPaidContents([])
     } finally {
       // silent 모드여도 로딩 완료 상태로 설정 (다음 로드 시 중복 방지)

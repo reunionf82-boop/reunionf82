@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       }
     })
   } catch (error: any) {
-    console.error('[결제 상태 확인] 오류:', error)
+
     return NextResponse.json(
       { success: false, error: error.message || '결제 상태 확인 중 오류가 발생했습니다.' },
       { status: 500 }

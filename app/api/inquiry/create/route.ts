@@ -41,11 +41,8 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) {
-      console.error('[inquiry/create] error:', error)
       // 테이블이 없을 수 있으므로 에러 로그만 남기고 성공으로 처리
       // (실제 운영 시에는 테이블 생성 필요)
-      console.warn('[inquiry/create] inquiries 테이블이 없을 수 있습니다. 테이블을 생성해주세요.')
-      
       // 임시로 성공 응답 반환 (테이블 생성 후 실제 저장 가능)
       return NextResponse.json({
         success: true,
@@ -58,7 +55,6 @@ export async function POST(req: NextRequest) {
       inquiry: data
     })
   } catch (error: any) {
-    console.error('[inquiry/create] exception:', error)
     return NextResponse.json(
       { error: error.message || '문의 접수 중 오류가 발생했습니다.' },
       { status: 500 }

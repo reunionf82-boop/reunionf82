@@ -610,7 +610,6 @@ export function calculateManseRyeok(
   // 총체적 난국이었음. 무토, 기토, 임수, 계수 일간의 십성 매핑이 대거 틀려있었음.
   // 이를 전면 수정해야 함.
 
-  
   const makePillar = (gan: string, ji: string, pillarType: string) => ({
     gan, ji,
     sibsung: SIBSUNG[`${dayGan}${gan}`] || '비견',

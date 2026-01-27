@@ -54,7 +54,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
         }
       }
     } catch (e) {
-      console.error('로컬 스토리지에서 배너 데이터 로드 실패:', e)
+
     }
     return null
   }
@@ -68,7 +68,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
         timestamp: Date.now()
       }))
     } catch (e) {
-      console.error('로컬 스토리지에 배너 데이터 저장 실패:', e)
+
     }
   }
   
@@ -89,7 +89,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
         return new Set(urls)
       }
     } catch (e) {
-      console.error('로컬 스토리지에서 이미지 정보 로드 실패:', e)
+
     }
     return new Set<string>()
   }
@@ -102,7 +102,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
       current.add(url)
       localStorage.setItem('review_event_loaded_images', JSON.stringify(Array.from(current)))
     } catch (e) {
-      console.error('로컬 스토리지에 이미지 정보 저장 실패:', e)
+
     }
   }
   
@@ -128,17 +128,14 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
           if (text) {
             json = JSON.parse(text)
           } else {
-            console.warn('[MyHistory] API 응답이 비어있습니다.')
+
           }
         } catch (e) {
-          console.error('[MyHistory] API 응답 파싱 실패:', e)
+
         }
-        
-        console.log('[MyHistory] API 응답 전체:', JSON.stringify(json, null, 2))
+
         const raw = (json as any)?.review_event_banners
-        console.log('[MyHistory] raw review_event_banners:', raw)
-        console.log('[MyHistory] raw 타입:', typeof raw)
-        
+
         if (cancelled) return
         
         let banners: { basic: string; details: string[] } = { basic: '', details: [] }
@@ -148,22 +145,18 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
             basic: typeof raw.basic === 'string' && raw.basic.trim() !== '' ? raw.basic : '',
             details: Array.isArray(raw.details) ? raw.details.filter((u: any) => typeof u === 'string' && u.trim() !== '') : []
           }
-          console.log('[MyHistory] 객체 파싱 결과:', JSON.stringify(banners, null, 2))
+
         } else if (Array.isArray(raw)) {
           const arr = raw.filter((u: any) => typeof u === 'string' && u.trim() !== '')
           banners = {
             basic: arr.length > 0 ? arr[0] : '',
             details: arr.length > 1 ? arr.slice(1) : []
           }
-          console.log('[MyHistory] 배열 파싱 결과:', JSON.stringify(banners, null, 2))
+
         } else {
-          console.log('[MyHistory] 파싱 실패 - 빈 배너 사용')
+
         }
-        
-        console.log('[MyHistory] 최종 banners:', JSON.stringify(banners, null, 2))
-        console.log('[MyHistory] banners.basic 존재:', !!banners.basic)
-        console.log('[MyHistory] banners.details.length:', banners.details.length)
-        
+
         if (!cancelled) {
           setLoginFormBanners(banners)
           saveBannersToStorage(banners)
@@ -250,7 +243,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
               json = JSON.parse(text)
             }
           } catch (e) {
-            console.error(`[MyHistory] 컨텐츠(${cid}) API 응답 파싱 실패:`, e)
+
           }
           const raw = json?.review_event_banners
           
@@ -799,18 +792,8 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
           }
         }
       } catch (e) {
-        console.error('[PDF 생성] 썸네일 삽입 오류:', e)
-      }
 
-      console.log('[PDF 생성] 컨텐츠 정보:', {
-        hasContent: !!contentObj,
-        bookCoverThumbnail: contentObj?.book_cover_thumbnail,
-        bookCoverThumbnailVideo: contentObj?.book_cover_thumbnail_video,
-        endingBookCoverThumbnail: contentObj?.ending_book_cover_thumbnail,
-        endingBookCoverThumbnailVideo: contentObj?.ending_book_cover_thumbnail_video,
-        finalBookCoverImageUrls,
-        finalEndingBookCoverImageUrls
-      });
+      }
 
       // 템플릿 리터럴 특수 문자 이스케이프
       const safeHtml = htmlContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${');
@@ -2024,7 +2007,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
       ))
       
     } catch (error: any) {
-      console.error('PDF 생성 실패:', error)
+
       alert('PDF 생성에 실패했습니다.')
       
       // PDF 생성 중 상태 해제
@@ -2057,8 +2040,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
     // 먼저 content.id가 있으면 그것을 시도
     if (result.content?.id) {
       const contentId = parseInt(String(result.content.id), 10)
-      console.log('[MyHistory] 리뷰 작성 시도 - content_id:', contentId)
-      
+
       // content_id가 유효한지 확인 (서버에서 확인함)
       // 일단 content_id를 사용하되, 서버에서 유효하지 않으면 에러가 발생함
       actualContentId = contentId
@@ -2072,11 +2054,11 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
           const findData = await findResponse.json().catch(() => ({}))
           if (findData.success && findData.content_id) {
             actualContentId = findData.content_id
-            console.log('[MyHistory] title로 content_id 찾음:', actualContentId)
+
           }
         }
       } catch (e) {
-        console.warn('[MyHistory] title로 content_id 찾기 실패:', e)
+
       }
     }
     
@@ -2090,12 +2072,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
       userName: result.user_name || null,
       title: result.title || null
     })
-    
-    console.log('[MyHistory] 리뷰 팝업 표시:', {
-      contentId: actualContentId,
-      userName: result.user_name || null,
-      title: result.title || null
-    })
+
   }
 
   const handleReviewSuccess = () => {
@@ -2245,19 +2222,14 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                     alt="리뷰 이벤트 기본 배너"
                     className="w-full h-auto object-contain cursor-pointer hover:opacity-90 transition-opacity block"
                     onClick={async () => {
-                      console.log('[MyHistory] 로그인 폼 배너 클릭')
-                      console.log('[MyHistory] detailBannersLoading:', detailBannersLoading)
-                      console.log('[MyHistory] loginFormBanners:', loginFormBanners)
-                      console.log('[MyHistory] loginFormBanners.details:', loginFormBanners.details)
-                      console.log('[MyHistory] loginFormBanners.details.length:', loginFormBanners.details?.length)
-                      
+
                       if (detailBannersLoading) {
-                        console.log('[MyHistory] 로딩 중이므로 리턴')
+
                         return
                       }
                       
                       if (loginFormBanners.details && loginFormBanners.details.length > 0) {
-                        console.log('[MyHistory] 상세 배너가 있음, 로딩 확인 시작')
+
                         // 이미 로딩된 이미지인지 확인 (메모리 + 로컬 스토리지)
                         const allLoaded = loginFormBanners.details.every((url: string) => {
                           return loadedDetailBannerImages.has(url) || getLoadedImagesFromStorage().has(url)
@@ -2527,7 +2499,6 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                         </p>
                       </div>
                     </div>
-
 
                     <div className="flex flex-col gap-2">
                       {/* 컨텐츠별 리뷰 이벤트 배너는 제거 - 상단에 기본 배너만 한 번 표시됨 */}

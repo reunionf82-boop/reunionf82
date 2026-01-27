@@ -26,17 +26,12 @@ export async function GET(req: NextRequest) {
     
     // 에러가 발생하면 상세 정보 로깅
     if (error) {
-      console.error('[API] app_settings SELECT 에러 상세:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      })
+
     }
     
     if (error) {
       // 에러 발생 시 기본값 반환
-      console.error('[API] app_settings 조회 에러:', error)
+
       return NextResponse.json({
         model: 'gemini-3-flash-preview',
         speaker: 'nara',
@@ -57,7 +52,7 @@ export async function GET(req: NextRequest) {
     const data = Array.isArray(rows) ? rows[0] : null
 
     if (!data) {
-      console.log('[API] app_settings 데이터가 없음, 기본값 반환')
+
       return NextResponse.json({
         model: 'gemini-3-flash-preview',
         speaker: 'nara',
@@ -74,19 +69,9 @@ export async function GET(req: NextRequest) {
       })
     }
     
-    console.log('[API] app_settings 데이터 존재:', {
-      hasData: !!data,
-      selected_model: data.selected_model,
-      selected_speaker: data.selected_speaker,
-      fortune_view_mode: (data as any).fortune_view_mode,
-      use_sequential_fortune: (data as any).use_sequential_fortune,
-      selected_tts_provider: (data as any).selected_tts_provider,
-      allKeys: Object.keys(data || {})
-    })
-    
     // 데이터가 있지만 필드가 없는 경우를 대비해 전체 데이터 확인
     if (data) {
-      console.log('[API] 전체 data 객체:', JSON.stringify(data, null, 2))
+
     }
 
     // DB 값 사용
@@ -98,14 +83,7 @@ export async function GET(req: NextRequest) {
     const typecastVoiceIdValue = (data as any).selected_typecast_voice_id
     
     // 디버깅: DB에서 가져온 원본 값 확인
-    console.log('[API] DB 원본 값:', {
-      selected_model: modelValue,
-      use_sequential_fortune: useSequentialFortuneValue,
-      fortune_view_mode: fortuneModeValue,
-      selected_speaker: speakerValue,
-      selected_tts_provider: ttsProviderValue
-    })
-    
+
     const finalModel = (modelValue != null && String(modelValue).trim() !== '') 
       ? String(modelValue).trim() 
       : 'gemini-3-flash-preview'
@@ -128,11 +106,6 @@ export async function GET(req: NextRequest) {
       : 'tc_5ecbbc6099979700087711d8'
 
     // 디버깅: 최종 반환 값 확인
-    console.log('[API] 최종 반환 값:', {
-      model: finalModel,
-      use_sequential_fortune: finalUseSequentialFortune,
-      fortune_view_mode: finalFortuneMode
-    })
 
     return NextResponse.json({
       model: finalModel,
@@ -152,7 +125,7 @@ export async function GET(req: NextRequest) {
       }
     })
   } catch (error: any) {
-    console.error('[API] 예외 발생:', error)
+
     return NextResponse.json(
       { 
         error: error.message || '설정을 가져오는데 실패했습니다.',

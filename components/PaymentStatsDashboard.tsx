@@ -85,7 +85,7 @@ export default function PaymentStatsDashboard({ isOpen, onClose }: PaymentStatsD
       }
     } catch (err: any) {
       setError(err.message || '결제 통계를 불러오는 중 오류가 발생했습니다.')
-      console.error('[결제 통계 조회] 오류:', err)
+
     } finally {
       setLoading(false)
     }

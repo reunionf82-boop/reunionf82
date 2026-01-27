@@ -59,7 +59,6 @@ app.post('/chat', async (req, res) => {
     req.setTimeout(1800000); // 30분
     res.setTimeout(1800000);
 
-    
     try {
         const {
             role_prompt,
@@ -80,7 +79,6 @@ app.post('/chat', async (req, res) => {
             isParallelMode = false // 병렬점사 모드 여부
         } = req.body;
 
-        
         // 병렬점사 모드에서는 각 대메뉴의 소제목에 해석도구가 포함되어 있어야 함
         if (isParallelMode && menu_subtitles && menu_subtitles.length > 0) {
             menu_subtitles.slice(0, 3).forEach((sub, idx) => {
@@ -297,7 +295,6 @@ ${isSecondRequest ? `
 
 다음 상품 메뉴 구성과 소제목들을 각각 해석해주세요.
 
-
 ${menuItemsInfo.map((menuItem, menuIdx) => {
   const menuNumber = menuIdx + 1;
   // 2차 요청일 때는 프론트엔드에서 이미 필터링된 menu_subtitles를 그대로 사용
@@ -330,13 +327,6 @@ ${subtitlesForMenu.map((sub, subIdx) => {
         // 병렬점사 모드: sub 객체에 이미 모든 정보가 포함되어 있음
         subtitleData = sub;
         // 디버깅: 해석도구 확인
-        console.log(`[프롬프트 생성-병렬점사] 메뉴 ${menuNumber} 소제목 ${subIdx + 1}:`, {
-            subtitle: sub?.subtitle || sub,
-            hasInterpretationTool: !!(sub?.interpretation_tool),
-            interpretationTool: sub?.interpretation_tool ? sub.interpretation_tool.substring(0, 50) + '...' : '없음',
-            hasDetailMenus: !!(sub?.detailMenus && sub.detailMenus.length > 0),
-            detailMenusCount: sub?.detailMenus?.length || 0
-        });
     } else if (isSecondRequest) {
         // 직렬점사 2차 요청: 이미 필터링된 menu_subtitles를 받았으므로 직접 사용
         subtitleData = sub;
@@ -550,7 +540,6 @@ ${isSecondRequest ? `
 
 `;
 
-
         // 완료된 HTML에서 깨진 부분 제거하고 유효한 부분만 반환하는 함수
         const extractValidHtml = (html, completedSubtitleIndices, allMenuSubtitles) => {
             if (!completedSubtitleIndices || completedSubtitleIndices.length === 0) {
@@ -637,8 +626,7 @@ ${isSecondRequest ? `
         const parseCompletedSubtitles = (html, allMenuSubtitles) => {
             const completedSubtitles = [];
             const completedMenus = [];
-            
-            
+
             // HTML에서 모든 소제목 섹션 추출 (subtitle-section과 detail-menu-section 모두)
             const sectionStartRegex = /<div[^>]*class="[^"]*(subtitle-section|detail-menu-section)[^"]*"[^>]*>/gi;
             const sectionMatches = [];
@@ -683,8 +671,7 @@ ${isSecondRequest ? `
                     subtitleSections.push(section);
                 }
             }
-            
-            
+
             // 각 소제목이 완료되었는지 확인
             allMenuSubtitles.forEach((subtitle, index) => {
                 const menuMatch = subtitle.subtitle.match(/^(\d+)-(\d+)/);
@@ -777,8 +764,7 @@ ${isSecondRequest ? `
                 if (!found) {
                 }
             });
-            
-            
+
             return { completedSubtitles, completedMenus };
         };
 
@@ -915,7 +901,6 @@ ${isSecondRequest ? `
 
         // 제안 1-4: HTML 정리 및 코드 블록 제거 (cloudways-html-safety.js 함수 사용)
         let cleanHtml = normalizeHtmlBasics(stripCodeFences(accumulatedText));
-        
 
         // finishReason 확인 (response에서 가져오기)
         let finishReason = 'STOP';
@@ -965,8 +950,7 @@ ${isSecondRequest ? `
             totalSubtitlesCount = requestCompletedIndices.length + req.body.remainingSubtitleIndices.length;
         }
         const allSubtitlesCompleted = parsedCompletedIndices.length === totalSubtitlesCount;
-        
-        
+
         try {
             const response = await result.response;
             finishReason = response.candidates?.[0]?.finishReason || 'STOP';
@@ -1120,8 +1104,7 @@ ${isSecondRequest ? `
             const remainingIndices = menu_subtitles
                 .map((_, index) => index)
                 .filter(index => !parsedCompletedIndices.includes(index));
-            
-            
+
             // partial_done 이벤트 전송
             res.write(`data: ${JSON.stringify({
                 type: 'partial_done',

@@ -93,8 +93,6 @@ export async function POST(req: NextRequest) {
             : msg.toLowerCase().includes('on conflict') || msg.toLowerCase().includes('no unique')
               ? 'app_settings.id에 UNIQUE 또는 PRIMARY KEY가 필요합니다.'
               : ''
-
-        console.error('[HomeHtml] 저장 에러:', updateError)
         return NextResponse.json(
           { error: '홈 HTML 저장에 실패했습니다.', details: msg, hint },
           { status: 500 }
@@ -128,7 +126,6 @@ export async function POST(req: NextRequest) {
       },
     })
   } catch (e: any) {
-    console.error('[HomeHtml][POST] 서버 내부 에러:', e)
     return NextResponse.json(
       { error: '홈 HTML 조회에 실패했습니다.', details: e?.message || '' },
       { status: 500 }

@@ -24,8 +24,7 @@ export async function POST(req: NextRequest) {
     // content_id가 있으면 먼저 확인
     if (content_id) {
       const contentIdNum = parseInt(content_id)
-      console.log('[reviews/create] 저장 시도 - content_id:', contentIdNum)
-      
+
       const { data: contentExists, error: contentCheckError } = await supabase
         .from('contents')
         .select('id')
@@ -33,7 +32,7 @@ export async function POST(req: NextRequest) {
         .maybeSingle()
       
       if (contentCheckError) {
-        console.error('[reviews/create] content 확인 오류:', contentCheckError)
+
         return NextResponse.json(
           { error: '컨텐츠 확인 중 오류가 발생했습니다.', details: contentCheckError.message },
           { status: 500 }
@@ -42,15 +41,15 @@ export async function POST(req: NextRequest) {
       
       if (contentExists && contentExists.id) {
         actualContentId = contentExists.id
-        console.log('[reviews/create] content_id 유효함:', actualContentId)
+
       } else {
-        console.warn('[reviews/create] 존재하지 않는 content_id:', contentIdNum)
+
       }
     }
     
     // content_id가 유효하지 않으면 title로 찾기 시도
     if (!actualContentId && title) {
-      console.log('[reviews/create] title로 content_id 찾기 시도:', title)
+
       const { data: contentByTitle, error: titleSearchError } = await supabase
         .from('contents')
         .select('id, content_name')
@@ -59,12 +58,12 @@ export async function POST(req: NextRequest) {
         .maybeSingle()
       
       if (titleSearchError) {
-        console.error('[reviews/create] title 검색 오류:', titleSearchError)
+
       } else if (contentByTitle && contentByTitle.id) {
         actualContentId = contentByTitle.id
-        console.log('[reviews/create] title로 content_id 찾음:', actualContentId)
+
       } else {
-        console.warn('[reviews/create] title로도 content를 찾을 수 없음:', title)
+
       }
     }
     
@@ -88,9 +87,7 @@ export async function POST(req: NextRequest) {
     if (image_url) {
       insertData.image_url = image_url
     }
-    
-    console.log('[reviews/create] insertData:', JSON.stringify(insertData, null, 2))
-    
+
     const { data, error } = await supabase
       .from('reviews')
       .insert(insertData)
@@ -98,24 +95,19 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) {
-      console.error('[reviews/create] error:', error)
-      console.error('[reviews/create] error details:', JSON.stringify(error, null, 2))
-      console.error('[reviews/create] error code:', error.code)
-      console.error('[reviews/create] error hint:', error.hint)
+
       return NextResponse.json(
         { error: '리뷰 저장에 실패했습니다.', details: error.message },
         { status: 500 }
       )
     }
-    
-    console.log('[reviews/create] 저장 성공:', data)
 
     return NextResponse.json({
       success: true,
       review: data
     })
   } catch (error: any) {
-    console.error('[reviews/create] exception:', error)
+
     return NextResponse.json(
       { error: error.message || '리뷰 저장 중 오류가 발생했습니다.' },
       { status: 500 }

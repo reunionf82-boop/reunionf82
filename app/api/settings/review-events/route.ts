@@ -8,8 +8,6 @@ async function handleRequest(contentIdRaw: string | null | undefined) {
   const contentId = contentIdRaw ? parseInt(contentIdRaw, 10) : NaN
   const supabase = getAdminSupabaseClient()
 
-  console.log(`[ReviewEvent Public] 요청: contentId=${contentIdRaw}, parsed=${contentId}`)
-
   // content_id가 없으면 모든 contents에서 배너가 있는 첫 번째 컨텐츠의 배너 반환
   if (!contentIdRaw || Number.isNaN(contentId)) {
     // 전체 컬럼 선택 (JSONB 파싱 문제 회피)
@@ -19,12 +17,10 @@ async function handleRequest(contentIdRaw: string | null | undefined) {
       .order('id', { ascending: true })
     
     if (contentsError) {
-      console.error(`[ReviewEvent Public] DB 에러:`, contentsError)
+
       return { review_event_banners: { basic: '', details: [] } }
     }
 
-    console.log(`[ReviewEvent Public] 전체 contents 조회 결과: ${allContents?.length || 0}개`)
-    
     // 실제로 배너 데이터가 있는 첫 번째 컨텐츠 찾기
     let contentsData: any = null
     if (allContents && Array.isArray(allContents)) {
@@ -54,7 +50,7 @@ async function handleRequest(contentIdRaw: string | null | undefined) {
 
           if (hasData) {
             contentsData = content
-            console.log(`[ReviewEvent Public] 배너 데이터 발견 - content_id=${content.id}`)
+
             break
           }
         }
@@ -62,7 +58,7 @@ async function handleRequest(contentIdRaw: string | null | undefined) {
     }
 
     if (!contentsData || !contentsData.review_event_banners) {
-      console.log(`[ReviewEvent Public] 배너 데이터가 있는 컨텐츠를 찾지 못함`)
+
       return { review_event_banners: { basic: '', details: [] } }
     }
 
@@ -80,12 +76,12 @@ async function handleRequest(contentIdRaw: string | null | undefined) {
     .maybeSingle()
 
   if (error) {
-    console.error(`[ReviewEvent Public] 단일 조회 DB 에러:`, error)
+
     return { review_event_banners: { basic: '', details: [] } }
   }
 
   if (!data) {
-    console.log(`[ReviewEvent Public] 컨텐츠를 찾을 수 없음: id=${contentId}`)
+
     return { review_event_banners: { basic: '', details: [] } }
   }
 
@@ -108,7 +104,7 @@ export async function GET(req: NextRequest) {
     })
 
   } catch (e: any) {
-    console.error(`[ReviewEvent Public] 서버 내부 에러:`, e)
+
     return NextResponse.json(
       { review_event_banners: { basic: '', details: [] }, error: e.message },
       { status: 500 }
@@ -130,7 +126,7 @@ export async function POST(req: NextRequest) {
       },
     })
   } catch (e: any) {
-    console.error(`[ReviewEvent Public][POST] 서버 내부 에러:`, e)
+
     return NextResponse.json(
       { review_event_banners: { basic: '', details: [] }, error: e.message },
       { status: 500 }

@@ -22,7 +22,6 @@ export async function GET(req: NextRequest) {
     try {
       supabase = getAdminSupabaseClient()
     } catch (clientError: any) {
-      console.error('[reviews/list] Supabase 클라이언트 생성 실패:', clientError)
       return NextResponse.json(
         { error: 'Supabase 클라이언트 초기화 실패', details: clientError.message },
         { status: 500 }
@@ -34,21 +33,6 @@ export async function GET(req: NextRequest) {
     // 쿼리 조건에 의미 없는 비교(gte 등)를 억지로 넣으면 created_at NULL 행이 누락될 수 있습니다.
     const cacheBuster = Date.now()
     
-    // 프로덕션 vs 개발서버 비교를 위한 Supabase URL 확인
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-    try {
-      console.log('[reviews/list] 쿼리 시작:', {
-        contentId,
-        onlyBest,
-        supabaseUrlPrefix: supabaseUrl ? supabaseUrl.substring(0, 30) + '...' : '없음',
-        environment: process.env.NODE_ENV || 'unknown',
-        cacheBuster,
-        timestamp: new Date().toISOString()
-      })
-    } catch (logError) {
-      // 로깅 에러는 무시하고 계속 진행
-      console.error('[reviews/list] 로깅 에러:', logError)
-    }
     
     // 🔄 Supabase 쿼리 캐시/지연 문제 해결: 트랜잭션 커밋 시간 확보
     // 새로 추가된 리뷰가 즉시 반영되지 않는 문제 해결을 위해 짧은 지연 추가
@@ -63,9 +47,6 @@ export async function GET(req: NextRequest) {
       .eq('content_id', parseInt(contentId))
       .eq('is_visible', true)
 
-    if (countError) {
-      console.error('[reviews/list] 개수 조회 에러:', countError)
-    }
 
     // 🔍 디버깅: content_id로 모든 리뷰 조회 (필터 없이)
     const { data: allReviews, error: allReviewsError } = await supabase
@@ -74,39 +55,6 @@ export async function GET(req: NextRequest) {
       .eq('content_id', parseInt(contentId))
       .order('created_at', { ascending: false })
       .limit(100)
-
-    if (!allReviewsError && allReviews) {
-      console.log('[reviews/list] 🔍 디버깅 - content_id로 모든 리뷰:', {
-        contentId,
-        totalReviews: allReviews.length,
-        reviews: allReviews.map((r: any) => ({
-          id: r.id,
-          content_id: r.content_id,
-          is_visible: r.is_visible,
-          is_visible_type: typeof r.is_visible,
-          created_at: r.created_at,
-          review_text_preview: r.review_text?.substring(0, 50) || ''
-        }))
-      })
-      
-      // is_visible이 true인 리뷰만 필터링
-      const visibleReviews = allReviews.filter((r: any) => {
-        // boolean true 또는 문자열 "true" 모두 처리
-        return r.is_visible === true || r.is_visible === 'true' || r.is_visible === 1
-      })
-      
-      console.log('[reviews/list] 🔍 디버깅 - is_visible 필터링 결과:', {
-        totalReviews: allReviews.length,
-        visibleReviewsCount: visibleReviews.length,
-        visibleReviewIds: visibleReviews.map((r: any) => r.id)
-      })
-    }
-
-    console.log('[reviews/list] 리뷰 개수 확인:', {
-      contentId,
-      totalVisibleCount: visibleCount,
-      onlyBest
-    })
 
     // 실제 데이터 조회
     // 🔍 is_visible 필터를 여러 방식으로 시도 (boolean true, 문자열 "true", 숫자 1)
@@ -124,43 +72,15 @@ export async function GET(req: NextRequest) {
     }
 
     // 쿼리 실행
-    // 🔄 Supabase 쿼리 결과가 최신인지 확인하기 위해 타임스탬프 로깅
-    const queryStartTime = Date.now()
     const { data, error, count: actualCount } = await query
-    const queryEndTime = Date.now()
-    
-    console.log('[reviews/list] 쿼리 실행 시간:', {
-      queryDuration: queryEndTime - queryStartTime,
-      timestamp: new Date().toISOString()
-    })
 
     if (error) {
-      console.error('[reviews/list] 쿼리 에러:', {
-        error: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
-        contentId,
-        onlyBest
-      })
-      console.error('[reviews/list] error details:', JSON.stringify(error, null, 2))
       return NextResponse.json(
         { error: '리뷰 조회에 실패했습니다.', details: error.message },
         { status: 500 }
       )
     }
 
-    // 🔍 디버깅: 조회된 데이터의 is_visible 값 확인
-    if (data && data.length > 0) {
-      console.log('[reviews/list] 🔍 조회된 리뷰의 is_visible 값:', {
-        totalReturned: data.length,
-        reviews: data.map((r: any) => ({
-          id: r.id,
-          is_visible: r.is_visible,
-          is_visible_type: typeof r.is_visible
-        }))
-      })
-    }
     
     // 🔍 만약 is_visible 필터가 제대로 작동하지 않는다면, 클라이언트 사이드에서 필터링
     let filteredData = data || []
@@ -171,13 +91,6 @@ export async function GET(req: NextRequest) {
         return isVisible === true || isVisible === 'true' || isVisible === 1
       })
       
-      if (filteredData.length !== data.length) {
-        console.warn('[reviews/list] ⚠️ is_visible 필터링 필요:', {
-          beforeFilter: data.length,
-          afterFilter: filteredData.length,
-          filteredOut: data.length - filteredData.length
-        })
-      }
     }
     
     // 필터링된 데이터 사용
@@ -200,66 +113,9 @@ export async function GET(req: NextRequest) {
       })).filter((r: any) => r?.id != null) || []
       reviewIdsString = reviewIds.join(',')
     } catch (mapError) {
-      console.error('[reviews/list] 데이터 매핑 에러:', mapError)
       // 에러가 발생해도 계속 진행
     }
     
-    try {
-      console.log('[reviews/list] 조회 성공:', {
-        contentId,
-        onlyBest,
-        expectedCount: visibleCount,
-        actualCount: actualCount || finalData?.length || 0,
-        returnedDataLength: finalData?.length || 0,
-        rawDataLength: data?.length || 0,
-        filteredDataLength: finalData?.length || 0,
-        reviewIds: reviewIds,
-        reviewIdsString: reviewIdsString,
-        reviews: reviewDetails
-      })
-    } catch (logError) {
-      console.error('[reviews/list] 로깅 에러:', logError)
-    }
-    
-    // 프로덕션 vs 개발서버 비교를 위한 상세 로그
-    try {
-      if (visibleCount !== null && visibleCount > 0) {
-        console.log('[reviews/list] 상세 비교 정보:', {
-          contentId,
-          onlyBest,
-          dbCount: visibleCount,
-          rawReturnedCount: data?.length || 0,
-          filteredReturnedCount: finalData?.length || 0,
-          missingCount: visibleCount - (finalData?.length || 0),
-          allReviewIds: reviewIds,
-          firstReviewId: reviewIds[0] || null,
-          lastReviewId: reviewIds[reviewIds.length - 1] || null
-        })
-      }
-    } catch (logError) {
-      console.error('[reviews/list] 상세 로깅 에러:', logError)
-    }
-
-    // 개수 불일치 시 경고
-    try {
-      if (visibleCount !== null && finalData) {
-        const returnedCount = finalData.length
-        const queryCount = actualCount || returnedCount
-        
-        if (visibleCount !== queryCount || visibleCount !== returnedCount) {
-          console.warn('[reviews/list] ⚠️ 리뷰 개수 불일치:', {
-            expectedFromCount: visibleCount,
-            queryCount: queryCount,
-            returnedDataLength: returnedCount,
-            rawDataLength: data?.length || 0,
-            difference: visibleCount - returnedCount,
-            possibleCachingIssue: visibleCount > returnedCount
-          })
-        }
-      }
-    } catch (warnError) {
-      console.error('[reviews/list] 경고 로깅 에러:', warnError)
-    }
 
     return NextResponse.json({
       success: true,
@@ -272,7 +128,6 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (error: any) {
-    console.error('[reviews/list] exception:', error)
     return NextResponse.json(
       { error: error.message || '리뷰 조회 중 오류가 발생했습니다.' },
       { status: 500 }
@@ -312,7 +167,6 @@ export async function POST(req: NextRequest) {
 
     const { data, error } = await query
     if (error) {
-      console.error('[reviews/list][POST] 쿼리 에러:', error)
       return NextResponse.json(
         { error: '리뷰 조회에 실패했습니다.', details: error.message },
         { status: 500 }
@@ -330,7 +184,6 @@ export async function POST(req: NextRequest) {
       },
     })
   } catch (error: any) {
-    console.error('[reviews/list][POST] exception:', error)
     return NextResponse.json(
       { error: error.message || '리뷰 조회 중 오류가 발생했습니다.' },
       { status: 500 }

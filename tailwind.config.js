@@ -16,24 +16,3 @@ module.exports = {
   plugins: [],
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -285,7 +285,6 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
 
 `
 
-    
     // 스트리밍 응답 생성
     const encoder = new TextEncoder()
     
@@ -307,8 +306,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
         const parseCompletedSubtitles = (html: string, allMenuSubtitles: any[]) => {
           const completedSubtitles: number[] = []
           const completedMenus: number[] = []
-          
-          
+
           // HTML에서 모든 소제목 섹션 추출 (더 견고한 방법)
           // subtitle-section과 detail-menu-section div를 찾되, 내부 구조를 정확히 파악
           // 패턴: <div class="subtitle-section">...<h3 class="subtitle-title">...</h3>...<div class="subtitle-content">...</div>...</div>
@@ -466,8 +464,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
             if (!found) {
             }
           })
-          
-          
+
           return { completedSubtitles, completedMenus }
         }
         
@@ -696,8 +693,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
                     
                     // 부분 완료 신호 전송 (2차 요청 필요)
                     hasSentPartialDone = true
-                    
-                    
+
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
                       type: 'partial_done',
                       html: safeHtml,
@@ -735,8 +731,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
                 const remainingSubtitles = menu_subtitles
                   .map((sub: any, index: number) => ({ ...sub, originalIndex: index }))
                   .filter((_: any, index: number) => !completedSubtitles.includes(index))
-                
-                
+
                 if (remainingSubtitles.length > 0) {
                   // 부분 완료 신호 전송 (2차 요청 필요)
                   hasSentPartialDone = true
@@ -763,8 +758,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
                   cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
                   cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
                   cleanHtml = cleanHtml.replace(/\*\*/g, '')
-                  
-                  
+
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
                     type: 'partial_done',
                     html: cleanHtml,
@@ -811,8 +805,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
               cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
               cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
               cleanHtml = cleanHtml.replace(/\*\*/g, '')
-              
-              
+
               // 완료 신호 즉시 전송
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
                 type: 'done',
@@ -940,8 +933,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
           if (finishReason === 'MAX_TOKENS') {
             const { completedSubtitles } = parseCompletedSubtitles(cleanHtml, menu_subtitles)
             const allSubtitlesCompleted = completedSubtitles.length === menu_subtitles.length
-            
-            
+
             if (allSubtitlesCompleted) {
               actualIsTruncated = false
               actualFinishReason = 'STOP'
@@ -1015,8 +1007,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
               const remainingSubtitles = menu_subtitles
                 .map((sub: any, index: number) => ({ ...sub, originalIndex: index }))
                 .filter((_: any, index: number) => !completedSubtitles.includes(index))
-              
-              
+
               if (remainingSubtitles.length > 0) {
                 hasSentPartialDone = true
                 
@@ -1042,8 +1033,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
                 cleanHtml = cleanHtml.replace(/(<\/(?:p|div|h[1-6]|span|li|td|th)>)\s*(\n\s*)+(\s*<table[^>]*>)/gi, '$1$3')
                 cleanHtml = cleanHtml.replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
                 cleanHtml = cleanHtml.replace(/\*\*/g, '')
-                
-                
+
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
                   type: 'partial_done',
                   html: cleanHtml,
@@ -1146,8 +1136,7 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
         }
       }
     })
-    
-    
+
     // 스트리밍 응답 반환
     return new Response(stream, {
       headers: {
@@ -1185,5 +1174,4 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
     )
   }
 }
-
 

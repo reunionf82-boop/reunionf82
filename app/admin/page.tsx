@@ -106,7 +106,6 @@ export default function AdminPage() {
       if (!response.ok) {
         const err = await response.json().catch(() => ({} as any))
         const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
-        console.error('[홈html 조회 실패]', msg, err)
         alert(`홈 HTML 불러오기 실패: ${msg}\n\n(프로덕션에서 저장/조회 환경변수 또는 DB 상태를 확인해야 합니다.)`)
         return
       }
@@ -132,7 +131,6 @@ export default function AdminPage() {
         setHomeHtmlImages(extractedImages.length > 0 ? extractedImages : [''])
       }
     } catch (error) {
-      console.error('[홈html 조회 에러]', error)
     }
   }
 
@@ -162,7 +160,6 @@ export default function AdminPage() {
       newImages[index] = result.url
       setHomeHtmlImages(newImages)
     } catch (error: any) {
-      console.error('[이미지 업로드 에러]', error)
       alert(`이미지 업로드 실패: ${error?.message || '알 수 없는 오류'}`)
     } finally {
       setUploadingImageIndex(null)
@@ -238,30 +235,21 @@ export default function AdminPage() {
       const data = await response.json()
       
       // 디버깅: API 응답 확인
-      console.log('[Admin] loadSettings API 응답:', JSON.stringify(data, null, 2))
-      console.log('[Admin] response.ok:', response.ok, 'response.status:', response.status)
-      console.log('[Admin] model:', data.model, 'speaker:', data.speaker)
-      console.log('[Admin] fortune_view_mode:', data.fortune_view_mode)
-      console.log('[Admin] use_sequential_fortune:', data.use_sequential_fortune, 'type:', typeof data.use_sequential_fortune)
-      
       // 모델 설정 (DB에서 가져온 값으로 무조건 업데이트)
       if (data.model !== undefined && data.model !== null) {
         const loadedModel = String(data.model).trim()
-        console.log('[Admin] 설정할 모델:', loadedModel)
         setSelectedModel(loadedModel)
       }
       
       // 화자 설정 (DB에서 가져온 값으로 무조건 업데이트)
       if (data.speaker !== undefined && data.speaker !== null) {
         const loadedSpeaker = String(data.speaker).trim()
-        console.log('[Admin] 설정할 화자:', loadedSpeaker)
         setSelectedSpeaker(loadedSpeaker)
       }
 
       // TTS 제공자/Typecast voice id
       if (data.tts_provider !== undefined) {
         const loadedProvider = data.tts_provider === 'typecast' ? 'typecast' : 'naver'
-        console.log('[Admin] 설정할 TTS 제공자:', loadedProvider)
         setSelectedTtsProvider(loadedProvider)
       }
       
@@ -269,7 +257,6 @@ export default function AdminPage() {
         const loadedVoiceId = (data.typecast_voice_id && String(data.typecast_voice_id).trim() !== '')
           ? String(data.typecast_voice_id).trim()
           : 'tc_5ecbbc6099979700087711d8'
-        console.log('[Admin] 설정할 Typecast Voice ID:', loadedVoiceId)
         setSelectedTypecastVoiceId(loadedVoiceId)
       }
 
@@ -279,7 +266,6 @@ export default function AdminPage() {
       // 점사 모드 로드 (DB에서 가져온 값으로 무조건 업데이트)
       if (data.fortune_view_mode !== undefined && data.fortune_view_mode !== null) {
         const loadedFortuneMode = String(data.fortune_view_mode).trim() === 'realtime' ? 'realtime' : 'batch'
-        console.log('[Admin] 설정할 점사 모드:', loadedFortuneMode, '(DB 값:', data.fortune_view_mode, ')')
         setFortuneViewMode(loadedFortuneMode)
       }
 
@@ -296,16 +282,13 @@ export default function AdminPage() {
         } else {
           loadedUseSequentialFortune = false
         }
-        console.log('[Admin] 설정할 점사 방식 (직렬=true, 병렬=false):', loadedUseSequentialFortune, '(DB 원본 값:', data.use_sequential_fortune, 'type:', typeof data.use_sequential_fortune, ')')
         setUseSequentialFortune(loadedUseSequentialFortune)
       }
     } catch (error) {
-      console.error('[Admin] loadSettings 에러:', error)
       // 에러 발생 시에도 기본값으로 변경하지 않고 현재 값 유지하되, 사용자에게 알림
       alert('설정을 불러오는 중 오류가 발생했습니다. 페이지를 새로고침해주세요.')
     }
   }
-
 
   const loadContents = async () => {
     try {
@@ -330,7 +313,6 @@ export default function AdminPage() {
         setContents([])
       }
     } catch (error) {
-      console.error('[loadContents] Error:', error)
       setContents([])
     } finally {
       setLoading(false)
@@ -460,7 +442,6 @@ export default function AdminPage() {
       const data = await response.json()
       setReviews(data.reviews || [])
     } catch (error) {
-      console.error('[리뷰 로드 에러]', error)
       alert('리뷰를 불러오는데 실패했습니다.')
       setReviews([])
     } finally {
@@ -486,7 +467,6 @@ export default function AdminPage() {
         setInquiries([])
       }
     } catch (error) {
-      console.error('문의 로드 실패:', error)
       setInquiries([])
     } finally {
       setLoadingInquiries(false)
@@ -514,7 +494,6 @@ export default function AdminPage() {
         await loadReviewsForContent(selectedContentId)
       }
     } catch (error: any) {
-      console.error('[리뷰 업데이트 에러]', error)
       alert(`리뷰 업데이트 실패: ${error?.message || '알 수 없는 오류'}`)
     }
   }
@@ -699,8 +678,7 @@ export default function AdminPage() {
                       'jinho': '진호 (남성)'
                     }
                     const speakerDisplayName = speakerNames[speaker] || speaker
-                    
-                    
+
                     try {
                       const response = await fetch('/api/admin/settings/save', {
                         method: 'POST',
@@ -1230,7 +1208,6 @@ export default function AdminPage() {
                         setShowHomeHtmlModal(false)
                       } catch (e: any) {
                         const errorMsg = e?.message || '홈 HTML 저장에 실패했습니다.'
-                        console.error('[홈 HTML 저장 에러]', e)
                         alert(`홈 HTML 저장 실패: ${errorMsg}\n\nDB에 home_html/home_bg_color 컬럼이 없을 수 있습니다. supabase-add-home-html.sql 및 supabase-add-home-bg-color.sql을 실행해주세요.`)
                       }
                     }}
@@ -1300,8 +1277,6 @@ export default function AdminPage() {
           )}
         </div>
       </div>
-
-
 
       {/* 리뷰 이벤트 관리 모달 */}
       {showReviewEventModal && selectedEventContent && (

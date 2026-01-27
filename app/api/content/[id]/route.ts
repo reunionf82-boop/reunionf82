@@ -54,23 +54,3 @@ export async function GET(
   }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

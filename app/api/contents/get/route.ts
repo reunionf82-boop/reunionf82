@@ -26,7 +26,6 @@ export async function GET(request: NextRequest) {
       .maybeSingle()
 
     if (error) {
-      console.error('[contents/get] error:', error)
       return NextResponse.json(
         { error: '컨텐츠 조회 중 오류가 발생했습니다.', details: error.message },
         { status: 500 }
@@ -39,7 +38,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, content: data }, { status: 200 })
   } catch (e: any) {
-    console.error('[contents/get] exception:', e)
     return NextResponse.json(
       { error: e?.message || '컨텐츠 조회 중 오류가 발생했습니다.' },
       { status: 500 }

@@ -32,7 +32,6 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
     return 'image'
   }
 
-
   // 모달이 열릴 때 초기화 및 동영상 파일 상태 확인
   useEffect(() => {
     if (isOpen) {
@@ -258,7 +257,7 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
           }
         } catch (error) {
           // 썸네일 생성 실패해도 계속 진행
-          console.warn('썸네일 이미지 생성 실패:', error)
+
         }
       }
       

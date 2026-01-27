@@ -58,7 +58,6 @@ async function resizeImageIfNeeded(file: File): Promise<File> {
     return new File([blob], `${baseName}-${targetWidth}.${ext}`, { type: outputType })
   } catch (e) {
     // HEIC 등 브라우저가 디코딩 못하는 포맷이면 원본 전송
-    console.warn('[ReviewPopup] 이미지 리사이즈 실패(원본 전송):', e)
     return file
   } finally {
     URL.revokeObjectURL(objectUrl)
@@ -289,16 +288,10 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
           onClose()
         }, 2000)
       } else {
-        console.error('[ReviewPopup] 리뷰 저장 실패:', {
-          status: response.status,
-          statusText: response.statusText,
-          result_data
-        })
         const errorMessage = result_data.error || result_data.details || '리뷰 등록에 실패했습니다.'
         throw new Error(errorMessage)
       }
     } catch (error: any) {
-      console.error('[ReviewPopup] 에러 발생:', error)
       alert(error.message || '리뷰 등록 중 오류가 발생했습니다.')
     } finally {
       setIsSubmitting(false)

@@ -40,7 +40,6 @@ export async function POST(req: NextRequest) {
       .order('id', { ascending: false })
     
     if (error) {
-      console.error('[admin/content/list] Supabase error:', error)
       return NextResponse.json(
         { error: error.message || '컨텐츠 목록을 가져오는데 실패했습니다.' },
         { 
@@ -94,7 +93,6 @@ export async function POST(req: NextRequest) {
       }
     )
   } catch (error: any) {
-    console.error('[admin/content/list] Exception:', error)
     return NextResponse.json(
       { error: error.message || '컨텐츠 목록을 가져오는 중 오류가 발생했습니다.' },
       { 

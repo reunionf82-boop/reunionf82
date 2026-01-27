@@ -125,7 +125,6 @@ export async function POST(req: NextRequest) {
     // 동영상인 경우, 파일명에서 확장자를 제거한 기본 이름도 반환 (WebM/MP4 공통 이름)
     const videoBaseName = isVideo ? baseFileName : null
 
-
     // 서비스 롤 키로 업로드 (RLS 우회)
     const supabase = getSupabaseClient()
     const supabaseHost = supabaseUrl ? (() => { try { return new URL(supabaseUrl).host } catch { return supabaseUrl } })() : ''
@@ -142,7 +141,7 @@ export async function POST(req: NextRequest) {
       })
 
     if (uploadError) {
-      console.error('Upload error:', uploadError)
+
       return NextResponse.json(
         {
           error: uploadError.message || '파일 업로드에 실패했습니다.',
@@ -186,12 +185,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-
     // 공개 URL 생성
     const { data: urlData } = supabase.storage
       .from('thumbnails')
       .getPublicUrl(filePath)
-
 
     return NextResponse.json({
       success: true,
@@ -271,7 +268,7 @@ async function handleImageDelete(req: NextRequest) {
     .remove([filePath])
 
   if (deleteError) {
-    console.error('Delete error:', deleteError)
+
     return NextResponse.json(
       {
         error: deleteError.message || '파일 삭제에 실패했습니다.',
