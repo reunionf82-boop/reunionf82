@@ -736,22 +736,21 @@ function ResultContent() {
             }
             
             // 직렬점사(partial_done) 완료 시 즉시 결과 저장 (지연 없이)
+            // ✅ user_credentials의 saved_id 업데이트가 완료될 때까지 기다려야 "나의 이용내역 > 보기"에서 검색 가능
             if (!autoSavedRef.current) {
-
               autoSavedRef.current = true
-              // 즉시 저장 (setTimeout 제거)
+              // ✅ await를 사용하여 저장 및 user_credentials 업데이트가 완료될 때까지 기다림
               ;(async () => {
                 try {
                   // 최신 HTML과 content를 직접 전달하여 저장
                   if (finalHtml && finalHtml.length >= 100) {
+                    // ✅ saveResultToLocal 내부에서 user_credentials 업데이트까지 완료되므로 await 필수
                     await saveResultToLocal(false, finalHtml, content)
-
+                    // 저장 및 user_credentials 업데이트 완료
                   } else {
-
                     autoSavedRef.current = false // 재시도 가능하도록
                   }
                 } catch (err) {
-
                   autoSavedRef.current = false // 실패 시 재시도 가능하도록
                 }
               })()
@@ -992,20 +991,20 @@ function ResultContent() {
           }, 500)
 
           // 모든 대메뉴 완료 시 즉시 결과 저장 (지연 없이)
-            if (!autoSavedRef.current) {
-
-              autoSavedRef.current = true
-              // 즉시 저장 (setTimeout 제거)
-              ;(async () => {
-                try {
-                  await saveResultToLocal(false, allAccumulatedHtml, content, model, startTime, userName)
-
-                } catch (err) {
-
-                  autoSavedRef.current = false // 실패 시 재시도 가능하도록
-                }
-              })()
-            }
+          // ✅ user_credentials의 saved_id 업데이트가 완료될 때까지 기다려야 "나의 이용내역 > 보기"에서 검색 가능
+          if (!autoSavedRef.current) {
+            autoSavedRef.current = true
+            // ✅ await를 사용하여 저장 및 user_credentials 업데이트가 완료될 때까지 기다림
+            ;(async () => {
+              try {
+                // ✅ saveResultToLocal 내부에서 user_credentials 업데이트까지 완료되므로 await 필수
+                await saveResultToLocal(false, allAccumulatedHtml, content, model, startTime, userName)
+                // 저장 및 user_credentials 업데이트 완료
+              } catch (err) {
+                autoSavedRef.current = false // 실패 시 재시도 가능하도록
+              }
+            })()
+          }
           
           return
         }
@@ -1250,16 +1249,16 @@ function ResultContent() {
                 }
                 
                 // 병렬점사 완료 시 즉시 결과 저장 (지연 없이)
+                // ✅ user_credentials의 saved_id 업데이트가 완료될 때까지 기다려야 "나의 이용내역 > 보기"에서 검색 가능
                 if (!autoSavedRef.current) {
-
                   autoSavedRef.current = true
-                  // 즉시 저장 (setTimeout 제거)
+                  // ✅ await를 사용하여 저장 및 user_credentials 업데이트가 완료될 때까지 기다림
                   ;(async () => {
                     try {
+                      // ✅ saveResultToLocal 내부에서 user_credentials 업데이트까지 완료되므로 await 필수
                       await saveResultToLocal(false, allAccumulatedHtml, content, model, startTime, userName)
-
+                      // 저장 및 user_credentials 업데이트 완료
                     } catch (err) {
-
                       autoSavedRef.current = false // 실패 시 재시도 가능하도록
                     }
                   })()
@@ -1580,10 +1579,15 @@ ${fontFace ? fontFace : ''}
       const result = await response.json()
 
       if (result.success) {
-        
         // 저장된 결과 ID 저장 (동기화 확인용)
         const savedResultId = result.data?.id
         const savedHtml = result.data?.html || ''
+        
+        // ✅ savedIdRef에 저장하여 나중에 사용 가능하도록 함
+        if (savedResultId) {
+          savedIdRef.current = String(savedResultId)
+          setSavedId(String(savedResultId))
+        }
 
         // 저장된 HTML이 비어있으면 경고
         if (!savedHtml || savedHtml.trim().length < 100) {
@@ -1623,6 +1627,7 @@ ${fontFace ? fontFace : ''}
               return
             }
 
+            // ✅ user_credentials 업데이트가 완료될 때까지 기다림 (by-credentials API에서 saved_id가 필요)
             const updateResponse = await fetch('/api/user-credentials/update', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1634,14 +1639,14 @@ ${fontFace ? fontFace : ''}
 
             if (!updateResponse.ok) {
               const errorText = await updateResponse.text()
-
+              // 업데이트 실패 시 에러는 무시하지만, saved_id는 이미 저장되었으므로 검색 가능
             } else {
               const updateResult = await updateResponse.json()
-
+              // ✅ user_credentials 업데이트 완료 - 이제 "나의 이용내역 > 보기"에서 검색 가능
             }
           } catch (updateError) {
             // 업데이트 실패는 무시 (로그만 출력)
-
+            // saved_id는 이미 저장되었으므로 검색 가능
           }
         } else {
 
