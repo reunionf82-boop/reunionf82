@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
+import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,12 +17,12 @@ export async function POST(req: NextRequest) {
     
     const supabase = getAdminSupabaseClient()
     const body = await req.json()
-    const { model, speaker, fortune_view_mode, use_sequential_fortune, tts_provider, typecast_voice_id, home_html } = body
+    const { model, speaker, fortune_view_mode, use_sequential_fortune, tts_provider, typecast_voice_id, home_html, dev_unlock_password, dev_unlock_duration_minutes, dev_unlock_hide_enabled } = body
 
     // 기존 레코드 조회
     const { data: existingRows, error: existingError } = await supabase
       .from('app_settings')
-      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html')
+      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html, dev_unlock_password_hash, dev_unlock_duration_minutes, dev_unlock_hide_enabled')
       .eq('id', 1)
       // ✅ id=1 행이 중복이어도 single-coercion 에러를 피하기 위해 배열로 받고 첫 행만 사용
       .limit(1)
@@ -42,6 +43,9 @@ export async function POST(req: NextRequest) {
       selected_tts_provider?: string
       selected_typecast_voice_id?: string
       home_html?: string
+      dev_unlock_password_hash?: string | null
+      dev_unlock_duration_minutes?: number | null
+      dev_unlock_hide_enabled?: boolean
     } = {
       updated_at: new Date().toISOString()
     }
@@ -113,6 +117,43 @@ export async function POST(req: NextRequest) {
       updateData.home_html = ''
     }
 
+    if (dev_unlock_password !== undefined) {
+      const rawPassword = String(dev_unlock_password || '').trim()
+      if (rawPassword === '') {
+        updateData.dev_unlock_password_hash = null
+      } else {
+        updateData.dev_unlock_password_hash = crypto
+          .createHash('sha256')
+          .update(rawPassword)
+          .digest('hex')
+      }
+    } else if (existing) {
+      updateData.dev_unlock_password_hash = (existing as any).dev_unlock_password_hash || null
+    } else {
+      updateData.dev_unlock_password_hash = null
+    }
+
+    if (dev_unlock_duration_minutes !== undefined) {
+      const rawMinutes = parseInt(String(dev_unlock_duration_minutes), 10)
+      if (Number.isFinite(rawMinutes) && rawMinutes > 0) {
+        updateData.dev_unlock_duration_minutes = rawMinutes
+      } else {
+        updateData.dev_unlock_duration_minutes = null
+      }
+    } else if (existing) {
+      updateData.dev_unlock_duration_minutes = (existing as any).dev_unlock_duration_minutes ?? null
+    } else {
+      updateData.dev_unlock_duration_minutes = null
+    }
+
+    if (dev_unlock_hide_enabled !== undefined) {
+      updateData.dev_unlock_hide_enabled = Boolean(dev_unlock_hide_enabled)
+    } else if (existing) {
+      updateData.dev_unlock_hide_enabled = Boolean((existing as any).dev_unlock_hide_enabled)
+    } else {
+      updateData.dev_unlock_hide_enabled = false
+    }
+
     let savedData: any = null
 
     if (existing) {
@@ -121,7 +162,7 @@ export async function POST(req: NextRequest) {
         .from('app_settings')
         .update(updateData)
         .eq('id', 1)
-        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html')
+        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html, dev_unlock_password_hash, dev_unlock_duration_minutes, dev_unlock_hide_enabled')
       
       if (updateError) {
 
@@ -141,7 +182,7 @@ export async function POST(req: NextRequest) {
           id: 1,
           ...updateData
         })
-        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html')
+        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html, dev_unlock_password_hash, dev_unlock_duration_minutes, dev_unlock_hide_enabled')
       
       if (insertError) {
 
@@ -164,6 +205,9 @@ export async function POST(req: NextRequest) {
       tts_provider: (savedData as any).selected_tts_provider || updateData.selected_tts_provider || 'naver',
       typecast_voice_id: (savedData as any).selected_typecast_voice_id || updateData.selected_typecast_voice_id || '',
       home_html: String((savedData as any).home_html || updateData.home_html || ''),
+      dev_unlock_password_set: Boolean((savedData as any).dev_unlock_password_hash || updateData.dev_unlock_password_hash),
+      dev_unlock_duration_minutes: (savedData as any).dev_unlock_duration_minutes ?? updateData.dev_unlock_duration_minutes ?? null,
+      dev_unlock_hide_enabled: Boolean((savedData as any).dev_unlock_hide_enabled ?? updateData.dev_unlock_hide_enabled),
     })
   } catch (error: any) {
 

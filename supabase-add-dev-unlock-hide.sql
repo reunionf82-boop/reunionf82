@@ -1,0 +1,2 @@
+ALTER TABLE app_settings
+ADD COLUMN IF NOT EXISTS dev_unlock_hide_enabled BOOLEAN DEFAULT FALSE;

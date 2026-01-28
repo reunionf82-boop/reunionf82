@@ -19,7 +19,12 @@ export default function Home() {
   const [showPrivacyPopup, setShowPrivacyPopup] = useState(false)
   const [showSlideMenu, setShowSlideMenu] = useState(false)
   const [showMyHistoryPopup, setShowMyHistoryPopup] = useState(false)
+  const [showDevUnlockModal, setShowDevUnlockModal] = useState(false)
+  const [devUnlockPasswordInput, setDevUnlockPasswordInput] = useState('')
+  const [devUnlockDurationMinutes, setDevUnlockDurationMinutes] = useState<number>(60)
+  const [devUnlockHideEnabled, setDevUnlockHideEnabled] = useState(false)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const devUnlockClickRef = useRef<{ count: number; timer: ReturnType<typeof setTimeout> | null }>({ count: 0, timer: null })
 
   const isEditableTarget = useCallback((target: EventTarget | null) => {
     if (!target || !(target instanceof HTMLElement)) return false
@@ -90,6 +95,130 @@ export default function Home() {
     })
   }, [])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const storedMinutes = localStorage.getItem('dev_unlock_duration_minutes')
+    if (storedMinutes) {
+      const parsed = parseInt(storedMinutes, 10)
+      if (Number.isFinite(parsed) && parsed > 0) {
+        setDevUnlockDurationMinutes(parsed)
+      }
+    }
+    const storedHide = localStorage.getItem('dev_unlock_hide_enabled')
+    if (storedHide !== null) {
+      setDevUnlockHideEnabled(storedHide === '1')
+    }
+    const until = localStorage.getItem('dev_unlock_until')
+    if (!until) return
+    const untilTime = parseInt(until, 10)
+    if (Number.isFinite(untilTime) && untilTime > Date.now()) {
+      return
+    } else {
+      localStorage.removeItem('dev_unlock_until')
+    }
+  }, [])
+
+  const loadDevUnlockConfig = useCallback(async () => {
+    try {
+      const response = await fetch('/api/dev-unlock/config', { cache: 'no-store' })
+      if (!response.ok) return
+      const data = await response.json()
+      const minutes = Number(data?.dev_unlock_duration_minutes || 60)
+      if (Number.isFinite(minutes) && minutes > 0) {
+        setDevUnlockDurationMinutes(minutes)
+        localStorage.setItem('dev_unlock_duration_minutes', String(minutes))
+      }
+      const hideEnabled = Boolean(data?.dev_unlock_hide_enabled)
+      setDevUnlockHideEnabled(hideEnabled)
+      localStorage.setItem('dev_unlock_hide_enabled', hideEnabled ? '1' : '0')
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadDevUnlockConfig()
+  }, [loadDevUnlockConfig])
+
+  const isDevUnlockActive = () => {
+    if (typeof window === 'undefined') return false
+    const hideEnabled = localStorage.getItem('dev_unlock_hide_enabled') === '1'
+    if (hideEnabled) return false
+    const until = localStorage.getItem('dev_unlock_until')
+    if (!until) return false
+    const untilTime = parseInt(until, 10)
+    if (!Number.isFinite(untilTime)) return false
+    if (untilTime <= Date.now()) {
+      localStorage.removeItem('dev_unlock_until')
+      return false
+    }
+    return true
+  }
+
+  const handleDevUnlockTitleClick = () => {
+    const now = Date.now()
+    if (devUnlockClickRef.current.timer) {
+      clearTimeout(devUnlockClickRef.current.timer)
+    }
+    if (devUnlockClickRef.current.count === 0) {
+      devUnlockClickRef.current.timer = setTimeout(() => {
+        devUnlockClickRef.current.count = 0
+        devUnlockClickRef.current.timer = null
+      }, 2000)
+    }
+    devUnlockClickRef.current.count += 1
+    if (devUnlockClickRef.current.count >= 5) {
+      devUnlockClickRef.current.count = 0
+      if (devUnlockClickRef.current.timer) {
+        clearTimeout(devUnlockClickRef.current.timer)
+        devUnlockClickRef.current.timer = null
+      }
+      setShowDevUnlockModal(true)
+    }
+  }
+
+  const formatUnlockDuration = (minutes: number) => {
+    const safeMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : 60
+    const hours = Math.floor(safeMinutes / 60)
+    const restMinutes = safeMinutes % 60
+    if (hours > 0 && restMinutes > 0) return `${hours}시간 ${restMinutes}분`
+    if (hours > 0) return `${hours}시간`
+    return `${restMinutes}분`
+  }
+
+  const handleDevUnlockSubmit = async () => {
+    const password = devUnlockPasswordInput.trim()
+    if (!password) {
+      alert('비밀번호를 입력해주세요.')
+      return
+    }
+    try {
+      const response = await fetch('/api/dev-unlock/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({} as any))
+        const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
+        alert(msg)
+        return
+      }
+      const data = await response.json()
+      const durationMinutes = Number(data?.dev_unlock_duration_minutes || devUnlockDurationMinutes || 60)
+      const safeMinutes = Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : 60
+      const until = Date.now() + safeMinutes * 60 * 1000
+      localStorage.setItem('dev_unlock_until', String(until))
+      localStorage.setItem('dev_unlock_duration_minutes', String(safeMinutes))
+      setDevUnlockDurationMinutes(safeMinutes)
+      setShowDevUnlockModal(false)
+      setDevUnlockPasswordInput('')
+      loadServices()
+    } catch (e) {
+      alert('인증 중 오류가 발생했습니다.')
+    }
+  }
+
   const loadServices = async () => {
     try {
       // POST 방식으로 컨텐츠 목록 가져오기 (캐시 우회)
@@ -107,11 +236,14 @@ export default function Home() {
       const result = await response.json()
       const data = result.success && result.data ? result.data : []
       
-      // ✅ 노출 컨텐츠만 프론트 메뉴에 표시 (기본값: 비노출)
-      const exposedOnly = (data || []).filter((content: any) => {
-        const v = content?.is_exposed
-        return v === true || v === 'true' || v === 1
-      })
+      const previewAllowed = isDevUnlockActive()
+      // ✅ 기본은 노출 컨텐츠만, 관리자 인증 시 비노출도 포함
+      const exposedOnly = previewAllowed
+        ? data
+        : (data || []).filter((content: any) => {
+            const v = content?.is_exposed
+            return v === true || v === 'true' || v === 1
+          })
       
       // Supabase 데이터를 ServiceCard 형식으로 변환
       const convertedServices = (exposedOnly || []).map((content: any) => ({
@@ -386,12 +518,74 @@ export default function Home() {
             <div className="pt-2">
               Copyright(c) FORTUNE82.COM All Rights Reserved.
             </div>
-            <div>
-              ㈜테크앤조이 │ 대표 : 서주형
-            </div>
+            <span
+              onClick={handleDevUnlockTitleClick}
+              className="text-white cursor-text"
+            >
+              (주)테크앤조이 │ 대표 : 서주형
+            </span>
           </div>
         </div>
       </footer>
+      )}
+
+      {/* 관리자 미리보기 잠금 해제 팝업 */}
+      {showDevUnlockModal && (
+        <div
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowDevUnlockModal(false)
+            }
+          }}
+        >
+          <div className="absolute top-0 left-0 right-0 bottom-0 bg-black/60"></div>
+          <div
+            className="relative w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
+              <h2 className="text-lg font-bold text-white">관리자 확인</h2>
+              <button
+                type="button"
+                onClick={() => setShowDevUnlockModal(false)}
+                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form
+              className="p-6 space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault()
+                handleDevUnlockSubmit()
+              }}
+            >
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">비밀번호</label>
+                <input
+                  type="password"
+                  value={devUnlockPasswordInput}
+                  onChange={(e) => setDevUnlockPasswordInput(e.target.value)}
+                  className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
+                  placeholder="관리자 비밀번호"
+                />
+              </div>
+              <div className="text-xs text-gray-500">
+                인증 후 {formatUnlockDuration(devUnlockDurationMinutes)} 동안 미노출 메뉴가 표시됩니다.
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-semibold py-3 rounded-lg transition-all"
+              >
+                확인
+              </button>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   )

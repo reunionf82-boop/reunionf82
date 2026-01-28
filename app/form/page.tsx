@@ -134,6 +134,29 @@ function FormContent() {
     }
   }, [title])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const storedMinutes = localStorage.getItem('dev_unlock_duration_minutes')
+    if (storedMinutes) {
+      const parsed = parseInt(storedMinutes, 10)
+      if (Number.isFinite(parsed) && parsed > 0) {
+        setDevUnlockDurationMinutes(parsed)
+      }
+    }
+    const storedHide = localStorage.getItem('dev_unlock_hide_enabled')
+    if (storedHide !== null) {
+      setDevUnlockHideEnabled(storedHide === '1')
+    }
+    const until = localStorage.getItem('dev_unlock_until')
+    if (!until) return
+    const untilTime = parseInt(until, 10)
+    if (Number.isFinite(untilTime) && untilTime > Date.now()) {
+      setDevUnlockEnabled(true)
+    } else {
+      localStorage.removeItem('dev_unlock_until')
+    }
+  }, [])
+
   // 이전 점사 자동 복구 (24시간 내)
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -418,6 +441,40 @@ function FormContent() {
   const [resumePhone, setResumePhone] = useState('')
   const [resumePassword, setResumePassword] = useState('')
   const [resumeLoading, setResumeLoading] = useState(false)
+  const [devUnlockEnabled, setDevUnlockEnabled] = useState(false)
+  const [showDevUnlockModal, setShowDevUnlockModal] = useState(false)
+  const [devUnlockPasswordInput, setDevUnlockPasswordInput] = useState('')
+  const [devUnlockDurationMinutes, setDevUnlockDurationMinutes] = useState<number>(60)
+  const [devUnlockHideEnabled, setDevUnlockHideEnabled] = useState(false)
+  const devUnlockClickRef = useRef<{ count: number; timer: ReturnType<typeof setTimeout> | null }>({ count: 0, timer: null })
+
+  const loadDevUnlockConfig = useCallback(async () => {
+    try {
+      const response = await fetch('/api/dev-unlock/config', { cache: 'no-store' })
+      if (!response.ok) return
+      const data = await response.json()
+      const minutes = Number(data?.dev_unlock_duration_minutes || 60)
+      if (Number.isFinite(minutes) && minutes > 0) {
+        setDevUnlockDurationMinutes(minutes)
+        localStorage.setItem('dev_unlock_duration_minutes', String(minutes))
+      }
+      const hideEnabled = Boolean(data?.dev_unlock_hide_enabled)
+      setDevUnlockHideEnabled(hideEnabled)
+      localStorage.setItem('dev_unlock_hide_enabled', hideEnabled ? '1' : '0')
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!showDevUnlockModal) return
+    void loadDevUnlockConfig()
+  }, [showDevUnlockModal, loadDevUnlockConfig])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    void loadDevUnlockConfig()
+  }, [loadDevUnlockConfig])
   
   // 결제 창 참조 (닫기용)
   const paymentWindowRef = useRef<Window | null>(null)
@@ -2142,7 +2199,19 @@ function FormContent() {
       // (기본값: 비노출, 운영자가 노출 체크 후 저장해야만 접근 가능)
       if (foundContent) {
         const exposed = foundContent?.is_exposed === true || foundContent?.is_exposed === 'true' || foundContent?.is_exposed === 1
-        if (!exposed) {
+        let previewAllowed = false
+        if (typeof window !== 'undefined') {
+          const until = localStorage.getItem('dev_unlock_until')
+          if (until) {
+            const untilTime = parseInt(until, 10)
+            if (Number.isFinite(untilTime) && untilTime > Date.now()) {
+              previewAllowed = true
+            } else {
+              localStorage.removeItem('dev_unlock_until')
+            }
+          }
+        }
+        if (!exposed && !previewAllowed) {
           setContent(null)
           setLoading(false)
           try {
@@ -2358,6 +2427,15 @@ function FormContent() {
       try {
         const contentData = await getContentById(parseInt(paymentContentId))
         if (contentData) {
+          if (typeof window !== 'undefined') {
+            const storedDuration = sessionStorage.getItem('dev_unlock_duration_minutes')
+            if (storedDuration) {
+              const parsed = parseInt(storedDuration, 10)
+              if (Number.isFinite(parsed) && parsed > 0) {
+                setDevUnlockDurationMinutes(parsed)
+              }
+            }
+          }
           // 결제 정보 저장 (status: 'success'로 명시적으로 저장)
           // 저장이 실패하면 재시도하고, 최종 실패 시 에러를 throw하여 사용자에게 알림
           let paymentSaveSuccess = false
@@ -2632,6 +2710,62 @@ function FormContent() {
   const showAlertMessage = (message: string) => {
     setAlertMessage(message)
     setShowAlert(true)
+  }
+
+  const handleDevUnlockSubmit = async () => {
+    const passwordValue = devUnlockPasswordInput.trim()
+    if (!passwordValue) {
+      showAlertMessage('비밀번호를 입력해주세요.')
+      return
+    }
+    try {
+      const response = await fetch('/api/dev-unlock/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordValue })
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({} as any))
+        const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
+        showAlertMessage(msg)
+        return
+      }
+      const data = await response.json().catch(() => ({} as any))
+      const durationMinutes = Number(data?.durationMinutes || devUnlockDurationMinutes)
+      if (Number.isFinite(durationMinutes) && durationMinutes > 0) {
+        setDevUnlockDurationMinutes(durationMinutes)
+        localStorage.setItem('dev_unlock_duration_minutes', String(durationMinutes))
+      }
+      const unlockMinutes = Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : devUnlockDurationMinutes
+      const unlockUntil = Date.now() + unlockMinutes * 60 * 1000
+      localStorage.setItem('dev_unlock_until', String(unlockUntil))
+      setDevUnlockEnabled(true)
+      setShowDevUnlockModal(false)
+      setDevUnlockPasswordInput('')
+    } catch (error) {
+      showAlertMessage('비밀번호 확인 중 오류가 발생했습니다.')
+    }
+  }
+
+  const handleDevUnlockTitleClick = () => {
+    const state = devUnlockClickRef.current
+    state.count += 1
+    if (state.timer) {
+      clearTimeout(state.timer)
+    }
+    state.timer = setTimeout(() => {
+      state.count = 0
+      state.timer = null
+    }, 2000)
+    if (state.count >= 5) {
+      state.count = 0
+      if (state.timer) {
+        clearTimeout(state.timer)
+        state.timer = null
+      }
+      setDevUnlockPasswordInput('')
+      setShowDevUnlockModal(true)
+    }
   }
 
   const handleResumeSubmit = async () => {
@@ -4391,7 +4525,12 @@ function FormContent() {
           >
             {/* 헤더 */}
             <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
-              <h2 className="text-xl font-bold text-white">결제 정보</h2>
+              <h2
+                className="text-xl font-bold text-white cursor-default"
+                onClick={handleDevUnlockTitleClick}
+              >
+                결제 정보
+              </h2>
               <button
                 type="button"
                 onClick={() => {
@@ -4530,50 +4669,113 @@ function FormContent() {
               </div>
 
               {/* 임시 결과 화면 이동 버튼 (개발용) */}
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!content || !content.id) {
-                      showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
-                      return
-                    }
-                    
-                    // 결제 완료와 동일한 방식으로 startFortuneTellingWithContent 호출
-                    const startTime = Date.now()
-                    try {
-                      await startFortuneTellingWithContent(
-                        startTime,
-                        content,
-                        {
-                          name: name,
-                          gender: gender,
-                          calendarType: calendarType,
-                          year: year,
-                          month: month,
-                          day: day,
-                          birthHour: birthHour || '',
-                          partnerName: isGonghapType ? partnerName : '',
-                          partnerGender: isGonghapType ? partnerGender : '',
-                          partnerCalendarType: isGonghapType ? partnerCalendarType : 'solar',
-                          partnerYear: isGonghapType ? partnerYear : '',
-                          partnerMonth: isGonghapType ? partnerMonth : '',
-                          partnerDay: isGonghapType ? partnerDay : '',
-                          partnerBirthHour: isGonghapType ? partnerBirthHour : ''
-                        },
-                        true // 결제 성공으로 인한 이동 플래그
-                      )
-                    } catch (error) {
+              {devUnlockEnabled && !devUnlockHideEnabled && (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!content || !content.id) {
+                        showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
+                        return
+                      }
+                      
+                      // 결제 완료와 동일한 방식으로 startFortuneTellingWithContent 호출
+                      const startTime = Date.now()
+                      try {
+                        await startFortuneTellingWithContent(
+                          startTime,
+                          content,
+                          {
+                            name: name,
+                            gender: gender,
+                            calendarType: calendarType,
+                            year: year,
+                            month: month,
+                            day: day,
+                            birthHour: birthHour || '',
+                            partnerName: isGonghapType ? partnerName : '',
+                            partnerGender: isGonghapType ? partnerGender : '',
+                            partnerCalendarType: isGonghapType ? partnerCalendarType : 'solar',
+                            partnerYear: isGonghapType ? partnerYear : '',
+                            partnerMonth: isGonghapType ? partnerMonth : '',
+                            partnerDay: isGonghapType ? partnerDay : '',
+                            partnerBirthHour: isGonghapType ? partnerBirthHour : ''
+                          },
+                          true // 결제 성공으로 인한 이동 플래그
+                        )
+                      } catch (error) {
 
-                      showAlertMessage(error instanceof Error ? error.message : '리절트 화면 이동 중 오류가 발생했습니다.')
-                    }
-                  }}
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
-                >
-                  리절트로 이동 (임시)
-                </button>
-              </div>
+                        showAlertMessage(error instanceof Error ? error.message : '리절트 화면 이동 중 오류가 발생했습니다.')
+                      }
+                    }}
+                    className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
+                  >
+                    리절트로 이동 (임시)
+                  </button>
+                </div>
+              )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 개발용 버튼 잠금 해제 팝업 */}
+      {showDevUnlockModal && (
+        <div
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowDevUnlockModal(false)
+            }
+          }}
+        >
+          <div className="absolute top-0 left-0 right-0 bottom-0 bg-black/60"></div>
+          <div
+            className="relative w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
+              <h2 className="text-lg font-bold text-white">관리자 확인</h2>
+              <button
+                type="button"
+                onClick={() => setShowDevUnlockModal(false)}
+                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form
+              className="p-6 space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault()
+                handleDevUnlockSubmit()
+              }}
+            >
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">비밀번호</label>
+                <input
+                  type="password"
+                  value={devUnlockPasswordInput}
+                  onChange={(e) => setDevUnlockPasswordInput(e.target.value)}
+                  className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
+                  placeholder="관리자 비밀번호"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
+              >
+                확인
+              </button>
+              <p className="text-xs text-gray-500">
+                인증 후 {devUnlockDurationMinutes >= 60
+                  ? `${Math.floor(devUnlockDurationMinutes / 60)}시간${devUnlockDurationMinutes % 60 ? ` ${devUnlockDurationMinutes % 60}분` : ''}`
+                  : `${devUnlockDurationMinutes}분`} 동안 임시 버튼이 표시됩니다.
+              </p>
+            </form>
           </div>
         </div>
       )}
@@ -4641,7 +4843,7 @@ function FormContent() {
                 {resumeLoading ? '처리 중...' : '재시도하기'}
               </button>
               <p className="text-xs text-gray-500">
-                결제에 사용한 휴대폰 번호와 비밀번호로 재시도할 수 있습니다.
+                결제 후 12시간 이내에만 재시도할 수 있습니다.
               </p>
             </div>
           </div>

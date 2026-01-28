@@ -31,10 +31,12 @@ export async function POST(request: NextRequest) {
     }
 
     const nowIso = new Date().toISOString()
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString()
     const { data, error } = await supabase
       .from('user_credentials')
       .select('id, request_key, saved_id, encrypted_phone, encrypted_password, created_at, expires_at')
       .gt('expires_at', nowIso)
+      .gte('created_at', twelveHoursAgo)
       .order('created_at', { ascending: false })
       .limit(200)
 

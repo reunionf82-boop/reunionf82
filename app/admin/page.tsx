@@ -15,6 +15,13 @@ export default function AdminPage() {
   const [selectedSpeaker, setSelectedSpeaker] = useState<string | null>(null)
   const [selectedTtsProvider, setSelectedTtsProvider] = useState<'naver' | 'typecast' | null>(null)
   const [selectedTypecastVoiceId, setSelectedTypecastVoiceId] = useState<string | null>(null)
+  const [devUnlockPassword, setDevUnlockPassword] = useState('')
+  const [devUnlockPasswordConfirm, setDevUnlockPasswordConfirm] = useState('')
+  const [devUnlockPasswordSet, setDevUnlockPasswordSet] = useState(false)
+  const [devUnlockSaving, setDevUnlockSaving] = useState(false)
+  const [devUnlockDurationMinutes, setDevUnlockDurationMinutes] = useState<string>('60')
+  const [devUnlockHideEnabled, setDevUnlockHideEnabled] = useState(false)
+  const [devUnlockHideSaving, setDevUnlockHideSaving] = useState(false)
   const [homeHtml, setHomeHtml] = useState<string>('')
   const [showHomeHtmlModal, setShowHomeHtmlModal] = useState(false)
   const [showHomeHtmlPreview, setShowHomeHtmlPreview] = useState(false)
@@ -270,6 +277,16 @@ export default function AdminPage() {
         setSelectedTypecastVoiceId(loadedVoiceId)
       }
 
+      if (data.dev_unlock_password_set !== undefined) {
+        setDevUnlockPasswordSet(Boolean(data.dev_unlock_password_set))
+      }
+      if (data.dev_unlock_duration_minutes !== undefined && data.dev_unlock_duration_minutes !== null) {
+        setDevUnlockDurationMinutes(String(data.dev_unlock_duration_minutes))
+      }
+      if (data.dev_unlock_hide_enabled !== undefined) {
+        setDevUnlockHideEnabled(Boolean(data.dev_unlock_hide_enabled))
+      }
+
       // 홈html은 별도 API로 조회 (리뷰이벤트와 동일한 방식)
       // loadHomeHtml() 함수에서 처리
 
@@ -367,6 +384,70 @@ export default function AdminPage() {
       alert('조회 중 오류가 발생했습니다.')
     } finally {
       setResumeAdminLoading(false)
+    }
+  }
+
+  const handleSaveDevUnlockPassword = async () => {
+    if (devUnlockSaving) return
+    if (devUnlockPassword.trim().length < 4) {
+      alert('비밀번호는 4자리 이상이어야 합니다.')
+      return
+    }
+    if (devUnlockPassword !== devUnlockPasswordConfirm) {
+      alert('비밀번호가 일치하지 않습니다.')
+      return
+    }
+    const durationNumber = parseInt(devUnlockDurationMinutes, 10)
+    if (!Number.isFinite(durationNumber) || durationNumber <= 0) {
+      alert('노출 시간(분)을 올바르게 입력해주세요.')
+      return
+    }
+    setDevUnlockSaving(true)
+    try {
+      const response = await fetch('/api/admin/settings/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dev_unlock_password: devUnlockPassword,
+          dev_unlock_duration_minutes: durationNumber,
+          dev_unlock_hide_enabled: devUnlockHideEnabled
+        })
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({} as any))
+        const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
+        throw new Error(msg)
+      }
+      setDevUnlockPassword('')
+      setDevUnlockPasswordConfirm('')
+      setDevUnlockPasswordSet(true)
+      alert('비밀번호가 저장되었습니다.')
+    } catch (error: any) {
+      alert(error?.message || '비밀번호 저장에 실패했습니다.')
+    } finally {
+      setDevUnlockSaving(false)
+    }
+  }
+
+  const handleSaveDevUnlockHide = async () => {
+    if (devUnlockHideSaving) return
+    setDevUnlockHideSaving(true)
+    try {
+      const response = await fetch('/api/admin/settings/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dev_unlock_hide_enabled: devUnlockHideEnabled })
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({} as any))
+        const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
+        throw new Error(msg)
+      }
+      alert('감추기 설정이 저장되었습니다.')
+    } catch (error: any) {
+      alert(error?.message || '감추기 설정 저장에 실패했습니다.')
+    } finally {
+      setDevUnlockHideSaving(false)
     }
   }
 
@@ -766,6 +847,71 @@ export default function AdminPage() {
                 </button>
               </div>
             )}
+            <div className="mt-2 bg-gray-800 rounded-lg p-3 border border-gray-700 w-full max-w-xl">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-white">폼 임시 결과 버튼 비밀번호</h3>
+                <span className={`text-xs ${devUnlockPasswordSet ? 'text-green-400' : 'text-yellow-400'}`}>
+                  {devUnlockPasswordSet ? '설정됨' : '미설정'}
+                </span>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={devUnlockPassword}
+                  onChange={(e) => setDevUnlockPassword(e.target.value)}
+                  className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  placeholder="비밀번호 (4자리 이상)"
+                />
+                <input
+                  type="text"
+                  value={devUnlockPasswordConfirm}
+                  onChange={(e) => setDevUnlockPasswordConfirm(e.target.value)}
+                  className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  placeholder="비밀번호 확인"
+                />
+                <input
+                  type="number"
+                  min="1"
+                  value={devUnlockDurationMinutes}
+                  onChange={(e) => setDevUnlockDurationMinutes(e.target.value)}
+                  className="w-28 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-pink-500"
+                  placeholder="분"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveDevUnlockPassword}
+                  disabled={devUnlockSaving}
+                  className="bg-pink-600 hover:bg-pink-700 text-white text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+                >
+                  {devUnlockSaving ? '저장 중...' : '저장'}
+                </button>
+              </div>
+              <div className="mt-2 text-xs text-gray-400 space-y-1">
+                <div>• 노출 시간은 분 단위로 설정하며, 해당 시간동안 재입력 없이 표시됨</div>
+                <div>• 프론트 홈 하단의 “(주)테크앤조이”를 5회 클릭 후 비밀번호를 입력하면 미배포 컨텐츠가 노출됨</div>
+                <div>• 미배포 컨텐츠 노출 상태에서 폼 페이지/점사 확인까지 테스트 가능</div>
+                <div>• 폼페이지 결제정보 팝업에서 “결제 정보” 타이틀을 5회 클릭 후 비밀번호를 입력하면 “리절트로 이동 (임시)” 버튼이 노출됨</div>
+              </div>
+              <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-gray-300">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={devUnlockHideEnabled}
+                    onChange={(e) => setDevUnlockHideEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-700 bg-gray-900 text-pink-500 focus:ring-pink-500"
+                  />
+                  감추기 (ON이면 노출시간 내에도 임시버튼과 미배포 컨텐츠 노출 숨김)
+                </label>
+                <button
+                  type="button"
+                  onClick={handleSaveDevUnlockHide}
+                  disabled={devUnlockHideSaving}
+                  className="bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50"
+                >
+                  {devUnlockHideSaving ? '저장 중...' : '감추기 저장'}
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* (이전 위치) 점사 모드 + TTS 설정: 모델 선택 토글 아래로 이동 */}

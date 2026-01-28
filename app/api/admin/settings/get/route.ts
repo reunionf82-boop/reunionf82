@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     // 직접 모든 필드를 조회하여 실제 DB 값을 확인
     const { data: rows, error } = await supabase
       .from('app_settings')
-      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html, updated_at')
+      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html, updated_at, dev_unlock_password_hash, dev_unlock_duration_minutes, dev_unlock_hide_enabled')
       .eq('id', 1)
       // ✅ id=1 행이 중복이어도 single-coercion 에러를 피하기 위해 배열로 받고 첫 행만 사용
       .limit(1)
@@ -115,6 +115,9 @@ export async function GET(req: NextRequest) {
       tts_provider: finalTtsProvider,
       typecast_voice_id: finalTypecastVoiceId,
       home_html: String((data as any).home_html || ''),
+      dev_unlock_password_set: Boolean((data as any).dev_unlock_password_hash),
+      dev_unlock_duration_minutes: (data as any).dev_unlock_duration_minutes ?? null,
+      dev_unlock_hide_enabled: Boolean((data as any).dev_unlock_hide_enabled),
       // review_event_banners는 컬럼이 없을 수 있으므로 선택적으로 포함
       review_event_banners: Array.isArray((data as any).review_event_banners) ? (data as any).review_event_banners : [],
     }, {
