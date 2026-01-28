@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import ServiceCard from '@/components/ServiceCard'
 import { getContents } from '@/lib/supabase-admin'
 import TermsPopup from '@/components/TermsPopup'
@@ -20,6 +20,68 @@ export default function Home() {
   const [showSlideMenu, setShowSlideMenu] = useState(false)
   const [showMyHistoryPopup, setShowMyHistoryPopup] = useState(false)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  const isEditableTarget = useCallback((target: EventTarget | null) => {
+    if (!target || !(target instanceof HTMLElement)) return false
+    const tagName = target.tagName
+    return (
+      tagName === 'INPUT' ||
+      tagName === 'TEXTAREA' ||
+      target.isContentEditable
+    )
+  }, [])
+
+  useEffect(() => {
+    const handleContextMenu = (event: MouseEvent) => {
+      if (isEditableTarget(event.target)) return
+      event.preventDefault()
+    }
+    const handleSelectStart = (event: Event) => {
+      if (isEditableTarget(event.target)) return
+      event.preventDefault()
+    }
+    const handleCopy = (event: ClipboardEvent) => {
+      if (isEditableTarget(event.target)) return
+      event.preventDefault()
+    }
+    const handleCut = (event: ClipboardEvent) => {
+      if (isEditableTarget(event.target)) return
+      event.preventDefault()
+    }
+    const handleDragStart = (event: DragEvent) => {
+      const target = event.target
+      if (target instanceof HTMLElement) {
+        const tagName = target.tagName
+        if (tagName === 'IMG' || tagName === 'VIDEO') {
+          event.preventDefault()
+        }
+      }
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return
+      if (!event.ctrlKey && !event.metaKey) return
+      const key = event.key.toLowerCase()
+      if (['c', 'x', 's', 'p', 'u', 'i'].includes(key)) {
+        event.preventDefault()
+      }
+    }
+
+    document.addEventListener('contextmenu', handleContextMenu, true)
+    document.addEventListener('selectstart', handleSelectStart, true)
+    document.addEventListener('copy', handleCopy, true)
+    document.addEventListener('cut', handleCut, true)
+    document.addEventListener('dragstart', handleDragStart, true)
+    document.addEventListener('keydown', handleKeyDown, true)
+
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu, true)
+      document.removeEventListener('selectstart', handleSelectStart, true)
+      document.removeEventListener('copy', handleCopy, true)
+      document.removeEventListener('cut', handleCut, true)
+      document.removeEventListener('dragstart', handleDragStart, true)
+      document.removeEventListener('keydown', handleKeyDown, true)
+    }
+  }, [isEditableTarget])
 
   useEffect(() => {
     // HTML을 먼저 로드하고, 그 다음에 서비스 로드
@@ -225,6 +287,36 @@ export default function Home() {
                 try {
                   const iframe = iframeRef.current
                   if (iframe?.contentWindow?.document?.body) {
+                    const iframeDocument = iframe.contentWindow.document
+                    const blockInIframe = (event: Event) => {
+                      if (event.target && isEditableTarget(event.target)) return
+                      event.preventDefault()
+                    }
+                    const blockDragInIframe = (event: DragEvent) => {
+                      const target = event.target
+                      if (target instanceof HTMLElement) {
+                        const tagName = target.tagName
+                        if (tagName === 'IMG' || tagName === 'VIDEO') {
+                          event.preventDefault()
+                        }
+                      }
+                    }
+                    const blockKeyInIframe = (event: KeyboardEvent) => {
+                      if (isEditableTarget(event.target)) return
+                      if (!event.ctrlKey && !event.metaKey) return
+                      const key = event.key.toLowerCase()
+                      if (['c', 'x', 's', 'p', 'u', 'i'].includes(key)) {
+                        event.preventDefault()
+                      }
+                    }
+
+                    iframeDocument.addEventListener('contextmenu', blockInIframe, true)
+                    iframeDocument.addEventListener('selectstart', blockInIframe, true)
+                    iframeDocument.addEventListener('copy', blockInIframe, true)
+                    iframeDocument.addEventListener('cut', blockInIframe, true)
+                    iframeDocument.addEventListener('dragstart', blockDragInIframe, true)
+                    iframeDocument.addEventListener('keydown', blockKeyInIframe, true)
+
                     const height = Math.max(
                       iframe.contentWindow.document.body.scrollHeight,
                       iframe.contentWindow.document.documentElement.scrollHeight,

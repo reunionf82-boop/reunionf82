@@ -713,10 +713,15 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             : [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
           
           const firstMenuValue = firstItem.value || ''
+          // 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
+          let firstMenuThumbnailImageUrl = firstItem.thumbnail_image_url || firstItem.thumbnail || ''
+          if (!firstMenuThumbnailImageUrl && firstItem.thumbnail_video_url) {
+            firstMenuThumbnailImageUrl = getThumbnailUrl(`${firstItem.thumbnail_video_url}.jpg`)
+          }
           setFirstMenuField({
             value: firstMenuValue,
             thumbnail: firstItem.thumbnail || '', // 하위 호환성(이전 구조 유지)
-            thumbnailImageUrl: firstItem.thumbnail_image_url || firstItem.thumbnail || '', // 하위 호환성
+            thumbnailImageUrl: firstMenuThumbnailImageUrl, // 하위 호환성
             thumbnailVideoUrl: firstItem.thumbnail_video_url || '',
             // 대메뉴에 값이 있는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
             subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
@@ -794,6 +799,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         setFirstMenuField({
             value: firstMenuValue,
           thumbnail: data.menu_items[0].thumbnail || '',
+          thumbnailImageUrl: data.menu_items[0].thumbnail || '',
+          thumbnailVideoUrl: '',
             // 대메뉴에 값이 있는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
             subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
               ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
