@@ -161,7 +161,89 @@ function ResultContent() {
     const urlRequestKey = searchParams.get('requestKey')
     const urlIsStreaming = searchParams.get('stream') === 'true'
     const urlGeneratePdf = searchParams.get('generatePdf') === 'true'
+    const urlResumeToken = searchParams.get('resumeToken')
+    const urlResumeCode = searchParams.get('resume')
     
+    if (urlResumeCode) {
+      void (async () => {
+        try {
+          const response = await fetch(`/api/resume-code/resolve?code=${encodeURIComponent(urlResumeCode)}`)
+          if (!response.ok) {
+            setError('복구 링크가 만료되었거나 유효하지 않습니다.')
+            setDataLoaded(true)
+            return
+          }
+          const data = await response.json()
+          const resolvedSavedId = data?.savedId ? String(data.savedId) : ''
+          const resolvedRequestKey = data?.requestKey ? String(data.requestKey) : ''
+          if (resolvedSavedId) {
+            savedIdRef.current = resolvedSavedId
+            setSavedId(resolvedSavedId)
+            sessionStorage.setItem('result_savedId', resolvedSavedId)
+          } else if (resolvedRequestKey) {
+            requestKeyRef.current = resolvedRequestKey
+            setRequestKey(resolvedRequestKey)
+            setIsStreaming(true)
+            setIsRealtime(true)
+            sessionStorage.setItem('result_requestKey', resolvedRequestKey)
+            sessionStorage.setItem('result_stream', 'true')
+          } else {
+            setError('복구 가능한 정보가 없습니다.')
+          }
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href)
+            url.searchParams.delete('resume')
+            window.history.replaceState({}, '', url.toString())
+          }
+          setDataLoaded(true)
+        } catch (e) {
+          setError('복구 링크 처리 중 오류가 발생했습니다.')
+          setDataLoaded(true)
+        }
+      })()
+      return
+    }
+
+    if (urlResumeToken) {
+      void (async () => {
+        try {
+          const response = await fetch(`/api/resume-token/resolve?token=${encodeURIComponent(urlResumeToken)}`)
+          if (!response.ok) {
+            setError('복구 링크가 만료되었거나 유효하지 않습니다.')
+            setDataLoaded(true)
+            return
+          }
+          const data = await response.json()
+          const resolvedSavedId = data?.savedId ? String(data.savedId) : ''
+          const resolvedRequestKey = data?.requestKey ? String(data.requestKey) : ''
+          if (resolvedSavedId) {
+            savedIdRef.current = resolvedSavedId
+            setSavedId(resolvedSavedId)
+            sessionStorage.setItem('result_savedId', resolvedSavedId)
+          } else if (resolvedRequestKey) {
+            requestKeyRef.current = resolvedRequestKey
+            setRequestKey(resolvedRequestKey)
+            setIsStreaming(true)
+            setIsRealtime(true)
+            sessionStorage.setItem('result_requestKey', resolvedRequestKey)
+            sessionStorage.setItem('result_stream', 'true')
+          } else {
+            setError('복구 가능한 정보가 없습니다.')
+          }
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href)
+            url.searchParams.delete('resumeToken')
+            window.history.replaceState({}, '', url.toString())
+          }
+          setDataLoaded(true)
+        } catch (e) {
+          setError('복구 링크 처리 중 오류가 발생했습니다.')
+          setDataLoaded(true)
+        }
+      })()
+      return
+    }
+
     if (urlStorageKey) {
       setStorageKey(urlStorageKey)
     }

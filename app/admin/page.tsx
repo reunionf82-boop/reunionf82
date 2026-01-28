@@ -391,6 +391,25 @@ export default function AdminPage() {
     }
   }
 
+  const createResumeCodeLink = async (payload: { savedId?: string; requestKey?: string }) => {
+    const response = await fetch('/api/admin/resume-code/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({} as any))
+      const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
+      throw new Error(msg)
+    }
+    const data = await response.json()
+    const code = data?.code
+    if (!code) {
+      throw new Error('숏코드 생성에 실패했습니다.')
+    }
+    return `${getBaseUrl()}/result?resume=${encodeURIComponent(String(code))}`
+  }
+
   const formatPhoneWithPrefix = (input: string) => {
     let value = String(input || '').replace(/[^0-9]/g, '')
     if (!value.startsWith('010')) {
@@ -1473,8 +1492,14 @@ export default function AdminPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          const link = `${getBaseUrl()}/result?savedId=${encodeURIComponent(String(resumeAdminResult.savedId))}`
-                          copyResumeLink(link)
+                          void (async () => {
+                            try {
+                              const link = await createResumeCodeLink({ savedId: String(resumeAdminResult.savedId) })
+                              await copyResumeLink(link)
+                            } catch (e: any) {
+                              alert(e?.message || '링크 생성에 실패했습니다.')
+                            }
+                          })()
                         }}
                         className="w-full bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded"
                       >
@@ -1483,8 +1508,14 @@ export default function AdminPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          const link = `${getBaseUrl()}/result?savedId=${encodeURIComponent(String(resumeAdminResult.savedId))}`
-                          window.open(link, '_blank')
+                          void (async () => {
+                            try {
+                              const link = await createResumeCodeLink({ savedId: String(resumeAdminResult.savedId) })
+                              window.open(link, '_blank')
+                            } catch (e: any) {
+                              alert(e?.message || '링크 생성에 실패했습니다.')
+                            }
+                          })()
                         }}
                         className="w-full bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-2 rounded"
                       >
@@ -1501,8 +1532,14 @@ export default function AdminPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          const link = `${getBaseUrl()}/result?requestKey=${encodeURIComponent(String(resumeAdminResult.requestKey))}&stream=true`
-                          copyResumeLink(link)
+                          void (async () => {
+                            try {
+                              const link = await createResumeCodeLink({ requestKey: String(resumeAdminResult.requestKey) })
+                              await copyResumeLink(link)
+                            } catch (e: any) {
+                              alert(e?.message || '링크 생성에 실패했습니다.')
+                            }
+                          })()
                         }}
                         className="w-full bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded"
                       >
@@ -1511,8 +1548,14 @@ export default function AdminPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          const link = `${getBaseUrl()}/result?requestKey=${encodeURIComponent(String(resumeAdminResult.requestKey))}&stream=true`
-                          window.open(link, '_blank')
+                          void (async () => {
+                            try {
+                              const link = await createResumeCodeLink({ requestKey: String(resumeAdminResult.requestKey) })
+                              window.open(link, '_blank')
+                            } catch (e: any) {
+                              alert(e?.message || '링크 생성에 실패했습니다.')
+                            }
+                          })()
                         }}
                         className="w-full bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-2 rounded"
                       >
