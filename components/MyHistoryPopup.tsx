@@ -2209,7 +2209,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
               <div className="p-6 pb-0 space-y-6">
                 <div className="bg-pink-50 border border-pink-200 rounded-lg p-4">
                   <p className="text-sm text-pink-700">
-                    * 최근 6개월간의 이용내역만 조회 가능합니다.
+                    * 최근 60일간의 이용내역만 조회 가능합니다.
                   </p>
                 </div>
               </div>

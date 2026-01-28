@@ -35,9 +35,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 24시간 후 만료 시간 계산 (KST 기준)
+    // 60일 후 만료 시간 계산 (KST 기준)
     const nowKST = new Date(getKSTNow())
-    const expiresAt = new Date(nowKST.getTime() + 24 * 60 * 60 * 1000) // 24시간 후
+    const expiresAt = new Date(nowKST.getTime() + 60 * 24 * 60 * 60 * 1000) // 60일 후
 
     // 디버그 로그 (saved_id가 NULL로 들어가는지 확인용)
     // 암호화

@@ -1640,6 +1640,12 @@ ${fontFace ? fontFace : ''}
         if (savedResultId) {
           savedIdRef.current = String(savedResultId)
           setSavedId(String(savedResultId))
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('resume_savedId', String(savedResultId))
+            localStorage.setItem('resume_in_progress', 'false')
+            localStorage.setItem('resume_timestamp', String(Date.now()))
+            localStorage.removeItem('resume_requestKey')
+          }
         }
 
         // 저장된 HTML이 비어있으면 경고

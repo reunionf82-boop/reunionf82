@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS user_credentials (
   encrypted_phone TEXT NOT NULL, -- 암호화된 휴대폰 번호
   encrypted_password TEXT NOT NULL, -- 암호화된 비밀번호
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  expires_at TIMESTAMPTZ NOT NULL -- 24시간 후 자동 만료
+  expires_at TIMESTAMPTZ NOT NULL -- 60일 후 자동 만료
 );
 
 -- 인덱스 생성 (조회 성능 향상)

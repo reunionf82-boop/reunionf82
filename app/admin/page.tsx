@@ -90,6 +90,16 @@ export default function AdminPage() {
   const [showInquiryModal, setShowInquiryModal] = useState(false)
   const [inquiries, setInquiries] = useState<any[]>([])
   const [loadingInquiries, setLoadingInquiries] = useState(false)
+  const [showResumeAdminModal, setShowResumeAdminModal] = useState(false)
+  const [resumeAdminPhone, setResumeAdminPhone] = useState('')
+  const [resumeAdminPassword, setResumeAdminPassword] = useState('')
+  const [resumeAdminLoading, setResumeAdminLoading] = useState(false)
+  const [resumeAdminResult, setResumeAdminResult] = useState<{
+    savedId?: string | null
+    requestKey?: string | null
+    createdAt?: string | null
+    expiresAt?: string | null
+  } | null>(null)
 
   // 결제 통계 대시보드 상태
   const [showPaymentStats, setShowPaymentStats] = useState(false)
@@ -317,6 +327,92 @@ export default function AdminPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleResumeAdminSearch = async () => {
+    if (resumeAdminLoading) return
+    const normalizedPhone = resumeAdminPhone.replace(/[^0-9]/g, '')
+    if (!normalizedPhone || normalizedPhone.length < 8) {
+      alert('휴대폰 번호를 정확히 입력해주세요.')
+      return
+    }
+    if (!resumeAdminPassword || resumeAdminPassword.length < 4) {
+      alert('비밀번호를 4자리 이상 입력해주세요.')
+      return
+    }
+    setResumeAdminLoading(true)
+    try {
+      const response = await fetch('/api/admin/user-credentials/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: resumeAdminPhone,
+          password: resumeAdminPassword
+        })
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({} as any))
+        const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
+        alert(msg)
+        return
+      }
+      const data = await response.json()
+      setResumeAdminResult({
+        savedId: data?.savedId || null,
+        requestKey: data?.requestKey || null,
+        createdAt: data?.createdAt || null,
+        expiresAt: data?.expiresAt || null
+      })
+    } catch (error) {
+      alert('조회 중 오류가 발생했습니다.')
+    } finally {
+      setResumeAdminLoading(false)
+    }
+  }
+
+  const copyResumeLink = async (link: string) => {
+    try {
+      await navigator.clipboard.writeText(link)
+      alert('링크가 복사되었습니다.')
+    } catch (e) {
+      const textArea = document.createElement('textarea')
+      textArea.value = link
+      textArea.style.position = 'fixed'
+      textArea.style.opacity = '0'
+      document.body.appendChild(textArea)
+      textArea.select()
+      try {
+        document.execCommand('copy')
+        alert('링크가 복사되었습니다.')
+      } catch (err) {
+        alert('복사에 실패했습니다. 수동으로 복사해주세요:\n' + link)
+      }
+      document.body.removeChild(textArea)
+    }
+  }
+
+  const formatPhoneWithPrefix = (input: string) => {
+    let value = String(input || '').replace(/[^0-9]/g, '')
+    if (!value.startsWith('010')) {
+      if (value.length < 3) {
+        value = '010'
+      } else {
+        value = `010${value}`
+      }
+    }
+    if (value.length > 11) {
+      value = value.slice(0, 11)
+    }
+    if (value.length <= 3) return '010-'
+    if (value.length <= 7) return `010-${value.slice(3)}`
+    return `010-${value.slice(3, 7)}-${value.slice(7)}`
+  }
+
+  const getBaseUrl = () => {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return window.location.origin
+    }
+    return ''
   }
 
   const handleModelChange = async (model: string) => {
@@ -555,6 +651,18 @@ export default function AdminPage() {
                 title="문의 관리"
               >
                 문의 관리
+              </button>
+              <button
+                onClick={() => {
+                  setResumeAdminResult(null)
+                  setResumeAdminPhone('010-')
+                  setResumeAdminPassword('')
+                  setShowResumeAdminModal(true)
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200"
+                title="점사 재시도 조회"
+              >
+                재시도 조회
               </button>
             </div>
             
@@ -1293,6 +1401,134 @@ export default function AdminPage() {
         isOpen={showPaymentStats}
         onClose={() => setShowPaymentStats(false)}
       />
+
+      {/* 점사 재시도 조회 모달 */}
+      {showResumeAdminModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-md flex flex-col">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex items-center justify-between rounded-t-lg">
+              <h2 className="text-xl font-bold text-white">점사 재시도 조회</h2>
+              <button
+                onClick={() => {
+                  if (resumeAdminLoading) return
+                  setShowResumeAdminModal(false)
+                }}
+                className="text-white hover:text-gray-200 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-blue-800 transition-colors"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-white mb-2">휴대폰 번호</label>
+                <input
+                  type="text"
+                  value={resumeAdminPhone}
+                  onChange={(e) => setResumeAdminPhone(formatPhoneWithPrefix(e.target.value))}
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="010-0000-0000"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-white mb-2">비밀번호</label>
+                <input
+                  type="password"
+                  value={resumeAdminPassword}
+                  onChange={(e) => setResumeAdminPassword(e.target.value)}
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="비밀번호"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleResumeAdminSearch}
+                disabled={resumeAdminLoading}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-50"
+              >
+                {resumeAdminLoading ? '조회 중...' : '조회'}
+              </button>
+              <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 text-xs text-gray-300 space-y-2">
+                <div className="text-gray-200 font-semibold">처리 매뉴얼</div>
+                <div>1) 휴대폰/비밀번호로 조회</div>
+                <div>2) saved_id가 있으면 결과 링크 복사/열기</div>
+                <div>3) request_key만 있으면 재시도 링크 복사/열기</div>
+                <div>4) 사용자에게 링크 전달 (60일 조회 가능)</div>
+              </div>
+              {resumeAdminResult && (
+                <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 text-sm text-gray-200 space-y-3">
+                  <div>
+                    <span className="text-gray-400">생성일:</span>{' '}
+                    <span>{resumeAdminResult.createdAt || '알 수 없음'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">만료:</span>{' '}
+                    <span>{resumeAdminResult.expiresAt || '알 수 없음'}</span>
+                  </div>
+                  {resumeAdminResult.savedId && (
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-gray-400">saved_id:</span>{' '}
+                        <span>{resumeAdminResult.savedId}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = `${getBaseUrl()}/result?savedId=${encodeURIComponent(String(resumeAdminResult.savedId))}`
+                          copyResumeLink(link)
+                        }}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded"
+                      >
+                        결과 링크 복사
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = `${getBaseUrl()}/result?savedId=${encodeURIComponent(String(resumeAdminResult.savedId))}`
+                          window.open(link, '_blank')
+                        }}
+                        className="w-full bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-2 rounded"
+                      >
+                        결과 열기
+                      </button>
+                    </div>
+                  )}
+                  {!resumeAdminResult.savedId && resumeAdminResult.requestKey && (
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-gray-400">request_key:</span>{' '}
+                        <span>{resumeAdminResult.requestKey}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = `${getBaseUrl()}/result?requestKey=${encodeURIComponent(String(resumeAdminResult.requestKey))}&stream=true`
+                          copyResumeLink(link)
+                        }}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded"
+                      >
+                        재시도 링크 복사
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = `${getBaseUrl()}/result?requestKey=${encodeURIComponent(String(resumeAdminResult.requestKey))}&stream=true`
+                          window.open(link, '_blank')
+                        }}
+                        className="w-full bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-2 rounded"
+                      >
+                        재시도 열기
+                      </button>
+                    </div>
+                  )}
+                  {!resumeAdminResult.savedId && !resumeAdminResult.requestKey && (
+                    <div className="text-yellow-300">복구 가능한 데이터가 없습니다.</div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 문의 관리 모달 */}
       {showInquiryModal && (

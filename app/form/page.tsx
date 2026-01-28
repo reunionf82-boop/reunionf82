@@ -133,6 +133,40 @@ function FormContent() {
       window.removeEventListener('focus', handleFocus)
     }
   }, [title])
+
+  // 이전 점사 자동 복구 (24시간 내)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (sessionStorage.getItem('resume_auto_checked')) return
+    sessionStorage.setItem('resume_auto_checked', '1')
+
+    const resumeTimestamp = localStorage.getItem('resume_timestamp')
+    if (resumeTimestamp) {
+      const diff = Date.now() - parseInt(resumeTimestamp, 10)
+      if (!Number.isFinite(diff) || diff > 24 * 60 * 60 * 1000) {
+        localStorage.removeItem('resume_requestKey')
+        localStorage.removeItem('resume_savedId')
+        localStorage.removeItem('resume_in_progress')
+        localStorage.removeItem('resume_timestamp')
+        return
+      }
+    }
+
+    const savedId = localStorage.getItem('resume_savedId')
+    if (savedId) {
+      sessionStorage.setItem('result_savedId', savedId)
+      router.push(`/result?savedId=${encodeURIComponent(savedId)}`)
+      return
+    }
+
+    const requestKey = localStorage.getItem('resume_requestKey')
+    const inProgress = localStorage.getItem('resume_in_progress')
+    if (requestKey && inProgress === 'true') {
+      sessionStorage.setItem('result_requestKey', requestKey)
+      sessionStorage.setItem('result_stream', 'true')
+      router.push(`/result?requestKey=${encodeURIComponent(requestKey)}&stream=true`)
+    }
+  }, [router])
   
   const [content, setContent] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -380,6 +414,10 @@ function FormContent() {
   const [phoneNumber2, setPhoneNumber2] = useState('')
   const [phoneNumber3, setPhoneNumber3] = useState('')
   const [password, setPassword] = useState('')
+  const [showResumePopup, setShowResumePopup] = useState(false)
+  const [resumePhone, setResumePhone] = useState('')
+  const [resumePassword, setResumePassword] = useState('')
+  const [resumeLoading, setResumeLoading] = useState(false)
   
   // 결제 창 참조 (닫기용)
   const paymentWindowRef = useRef<Window | null>(null)
@@ -2596,6 +2634,69 @@ function FormContent() {
     setShowAlert(true)
   }
 
+  const handleResumeSubmit = async () => {
+    if (resumeLoading) return
+    const normalizedPhone = resumePhone.replace(/[^0-9]/g, '')
+    if (!normalizedPhone || normalizedPhone.length < 8) {
+      showAlertMessage('휴대폰 번호를 정확히 입력해주세요.')
+      return
+    }
+    if (!resumePassword || resumePassword.length < 4) {
+      showAlertMessage('비밀번호를 4자리 이상 입력해주세요.')
+      return
+    }
+
+    setResumeLoading(true)
+    try {
+      const response = await fetch('/api/user-credentials/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: resumePhone,
+          password: resumePassword
+        })
+      })
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({} as any))
+        const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
+        showAlertMessage(msg)
+        return
+      }
+
+      const data = await response.json()
+      if (data?.savedId) {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('result_savedId', String(data.savedId))
+        }
+        router.push(`/result?savedId=${encodeURIComponent(String(data.savedId))}`)
+        setShowResumePopup(false)
+        return
+      }
+
+      if (data?.requestKey) {
+        const tempRes = await fetch(`/api/temp-request/get?requestKey=${encodeURIComponent(String(data.requestKey))}`)
+        if (!tempRes.ok) {
+          showAlertMessage('재시도 데이터를 찾을 수 없습니다. 고객센터로 문의해주세요.')
+          return
+        }
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('result_requestKey', String(data.requestKey))
+          sessionStorage.setItem('result_stream', 'true')
+        }
+        router.push(`/result?requestKey=${encodeURIComponent(String(data.requestKey))}&stream=true`)
+        setShowResumePopup(false)
+        return
+      }
+
+      showAlertMessage('복구 가능한 기록이 없습니다.')
+    } catch (error) {
+      showAlertMessage('재시도 처리 중 오류가 발생했습니다.')
+    } finally {
+      setResumeLoading(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -3343,6 +3444,9 @@ function FormContent() {
             // 초안을 미리 생성하면 빈 HTML로 저장되어 이후 업데이트가 제대로 안 될 수 있음
             sessionStorage.setItem('result_requestKey', requestKey)
             sessionStorage.setItem('result_stream', 'true')
+            localStorage.setItem('resume_requestKey', requestKey)
+            localStorage.setItem('resume_in_progress', 'true')
+            localStorage.setItem('resume_timestamp', String(Date.now()))
           }
         } catch (e) {
 
@@ -4469,6 +4573,76 @@ function FormContent() {
                   리절트로 이동 (임시)
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 재시도 팝업 */}
+      {showResumePopup && (
+        <div
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+          onClick={(e) => {
+            if (resumeLoading) return
+            if (e.target === e.currentTarget) {
+              setShowResumePopup(false)
+            }
+          }}
+        >
+          <div className="absolute top-0 left-0 right-0 bottom-0 bg-black/60"></div>
+          <div
+            className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
+              <h2 className="text-xl font-bold text-white">재시도</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  if (resumeLoading) return
+                  setShowResumePopup(false)
+                }}
+                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
+                disabled={resumeLoading}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">휴대폰 번호</label>
+                <input
+                  type="text"
+                  value={resumePhone}
+                  onChange={(e) => setResumePhone(e.target.value)}
+                  className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
+                  placeholder="010-0000-0000"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">비밀번호</label>
+                <input
+                  type="password"
+                  value={resumePassword}
+                  onChange={(e) => setResumePassword(e.target.value)}
+                  className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
+                  placeholder="비밀번호 (4자리 이상)"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleResumeSubmit}
+                disabled={resumeLoading}
+                className="w-full bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {resumeLoading ? '처리 중...' : '재시도하기'}
+              </button>
+              <p className="text-xs text-gray-500">
+                결제에 사용한 휴대폰 번호와 비밀번호로 재시도할 수 있습니다.
+              </p>
             </div>
           </div>
         </div>
@@ -5737,6 +5911,20 @@ function FormContent() {
                 className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-4 px-8 rounded-xl transition-colors duration-200"
               >
                 이전으로
+              </button>
+            </div>
+            <div className="mt-3 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  const storedPhone = typeof window !== 'undefined' ? (sessionStorage.getItem('payment_phone') || '') : ''
+                  setResumePhone(storedPhone || `${phoneNumber1}-${phoneNumber2}${phoneNumber3 ? '-' + phoneNumber3 : ''}`)
+                  setResumePassword('')
+                  setShowResumePopup(true)
+                }}
+                className="text-xs text-gray-500 hover:text-pink-500 underline underline-offset-4 transition-colors"
+              >
+                이미 결제하셨나요? 재시도하기
               </button>
             </div>
 

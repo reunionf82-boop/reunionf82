@@ -125,16 +125,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // saved_results에서 해당 saved_id들의 결과 조회 (최근 6개월)
+    // saved_results에서 해당 saved_id들의 결과 조회 (최근 60일)
     // 전화번호와 비밀번호가 정확히 일치하는 credential의 saved_id만 사용
-    const sixMonthsAgo = new Date()
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+    const sixtyDaysAgo = new Date()
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60)
 
     const { data: savedResults, error: resultsError } = await supabase
       .from('saved_results')
       .select('*')
       .in('id', matchingSavedIdsArray)
-      .gte('saved_at', sixMonthsAgo.toISOString())
+      .gte('saved_at', sixtyDaysAgo.toISOString())
       .order('saved_at', { ascending: false })
 
     if (resultsError) {
