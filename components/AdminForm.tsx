@@ -37,6 +37,29 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   }, [])
 
   const applyIframeProtection = useCallback((iframeDocument: Document) => {
+    const existingStyle = iframeDocument.getElementById('html-preview-protection')
+    if (!existingStyle) {
+      const styleTag = iframeDocument.createElement('style')
+      styleTag.id = 'html-preview-protection'
+      styleTag.textContent = `
+        * {
+          -webkit-user-select: none;
+          -ms-user-select: none;
+          user-select: none;
+        }
+        img, video {
+          -webkit-user-drag: none;
+          user-drag: none;
+        }
+        input, textarea, [contenteditable="true"] {
+          -webkit-user-select: text;
+          -ms-user-select: text;
+          user-select: text;
+        }
+      `
+      iframeDocument.head?.appendChild(styleTag)
+    }
+
     const blockIfNotEditable = (event: Event) => {
       if (event.target && isEditableTarget(event.target)) return
       event.preventDefault()
