@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { getContents, getContentById, getSelectedModel, getSelectedSpeaker, getFortuneViewMode, getUseSequentialFortune } from '@/lib/supabase-admin'
@@ -140,6 +140,158 @@ function FormContent() {
   const recommendationIframeRef = useRef<HTMLIFrameElement>(null)
   const menuItemsIframeRef = useRef<HTMLIFrameElement>(null)
   const [expandedReviewImage, setExpandedReviewImage] = useState<string | null>(null)
+
+  const isEditableTarget = useCallback((target: EventTarget | null) => {
+    if (!target || !(target instanceof HTMLElement)) return false
+    const tagName = target.tagName
+    return (
+      tagName === 'INPUT' ||
+      tagName === 'TEXTAREA' ||
+      target.isContentEditable
+    )
+  }, [])
+
+  const applyIframeProtection = useCallback((iframeDocument: Document) => {
+    const existingStyle = iframeDocument.getElementById('html-preview-protection')
+    if (!existingStyle) {
+      const styleTag = iframeDocument.createElement('style')
+      styleTag.id = 'html-preview-protection'
+      styleTag.textContent = `
+        html, body, * {
+          -webkit-user-select: none;
+          -ms-user-select: none;
+          user-select: none;
+        }
+        img, video {
+          -webkit-user-drag: none;
+          user-drag: none;
+        }
+        input, textarea, [contenteditable="true"] {
+          -webkit-user-select: text;
+          -ms-user-select: text;
+          user-select: text;
+        }
+      `
+      if (iframeDocument.head) {
+        iframeDocument.head.appendChild(styleTag)
+      } else {
+        iframeDocument.documentElement.appendChild(styleTag)
+      }
+    }
+
+    if (iframeDocument.body) {
+      iframeDocument.body.style.userSelect = 'none'
+      iframeDocument.body.oncontextmenu = (event) => {
+        if (isEditableTarget(event.target)) return true
+        event.preventDefault()
+        return false
+      }
+      iframeDocument.body.onselectstart = (event) => {
+        if (isEditableTarget(event.target)) return true
+        event.preventDefault()
+        return false
+      }
+      iframeDocument.body.oncopy = (event) => {
+        if (isEditableTarget(event.target)) return true
+        event.preventDefault()
+        return false
+      }
+      iframeDocument.body.oncut = (event) => {
+        if (isEditableTarget(event.target)) return true
+        event.preventDefault()
+        return false
+      }
+    }
+    iframeDocument.documentElement.style.userSelect = 'none'
+
+    const blockIfNotEditable = (event: Event) => {
+      if (event.target && isEditableTarget(event.target)) return
+      event.preventDefault()
+    }
+    const blockDragInIframe = (event: DragEvent) => {
+      const target = event.target
+      if (target instanceof HTMLElement) {
+        const tagName = target.tagName
+        if (tagName === 'IMG' || tagName === 'VIDEO') {
+          event.preventDefault()
+        }
+      }
+    }
+    const blockKeyInIframe = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return
+      if (!event.ctrlKey && !event.metaKey) return
+      const key = event.key.toLowerCase()
+      if (['c', 'x', 's', 'p', 'u', 'i'].includes(key)) {
+        event.preventDefault()
+      }
+    }
+
+    iframeDocument.addEventListener('contextmenu', blockIfNotEditable, true)
+    iframeDocument.addEventListener('selectstart', blockIfNotEditable, true)
+    iframeDocument.addEventListener('copy', blockIfNotEditable, true)
+    iframeDocument.addEventListener('cut', blockIfNotEditable, true)
+    iframeDocument.addEventListener('dragstart', blockDragInIframe, true)
+    iframeDocument.addEventListener('keydown', blockKeyInIframe, true)
+  }, [isEditableTarget])
+
+  const buildProtectedHtml = useCallback((html: string) => {
+    const protectionStyle = `
+      <style id="html-preview-protection">
+        html, body, * {
+          -webkit-user-select: none;
+          -ms-user-select: none;
+          user-select: none;
+        }
+        img, video {
+          -webkit-user-drag: none;
+          user-drag: none;
+        }
+        input, textarea, [contenteditable="true"] {
+          -webkit-user-select: text;
+          -ms-user-select: text;
+          user-select: text;
+        }
+      </style>
+    `
+    const protectionScript = `
+      <script>
+        (function () {
+          function isEditableTarget(target) {
+            if (!target) return false;
+            var tagName = target.tagName;
+            return tagName === 'INPUT' || tagName === 'TEXTAREA' || target.isContentEditable === true;
+          }
+          function blockEvent(event) {
+            if (isEditableTarget(event.target)) return;
+            event.preventDefault();
+          }
+          function blockKey(event) {
+            if (isEditableTarget(event.target)) return;
+            if (!event.ctrlKey && !event.metaKey) return;
+            var key = String(event.key || '').toLowerCase();
+            if (['c', 'x', 's', 'p', 'u', 'i'].indexOf(key) >= 0) {
+              event.preventDefault();
+            }
+          }
+          document.addEventListener('contextmenu', blockEvent, true);
+          document.addEventListener('selectstart', blockEvent, true);
+          document.addEventListener('copy', blockEvent, true);
+          document.addEventListener('cut', blockEvent, true);
+          document.addEventListener('dragstart', blockEvent, true);
+          document.addEventListener('keydown', blockKey, true);
+        })();
+      </script>
+    `
+    const headInjection = `${protectionStyle}${protectionScript}`
+
+    if (/<head[^>]*>/i.test(html)) {
+      return html.replace(/<head[^>]*>/i, (match) => `${match}\n${headInjection}`)
+    }
+    if (/<html[^>]*>/i.test(html)) {
+      return html.replace(/<html[^>]*>/i, (match) => `${match}\n<head>${headInjection}</head>`)
+    }
+    return `<!doctype html><html><head>${headInjection}</head><body>${html}</body></html>`
+  }, [])
 
   // iframe 높이 자동 조정 (프론트홈과 동일한 방식)
   useEffect(() => {
@@ -4523,7 +4675,7 @@ function FormContent() {
               <div className="w-full p-0 m-0 border-0 overflow-hidden" style={{ height: 'auto', minHeight: '1px' }}>
                 <iframe
                   ref={introductionIframeRef}
-                  srcDoc={content.introduction}
+                  srcDoc={buildProtectedHtml(content.introduction)}
                   className="w-full border-0"
                   style={{
                     display: 'block',
@@ -4541,6 +4693,7 @@ function FormContent() {
                       try {
                         const iframe = introductionIframeRef.current
                         if (iframe?.contentWindow?.document?.body) {
+                          applyIframeProtection(iframe.contentWindow.document)
                           // iframe 내부 body와 html의 패딩/마진을 0으로 설정
                           const body = iframe.contentWindow.document.body
                           const html = iframe.contentWindow.document.documentElement
@@ -4579,7 +4732,7 @@ function FormContent() {
               <div className="w-full p-0 m-0 border-0 overflow-hidden" style={{ height: 'auto', minHeight: '1px' }}>
                 <iframe
                   ref={recommendationIframeRef}
-                  srcDoc={content.recommendation}
+                  srcDoc={buildProtectedHtml(content.recommendation)}
                   className="w-full border-0"
                   style={{
                     display: 'block',
@@ -4597,6 +4750,7 @@ function FormContent() {
                       try {
                         const iframe = recommendationIframeRef.current
                         if (iframe?.contentWindow?.document?.body) {
+                          applyIframeProtection(iframe.contentWindow.document)
                           // iframe 내부 body와 html의 패딩/마진을 0으로 설정
                           const body = iframe.contentWindow.document.body
                           const html = iframe.contentWindow.document.documentElement
@@ -4633,7 +4787,7 @@ function FormContent() {
               <div className="w-full p-0 m-0 border-0 overflow-hidden" style={{ height: 'auto', minHeight: '1px' }}>
                 <iframe
                   ref={menuItemsIframeRef}
-                  srcDoc={content.menu_composition}
+                  srcDoc={buildProtectedHtml(content.menu_composition)}
                   className="w-full border-0"
                   style={{
                     display: 'block',
@@ -4651,6 +4805,7 @@ function FormContent() {
                       try {
                         const iframe = menuItemsIframeRef.current
                         if (iframe?.contentWindow?.document?.body) {
+                          applyIframeProtection(iframe.contentWindow.document)
                           // iframe 내부 body와 html의 패딩/마진을 0으로 설정
                           const body = iframe.contentWindow.document.body
                           const html = iframe.contentWindow.document.documentElement
@@ -4686,10 +4841,10 @@ function FormContent() {
                 <div className="w-full p-0 m-0 border-0 overflow-hidden" style={{ height: 'auto', minHeight: '1px' }}>
                   <iframe
                     ref={menuItemsIframeRef}
-                    srcDoc={content.menu_items.map((item: any) => {
+                    srcDoc={buildProtectedHtml(content.menu_items.map((item: any) => {
                       const itemValue = typeof item === 'string' ? item : (item.value || item)
                       return itemValue
-                    }).join('')}
+                    }).join(''))}
                     className="w-full border-0"
                     style={{
                       display: 'block',
@@ -4707,6 +4862,7 @@ function FormContent() {
                         try {
                           const iframe = menuItemsIframeRef.current
                           if (iframe?.contentWindow?.document?.body) {
+                            applyIframeProtection(iframe.contentWindow.document)
                             // iframe 내부 body와 html의 패딩/마진을 0으로 설정
                             const body = iframe.contentWindow.document.body
                             const html = iframe.contentWindow.document.documentElement

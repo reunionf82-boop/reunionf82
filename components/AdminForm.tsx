@@ -118,6 +118,65 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     iframeDocument.addEventListener('dragstart', blockDragInIframe, true)
     iframeDocument.addEventListener('keydown', blockKeyInIframe, true)
   }, [isEditableTarget])
+
+  const buildProtectedHtml = useCallback((html: string) => {
+    const protectionStyle = `
+      <style id="html-preview-protection">
+        html, body, * {
+          -webkit-user-select: none;
+          -ms-user-select: none;
+          user-select: none;
+        }
+        img, video {
+          -webkit-user-drag: none;
+          user-drag: none;
+        }
+        input, textarea, [contenteditable="true"] {
+          -webkit-user-select: text;
+          -ms-user-select: text;
+          user-select: text;
+        }
+      </style>
+    `
+    const protectionScript = `
+      <script>
+        (function () {
+          function isEditableTarget(target) {
+            if (!target) return false;
+            var tagName = target.tagName;
+            return tagName === 'INPUT' || tagName === 'TEXTAREA' || target.isContentEditable === true;
+          }
+          function blockEvent(event) {
+            if (isEditableTarget(event.target)) return;
+            event.preventDefault();
+          }
+          function blockKey(event) {
+            if (isEditableTarget(event.target)) return;
+            if (!event.ctrlKey && !event.metaKey) return;
+            var key = String(event.key || '').toLowerCase();
+            if (['c', 'x', 's', 'p', 'u', 'i'].indexOf(key) >= 0) {
+              event.preventDefault();
+            }
+          }
+          document.addEventListener('contextmenu', blockEvent, true);
+          document.addEventListener('selectstart', blockEvent, true);
+          document.addEventListener('copy', blockEvent, true);
+          document.addEventListener('cut', blockEvent, true);
+          document.addEventListener('dragstart', blockEvent, true);
+          document.addEventListener('keydown', blockKey, true);
+        })();
+      </script>
+    `
+    const headInjection = `${protectionStyle}${protectionScript}`
+
+    if (/<head[^>]*>/i.test(html)) {
+      return html.replace(/<head[^>]*>/i, (match) => `${match}\n${headInjection}`)
+    }
+    if (/<html[^>]*>/i.test(html)) {
+      return html.replace(/<html[^>]*>/i, (match) => `${match}\n<head>${headInjection}</head>`)
+    }
+    return `<!doctype html><html><head>${headInjection}</head><body>${html}</body></html>`
+  }, [])
   
   const [formData, setFormData] = useState({
     title: '',
@@ -2428,7 +2487,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               <button
                 type="button"
                 onClick={() => {
-                  setHtmlPreviewContent(formData.introduction)
+                  setHtmlPreviewContent(buildProtectedHtml(formData.introduction))
                   setHtmlPreviewTitle('소개 미리보기')
                   setShowHtmlPreview(true)
                 }}
@@ -2470,7 +2529,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               <button
                 type="button"
                 onClick={() => {
-                  setHtmlPreviewContent(formData.recommendation)
+                  setHtmlPreviewContent(buildProtectedHtml(formData.recommendation))
                   setHtmlPreviewTitle('추천 미리보기')
                   setShowHtmlPreview(true)
                 }}
@@ -2512,7 +2571,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               <button
                 type="button"
                 onClick={() => {
-                  setHtmlPreviewContent(formData.menu_composition)
+                  setHtmlPreviewContent(buildProtectedHtml(formData.menu_composition))
                   setHtmlPreviewTitle('상품 메뉴 편성 미리보기')
                   setShowHtmlPreview(true)
                 }}
