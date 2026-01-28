@@ -42,7 +42,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       const styleTag = iframeDocument.createElement('style')
       styleTag.id = 'html-preview-protection'
       styleTag.textContent = `
-        * {
+        html, body, * {
           -webkit-user-select: none;
           -ms-user-select: none;
           user-select: none;
@@ -57,8 +57,37 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           user-select: text;
         }
       `
-      iframeDocument.head?.appendChild(styleTag)
+      if (iframeDocument.head) {
+        iframeDocument.head.appendChild(styleTag)
+      } else {
+        iframeDocument.documentElement.appendChild(styleTag)
+      }
     }
+
+    if (iframeDocument.body) {
+      iframeDocument.body.style.userSelect = 'none'
+      iframeDocument.body.oncontextmenu = (event) => {
+        if (isEditableTarget(event.target)) return true
+        event.preventDefault()
+        return false
+      }
+      iframeDocument.body.onselectstart = (event) => {
+        if (isEditableTarget(event.target)) return true
+        event.preventDefault()
+        return false
+      }
+      iframeDocument.body.oncopy = (event) => {
+        if (isEditableTarget(event.target)) return true
+        event.preventDefault()
+        return false
+      }
+      iframeDocument.body.oncut = (event) => {
+        if (isEditableTarget(event.target)) return true
+        event.preventDefault()
+        return false
+      }
+    }
+    iframeDocument.documentElement.style.userSelect = 'none'
 
     const blockIfNotEditable = (event: Event) => {
       if (event.target && isEditableTarget(event.target)) return
