@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
       // 먼저 기존 레코드를 조회하여 현재 값 확인
       const { data: existingContent } = await supabase
         .from('contents')
-        .select('book_cover_thumbnail, book_cover_thumbnail_video, ending_book_cover_thumbnail, ending_book_cover_thumbnail_video')
+        .select('book_cover_thumbnail, book_cover_thumbnail_video, ending_book_cover_thumbnail, ending_book_cover_thumbnail_video, menu_items')
         .eq('id', id)
         .single()
       
@@ -80,6 +80,83 @@ export async function POST(req: NextRequest) {
           } else {
             delete dataToSave.ending_book_cover_thumbnail_video
           }
+        }
+      }
+
+      if (existingContent && menu_items) {
+        const ensureString = (value: any) => (typeof value === 'string' ? value : '')
+        const pickIfEmpty = (incoming: any, fallback: any) => {
+          const incomingValue = ensureString(incoming).trim()
+          if (incomingValue !== '') return incomingValue
+          const fallbackValue = ensureString(fallback).trim()
+          return fallbackValue !== '' ? fallbackValue : incomingValue
+        }
+
+        const existingMenuItemsRaw = existingContent.menu_items
+        const existingMenuItems = typeof existingMenuItemsRaw === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(existingMenuItemsRaw)
+              } catch {
+                return []
+              }
+            })()
+          : existingMenuItemsRaw
+
+        if (Array.isArray(existingMenuItems) && Array.isArray(menu_items)) {
+          const mergedMenuItems = menu_items.map((item: any, index: number) => {
+            const existingItem = existingMenuItems[index] || {}
+            const mergedItem = { ...item }
+
+            mergedItem.thumbnail_image_url = pickIfEmpty(
+              mergedItem.thumbnail_image_url,
+              existingItem.thumbnail_image_url || existingItem.thumbnail
+            )
+            mergedItem.thumbnail_video_url = pickIfEmpty(
+              mergedItem.thumbnail_video_url,
+              existingItem.thumbnail_video_url || existingItem.thumbnail_video
+            )
+
+            if (Array.isArray(mergedItem.subtitles)) {
+              mergedItem.subtitles = mergedItem.subtitles.map((sub: any, subIndex: number) => {
+                const existingSub = (existingItem.subtitles || [])[subIndex] || {}
+                const mergedSub = { ...sub }
+
+                mergedSub.thumbnail_image_url = pickIfEmpty(
+                  mergedSub.thumbnail_image_url,
+                  existingSub.thumbnail_image_url || existingSub.thumbnail
+                )
+                mergedSub.thumbnail_video_url = pickIfEmpty(
+                  mergedSub.thumbnail_video_url,
+                  existingSub.thumbnail_video_url || existingSub.thumbnail_video
+                )
+
+                if (Array.isArray(mergedSub.detailMenus)) {
+                  mergedSub.detailMenus = mergedSub.detailMenus.map((dm: any, dmIndex: number) => {
+                    const existingDm = (existingSub.detailMenus || [])[dmIndex] || {}
+                    const mergedDm = { ...dm }
+
+                    mergedDm.thumbnail_image_url = pickIfEmpty(
+                      mergedDm.thumbnail_image_url,
+                      existingDm.thumbnail_image_url || existingDm.thumbnail
+                    )
+                    mergedDm.thumbnail_video_url = pickIfEmpty(
+                      mergedDm.thumbnail_video_url,
+                      existingDm.thumbnail_video_url || existingDm.thumbnail_video
+                    )
+
+                    return mergedDm
+                  })
+                }
+
+                return mergedSub
+              })
+            }
+
+            return mergedItem
+          })
+
+          dataToSave.menu_items = JSON.stringify(mergedMenuItems)
         }
       }
       

@@ -947,11 +947,17 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           }))
           
           const firstMenuValue = data.menu_items[0].value || ''
-        setFirstMenuField({
+          const legacyFirstMenu = data.menu_items[0] || {}
+          const legacyVideoUrl = legacyFirstMenu.thumbnail_video_url || legacyFirstMenu.thumbnail_video || ''
+          let legacyImageUrl = legacyFirstMenu.thumbnail_image_url || legacyFirstMenu.thumbnail || ''
+          if (!legacyImageUrl && legacyVideoUrl) {
+            legacyImageUrl = getThumbnailUrl(`${legacyVideoUrl}.jpg`)
+          }
+          setFirstMenuField({
             value: firstMenuValue,
-          thumbnail: data.menu_items[0].thumbnail || '',
-          thumbnailImageUrl: data.menu_items[0].thumbnail || '',
-          thumbnailVideoUrl: '',
+            thumbnail: legacyFirstMenu.thumbnail || '',
+            thumbnailImageUrl: legacyImageUrl,
+            thumbnailVideoUrl: legacyVideoUrl,
             // 대메뉴에 값이 있는데 소메뉴가 없으면 디폴트 소메뉴 1개 추가
             subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
               ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
@@ -961,10 +967,17 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           // 나머지 메뉴 항목들
           setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
             const menuValue = item.value || ''
+            const legacyItemVideoUrl = item.thumbnail_video_url || item.thumbnail_video || ''
+            let legacyItemImageUrl = item.thumbnail_image_url || item.thumbnail || ''
+            if (!legacyItemImageUrl && legacyItemVideoUrl) {
+              legacyItemImageUrl = getThumbnailUrl(`${legacyItemVideoUrl}.jpg`)
+            }
             return {
-            id: item.id || Date.now() + idx + 1000,
+              id: item.id || Date.now() + idx + 1000,
               value: menuValue,
-            thumbnail: item.thumbnail || '',
+              thumbnail: item.thumbnail || '',
+              thumbnailImageUrl: legacyItemImageUrl,
+              thumbnailVideoUrl: legacyItemVideoUrl,
               // 대메뉴에 값이 있으면 디폴트 소메뉴 1개 추가
               subtitles: menuValue.trim().length > 0
                 ? [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '', detailMenus: [] }]
