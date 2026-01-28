@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getContentById, type ContentData, getThumbnailUrl } from '@/lib/supabase-admin'
 import ThumbnailModal from '@/components/ThumbnailModal'
@@ -26,6 +26,46 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
   const speakerParam = searchParams.get('speaker') // URL에서 화자 파라미터 가져오기
   const ttsProviderParam = searchParams.get('ttsProvider') // URL에서 TTS 제공자 파라미터
   const typecastVoiceIdParam = searchParams.get('typecastVoiceId') // URL에서 Typecast voice id 파라미터
+  const isEditableTarget = useCallback((target: EventTarget | null) => {
+    if (!target || !(target instanceof HTMLElement)) return false
+    const tagName = target.tagName
+    return (
+      tagName === 'INPUT' ||
+      tagName === 'TEXTAREA' ||
+      target.isContentEditable
+    )
+  }, [])
+
+  const applyIframeProtection = useCallback((iframeDocument: Document) => {
+    const blockIfNotEditable = (event: Event) => {
+      if (event.target && isEditableTarget(event.target)) return
+      event.preventDefault()
+    }
+    const blockDragInIframe = (event: DragEvent) => {
+      const target = event.target
+      if (target instanceof HTMLElement) {
+        const tagName = target.tagName
+        if (tagName === 'IMG' || tagName === 'VIDEO') {
+          event.preventDefault()
+        }
+      }
+    }
+    const blockKeyInIframe = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return
+      if (!event.ctrlKey && !event.metaKey) return
+      const key = event.key.toLowerCase()
+      if (['c', 'x', 's', 'p', 'u', 'i'].includes(key)) {
+        event.preventDefault()
+      }
+    }
+
+    iframeDocument.addEventListener('contextmenu', blockIfNotEditable, true)
+    iframeDocument.addEventListener('selectstart', blockIfNotEditable, true)
+    iframeDocument.addEventListener('copy', blockIfNotEditable, true)
+    iframeDocument.addEventListener('cut', blockIfNotEditable, true)
+    iframeDocument.addEventListener('dragstart', blockDragInIframe, true)
+    iframeDocument.addEventListener('keydown', blockKeyInIframe, true)
+  }, [isEditableTarget])
   
   const [formData, setFormData] = useState({
     title: '',
@@ -5300,6 +5340,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       try {
                         const iframe = htmlPreviewIframeRef.current
                         if (iframe?.contentWindow?.document?.body) {
+                          applyIframeProtection(iframe.contentWindow.document)
                           const height = Math.max(
                             iframe.contentWindow.document.body.scrollHeight,
                             iframe.contentWindow.document.documentElement.scrollHeight,
