@@ -163,6 +163,12 @@ function FormContent() {
     if (sessionStorage.getItem('resume_auto_checked')) return
     sessionStorage.setItem('resume_auto_checked', '1')
 
+    const skipResumeOnce = sessionStorage.getItem('skip_resume_once')
+    if (skipResumeOnce) {
+      sessionStorage.removeItem('skip_resume_once')
+      return
+    }
+
     const resumeTimestamp = localStorage.getItem('resume_timestamp')
     if (resumeTimestamp) {
       const diff = Date.now() - parseInt(resumeTimestamp, 10)

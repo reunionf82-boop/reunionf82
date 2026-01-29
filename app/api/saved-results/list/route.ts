@@ -17,7 +17,91 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 
 export async function GET(request: NextRequest) {
   try {
-    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json(
+        { success: false, error: 'Supabase 환경 변수가 설정되지 않았습니다.' },
+        { status: 500 }
+      )
+    }
+
+    const searchParams = request.nextUrl.searchParams
+    const idParam = searchParams.get('id')
+    if (idParam) {
+      const parsedId = parseInt(idParam, 10)
+      if (!Number.isFinite(parsedId)) {
+        return NextResponse.json(
+          { success: false, error: '유효하지 않은 결과 ID입니다.' },
+          { status: 400 }
+        )
+      }
+
+      const { data, error } = await supabase
+        .from('saved_results')
+        .select('*')
+        .eq('id', parsedId)
+        .maybeSingle()
+
+      if (error) {
+        return NextResponse.json(
+          { success: false, error: '저장된 결과 조회에 실패했습니다.', details: error.message },
+          { status: 500 }
+        )
+      }
+
+      if (!data) {
+        return NextResponse.json(
+          { success: false, error: '저장된 결과를 찾을 수 없습니다.' },
+          { status: 404 }
+        )
+      }
+
+      const savedDateUTC = new Date(data.saved_at)
+      const kstOptions: Intl.DateTimeFormatOptions = {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }
+      const formatter = new Intl.DateTimeFormat('en-US', kstOptions)
+      const parts = formatter.formatToParts(savedDateUTC)
+      const year = parts.find(p => p.type === 'year')?.value || ''
+      const month = parts.find(p => p.type === 'month')?.value || ''
+      const day = parts.find(p => p.type === 'day')?.value || ''
+      const hour = parts.find(p => p.type === 'hour')?.value || ''
+      const minute = parts.find(p => p.type === 'minute')?.value || ''
+      const second = parts.find(p => p.type === 'second')?.value || ''
+      const savedAtKST = `${year}. ${month}. ${day}. ${hour}:${minute}:${second}`
+
+      return NextResponse.json(
+        {
+          success: true,
+          data: {
+            id: data.id.toString(),
+            title: data.title,
+            html: data.html,
+            savedAt: savedAtKST,
+            savedAtISO: data.saved_at,
+            content: data.content,
+            model: data.model,
+            processingTime: data.processing_time,
+            userName: data.user_name,
+            pdf_generated: data.pdf_generated || false
+          }
+        },
+        {
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+          }
+        }
+      )
+    }
+
     // 저장된 결과 목록 조회 (최신순, 제한 없음)
     // 먼저 count만 조회하여 실제 레코드 수 확인
     const { count: totalCount } = await supabase

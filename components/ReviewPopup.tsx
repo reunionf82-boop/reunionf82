@@ -1,68 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-
-const MAX_IMAGE_WIDTH = 1024
-
-async function resizeImageIfNeeded(file: File): Promise<File> {
-  // GIF/SVG 등은 캔버스 변환 시 손실/문제 가능성이 있어 원본 유지
-  if (!file.type.startsWith('image/')) return file
-  if (file.type === 'image/gif' || file.type === 'image/svg+xml') return file
-
-  const objectUrl = URL.createObjectURL(file)
-  try {
-    const img = new Image()
-    img.decoding = 'async'
-    img.src = objectUrl
-
-    if (typeof (img as any).decode === 'function') {
-      await (img as any).decode()
-    } else {
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve()
-        img.onerror = () => reject(new Error('이미지 로드에 실패했습니다.'))
-      })
-    }
-
-    const width = img.naturalWidth || img.width
-    const height = img.naturalHeight || img.height
-
-    if (!width || width <= MAX_IMAGE_WIDTH) return file
-
-    const targetWidth = MAX_IMAGE_WIDTH
-    const targetHeight = Math.round((height * targetWidth) / width)
-
-    const canvas = document.createElement('canvas')
-    canvas.width = targetWidth
-    canvas.height = targetHeight
-
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return file
-
-    ctx.drawImage(img, 0, 0, targetWidth, targetHeight)
-
-    // PNG는 투명도 유지, 그 외는 JPEG로 압축(용량 절감)
-    const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg'
-    const jpegQuality = 1.0
-
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error('이미지 변환에 실패했습니다.'))),
-        outputType,
-        outputType === 'image/jpeg' ? jpegQuality : undefined
-      )
-    })
-
-    const baseName = (file.name || 'image').replace(/\.[^.]+$/, '')
-    const ext = outputType === 'image/png' ? 'png' : 'jpg'
-    return new File([blob], `${baseName}-${targetWidth}.${ext}`, { type: outputType })
-  } catch (e) {
-    // HEIC 등 브라우저가 디코딩 못하는 포맷이면 원본 전송
-    return file
-  } finally {
-    URL.revokeObjectURL(objectUrl)
-  }
-}
+import { useState, useEffect } from 'react'
 
 interface ReviewPopupProps {
   isOpen: boolean
@@ -75,17 +13,8 @@ interface ReviewPopupProps {
 
 export default function ReviewPopup({ isOpen, onClose, contentId, userName, title, onSuccess }: ReviewPopupProps) {
   const [reviewText, setReviewText] = useState('')
-  const [selectedImages, setSelectedImages] = useState<File[]>([])
-  const [imagePreviews, setImagePreviews] = useState<string[]>([])
-  const [imageLoadedStates, setImageLoadedStates] = useState<boolean[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isUploading, setIsUploading] = useState(false)
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [showSuccessMessage, setShowSuccessMessage] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const cameraInputRef = useRef<HTMLInputElement>(null)
-  
-  const MAX_IMAGES = 4
 
   const maxLength = 3000
   const currentLength = reviewText.length
@@ -94,95 +23,9 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
   useEffect(() => {
     if (!isOpen) {
       setReviewText('')
-      setSelectedImages([])
-      setImagePreviews([])
-      setImageLoadedStates([])
-      setIsUploading(false)
-      setShowConfirmDialog(false)
       setShowSuccessMessage(false)
     }
   }, [isOpen])
-
-  // 이미지 선택 핸들러
-  const handleImageSelect = async (files: FileList | null) => {
-    if (!files || files.length === 0) return
-
-    const newFiles: File[] = []
-    const newPreviews: string[] = []
-    const newLoadedStates: boolean[] = []
-
-    // 최대 개수 확인
-    if (selectedImages.length + files.length > MAX_IMAGES) {
-      alert(`최대 ${MAX_IMAGES}개까지 등록할 수 있습니다.`)
-      return
-    }
-
-    for (let i = 0; i < files.length && selectedImages.length + newFiles.length < MAX_IMAGES; i++) {
-      const file = files[i]
-
-      // 이미지 파일인지 확인
-      if (!file.type.startsWith('image/')) {
-        alert(`${file.name}은(는) 이미지 파일이 아닙니다.`)
-        continue
-      }
-
-      // 너무 큰 파일은 브라우저 메모리/성능 문제로 제한 (리사이즈 전)
-      const hardMaxSize = 25 * 1024 * 1024
-      if (file.size > hardMaxSize) {
-        alert(`${file.name}의 파일 크기가 너무 큽니다. (최대 25MB)`)
-        continue
-      }
-
-      // 가로 해상도 1024 초과 시 로컬에서 리사이즈 후 업로드
-      const processedFile = await resizeImageIfNeeded(file)
-      newFiles.push(processedFile)
-      newLoadedStates.push(false)
-
-      // 미리보기 생성
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const previewIndex = newFiles.length - 1
-        setImagePreviews(prev => {
-          const updated = [...prev]
-          updated[selectedImages.length + previewIndex] = reader.result as string
-          return updated
-        })
-        // 이미지가 DOM에 로드될 때까지 약간의 지연
-        setTimeout(() => {
-          setImageLoadedStates(prev => {
-            const updated = [...prev]
-            updated[selectedImages.length + previewIndex] = true
-            return updated
-          })
-        }, 50)
-      }
-      reader.readAsDataURL(processedFile)
-    }
-
-    if (newFiles.length > 0) {
-      setSelectedImages(prev => [...prev, ...newFiles])
-      setImageLoadedStates(prev => [...prev, ...newLoadedStates])
-    }
-  }
-
-  // 앨범에서 선택
-  const handleAlbumSelect = () => {
-    fileInputRef.current?.click()
-  }
-
-  // 카메라로 촬영
-  const handleCameraCapture = () => {
-    cameraInputRef.current?.click()
-  }
-
-  // 이미지 제거
-  const handleRemoveImage = (index: number) => {
-    setSelectedImages(prev => prev.filter((_, i) => i !== index))
-    setImagePreviews(prev => prev.filter((_, i) => i !== index))
-    setImageLoadedStates(prev => prev.filter((_, i) => i !== index))
-    if (fileInputRef.current) fileInputRef.current.value = ''
-    if (cameraInputRef.current) cameraInputRef.current.value = ''
-  }
 
   // 저장 버튼 클릭
   const handleSave = async () => {
@@ -190,20 +33,6 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
       alert('리뷰 내용을 입력해주세요.')
       return
     }
-
-    // 텍스트만 있고 이미지가 없으면 확인 다이얼로그 표시
-    if (selectedImages.length === 0) {
-      setShowConfirmDialog(true)
-      return
-    }
-
-    // 이미지가 있으면 바로 저장
-    await submitReview()
-  }
-
-  // 확인 다이얼로그에서 저장 확인
-  const handleConfirmSave = async () => {
-    setShowConfirmDialog(false)
     await submitReview()
   }
 
@@ -212,51 +41,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
     setIsSubmitting(true)
 
     try {
-      // 이미지가 있으면 먼저 업로드
-      let imageUrls: string[] = []
-      if (selectedImages.length > 0) {
-        // 모든 이미지가 완전히 로드될 때까지 대기 (최대 1초)
-        let waitCount = 0
-        while (imageLoadedStates.length < selectedImages.length || imageLoadedStates.some(loaded => !loaded) && waitCount < 20) {
-          await new Promise(resolve => setTimeout(resolve, 50))
-          waitCount++
-        }
-        
-        setIsUploading(true)
-        // 상태 업데이트가 DOM에 반영될 시간을 줌
-        await new Promise(resolve => setTimeout(resolve, 100))
-        
-        try {
-          // 모든 이미지를 순차적으로 업로드
-          for (const imageFile of selectedImages) {
-            const formData = new FormData()
-            formData.append('file', imageFile)
-
-            const uploadResponse = await fetch('/api/reviews/upload-image', {
-              method: 'POST',
-              body: formData
-            })
-
-            if (!uploadResponse.ok) {
-              const errorData = await uploadResponse.json().catch(() => ({}))
-              throw new Error(errorData.error || '이미지 업로드에 실패했습니다.')
-            }
-
-            const uploadData = await uploadResponse.json()
-            if (!uploadData.success || !uploadData.url) {
-              throw new Error('이미지 업로드에 실패했습니다.')
-            }
-            imageUrls.push(uploadData.url)
-          }
-        } finally {
-          setIsUploading(false)
-        }
-      }
-
       // 리뷰 저장 (contentId와 함께 title도 전달 - contentId가 유효하지 않을 경우 대비)
-      // 여러 이미지 URL을 JSON 배열 문자열로 전달
-      const imageUrl = imageUrls.length > 0 ? JSON.stringify(imageUrls) : null
-      
       const response = await fetch('/api/reviews/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -264,7 +49,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
           content_id: contentId,
           review_text: reviewText.trim(),
           user_name: userName || null,
-          image_url: imageUrl,
+          image_url: null,
           title: title || null
         })
       })
@@ -300,9 +85,7 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
 
   if (!isOpen) return null
 
-  const successTitle = selectedImages.length > 0
-    ? '베스트리뷰 후보가 되셨습니다'
-    : '리뷰가 저장되었습니다'
+  const successTitle = '리뷰가 저장되었습니다'
 
   return (
     <>
@@ -349,146 +132,6 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
               </div>
             </div>
 
-            {/* 이미지 선택 영역 */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                사진 (선택사항, 최대 {MAX_IMAGES}개)
-              </label>
-              {imagePreviews.length > 0 ? (
-                <div className="space-y-3">
-                  {/* 이미지 그리드 */}
-                  <div className="grid grid-cols-2 gap-3">
-                    {imagePreviews.map((preview, index) => (
-                      <div key={index} className="relative bg-gray-50 rounded-lg border border-gray-300 overflow-hidden" style={{ minHeight: '200px', height: '200px' }}>
-                        <div className="w-full h-full flex items-center justify-center">
-                          {!imageLoadedStates[index] && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
-                            </div>
-                          )}
-                          <img
-                            src={preview}
-                            alt={`미리보기 ${index + 1}`}
-                            className={`w-full h-full object-contain transition-opacity duration-200 ${imageLoadedStates[index] ? 'opacity-100' : 'opacity-0'}`}
-                            onLoad={() => {
-                              setImageLoadedStates(prev => {
-                                const updated = [...prev]
-                                updated[index] = true
-                                return updated
-                              })
-                            }}
-                            onError={() => {
-                              setImageLoadedStates(prev => {
-                                const updated = [...prev]
-                                updated[index] = true
-                                return updated
-                              })
-                            }}
-                          />
-                        </div>
-                        {!isUploading && imageLoadedStates[index] && (
-                          <button
-                            onClick={() => handleRemoveImage(index)}
-                            className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 transition-colors z-10"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  
-                  {/* 업로드 중 오버레이 */}
-                  {isUploading && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[10001]">
-                      <div className="bg-white rounded-lg p-4 flex flex-col items-center gap-2">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500"></div>
-                        <span className="text-sm font-semibold text-gray-700">업로드 중...</span>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* 추가 이미지 선택 버튼 (최대 개수 미만일 때만 표시) */}
-                  {imagePreviews.length < MAX_IMAGES && (
-                    <div className="flex gap-3">
-                      <button
-                        type="button"
-                        onClick={handleAlbumSelect}
-                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
-                      >
-                        <div className="flex items-center justify-center gap-2">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          <span>앨범에서 추가</span>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleCameraCapture}
-                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
-                      >
-                        <div className="flex items-center justify-center gap-2">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
-                          <span>사진 촬영</span>
-                        </div>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={handleAlbumSelect}
-                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
-                  >
-                    <div className="flex items-center justify-center gap-2">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <span>앨범에서 선택</span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCameraCapture}
-                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
-                  >
-                    <div className="flex items-center justify-center gap-2">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      <span>사진 촬영</span>
-                    </div>
-                  </button>
-                </div>
-              )}
-
-              {/* 숨겨진 파일 입력 (multiple 속성 추가) */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={(e) => { void handleImageSelect(e.target.files) }}
-              />
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={(e) => { void handleImageSelect(e.target.files) }}
-              />
-            </div>
           </div>
 
           {/* 푸터 */}
@@ -501,40 +144,14 @@ export default function ReviewPopup({ isOpen, onClose, contentId, userName, titl
             </button>
             <button
               onClick={handleSave}
-              disabled={isSubmitting || isUploading || !reviewText.trim()}
+              disabled={isSubmitting || !reviewText.trim()}
               className="flex-1 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
             >
-              {isUploading ? `업로드 중... (${selectedImages.length}개)` : isSubmitting ? '저장 중...' : '저장'}
+              {isSubmitting ? '저장 중...' : '저장'}
             </button>
           </div>
         </div>
       </div>
-
-      {/* 확인 다이얼로그 */}
-      {showConfirmDialog && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10001] p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">저장 확인</h3>
-            <p className="text-gray-600 mb-6">
-              이용 사진까지 저장하시면 올리브영 5만원 모바일 쿠폰을 드립니다. 이대로 저장하시겠어요?
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowConfirmDialog(false)}
-                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
-              >
-                취소
-              </button>
-              <button
-                onClick={handleConfirmSave}
-                className="flex-1 bg-pink-500 hover:bg-pink-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200"
-              >
-                저장
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 성공 메시지 */}
       {showSuccessMessage && (

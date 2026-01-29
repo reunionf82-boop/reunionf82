@@ -506,19 +506,39 @@ function ResultContent() {
     }
 
     // Supabase에서 완료된 결과 로드
+    let cancelled = false
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000)
+
+    const fetchJson = async (url: string) => {
+      const response = await fetch(url, { signal: controller.signal })
+      const text = await response.text()
+      let data: any = {}
+      if (text) {
+        try {
+          data = JSON.parse(text)
+        } catch {
+          data = {}
+        }
+      }
+      return { response, data }
+    }
+
     const loadData = async () => {
       try {
-        const response = await fetch(`/api/saved-results/list`)
+        const { response, data: result } = await fetchJson(`/api/saved-results/list?id=${encodeURIComponent(savedId)}`)
         if (!response.ok) {
-          throw new Error('저장된 결과 목록 조회 실패')
+          const errorMessage = result?.error || '저장된 결과 조회 실패'
+          throw new Error(errorMessage)
         }
 
-        const result = await response.json()
-        if (!result.success || !result.data) {
+        if (!result?.success || !result?.data) {
           throw new Error('저장된 결과 데이터가 없습니다.')
         }
 
-        const savedResult = result.data.find((item: any) => item.id === savedId)
+        const savedResult = Array.isArray(result.data)
+          ? result.data.find((item: any) => item.id === savedId)
+          : result.data
         if (!savedResult) {
           throw new Error('저장된 결과를 찾을 수 없습니다.')
         }
@@ -532,7 +552,7 @@ function ResultContent() {
           return fontFaceBlocks.length > 0 ? `<style>${fontFaceBlocks.join('\n')}</style>` : ''
         })
         
-        if (!savedHtml || savedHtml.trim().length < 100) {
+        if (!savedHtml || savedHtml.trim().length === 0) {
           throw new Error('저장된 결과에 내용이 없습니다. 관리자에게 문의해주세요.')
         }
 
@@ -543,14 +563,16 @@ function ResultContent() {
         
         if (needsFetchContent && savedResult.title) {
           try {
-            const findResponse = await fetch(`/api/contents/find-by-title?title=${encodeURIComponent(savedResult.title)}`)
+            const { response: findResponse, data: findData } = await fetchJson(
+              `/api/contents/find-by-title?title=${encodeURIComponent(savedResult.title)}`
+            )
             if (findResponse.ok) {
-              const findData = await findResponse.json().catch(() => ({}))
               if (findData.success && findData.content_id) {
                 // content_id로 전체 content 정보 가져오기 (full=true로 전체 데이터 요청)
-                const contentResponse = await fetch(`/api/content/${findData.content_id}?full=true`)
+                const { response: contentResponse, data: contentData } = await fetchJson(
+                  `/api/content/${findData.content_id}?full=true`
+                )
                 if (contentResponse.ok) {
-                  const contentData = await contentResponse.json()
                   if (contentData && contentData.menu_items) {
                     // 기존 저장된 content의 user_info는 유지 (점사 시 입력한 정보)
                     finalContent = {
@@ -596,16 +618,29 @@ function ResultContent() {
           }, 1000)
         }
         
+        if (cancelled) return
+
         // 저장된 결과 목록 로드
-        loadSavedResults()
+        try {
+          await loadSavedResults()
+        } catch {
+        }
       } catch (e: any) {
+        if (cancelled) return
         setError('결과 데이터를 불러오는 중 오류가 발생했습니다.')
       } finally {
-        setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
 
     loadData()
+    return () => {
+      cancelled = true
+      controller.abort()
+      window.clearTimeout(timeoutId)
+    }
   }, [savedId, storageKey, isRealtime])
 
   // realtime 모드: requestKey 기반으로 스트리밍 수행
@@ -3373,6 +3408,18 @@ ${fontFace ? fontFace : ''}
       line-height: 1.8 !important;
       ${bodyFontFamilyName ? `font-family: '${bodyFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;` : ''}
       ${bodyColor ? `color: ${bodyColor} !important;` : ''}
+    }
+    .jeminai-results .subtitle-content.subtitle-loading {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      gap: 0.5rem !important;
+      margin-top: 2.5rem !important;
+      font-size: ${Math.round(bodyFontSize * 2)}px !important;
+      font-weight: 800 !important;
+      line-height: 1.4 !important;
+      color: #9CA3AF !important;
     }
     .jeminai-results .detail-menu-content {
       font-size: ${bodyFontSize}px !important;
@@ -6663,7 +6710,7 @@ ${fontFace ? fontFace : ''}
               {/* 안내 문구 */}
               <div className="mb-4">
                 <p className="text-gray-700 font-medium">
-                  <span className="text-pink-600">점사가 모두 완료될때까지 현재 화면에서 나가지 마세요!</span>
+                  <span className="text-pink-600">본문 점사가 모두 완료되었다는 팝업창이 뜨기 전까지는 현재 화면에서 나가지 마세요!</span>
                 </p>
               </div>
               
@@ -6931,10 +6978,8 @@ ${fontFace ? fontFace : ''}
                             />
                           ) : (
                             <div 
-                              className="subtitle-content text-gray-400 flex items-center gap-2 py-2"
+                              className="subtitle-content subtitle-loading py-2"
                               style={{
-                                fontSize: `${bodyFontSize}px`,
-                                fontWeight: bodyFontBold ? 'bold' : 'normal',
                                 fontFamily: bodyFontFamilyName ? `'${bodyFontFamilyName}', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif` : undefined
                               }}
                             >

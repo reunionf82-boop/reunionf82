@@ -54,6 +54,8 @@ export default function ServiceCard({ service }: ServiceCardProps) {
         if (typeof service.id === 'number') {
           sessionStorage.setItem('form_content_id', String(service.id))
         }
+        // 재회보기 클릭 시 폼 자동복구를 1회 스킵
+        sessionStorage.setItem('skip_resume_once', '1')
         // ✅ 썸네일 캐시는 "컨텐츠별(title별)"로 분리해서 저장 (다른 폼에서 섞이는 버그 방지)
         const imageKey = `form_thumbnail_image_url:${service.title}`
         const videoKey = `form_thumbnail_video_url:${service.title}`
@@ -75,6 +77,8 @@ export default function ServiceCard({ service }: ServiceCardProps) {
         if (typeof service.id === 'number') {
           sessionStorage.setItem('form_content_id', String(service.id))
         }
+        // 재회보기 클릭 시 폼 자동복구를 1회 스킵
+        sessionStorage.setItem('skip_resume_once', '1')
         // ✅ 썸네일 캐시는 "컨텐츠별(title별)"로 분리해서 저장 (다른 폼에서 섞이는 버그 방지)
         const imageKey = `form_thumbnail_image_url:${service.title}`
         const videoKey = `form_thumbnail_video_url:${service.title}`
