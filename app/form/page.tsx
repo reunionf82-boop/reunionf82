@@ -2235,10 +2235,7 @@ function FormContent() {
       setLoading(false)
 
       if (foundContent?.id) {
-        // 클릭 수 조회 (증가 전 값)
-        setClickCount(foundContent.click_count || 0)
-
-        // 클릭 수 증가 (백그라운드)
+        // 클릭 수 증가 (백그라운드) - 일자 기준 유니크 카운트
         void (async () => {
           try {
             const clickRes = await fetch('/api/content/click', {
@@ -2248,7 +2245,7 @@ function FormContent() {
             })
             if (clickRes.ok) {
               const clickData = await clickRes.json()
-              setClickCount(clickData.click_count || foundContent.click_count || 0)
+              setClickCount(clickData.total_count || 0)
             }
           } catch (e) {
             // 무시 (UX 우선)
