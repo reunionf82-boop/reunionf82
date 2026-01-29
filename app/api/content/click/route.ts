@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     let inserted = false
     const { data: insertData, error: insertError } = await supabase
       .from('daily_unique_content_views')
-      .insert({
+      .upsert({
         content_id: contentId,
         day,
         fingerprint_hash: fingerprintHash,
