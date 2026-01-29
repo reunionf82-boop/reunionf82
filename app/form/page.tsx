@@ -5579,7 +5579,7 @@ function FormContent() {
                 })()}
               </div>
               <p className="text-sm text-gray-700 leading-relaxed">
-                포춘82 코인 결제 불가, 만약 재회사주 솔루션이 만족스럽지 않으신 경우 연락주시면 100% 환불해 드립니다.
+                해당 상품은 포춘82 코인 결제가 불가능하며 별도로 운영됩니다.
               </p>
             </div>
           )}
