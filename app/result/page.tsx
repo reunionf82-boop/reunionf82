@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 'use client'
 
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense, useEffect, useState, useRef, useMemo, memo, useCallback } from 'react'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { getContentById, getSelectedSpeaker, getFortuneViewMode } from '@/lib/supabase-admin'
@@ -96,6 +96,7 @@ function appendStreamChunk(prev: string, next: string): string {
 
 function ResultContent() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   
   // sessionStorage에서 데이터 가져오기 (URL 파라미터 대신, 하위 호환성 유지)
   const [storageKey, setStorageKey] = useState<string | null>(null)
@@ -154,6 +155,10 @@ function ResultContent() {
       setDataLoaded(true)
       return
     }
+
+    // ✅ URL 직접 접근 차단: 세션 기반 데이터가 없으면 폼으로 이동
+    router.replace('/form')
+    return
     
     // 2. URL 파라미터 확인 (하위 호환성)
     const urlStorageKey = searchParams.get('key')
@@ -167,7 +172,7 @@ function ResultContent() {
     if (urlResumeCode) {
       void (async () => {
         try {
-          const response = await fetch(`/api/resume-code/resolve?code=${encodeURIComponent(urlResumeCode)}`)
+          const response = await fetch(`/api/resume-code/resolve?code=${encodeURIComponent(String(urlResumeCode))}`)
           if (!response.ok) {
             setError('복구 링크가 만료되었거나 유효하지 않습니다.')
             setDataLoaded(true)
@@ -207,7 +212,7 @@ function ResultContent() {
     if (urlResumeToken) {
       void (async () => {
         try {
-          const response = await fetch(`/api/resume-token/resolve?token=${encodeURIComponent(urlResumeToken)}`)
+          const response = await fetch(`/api/resume-token/resolve?token=${encodeURIComponent(String(urlResumeToken))}`)
           if (!response.ok) {
             setError('복구 링크가 만료되었거나 유효하지 않습니다.')
             setDataLoaded(true)

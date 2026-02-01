@@ -18,6 +18,23 @@ import jsPDF from 'jspdf'
 function FormContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+
+  const fetchContentsSafe = async () => {
+    try {
+      const response = await fetch('/api/admin/content/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (response.ok) {
+        const payload = await response.json()
+        if (Array.isArray(payload?.data)) {
+          return payload.data
+        }
+      }
+    } catch (error) {
+    }
+    return await getContents()
+  }
   
   // sessionStorage에서 title 가져오기 (URL 파라미터 대신)
   const [title, setTitle] = useState<string>('')
@@ -66,12 +83,14 @@ function FormContent() {
       }
 
       // 1. sessionStorage 우선 확인 (새로운 방식)
+      let hasTitle = false
       if (typeof window !== 'undefined') {
         const storedTitle = sessionStorage.getItem('form_title')
         const storedModel = sessionStorage.getItem('form_model')
         
         if (storedTitle) {
           setTitle(storedTitle)
+          hasTitle = true
           // 삭제하지 않음 (result에서 돌아올 때 재사용 가능하도록 유지)
         }
         
@@ -88,6 +107,31 @@ function FormContent() {
       
       if (urlTitle) {
         setTitle(urlTitle)
+        hasTitle = true
+      }
+
+      // 2-1. 포털 직접 링크(/form) 대응: title이 없으면 기본 컨텐츠 자동 선택
+      if (!hasTitle) {
+        try {
+          const data = await fetchContentsSafe()
+          const defaultContent =
+            data?.find((item: any) => item?.is_exposed === true || item?.is_exposed === 'true' || item?.is_exposed === 1) ||
+            data?.[0] ||
+            null
+          if (defaultContent?.content_name) {
+            setTitle(defaultContent.content_name)
+            hasTitle = true
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('form_title', defaultContent.content_name)
+              if (typeof defaultContent.id === 'number') {
+                sessionStorage.setItem('form_content_id', String(defaultContent.id))
+              }
+              // 직접 링크 진입 시 자동 복구 1회 스킵
+              sessionStorage.setItem('skip_resume_once', '1')
+            }
+          }
+        } catch (error) {
+        }
       }
       
       if (urlModel) {
@@ -160,6 +204,9 @@ function FormContent() {
   // 이전 점사 자동 복구 (24시간 내)
   useEffect(() => {
     if (typeof window === 'undefined') return
+    const portalToken = searchParams.get('token')
+    const directTitle = searchParams.get('title')
+    if (portalToken || !directTitle) return
     if (sessionStorage.getItem('resume_auto_checked')) return
     sessionStorage.setItem('resume_auto_checked', '1')
 
@@ -195,7 +242,7 @@ function FormContent() {
       sessionStorage.setItem('result_stream', 'true')
       router.push(`/result?requestKey=${encodeURIComponent(requestKey)}&stream=true`)
     }
-  }, [router])
+  }, [router, searchParams])
   
   const [content, setContent] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -1031,10 +1078,8 @@ function FormContent() {
   }, [currentAudio])
 
   useEffect(() => {
-    if (title) {
-      setLoading(true)
+    setLoading(true)
     loadContent()
-    }
   }, [title])
 
   // content가 변경될 때 썸네일 에러 상태 초기화 및 캐시된 썸네일 업데이트
@@ -2179,12 +2224,12 @@ function FormContent() {
       }
 
       if (!foundContent) {
-        const data = await getContents()
+        const data = await fetchContentsSafe()
         foundContent = data?.find((item: any) => item.content_name === decodedTitle) || null
       } else {
         // storedContentId로 가져온 컨텐츠가 title과 다르면(다른 카드 클릭 등) 폴백
         if (foundContent?.content_name && foundContent.content_name !== decodedTitle) {
-          const data = await getContents()
+          const data = await fetchContentsSafe()
           foundContent = data?.find((item: any) => item.content_name === decodedTitle) || null
         }
       }
@@ -2206,6 +2251,11 @@ function FormContent() {
       if (foundContent) {
         const exposed = foundContent?.is_exposed === true || foundContent?.is_exposed === 'true' || foundContent?.is_exposed === 1
         let previewAllowed = false
+        const portalToken = searchParams.get('token')
+        const directTitle = searchParams.get('title')
+        if ((portalToken && portalToken.trim()) || (directTitle && directTitle.trim())) {
+          previewAllowed = true
+        }
         if (typeof window !== 'undefined') {
           const until = localStorage.getItem('dev_unlock_until')
           if (until) {
