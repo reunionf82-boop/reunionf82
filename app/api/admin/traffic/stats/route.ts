@@ -145,6 +145,22 @@ export async function GET(request: NextRequest) {
 
     const series = Object.values(seriesMap).sort((a, b) => a.bucket.localeCompare(b.bucket))
 
+    // 유입수는 유니크보다 작지 않도록 방어 처리 (이전 데이터 누락/경합 대비)
+    series.forEach((item) => {
+      if (item.views < item.unique) {
+        item.views = item.unique
+      }
+    })
+    if (byPageViews.home < byPageUnique.home) {
+      byPageViews.home = byPageUnique.home
+    }
+    if (byPageViews.form < byPageUnique.form) {
+      byPageViews.form = byPageUnique.form
+    }
+    if (totalViews < totalUnique) {
+      totalViews = totalUnique
+    }
+
     return NextResponse.json({
       success: true,
       data: {

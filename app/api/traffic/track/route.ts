@@ -52,42 +52,14 @@ export async function POST(req: NextRequest) {
       throw uniqueInsertError
     }
 
-    const { data: existingCountData, error: existingCountError } = await supabase
-      .from('daily_page_views')
-      .select('view_count')
-      .eq('page', page)
-      .eq('day', day)
-      .maybeSingle()
+    const { data: updatedCountData, error: countError } = await supabase
+      .rpc('increment_daily_page_view', { p_page: page, p_day: day })
 
-    if (existingCountError) {
-      throw existingCountError
+    if (countError) {
+      throw countError
     }
 
-    let updatedCount = 1
-    if (existingCountData?.view_count !== undefined && existingCountData?.view_count !== null) {
-      updatedCount = Number(existingCountData.view_count) + 1
-      const { error: updateError } = await supabase
-        .from('daily_page_views')
-        .update({ view_count: updatedCount })
-        .eq('page', page)
-        .eq('day', day)
-
-      if (updateError) {
-        throw updateError
-      }
-    } else {
-      const { error: insertError } = await supabase
-        .from('daily_page_views')
-        .insert({
-          page,
-          day,
-          view_count: updatedCount,
-        })
-
-      if (insertError) {
-        throw insertError
-      }
-    }
+    const updatedCount = Number(updatedCountData) || 0
 
     const { count: uniqueDailyCount, error: uniqueCountError } = await supabase
       .from('daily_unique_page_views')
