@@ -97,6 +97,15 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    void fetch('/api/traffic/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page: 'home' }),
+    })
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
     const storedMinutes = localStorage.getItem('dev_unlock_duration_minutes')
     if (storedMinutes) {
       const parsed = parseInt(storedMinutes, 10)

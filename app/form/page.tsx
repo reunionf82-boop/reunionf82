@@ -148,6 +148,15 @@ function FormContent() {
     }
     loadData()
   }, [searchParams])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    void fetch('/api/traffic/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page: 'form' }),
+    })
+  }, [])
   
   // 페이지 포커스 시 sessionStorage에서 title 다시 확인 (result에서 돌아올 때 대응)
   useEffect(() => {

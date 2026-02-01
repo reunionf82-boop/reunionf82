@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { getContents, deleteContent } from '@/lib/supabase-admin'
 import AdminReviewEventModal from '@/components/AdminReviewEventModal'
 import PaymentStatsDashboard from '@/components/PaymentStatsDashboard'
+import TrafficStatsDashboard from '@/components/TrafficStatsDashboard'
 
 export default function AdminPage() {
   const router = useRouter()
@@ -110,6 +111,7 @@ export default function AdminPage() {
 
   // 결제 통계 대시보드 상태
   const [showPaymentStats, setShowPaymentStats] = useState(false)
+  const [showTrafficStats, setShowTrafficStats] = useState(false)
 
   // 홈html 조회 (리뷰이벤트와 동일한 방식 - POST로 캐시 우회)
   const loadHomeHtml = async () => {
@@ -744,6 +746,13 @@ export default function AdminPage() {
                 title="결제 통계 대시보드"
               >
                 💰 결제 통계
+              </button>
+              <button
+                onClick={() => setShowTrafficStats(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200 shadow-lg"
+                title="유입 통계 대시보드"
+              >
+                유입 통계
               </button>
               <button
                 onClick={handleOpenInquiryModal}
@@ -1565,6 +1574,12 @@ export default function AdminPage() {
       <PaymentStatsDashboard
         isOpen={showPaymentStats}
         onClose={() => setShowPaymentStats(false)}
+      />
+
+      {/* 유입 통계 대시보드 */}
+      <TrafficStatsDashboard
+        isOpen={showTrafficStats}
+        onClose={() => setShowTrafficStats(false)}
       />
 
       {/* 점사 재시도 조회 모달 */}
