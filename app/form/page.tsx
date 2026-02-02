@@ -536,6 +536,15 @@ function FormContent() {
     return digits.slice(0, 11)
   }
 
+  const clearConfirmedOidState = () => {
+    if (typeof window === 'undefined') return
+    sessionStorage.removeItem('payment_confirmed_oid')
+    sessionStorage.removeItem('payment_confirmed_oid_at')
+    const url = new URL(window.location.href)
+    url.searchParams.delete('confirmedOid')
+    window.history.replaceState(null, '', url.toString())
+  }
+
   const loadDevUnlockConfig = useCallback(async () => {
     try {
       const response = await fetch('/api/dev-unlock/config', { cache: 'no-store' })
@@ -3092,6 +3101,8 @@ function FormContent() {
               },
               true
             )
+            // 점사 성공 시에만 재사용 방지: confirmedOid 표시/세션 제거 (오류 시에는 그대로 두어 재시도 가능)
+            clearConfirmedOidState()
           } catch (err) {
             setSubmitting(false)
             showAlertMessage(err instanceof Error ? err.message : '점사 시작 중 오류가 발생했습니다.')
