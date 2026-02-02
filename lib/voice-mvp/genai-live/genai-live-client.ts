@@ -15,7 +15,7 @@ import {
   type Part,
   type Session,
   type Content,
-} from '@google/genai'
+} from '@google/genai/web'
 
 import { EventEmitter } from 'eventemitter3'
 import { difference } from 'lodash'
@@ -177,10 +177,17 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
   }
 
   sendRealtimeInput(chunks: Array<{ mimeType: string; data: string }>) {
+    if (this._status !== 'connected' || !this.session) {
+      return
+    }
     let hasAudio = false
     let hasVideo = false
     for (const ch of chunks) {
-      this.session?.sendRealtimeInput({ media: ch as any })
+      try {
+        this.session?.sendRealtimeInput({ media: ch as any })
+      } catch {
+        return
+      }
       if (ch.mimeType.includes('audio')) hasAudio = true
       if (ch.mimeType.includes('image')) hasVideo = true
       if (hasAudio && hasVideo) break

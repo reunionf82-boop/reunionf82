@@ -1,6 +1,8 @@
 create or replace function public.increment_daily_page_view(p_page text, p_day date)
 returns integer
 language plpgsql
+security definer
+set search_path = public, pg_temp
 as $$
 declare
   new_count integer;

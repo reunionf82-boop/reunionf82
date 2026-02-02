@@ -8,7 +8,7 @@ import { audioContext } from '@/lib/voice-mvp/genai-live/utils'
 import VolMeterWorket from '@/lib/voice-mvp/genai-live/worklets/vol-meter'
 import { GenAILiveClient } from '@/lib/voice-mvp/genai-live/genai-live-client'
 import type { LiveClientOptions } from '@/lib/voice-mvp/genai-live/types'
-import { Modality, type LiveConnectConfig } from '@google/genai'
+import { Modality, type LiveConnectConfig } from '@google/genai/web'
 
 type Msg = { role: 'user' | 'assistant' | 'system'; text: string }
 
@@ -60,6 +60,18 @@ const DEFAULT_VOICE_NAMES: Record<string, string> = {
   fortune: 'Aoede',
   gunghap: 'Aoede',
   reunion: 'Aoede',
+}
+
+const LIVE_MODEL_FALLBACK = 'models/gemini-2.5-flash-native-audio-preview-12-2025'
+
+function normalizeLiveModel(base: string) {
+  const trimmed = String(base || '').trim()
+  if (!trimmed) return LIVE_MODEL_FALLBACK
+  const model = trimmed.includes('/') ? trimmed : `models/${trimmed}`
+  if (model.includes('-exp')) return LIVE_MODEL_FALLBACK
+  if (model.includes('native-audio') || model.includes('gemini-live-2.5')) return model
+  if (!model.includes('-live')) return LIVE_MODEL_FALLBACK
+  return model
 }
 
 function getModeVoicePreset(snapshot: any, mode: string) {
@@ -194,6 +206,7 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
   const isAiSpeakingRef = useRef<boolean>(false) // AI가 현재 말하고 있는지 추적
   const isFirstConnectionRef = useRef<boolean>(true) // 최초 연결 여부 추적
   const audioTimeoutRef = useRef<NodeJS.Timeout | null>(null) // 오디오 스트림 종료 감지용 타임아웃
+  const manualDisconnectRef = useRef(false)
 
   const snapshot = session?.routing_config_snapshot
   const voiceStyle = useMemo(() => String(snapshot?.voice_style || 'calm').trim() || 'calm', [snapshot])
@@ -206,10 +219,7 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
         session?.routing_config_snapshot?.routing?.base_model ||
         'gemini-2.0-flash-001'
     ).trim()
-    if (!base) return 'models/gemini-2.0-flash-001'
-    // Live API expects "models/..." naming (or a full resource name depending on client).
-    // Our DB stores plain ids like "gemini-2.0-flash-001".
-    return base.includes('/') ? base : `models/${base}`
+    return normalizeLiveModel(base)
   }, [session])
 
   useEffect(() => {
@@ -289,11 +299,24 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
       setConnected(true)
       isAiSpeakingRef.current = false // 연결 시 초기화
     }
-    const onClose = () => {
+    const onClose = (event?: CloseEvent) => {
       setConnected(false)
       isAiSpeakingRef.current = false
+      recorderRef.current?.stop()
+      streamerRef.current?.stop()
+      if (manualDisconnectRef.current) {
+        manualDisconnectRef.current = false
+        return
+      }
+      const code = event?.code ? ` (code ${event.code})` : ''
+      const reason = event?.reason ? `: ${event.reason}` : ''
+      setError(`Live 연결 종료${code}${reason}`)
     }
-    const onError = (e: any) => setError(e?.message || 'Live 연결 오류')
+    const onError = (e: any) => {
+      setError(e?.message || 'Live 연결 오류')
+      recorderRef.current?.stop()
+      streamerRef.current?.stop()
+    }
 
     const onAudio = (data: ArrayBuffer) => {
       try {
@@ -317,8 +340,8 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
             }
           }
           
-          // jong.mp3: 5% 확률로 재생
-          if (Math.random() < 0.05 && jongSoundRef.current) {
+          // jong.mp3: 30% 확률로 재생
+          if (Math.random() < 0.3 && jongSoundRef.current) {
             jongSoundRef.current.currentTime = 0
             jongSoundRef.current.play().catch(() => {})
           }
@@ -424,7 +447,10 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
         },
       }
 
-      await clientRef.current.connect(model, config)
+      const connectedOk = await clientRef.current.connect(model, config)
+      if (!connectedOk) {
+        throw new Error('Live 연결 실패')
+      }
 
       // ✅ 연결 시 jong.mp3 재생 (500ms 지연)
       // 최초 연결 시: 100% 확률, 이후 연결 시: 5% 확률
@@ -448,6 +474,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
       const recorder = recorderRef.current
 
       const onData = (base64: string) => {
+        if (clientRef.current?.status !== 'connected') return
         clientRef.current?.sendRealtimeInput([{ mimeType: 'audio/pcm;rate=16000', data: base64 }])
       }
       recorder.off('data', onData as any).off('volume', setInVolume as any)
@@ -461,6 +488,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
   }
 
   const disconnect = async () => {
+    manualDisconnectRef.current = true
     recorderRef.current?.stop()
     streamerRef.current?.stop()
     clientRef.current?.disconnect()

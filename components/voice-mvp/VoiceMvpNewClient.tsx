@@ -179,14 +179,7 @@ export default function VoiceMvpNewClient() {
           <a href="/" className="text-2xl font-bold tracking-tight text-pink-600">
             jeuniOn
           </a>
-          <a
-            href="/admin"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm font-semibold text-gray-700 hover:text-pink-600 transition-colors"
-          >
-            어드민
-          </a>
+          
         </div>
       </header>
 

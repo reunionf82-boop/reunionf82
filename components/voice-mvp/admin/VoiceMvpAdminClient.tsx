@@ -209,14 +209,6 @@ export default function VoiceMvpAdminClient() {
             >
               새 세션 만들기
             </a>
-            <a
-              href="/admin"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-2 rounded-lg font-semibold bg-gray-700 hover:bg-gray-600"
-            >
-              어드민 홈
-            </a>
           </div>
         </div>
 
@@ -229,16 +221,23 @@ export default function VoiceMvpAdminClient() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
+          <div className="bg-gray-800 rounded-xl border border-gray-700 p-5 h-full flex flex-col">
             <div className="font-bold mb-4">라우팅 설정</div>
             {loading ? (
               <div className="text-gray-400">로딩 중...</div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-4 flex-1">
                 <Field label="기본 모델(Flash)" value={config.base_model} onChange={(v) => setConfig((c) => ({ ...c, base_model: v }))} />
+              </div>
+            )}
+          </div>
 
-                <div className="pt-2 border-t border-gray-700" />
-                <div className="font-semibold text-gray-200">페르소나 (유형별)</div>
+          <div className="bg-gray-800 rounded-xl border border-gray-700 p-5 h-full flex flex-col">
+            <div className="font-bold mb-4">페르소나 (유형별)</div>
+            {loading ? (
+              <div className="text-gray-400">로딩 중...</div>
+            ) : (
+              <div className="space-y-4 flex-1">
                 <PersonaVoiceRow
                   title="사주"
                   gender={config.voice_gender_saju || 'female'}
@@ -324,42 +323,6 @@ export default function VoiceMvpAdminClient() {
                 >
                   {saving ? '저장 중...' : '저장'}
                 </button>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
-            <div className="font-bold mb-4">최근 세션</div>
-            {loading ? (
-              <div className="text-gray-400">로딩 중...</div>
-            ) : sessions.length === 0 ? (
-              <div className="text-gray-400">세션이 없습니다.</div>
-            ) : (
-              <div className="space-y-3 max-h-[520px] overflow-y-auto">
-                {sessions.map((s) => (
-                  <a
-                    key={s.id}
-                    href={`/voice-mvp/session/${s.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`block rounded-lg border px-4 py-3 hover:border-pink-500 transition-colors ${
-                      s.status === 'ended' ? 'border-gray-700 text-gray-400' : 'border-gray-600'
-                    }`}
-                    onClick={(e) => {
-                      if (!enabled) e.preventDefault()
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold">{s.mode}</div>
-                      <div className="text-xs text-gray-400">{s.created_at}</div>
-                    </div>
-                    <div className="text-sm mt-1">
-                      {s.profile_self?.name} ({s.profile_self?.gender})
-                      {s.profile_partner?.name ? ` ↔ ${s.profile_partner?.name}` : ''}
-                    </div>
-                    <div className="text-xs mt-1 text-gray-400">status: {s.status}</div>
-                  </a>
-                ))}
               </div>
             )}
           </div>
