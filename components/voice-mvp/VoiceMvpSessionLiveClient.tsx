@@ -291,7 +291,12 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
       return
     }
 
-    const opts: LiveClientOptions = { apiKey } as any
+    const opts: LiveClientOptions = {
+      apiKey,
+      httpOptions: {
+        apiVersion: 'v1beta',
+      },
+    } as any
     const client = new GenAILiveClient(opts)
     clientRef.current = client
 
