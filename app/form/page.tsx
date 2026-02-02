@@ -500,7 +500,7 @@ function FormContent() {
   const [phoneNumber3, setPhoneNumber3] = useState('')
   const [password, setPassword] = useState('')
   const [showResumePopup, setShowResumePopup] = useState(false)
-  const [resumePhone, setResumePhone] = useState('')
+  const [resumePhone, setResumePhone] = useState('010')
   const [resumePassword, setResumePassword] = useState('')
   const [resumeLoading, setResumeLoading] = useState(false)
   const [confirmedOidExpired, setConfirmedOidExpired] = useState(false) // 결제 확인 후 12시간 초과 여부
@@ -510,6 +510,31 @@ function FormContent() {
   const [devUnlockDurationMinutes, setDevUnlockDurationMinutes] = useState<number>(60)
   const [devUnlockHideEnabled, setDevUnlockHideEnabled] = useState(false)
   const devUnlockClickRef = useRef<{ count: number; timer: ReturnType<typeof setTimeout> | null }>({ count: 0, timer: null })
+
+  const formatInquiryPhone = (value: string) => {
+    let digits = String(value || '').replace(/[^0-9]/g, '')
+    if (!digits.startsWith('010')) {
+      digits = '010' + digits.replace(/^010/, '')
+    }
+    digits = digits.slice(0, 11)
+
+    let formatted = '010-'
+    if (digits.length > 3) {
+      const rest = digits.slice(3)
+      formatted = rest.length <= 4
+        ? `010-${rest}`
+        : `010-${rest.slice(0, 4)}-${rest.slice(4, 8)}`
+    }
+
+    return formatted.replace(/-+/g, '-')
+  }
+  const formatResumePhoneDigits = (value: string) => {
+    let digits = String(value || '').replace(/[^0-9]/g, '')
+    if (!digits.startsWith('010')) {
+      digits = '010' + digits.replace(/^010/, '')
+    }
+    return digits.slice(0, 11)
+  }
 
   const loadDevUnlockConfig = useCallback(async () => {
     try {
@@ -5047,11 +5072,14 @@ function FormContent() {
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">휴대폰 번호</label>
                 <input
-                  type="text"
-                  value={resumePhone}
-                  onChange={(e) => setResumePhone(e.target.value)}
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  value={formatInquiryPhone(resumePhone)}
+                  onChange={(e) => setResumePhone(formatResumePhoneDigits(e.target.value))}
                   className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
-                  placeholder="010-0000-0000"
+                  placeholder="010-1234-5678"
+                  maxLength={13}
                 />
               </div>
               <div>
