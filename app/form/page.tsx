@@ -503,6 +503,7 @@ function FormContent() {
   const [resumePhone, setResumePhone] = useState('')
   const [resumePassword, setResumePassword] = useState('')
   const [resumeLoading, setResumeLoading] = useState(false)
+  const [confirmedOidExpired, setConfirmedOidExpired] = useState(false) // 결제 확인 후 12시간 초과 여부
   const [devUnlockEnabled, setDevUnlockEnabled] = useState(false)
   const [showDevUnlockModal, setShowDevUnlockModal] = useState(false)
   const [devUnlockPasswordInput, setDevUnlockPasswordInput] = useState('')
@@ -736,6 +737,35 @@ function FormContent() {
         setIsLoadingFromStorage(false)
       }
     }
+  }, [searchParams])
+
+  // 결제 확인(confirmedOid) 후 12시간 유효 여부 (서버 completed_at 기준)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !searchParams.get('confirmedOid')) return
+    const oid = searchParams.get('confirmedOid')
+    fetch(`/api/payment/status?oid=${encodeURIComponent(oid || '')}`)
+      .then((res) => res.json())
+      .then((data) => {
+        // 운영자 예외: allowedRetry/allowedUntil 있으면 만료 처리 안 함
+        if (data?.allowedRetry === true || (data?.allowedUntil && Date.now() < new Date(data.allowedUntil).getTime())) {
+          return
+        }
+        const completedAt = data?.completedAt
+        if (completedAt) {
+          const ts = new Date(completedAt).getTime()
+          if (Number.isFinite(ts) && Date.now() - ts > 12 * 60 * 60 * 1000) {
+            setConfirmedOidExpired(true)
+          }
+        } else {
+          // completed_at 없으면 세션 리다이렉트 시각으로 폴백
+          const at = sessionStorage.getItem('payment_confirmed_oid_at')
+          if (at) {
+            const ts = parseInt(at, 10)
+            if (Number.isFinite(ts) && Date.now() - ts > 12 * 60 * 60 * 1000) setConfirmedOidExpired(true)
+          }
+        }
+      })
+      .catch(() => {})
   }, [searchParams])
 
   // 사용자 정보 변경 시 LocalStorage에 자동 저장 (포털 토큰이 없을 때만)
@@ -2853,35 +2883,78 @@ function FormContent() {
         })
       })
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({} as any))
-        const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
-        showAlertMessage(msg)
-        return
-      }
-
-      const data = await response.json()
-      if (data?.savedId) {
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('result_savedId', String(data.savedId))
-        }
-        router.push(`/result?savedId=${encodeURIComponent(String(data.savedId))}`)
-        setShowResumePopup(false)
-        return
-      }
-
-      if (data?.requestKey) {
-        const tempRes = await fetch(`/api/temp-request/get?requestKey=${encodeURIComponent(String(data.requestKey))}`)
-        if (!tempRes.ok) {
-          showAlertMessage('재시도 데이터를 찾을 수 없습니다. 고객센터로 문의해주세요.')
+      // 본인정보(user_credentials)에 있으면 savedId/requestKey로 바로 이동
+      if (response.ok) {
+        const data = await response.json()
+        if (data?.savedId) {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('result_savedId', String(data.savedId))
+          }
+          router.push(`/result?savedId=${encodeURIComponent(String(data.savedId))}`)
+          setShowResumePopup(false)
           return
         }
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('result_requestKey', String(data.requestKey))
-          sessionStorage.setItem('result_stream', 'true')
+        if (data?.requestKey) {
+          const rk = String(data.requestKey)
+          // pending 결제용 본인정보(pending_oid) → 본인 확인 후 success 전환하고 폼으로 이동
+          if (rk.startsWith('pending_')) {
+            const oid = rk.replace(/^pending_/, '')
+            const byCredRes = await fetch('/api/payment/confirm-pending-by-credentials', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ oid, phone: resumePhone, password: resumePassword })
+            })
+            const byCredData = await byCredRes.json().catch(() => ({}))
+            if (byCredRes.ok && byCredData?.success && byCredData?.oid) {
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem('payment_oid', String(byCredData.oid))
+                sessionStorage.setItem('payment_content_id', String(byCredData.contentId || ''))
+                sessionStorage.setItem('form_content_id', String(byCredData.contentId || ''))
+                sessionStorage.setItem('payment_user_name', String(byCredData.userName || ''))
+                sessionStorage.setItem('payment_phone', String(byCredData.phoneNumber || ''))
+                sessionStorage.setItem('payment_user_gender', String(byCredData.gender || ''))
+                sessionStorage.setItem('payment_confirmed_oid', String(byCredData.oid))
+                sessionStorage.setItem('payment_confirmed_oid_at', String(Date.now()))
+              }
+              setShowResumePopup(false)
+              router.push(`/form?confirmedOid=${encodeURIComponent(byCredData.oid)}`)
+              return
+            }
+          }
+          const tempRes = await fetch(`/api/temp-request/get?requestKey=${encodeURIComponent(rk)}`)
+          if (!tempRes.ok) {
+            showAlertMessage('재시도 데이터를 찾을 수 없습니다. 고객센터로 문의해주세요.')
+            return
+          }
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('result_requestKey', rk)
+            sessionStorage.setItem('result_stream', 'true')
+          }
+          router.push(`/result?requestKey=${encodeURIComponent(rk)}&stream=true`)
+          setShowResumePopup(false)
+          return
         }
-        router.push(`/result?requestKey=${encodeURIComponent(String(data.requestKey))}&stream=true`)
+      }
+      // 본인정보 DB에 없어도(404) pending 결제 확인(비밀번호 3203) 시도 → payments만 있고 user_credentials 없는 고객도 재시도 가능
+      const confirmRes = await fetch('/api/payment/confirm-pending', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: resumePhone, password: resumePassword })
+      })
+      const confirmData = await confirmRes.json().catch(() => ({}))
+      if (confirmRes.ok && confirmData?.success && confirmData?.oid) {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('payment_oid', String(confirmData.oid))
+          sessionStorage.setItem('payment_content_id', String(confirmData.contentId || ''))
+          sessionStorage.setItem('form_content_id', String(confirmData.contentId || ''))
+          sessionStorage.setItem('payment_user_name', String(confirmData.userName || ''))
+          sessionStorage.setItem('payment_phone', String(confirmData.phoneNumber || ''))
+          sessionStorage.setItem('payment_user_gender', String(confirmData.gender || ''))
+          sessionStorage.setItem('payment_confirmed_oid', String(confirmData.oid))
+          sessionStorage.setItem('payment_confirmed_oid_at', String(Date.now()))
+        }
         setShowResumePopup(false)
+        router.push(`/form?confirmedOid=${encodeURIComponent(confirmData.oid)}`)
         return
       }
 
@@ -2923,6 +2996,86 @@ function FormContent() {
     if (!agreePrivacy) {
       showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
       return
+    }
+    
+    // 결제 확인(재시도)으로 온 경우: 이미 success로 전환된 결제이므로 결제창 없이 점사 시작
+    const confirmedOid = searchParams.get('confirmedOid') || (typeof window !== 'undefined' ? sessionStorage.getItem('payment_confirmed_oid') : null)
+    if (confirmedOid && content?.id) {
+      try {
+        const statusRes = await fetch(`/api/payment/status?oid=${encodeURIComponent(confirmedOid)}`)
+        const statusData = await statusRes.json().catch(() => ({}))
+        if (statusData.success && statusData.status === 'success') {
+          // 운영자 예외: allowedRetry/allowedUntil 있으면 12시간 무시
+          const allowed = statusData.allowedRetry === true || (statusData.allowedUntil && Date.now() < new Date(statusData.allowedUntil).getTime())
+          if (!allowed) {
+            const completedAt = statusData.completedAt
+            let ts = NaN
+            if (completedAt) ts = new Date(completedAt).getTime()
+            if (!Number.isFinite(ts) && typeof window !== 'undefined') {
+              const at = sessionStorage.getItem('payment_confirmed_oid_at')
+              if (at) ts = parseInt(at, 10)
+            }
+            if (Number.isFinite(ts) && Date.now() - ts > 12 * 60 * 60 * 1000) {
+              showAlertMessage('결제 확인 후 12시간이 지나 이용 기간이 만료되었습니다. 고객센터로 문의해 주세요.')
+              return
+            }
+          }
+          if (typeof window !== 'undefined') {
+            const phoneStr = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+            sessionStorage.setItem('payment_oid', confirmedOid)
+            sessionStorage.setItem('payment_content_id', String(content.id))
+            sessionStorage.setItem('payment_user_name', name || '')
+            sessionStorage.setItem('payment_phone', phoneStr)
+            sessionStorage.setItem('payment_password', password || '')
+            sessionStorage.setItem('payment_user_gender', gender || '')
+            sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
+            sessionStorage.setItem('payment_user_year', year || '')
+            sessionStorage.setItem('payment_user_month', month || '')
+            sessionStorage.setItem('payment_user_day', day || '')
+            sessionStorage.setItem('payment_user_birth_hour', birthHour || '')
+            if (partnerName) {
+              sessionStorage.setItem('payment_partner_name', partnerName)
+              sessionStorage.setItem('payment_partner_gender', partnerGender || '')
+              sessionStorage.setItem('payment_partner_calendar_type', partnerCalendarType || 'solar')
+              sessionStorage.setItem('payment_partner_year', partnerYear || '')
+              sessionStorage.setItem('payment_partner_month', partnerMonth || '')
+              sessionStorage.setItem('payment_partner_day', partnerDay || '')
+              sessionStorage.setItem('payment_partner_birth_hour', partnerBirthHour || '')
+            }
+          }
+          setSubmitting(true)
+          const startTime = Date.now()
+          try {
+            await startFortuneTellingWithContent(
+              startTime,
+              content,
+              {
+                name: name,
+                gender: gender,
+                calendarType: calendarType,
+                year: year,
+                month: month,
+                day: day,
+                birthHour: birthHour || '',
+                partnerName: partnerName || '',
+                partnerGender: partnerGender || '',
+                partnerCalendarType: partnerCalendarType || 'solar',
+                partnerYear: partnerYear || '',
+                partnerMonth: partnerMonth || '',
+                partnerDay: partnerDay || '',
+                partnerBirthHour: partnerBirthHour || ''
+              },
+              true
+            )
+          } catch (err) {
+            setSubmitting(false)
+            showAlertMessage(err instanceof Error ? err.message : '점사 시작 중 오류가 발생했습니다.')
+          }
+          return
+        }
+      } catch (e) {
+        // status 확인 실패 시 일반 결제 팝업으로 진행
+      }
     }
     
     // 결제 팝업 표시
@@ -3009,6 +3162,21 @@ function FormContent() {
         setPaymentProcessingMethod(null)
         showAlertMessage('결제 정보를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.')
         return
+      }
+
+      // pending 시점에도 본인정보(user_credentials) 저장 → 재시도 시 본인 확인으로 정상 진행 가능
+      try {
+        await fetch('/api/user-credentials/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestKey: `pending_${oid}`,
+            phone: `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`,
+            password: password || ''
+          })
+        })
+      } catch {
+        // 본인정보 저장 실패해도 결제 진행은 계속 (관리자 비밀번호 3203 재시도로 보완 가능)
       }
 
         // 주문번호 및 사용자 정보를 sessionStorage에 저장 (result 페이지에서 점사 시작 시 사용)
@@ -6159,15 +6327,24 @@ function FormContent() {
               </div>
             </div>
 
+            {/* 결제 확인(재시도)으로 온 경우 안내 */}
+            {searchParams.get('confirmedOid') && (
+              <div className={`mb-4 p-4 rounded-xl text-sm ${confirmedOidExpired ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-green-50 border border-green-200 text-green-800'}`}>
+                {confirmedOidExpired
+                  ? '결제 확인 후 12시간이 지나 이용 기간이 만료되었습니다. 고객센터로 문의해 주세요.'
+                  : '결제가 확인되었습니다. 상기 본인정보를 확인(필요시 수정)하고 12시간 이내에 점사보기를 눌러 점사를 시작해주세요.'}
+              </div>
+            )}
+
             {/* 버튼 영역 */}
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting || loading}
+                disabled={submitting || loading || (!!searchParams.get('confirmedOid') && confirmedOidExpired)}
                 className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                {submitting ? '처리 중...' : '결제하기'}
+                {submitting ? '처리 중...' : (searchParams.get('confirmedOid') ? '점사보기' : '결제하기')}
               </button>
               <button
                 type="button"

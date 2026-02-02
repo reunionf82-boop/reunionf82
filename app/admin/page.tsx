@@ -112,6 +112,12 @@ export default function AdminPage() {
   // 결제 통계 대시보드 상태
   const [showPaymentStats, setShowPaymentStats] = useState(false)
   const [showTrafficStats, setShowTrafficStats] = useState(false)
+  // 결제 재시도 예외 (12시간 경과 후 허용)
+  const [showAllowRetryModal, setShowAllowRetryModal] = useState(false)
+  const [allowRetryOid, setAllowRetryOid] = useState('')
+  const [allowRetryHours, setAllowRetryHours] = useState(24)
+  const [allowRetryLoading, setAllowRetryLoading] = useState(false)
+  const [allowRetryMessage, setAllowRetryMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
   // 홈html 조회 (리뷰이벤트와 동일한 방식 - POST로 캐시 우회)
   const loadHomeHtml = async () => {
@@ -386,6 +392,40 @@ export default function AdminPage() {
       alert('조회 중 오류가 발생했습니다.')
     } finally {
       setResumeAdminLoading(false)
+    }
+  }
+
+  const handleAllowRetrySubmit = async () => {
+    if (allowRetryLoading) return
+    const oid = allowRetryOid.trim()
+    if (!oid) {
+      setAllowRetryMessage({ type: 'err', text: '주문번호(oid)를 입력해 주세요.' })
+      return
+    }
+    const hours = Number(allowRetryHours)
+    if (!Number.isFinite(hours) || hours < 1) {
+      setAllowRetryMessage({ type: 'err', text: '허용 시간(시간)을 1 이상 입력해 주세요.' })
+      return
+    }
+    setAllowRetryLoading(true)
+    setAllowRetryMessage(null)
+    try {
+      const res = await fetch('/api/admin/payment/allow-retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oid, hours })
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.success) {
+        setAllowRetryMessage({ type: 'ok', text: `허용 완료: ${oid} (${hours}시간)` })
+        setAllowRetryOid('')
+      } else {
+        setAllowRetryMessage({ type: 'err', text: data?.error || '저장에 실패했습니다.' })
+      }
+    } catch {
+      setAllowRetryMessage({ type: 'err', text: '서버 오류가 발생했습니다.' })
+    } finally {
+      setAllowRetryLoading(false)
     }
   }
 
@@ -772,6 +812,18 @@ export default function AdminPage() {
                 title="점사 재시도 조회"
               >
                 재시도 조회
+              </button>
+              <button
+                onClick={() => {
+                  setAllowRetryOid('')
+                  setAllowRetryHours(24)
+                  setAllowRetryMessage(null)
+                  setShowAllowRetryModal(true)
+                }}
+                className="bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200"
+                title="결제 재시도 예외 (12시간 경과 후 허용)"
+              >
+                재시도 예외 허용
               </button>
             </div>
             
@@ -1729,6 +1781,67 @@ export default function AdminPage() {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 결제 재시도 예외 (12시간 경과 후 허용) 모달 */}
+      {showAllowRetryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-md flex flex-col">
+            <div className="bg-gradient-to-r from-amber-600 to-amber-700 px-6 py-4 flex items-center justify-between rounded-t-lg">
+              <h2 className="text-xl font-bold text-white">재시도 예외 허용</h2>
+              <button
+                onClick={() => {
+                  if (allowRetryLoading) return
+                  setShowAllowRetryModal(false)
+                  setAllowRetryMessage(null)
+                }}
+                className="text-white hover:text-gray-200 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-amber-800 transition-colors"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-300">
+                결제 확인 후 12시간이 지나 만료된 고객에게 예외적으로 점사보기를 허용합니다. 주문번호(oid)와 허용 시간을 입력하세요.
+              </p>
+              <div>
+                <label className="block text-sm font-semibold text-white mb-2">주문번호 (oid)</label>
+                <input
+                  type="text"
+                  value={allowRetryOid}
+                  onChange={(e) => setAllowRetryOid(e.target.value)}
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="payments 테이블의 oid"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-white mb-2">허용 시간 (시간)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={allowRetryHours}
+                  onChange={(e) => setAllowRetryHours(Number(e.target.value) || 24)}
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">1~720 (최대 30일). 기본 24시간.</p>
+              </div>
+              {allowRetryMessage && (
+                <div className={`p-3 rounded-lg text-sm ${allowRetryMessage.type === 'ok' ? 'bg-green-900/50 text-green-200' : 'bg-red-900/50 text-red-200'}`}>
+                  {allowRetryMessage.text}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleAllowRetrySubmit}
+                disabled={allowRetryLoading}
+                className="w-full bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-50"
+              >
+                {allowRetryLoading ? '처리 중...' : '허용'}
+              </button>
             </div>
           </div>
         </div>
