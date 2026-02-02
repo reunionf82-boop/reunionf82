@@ -1,8 +1,12 @@
 'use client'
 
 import { useCallback, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 
 export default function GlobalProtection() {
+  const pathname = usePathname()
+  const isAdmin = pathname?.startsWith('/admin') ?? false
+
   const isEditableTarget = useCallback((target: EventTarget | null) => {
     if (!target || !(target instanceof HTMLElement)) return false
     const tagName = target.tagName
@@ -14,6 +18,7 @@ export default function GlobalProtection() {
   }, [])
 
   useEffect(() => {
+    if (isAdmin) return // 관리자 화면에서는 우클릭·드래그 금지 미적용
     const handleContextMenu = (event: MouseEvent) => {
       if (isEditableTarget(event.target)) return
       event.preventDefault()
@@ -63,7 +68,7 @@ export default function GlobalProtection() {
       document.removeEventListener('dragstart', handleDragStart, true)
       document.removeEventListener('keydown', handleKeyDown, true)
     }
-  }, [isEditableTarget])
+  }, [isEditableTarget, isAdmin])
 
   return null
 }

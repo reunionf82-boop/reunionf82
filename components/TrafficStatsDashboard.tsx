@@ -85,14 +85,27 @@ export default function TrafficStatsDashboard({ isOpen, onClose }: TrafficStatsD
         <div className="bg-gray-800 border-b border-gray-700 px-6 py-5 rounded-t-xl">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold text-white">유입 통계 대시보드</h2>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg p-2 transition-colors duration-200"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => loadStats()}
+                disabled={loading || (period === 'custom' && (!startDate || !endDate))}
+                className="text-gray-400 hover:text-white hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg p-2 transition-colors duration-200 flex items-center gap-1.5"
+                title="새로고침"
+              >
+                <svg className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="text-sm font-medium">리프레시</span>
+              </button>
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg p-2 transition-colors duration-200"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <select

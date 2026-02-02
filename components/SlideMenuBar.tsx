@@ -2,8 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { getContents } from '@/lib/supabase-admin'
 import TermsPopup from './TermsPopup'
+
+// 관리자에서 "배포" 체크한 컨텐츠만 노출
+function isDeployed(content: { is_exposed?: boolean | string | number } | null) {
+  if (!content) return false
+  const v = content.is_exposed
+  return v === true || v === 'true' || v === 1
+}
 import PrivacyPopup from './PrivacyPopup'
 
 interface SlideMenuBarProps {
@@ -58,7 +64,9 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
         if (isValid) {
           const parsed = JSON.parse(stored)
           if (Array.isArray(parsed) && parsed.length >= 0) {
-            setPaidContents(parsed)
+            // 캐시에서도 배포된 컨텐츠만 표시 (미배포 제외)
+            const deployedOnly = parsed.filter((c: any) => isDeployed(c))
+            setPaidContents(deployedOnly)
             setPreloadCompleted(true)
             return // localStorage에서 로드했으면 API 호출 불필요
           }
@@ -142,9 +150,16 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
         setLoadingContents(true)
       }
       
-      // 1. 모든 컨텐츠 가져오기
-      const allContents = await getContents()
-      setContents(allContents || [])
+      // 1. 컨텐츠 목록 가져오기 (홈과 동일 API, is_exposed 포함)
+      const listRes = await fetch('/api/admin/content/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({})
+      })
+      const listData = listRes.ok ? await listRes.json() : {}
+      const allContents = listData.success && Array.isArray(listData.data) ? listData.data : []
+      setContents(allContents)
       
       // 2. 결제한 내역 가져오기 (saved_results)
       const savedResponse = await fetch('/api/saved-results/list', { cache: 'no-store' })
@@ -152,10 +167,11 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
         const savedData = await savedResponse.json()
         const savedTitles = new Set((savedData.data || []).map((item: any) => item.title))
         
-        // 3. 결제한 내역의 title과 content_name을 매칭하여 결제한 컨텐츠만 필터링
-        const paid = (allContents || []).filter((content: any) => 
-          savedTitles.has(content.content_name)
-        )
+        // 3. 결제한 컨텐츠 중 관리자에서 "배포" 체크한 것만 백야 섹션에 표시
+        const paid = allContents.filter((content: any) => {
+          if (!savedTitles.has(content.content_name)) return false
+          return isDeployed(content)
+        })
         setPaidContents(paid)
         
         // 4. localStorage에 저장 (로딩 없이 즉시 표시를 위해)
