@@ -156,11 +156,7 @@ function ResultContent() {
       return
     }
 
-    // ✅ URL 직접 접근 차단: 세션 기반 데이터가 없으면 폼으로 이동
-    router.replace('/form')
-    return
-    
-    // 2. URL 파라미터 확인 (하위 호환성)
+    // 2. URL 파라미터 확인 (나의 이용내역 다시보기: 새 창은 sessionStorage 없으므로 savedId 등 URL로 전달)
     const urlStorageKey = searchParams.get('key')
     const urlSavedId = searchParams.get('savedId')
     const urlRequestKey = searchParams.get('requestKey')
@@ -168,6 +164,11 @@ function ResultContent() {
     const urlGeneratePdf = searchParams.get('generatePdf') === 'true'
     const urlResumeToken = searchParams.get('resumeToken')
     const urlResumeCode = searchParams.get('resume')
+
+    if (!urlStorageKey && !urlSavedId && !urlRequestKey && !urlResumeToken && !urlResumeCode) {
+      router.replace('/form')
+      return
+    }
     
     if (urlResumeCode) {
       void (async () => {
