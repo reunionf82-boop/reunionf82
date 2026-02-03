@@ -2915,6 +2915,30 @@ function FormContent() {
 
     setResumeLoading(true)
     try {
+      // "재시도하기"는 pending 결제 복구(폼→점사보기)가 목적이므로, 먼저 confirm-pending 시도
+      // → pending 없을 때만 user-credentials/verify로 savedId/requestKey(점사결과 보기) 처리
+      const confirmRes = await fetch('/api/payment/confirm-pending', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: resumePhone, password: resumePassword })
+      })
+      const confirmData = await confirmRes.json().catch(() => ({}))
+      if (confirmRes.ok && confirmData?.success && confirmData?.oid) {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('payment_oid', String(confirmData.oid))
+          sessionStorage.setItem('payment_content_id', String(confirmData.contentId || ''))
+          sessionStorage.setItem('form_content_id', String(confirmData.contentId || ''))
+          sessionStorage.setItem('payment_user_name', String(confirmData.userName || ''))
+          sessionStorage.setItem('payment_phone', String(confirmData.phoneNumber || ''))
+          sessionStorage.setItem('payment_user_gender', String(confirmData.gender || ''))
+          sessionStorage.setItem('payment_confirmed_oid', String(confirmData.oid))
+          sessionStorage.setItem('payment_confirmed_oid_at', String(Date.now()))
+        }
+        setShowResumePopup(false)
+        router.push(`/form?confirmedOid=${encodeURIComponent(confirmData.oid)}`)
+        return
+      }
+
       const response = await fetch('/api/user-credentials/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2924,7 +2948,6 @@ function FormContent() {
         })
       })
 
-      // 본인정보(user_credentials)에 있으면 savedId/requestKey로 바로 이동
       if (response.ok) {
         const data = await response.json()
         if (data?.savedId) {
@@ -2937,7 +2960,6 @@ function FormContent() {
         }
         if (data?.requestKey) {
           const rk = String(data.requestKey)
-          // pending 결제용 본인정보(pending_oid) → 본인 확인 후 success 전환하고 폼으로 이동
           if (rk.startsWith('pending_')) {
             const oid = rk.replace(/^pending_/, '')
             const byCredRes = await fetch('/api/payment/confirm-pending-by-credentials', {
@@ -2972,30 +2994,7 @@ function FormContent() {
             setShowResumePopup(false)
             return
           }
-          // temp-request 없음(만료 등) → 아래 confirm-pending(3203) 시도로 넘어감 (pending 결제가 있으면 3203으로 복구 가능)
         }
-      }
-      // 본인정보 DB에 없어도(404) pending 결제 확인(비밀번호 3203) 시도 → payments만 있고 user_credentials 없는 고객도 재시도 가능
-      const confirmRes = await fetch('/api/payment/confirm-pending', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: resumePhone, password: resumePassword })
-      })
-      const confirmData = await confirmRes.json().catch(() => ({}))
-      if (confirmRes.ok && confirmData?.success && confirmData?.oid) {
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('payment_oid', String(confirmData.oid))
-          sessionStorage.setItem('payment_content_id', String(confirmData.contentId || ''))
-          sessionStorage.setItem('form_content_id', String(confirmData.contentId || ''))
-          sessionStorage.setItem('payment_user_name', String(confirmData.userName || ''))
-          sessionStorage.setItem('payment_phone', String(confirmData.phoneNumber || ''))
-          sessionStorage.setItem('payment_user_gender', String(confirmData.gender || ''))
-          sessionStorage.setItem('payment_confirmed_oid', String(confirmData.oid))
-          sessionStorage.setItem('payment_confirmed_oid_at', String(Date.now()))
-        }
-        setShowResumePopup(false)
-        router.push(`/form?confirmedOid=${encodeURIComponent(confirmData.oid)}`)
-        return
       }
 
       showAlertMessage('복구 가능한 기록이 없습니다.')
