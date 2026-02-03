@@ -2588,7 +2588,12 @@ function FormContent() {
                   userName: paymentUserName,
                   phoneNumber: sessionStorage.getItem('payment_phone') || '',
                   gender: (paymentUserGender as 'male' | 'female' | '') || null,
-                  status: 'success' // 결제 성공 상태로 명시적으로 저장
+                  status: 'success',
+                  calendarType: (paymentUserCalendarType as 'solar' | 'lunar' | 'lunar-leap') || undefined,
+                  birthYear: paymentUserYear ? parseInt(paymentUserYear, 10) : undefined,
+                  birthMonth: paymentUserMonth ? parseInt(paymentUserMonth, 10) : undefined,
+                  birthDay: paymentUserDay ? parseInt(paymentUserDay, 10) : undefined,
+                  birthHour: paymentUserBirthHour || undefined
                 })
               })
               
@@ -3198,7 +3203,12 @@ function FormContent() {
             userName: name,
             phoneNumber: phoneNumber,
             gender: (gender as 'male' | 'female' | '') || null,
-            status: 'pending'
+            status: 'pending',
+            calendarType: calendarType || undefined,
+            birthYear: year ? parseInt(year, 10) : undefined,
+            birthMonth: month ? parseInt(month, 10) : undefined,
+            birthDay: day ? parseInt(day, 10) : undefined,
+            birthHour: birthHour || undefined
           })
         })
         

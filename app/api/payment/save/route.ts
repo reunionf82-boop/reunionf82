@@ -16,11 +16,32 @@ import { getKSTNow } from '@/lib/payment-utils'
  * - userName: string
  * - phoneNumber: string
  * - gender?: 'male' | 'female' | null
+ * - calendarType?: 'solar' | 'lunar' | 'lunar-leap'
+ * - birthYear?: number
+ * - birthMonth?: number
+ * - birthDay?: number
+ * - birthHour?: string (태어난 시)
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { oid, contentId, paymentCode, name, pay, paymentType, userName, phoneNumber, gender, status } = body
+    const {
+      oid,
+      contentId,
+      paymentCode,
+      name,
+      pay,
+      paymentType,
+      userName,
+      phoneNumber,
+      gender,
+      status,
+      calendarType,
+      birthYear,
+      birthMonth,
+      birthDay,
+      birthHour
+    } = body
 
     // 필수 파라미터 검증 (status가 update일 땐 일부 생략 가능하지만 일단 단순화)
     // if (!oid || !contentId || !paymentCode || !name || !pay || !paymentType) {
@@ -64,6 +85,13 @@ export async function POST(request: NextRequest) {
       status: paymentStatus,
       updated_at: kstNow // KST 기준으로 저장 (트리거보다 명시적 값이 우선)
     }
+    if (calendarType === 'solar' || calendarType === 'lunar' || calendarType === 'lunar-leap') {
+      upsertData.calendar_type = calendarType
+    }
+    if (birthYear != null && !Number.isNaN(Number(birthYear))) upsertData.birth_year = parseInt(String(birthYear), 10)
+    if (birthMonth != null && !Number.isNaN(Number(birthMonth))) upsertData.birth_month = parseInt(String(birthMonth), 10)
+    if (birthDay != null && !Number.isNaN(Number(birthDay))) upsertData.birth_day = parseInt(String(birthDay), 10)
+    if (birthHour != null && String(birthHour).trim()) upsertData.birth_hour = String(birthHour).trim().substring(0, 50)
     
     // 새 레코드인 경우에만 created_at 설정 (KST 기준)
     if (!existingRecord) {
