@@ -23,6 +23,7 @@ export default function Home() {
   const [devUnlockPasswordInput, setDevUnlockPasswordInput] = useState('')
   const [devUnlockDurationMinutes, setDevUnlockDurationMinutes] = useState<number>(60)
   const [devUnlockHideEnabled, setDevUnlockHideEnabled] = useState(false)
+  const [devUnlockActive, setDevUnlockActive] = useState(false)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const devUnlockClickRef = useRef<{ count: number; timer: ReturnType<typeof setTimeout> | null }>({ count: 0, timer: null })
 
@@ -117,14 +118,21 @@ export default function Home() {
     if (storedHide !== null) {
       setDevUnlockHideEnabled(storedHide === '1')
     }
-    const until = localStorage.getItem('dev_unlock_until')
-    if (!until) return
-    const untilTime = parseInt(until, 10)
-    if (Number.isFinite(untilTime) && untilTime > Date.now()) {
+    const hideEnabled = localStorage.getItem('dev_unlock_hide_enabled') === '1'
+    if (hideEnabled) {
+      setDevUnlockActive(false)
       return
-    } else {
+    }
+    const until = localStorage.getItem('dev_unlock_until')
+    if (until) {
+      const untilTime = parseInt(until, 10)
+      if (Number.isFinite(untilTime) && untilTime > Date.now()) {
+        setDevUnlockActive(true)
+        return
+      }
       localStorage.removeItem('dev_unlock_until')
     }
+    setDevUnlockActive(false)
   }, [])
 
   const loadDevUnlockConfig = useCallback(async () => {
@@ -220,6 +228,7 @@ export default function Home() {
       localStorage.setItem('dev_unlock_until', String(until))
       localStorage.setItem('dev_unlock_duration_minutes', String(safeMinutes))
       setDevUnlockDurationMinutes(safeMinutes)
+      setDevUnlockActive(true)
       setShowDevUnlockModal(false)
       setDevUnlockPasswordInput('')
       loadServices()
@@ -255,17 +264,21 @@ export default function Home() {
           })
       
       // Supabase 데이터를 ServiceCard 형식으로 변환
-      const convertedServices = (exposedOnly || []).map((content: any) => ({
-        id: content.id,
-        title: content.content_name || '이름 없음',
-        description: content.introduction || '',
-        summary: content.summary || '',
-        price: content.price || '',
-        isNew: content.is_new || false,
-        isFree: !content.price || content.price === '' || content.price === '0',
-        thumbnailImageUrl: content.thumbnail_url || '',
-        thumbnailVideoUrl: content.thumbnail_video_url || '',
-      }))
+      const convertedServices = (exposedOnly || []).map((content: any) => {
+        const isExposed = content?.is_exposed === true || content?.is_exposed === 'true' || content?.is_exposed === 1
+        return {
+          id: content.id,
+          title: content.content_name || '이름 없음',
+          description: content.introduction || '',
+          summary: content.summary || '',
+          price: content.price || '',
+          isNew: content.is_new || false,
+          isFree: !content.price || content.price === '' || content.price === '0',
+          thumbnailImageUrl: content.thumbnail_url || '',
+          thumbnailVideoUrl: content.thumbnail_video_url || '',
+          isExposed,
+        }
+      })
       setServices(convertedServices)
     } catch (error) {
     } finally {
@@ -486,7 +499,11 @@ export default function Home() {
           ) : (
             <div className="w-full grid grid-cols-1 gap-6 justify-items-stretch">
               {services.map((service) => (
-                <ServiceCard key={service.id} service={service} />
+                <ServiceCard
+                  key={service.id}
+                  service={service}
+                  showExposedBadge={devUnlockActive}
+                />
               ))}
             </div>
           )}
@@ -538,18 +555,13 @@ export default function Home() {
       </footer>
       )}
 
-      {/* 관리자 미리보기 잠금 해제 팝업 */}
+      {/* 관리자 미리보기 잠금 해제 팝업 - 닫기는 오버레이 클릭 시에만 (패딩 영역 오클릭 방지) */}
       {showDevUnlockModal && (
         <div
           className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowDevUnlockModal(false)
-            }
-          }}
         >
-          <div className="absolute top-0 left-0 right-0 bottom-0 bg-black/60"></div>
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
           <div
             className="relative w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl"
             onClick={(e) => e.stopPropagation()}

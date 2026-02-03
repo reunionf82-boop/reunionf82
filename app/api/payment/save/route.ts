@@ -16,6 +16,7 @@ import { getKSTNow } from '@/lib/payment-utils'
  * - userName: string
  * - phoneNumber: string
  * - gender?: 'male' | 'female' | null
+ * - password?: string
  * - calendarType?: 'solar' | 'lunar' | 'lunar-leap'
  * - birthYear?: number
  * - birthMonth?: number
@@ -35,6 +36,7 @@ export async function POST(request: NextRequest) {
       userName,
       phoneNumber,
       gender,
+      password,
       status,
       calendarType,
       birthYear,
@@ -60,6 +62,7 @@ export async function POST(request: NextRequest) {
     // ⚠️ 요청에 따라 암호화 없이 원문 저장
     const plainUserName: string | null = userName ? String(userName) : null
     const plainPhoneNumber: string | null = phoneNumber ? String(phoneNumber) : null
+    const plainPassword: string | null = password ? String(password) : null
 
     // 결제 정보 저장 (Upsert로 변경하여 중복 방지 및 상태 업데이트)
     const paymentStatus = status || 'pending' // 기본값을 pending으로 변경
@@ -82,6 +85,7 @@ export async function POST(request: NextRequest) {
       user_name: plainUserName,
       phone_number: plainPhoneNumber,
       gender: gender === 'male' || gender === 'female' ? gender : null,
+      password: plainPassword,
       status: paymentStatus,
       updated_at: kstNow // KST 기준으로 저장 (트리거보다 명시적 값이 우선)
     }
@@ -102,6 +106,15 @@ export async function POST(request: NextRequest) {
     // success 상태일 때만 completed_at 설정 (KST 기준)
     if (paymentStatus === 'success') {
       upsertData.completed_at = kstNow
+    }
+    // pending 시 점사 요청 연결용 (나중에 user_credentials replace 시 payment 업데이트에 사용)
+    if (paymentStatus === 'pending') {
+      upsertData.request_key = `pending_${oid}`
+      upsertData.fortune_status = 'pending'
+    }
+    // 결제 실패 시 원인 저장 (선택)
+    if (body.paymentFailureReason != null && String(body.paymentFailureReason).trim()) {
+      upsertData.payment_failure_reason = String(body.paymentFailureReason).trim().substring(0, 500)
     }
     
     // 1) 우선 Upsert 시도 (oid UNIQUE 제약이 있을 때 가장 안정적/빠름)

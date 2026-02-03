@@ -100,3 +100,19 @@ export function decrypt(encryptedText: string): string {
     throw new Error(`복호화 실패: ${error}`)
   }
 }
+
+/**
+ * user_credentials 등: 암호문이면 복호화, 평문이면 그대로 반환 (기존 암호화 데이터 호환)
+ */
+export function plainOrDecrypt(value: string | null | undefined): string {
+  if (value == null || typeof value !== 'string') return ''
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  try {
+    const parts = trimmed.split(':')
+    if (parts.length !== 3) return trimmed
+    return decrypt(trimmed)
+  } catch {
+    return trimmed
+  }
+}

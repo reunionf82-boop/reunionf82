@@ -6713,12 +6713,29 @@ ${fontFace ? fontFace : ''}
                 </p>
               </div>
               
-              {/* 안내 문구 */}
-              <div className="mb-4">
-                <p className="text-gray-700 font-medium">
-                  <span className="text-pink-600">본문 점사가 모두 완료되었다는 팝업창이 뜨기 전까지는 현재 화면에서 나가지 마세요!</span>
+              {/* 안내 문구: 제목은 효과 없음, 리스트만 ⚠️ + 스케일 펄스 + 글자 블링크 */}
+              <div className="mb-4 rounded-lg px-4 py-3">
+                <p className="text-pink-600 font-semibold mb-2 text-center">
+                  실시간 점사가 모두 완료될때까지 다음 행동을 하지 마세요!
                 </p>
+                <ul className="result-realtime-notice-list grid grid-cols-2 gap-x-3 gap-y-0.5 text-sm font-semibold text-pink-600 list-none [&_li]:leading-tight w-fit mx-auto text-left [&_li]:flex [&_li]:items-center [&_li]:gap-1.5">
+                  <li><span aria-hidden="true">⚠️</span> 화면 캡쳐</li>
+                  <li><span aria-hidden="true">⚠️</span> 전화 통화</li>
+                  <li><span aria-hidden="true">⚠️</span> 카톡 보기</li>
+                  <li><span aria-hidden="true">⚠️</span> 홈 버튼 누르기</li>
+                  <li><span aria-hidden="true">⚠️</span> 이전 버튼 누르기</li>
+                  <li><span aria-hidden="true">⚠️</span> 다른 앱 사용</li>
+                </ul>
               </div>
+              <style dangerouslySetInnerHTML={{ __html: `
+                @keyframes result-realtime-list-flicker {
+                  0%, 100% { opacity: 1; }
+                  50% { opacity: 0.35; }
+                }
+                .result-realtime-notice-list {
+                  animation: result-realtime-list-flicker 3s ease-in-out infinite;
+                }
+              `}} />
               
               {/* 로딩 스피너 */}
               <div className="flex justify-center">

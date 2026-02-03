@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createClient } from '@supabase/supabase-js'
-import { decrypt } from '@/lib/encryption'
+import { plainOrDecrypt } from '@/lib/encryption'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -58,8 +58,8 @@ export async function POST(request: NextRequest) {
     const rows = data || []
     for (const row of rows) {
       try {
-        const decryptedPhone = normalizePhone(decrypt(row.encrypted_phone))
-        const decryptedPassword = decrypt(row.encrypted_password)
+        const decryptedPhone = normalizePhone(plainOrDecrypt(row.encrypted_phone))
+        const decryptedPassword = plainOrDecrypt(row.encrypted_password)
         if (decryptedPhone === phone && decryptedPassword === password) {
           const savedId = row.saved_id ? String(row.saved_id) : ''
           const requestKey = row.request_key || ''

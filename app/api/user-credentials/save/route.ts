@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { encrypt } from '@/lib/encryption'
 import { getKSTNow } from '@/lib/payment-utils'
 
 export const dynamic = 'force-dynamic'
@@ -35,49 +34,43 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const normalizedReplaceKey = replaceRequestKey ? String(replaceRequestKey).trim() : ''
-
     // 60일 후 만료 시간 계산 (KST 기준)
     const nowKST = new Date(getKSTNow())
     const expiresAt = new Date(nowKST.getTime() + 60 * 24 * 60 * 60 * 1000) // 60일 후
 
-    // 디버그 로그 (saved_id가 NULL로 들어가는지 확인용)
-    // 암호화
-    let encryptedPhone: string
-    let encryptedPassword: string
-    try {
-      encryptedPhone = encrypt(phone)
-      encryptedPassword = encrypt(password)
-    } catch (encryptError: any) {
-      return NextResponse.json(
-        { error: '암호화 중 오류가 발생했습니다.', details: encryptError.message },
-        { status: 500 }
-      )
-    }
+    // 평문으로 저장 (encrypted_* 컬럼명은 유지)
+    const plainPhone = String(phone).trim()
+    const plainPassword = String(password).trim()
 
     const normalizedRequestKey = requestKey ? String(requestKey).trim() : ''
+    const normalizedReplaceKey = replaceRequestKey ? String(replaceRequestKey).trim() : ''
     const hasRequestKey = normalizedRequestKey.length > 0
 
-    // ✅ 재시도(점사보기) 경로: 기존 pending_oid row를 request_xxx로 교체 → 점사 완료 후 saved_id가 해당 row에 기록됨
+    // ✅ 결제 성공 후 점사 시작 시: 기존 pending_{oid} 행을 request_xxx로 교체 → 점사 완료 후 saved_id가 이 행에 기록됨 (나의 이용내역 조회 가능)
     if (hasRequestKey && normalizedReplaceKey) {
       const { data: replaceRows, error: replaceError } = await supabase
         .from('user_credentials')
         .select('id, request_key, saved_id')
         .eq('request_key', normalizedReplaceKey)
         .limit(1)
-      if (!replaceError && replaceRows && replaceRows.length > 0) {
+        if (!replaceError && replaceRows && replaceRows.length > 0) {
         const { data: updated, error: updateError } = await supabase
           .from('user_credentials')
           .update({
             request_key: normalizedRequestKey,
-            encrypted_phone: encryptedPhone,
-            encrypted_password: encryptedPassword,
+            encrypted_phone: plainPhone,
+            encrypted_password: plainPassword,
             expires_at: expiresAt.toISOString()
           })
           .eq('id', replaceRows[0].id)
           .select()
           .single()
         if (!updateError && updated) {
+          // 결제 건 연결: payment.request_key를 pending_oid → request_xxx로 갱신
+          await supabase
+            .from('payments')
+            .update({ request_key: normalizedRequestKey, updated_at: getKSTNow() })
+            .eq('request_key', normalizedReplaceKey)
           return NextResponse.json({
             success: true,
             id: updated.id,
@@ -108,8 +101,8 @@ export async function POST(request: NextRequest) {
       if (existingRows && existingRows.length > 0) {
         const existing = existingRows[0]
         const updatePayload: Record<string, any> = {
-          encrypted_phone: encryptedPhone,
-          encrypted_password: encryptedPassword,
+          encrypted_phone: plainPhone,
+          encrypted_password: plainPassword,
           expires_at: expiresAt.toISOString()
         }
         if (savedId) {
@@ -130,6 +123,18 @@ export async function POST(request: NextRequest) {
           )
         }
 
+        // 점사 완료: payment에 saved_id·fortune_status 반영 (다시보기 가능 상태 추적)
+        if (savedId) {
+          await supabase
+            .from('payments')
+            .update({
+              saved_id: parseInt(String(savedId), 10),
+              fortune_status: 'completed',
+              updated_at: getKSTNow()
+            })
+            .eq('request_key', normalizedRequestKey)
+        }
+
         return NextResponse.json({
           success: true,
           id: updated.id,
@@ -146,8 +151,8 @@ export async function POST(request: NextRequest) {
       .insert({
         request_key: hasRequestKey ? normalizedRequestKey : null,
         saved_id: savedId || null,
-        encrypted_phone: encryptedPhone,
-        encrypted_password: encryptedPassword,
+        encrypted_phone: plainPhone,
+        encrypted_password: plainPassword,
         created_at: getKSTNow(), // KST 기준으로 저장
         expires_at: expiresAt.toISOString() // KST 기준으로 계산된 만료 시간
       })

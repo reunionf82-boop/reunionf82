@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { getContents, deleteContent } from '@/lib/supabase-admin'
 import AdminReviewEventModal from '@/components/AdminReviewEventModal'
 import PaymentStatsDashboard from '@/components/PaymentStatsDashboard'
+import PaymentListDashboard from '@/components/PaymentListDashboard'
 import TrafficStatsDashboard from '@/components/TrafficStatsDashboard'
 
 export default function AdminPage() {
@@ -98,26 +99,10 @@ export default function AdminPage() {
   const [showInquiryModal, setShowInquiryModal] = useState(false)
   const [inquiries, setInquiries] = useState<any[]>([])
   const [loadingInquiries, setLoadingInquiries] = useState(false)
-  const [showResumeAdminModal, setShowResumeAdminModal] = useState(false)
-  const [resumeAdminPhone, setResumeAdminPhone] = useState('')
-  const [resumeAdminPassword, setResumeAdminPassword] = useState('')
-  const [resumeAdminLoading, setResumeAdminLoading] = useState(false)
-  const [resumeAdminResult, setResumeAdminResult] = useState<{
-    savedId?: string | null
-    requestKey?: string | null
-    createdAt?: string | null
-    expiresAt?: string | null
-  } | null>(null)
-
   // 결제 통계 대시보드 상태
   const [showPaymentStats, setShowPaymentStats] = useState(false)
+  const [showPaymentList, setShowPaymentList] = useState(false)
   const [showTrafficStats, setShowTrafficStats] = useState(false)
-  // 결제 재시도 예외 (24시간 경과 후 허용)
-  const [showAllowRetryModal, setShowAllowRetryModal] = useState(false)
-  const [allowRetryOid, setAllowRetryOid] = useState('')
-  const [allowRetryHours, setAllowRetryHours] = useState(24)
-  const [allowRetryLoading, setAllowRetryLoading] = useState(false)
-  const [allowRetryMessage, setAllowRetryMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
   // 홈html 조회 (리뷰이벤트와 동일한 방식 - POST로 캐시 우회)
   const loadHomeHtml = async () => {
@@ -354,81 +339,6 @@ export default function AdminPage() {
     }
   }
 
-  const handleResumeAdminSearch = async () => {
-    if (resumeAdminLoading) return
-    const normalizedPhone = resumeAdminPhone.replace(/[^0-9]/g, '')
-    if (!normalizedPhone || normalizedPhone.length < 8) {
-      alert('휴대폰 번호를 정확히 입력해주세요.')
-      return
-    }
-    if (!resumeAdminPassword || resumeAdminPassword.length < 4) {
-      alert('비밀번호를 4자리 이상 입력해주세요.')
-      return
-    }
-    setResumeAdminLoading(true)
-    try {
-      const response = await fetch('/api/admin/user-credentials/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: resumeAdminPhone,
-          password: resumeAdminPassword
-        })
-      })
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({} as any))
-        const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
-        alert(msg)
-        return
-      }
-      const data = await response.json()
-      setResumeAdminResult({
-        savedId: data?.savedId || null,
-        requestKey: data?.requestKey || null,
-        createdAt: data?.createdAt || null,
-        expiresAt: data?.expiresAt || null
-      })
-    } catch (error) {
-      alert('조회 중 오류가 발생했습니다.')
-    } finally {
-      setResumeAdminLoading(false)
-    }
-  }
-
-  const handleAllowRetrySubmit = async () => {
-    if (allowRetryLoading) return
-    const oid = allowRetryOid.trim()
-    if (!oid) {
-      setAllowRetryMessage({ type: 'err', text: '주문번호(oid)를 입력해 주세요.' })
-      return
-    }
-    const hours = Number(allowRetryHours)
-    if (!Number.isFinite(hours) || hours < 1) {
-      setAllowRetryMessage({ type: 'err', text: '허용 시간(시간)을 1 이상 입력해 주세요.' })
-      return
-    }
-    setAllowRetryLoading(true)
-    setAllowRetryMessage(null)
-    try {
-      const res = await fetch('/api/admin/payment/allow-retry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ oid, hours })
-      })
-      const data = await res.json().catch(() => ({}))
-      if (res.ok && data?.success) {
-        setAllowRetryMessage({ type: 'ok', text: `허용 완료: ${oid} (${hours}시간)` })
-        setAllowRetryOid('')
-      } else {
-        setAllowRetryMessage({ type: 'err', text: data?.error || '저장에 실패했습니다.' })
-      }
-    } catch {
-      setAllowRetryMessage({ type: 'err', text: '서버 오류가 발생했습니다.' })
-    } finally {
-      setAllowRetryLoading(false)
-    }
-  }
-
   const handleSaveDevUnlockPassword = async () => {
     if (devUnlockSaving) return
     if (devUnlockPassword.trim().length < 4) {
@@ -493,46 +403,6 @@ export default function AdminPage() {
     }
   }
 
-  const copyResumeLink = async (link: string) => {
-    try {
-      await navigator.clipboard.writeText(link)
-      alert('링크가 복사되었습니다.')
-    } catch (e) {
-      const textArea = document.createElement('textarea')
-      textArea.value = link
-      textArea.style.position = 'fixed'
-      textArea.style.opacity = '0'
-      document.body.appendChild(textArea)
-      textArea.select()
-      try {
-        document.execCommand('copy')
-        alert('링크가 복사되었습니다.')
-      } catch (err) {
-        alert('복사에 실패했습니다. 수동으로 복사해주세요:\n' + link)
-      }
-      document.body.removeChild(textArea)
-    }
-  }
-
-  const createResumeCodeLink = async (payload: { savedId?: string; requestKey?: string }) => {
-    const response = await fetch('/api/admin/resume-code/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({} as any))
-      const msg = typeof err?.error === 'string' ? err.error : `HTTP ${response.status}`
-      throw new Error(msg)
-    }
-    const data = await response.json()
-    const code = data?.code
-    if (!code) {
-      throw new Error('숏코드 생성에 실패했습니다.')
-    }
-    return `${getBaseUrl()}/result?resume=${encodeURIComponent(String(code))}`
-  }
-
   const formatPhoneWithPrefix = (input: string) => {
     let value = String(input || '').replace(/[^0-9]/g, '')
     if (!value.startsWith('010')) {
@@ -548,13 +418,6 @@ export default function AdminPage() {
     if (value.length <= 3) return '010-'
     if (value.length <= 7) return `010-${value.slice(3)}`
     return `010-${value.slice(3, 7)}-${value.slice(7)}`
-  }
-
-  const getBaseUrl = () => {
-    if (typeof window !== 'undefined' && window.location?.origin) {
-      return window.location.origin
-    }
-    return ''
   }
 
   const handleModelChange = async (model: string) => {
@@ -788,6 +651,13 @@ export default function AdminPage() {
                 💰 결제 통계
               </button>
               <button
+                onClick={() => setShowPaymentList(true)}
+                className="bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200 shadow-lg"
+                title="결제 현황 · 고객 정보 (일/주/월/기간/전체)"
+              >
+                결제 현황
+              </button>
+              <button
                 onClick={() => setShowTrafficStats(true)}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200 shadow-lg"
                 title="유입 통계 대시보드"
@@ -800,30 +670,6 @@ export default function AdminPage() {
                 title="문의 관리"
               >
                 문의 관리
-              </button>
-              <button
-                onClick={() => {
-                  setResumeAdminResult(null)
-                  setResumeAdminPhone('010-')
-                  setResumeAdminPassword('')
-                  setShowResumeAdminModal(true)
-                }}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200"
-                title="점사 재시도 조회"
-              >
-                재시도 조회
-              </button>
-              <button
-                onClick={() => {
-                  setAllowRetryOid('')
-                  setAllowRetryHours(24)
-                  setAllowRetryMessage(null)
-                  setShowAllowRetryModal(true)
-                }}
-                className="bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200"
-                title="결제 재시도 예외 (24시간 경과 후 허용)"
-              >
-                재시도 예외 허용
               </button>
             </div>
             
@@ -1628,224 +1474,17 @@ export default function AdminPage() {
         onClose={() => setShowPaymentStats(false)}
       />
 
+      {/* 결제 현황 · 고객 정보 (일/주/월/기간/전체, 점사 상태, 다시보기, 실패 원인) */}
+      <PaymentListDashboard
+        isOpen={showPaymentList}
+        onClose={() => setShowPaymentList(false)}
+      />
+
       {/* 유입 통계 대시보드 */}
       <TrafficStatsDashboard
         isOpen={showTrafficStats}
         onClose={() => setShowTrafficStats(false)}
       />
-
-      {/* 점사 재시도 조회 모달 */}
-      {showResumeAdminModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-md flex flex-col">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex items-center justify-between rounded-t-lg">
-              <h2 className="text-xl font-bold text-white">점사 재시도 조회</h2>
-              <button
-                onClick={() => {
-                  if (resumeAdminLoading) return
-                  setShowResumeAdminModal(false)
-                }}
-                className="text-white hover:text-gray-200 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-blue-800 transition-colors"
-              >
-                ×
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-white mb-2">휴대폰 번호</label>
-                <input
-                  type="text"
-                  value={resumeAdminPhone}
-                  onChange={(e) => setResumeAdminPhone(formatPhoneWithPrefix(e.target.value))}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="010-0000-0000"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-white mb-2">비밀번호</label>
-                <input
-                  type="password"
-                  value={resumeAdminPassword}
-                  onChange={(e) => setResumeAdminPassword(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="비밀번호"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={handleResumeAdminSearch}
-                disabled={resumeAdminLoading}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-50"
-              >
-                {resumeAdminLoading ? '조회 중...' : '조회'}
-              </button>
-              <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 text-xs text-gray-300 space-y-2">
-                <div className="text-gray-200 font-semibold">처리 매뉴얼</div>
-                <div>1) 휴대폰/비밀번호로 조회</div>
-                <div>2) saved_id가 있으면 결과 링크 복사/열기</div>
-                <div>3) request_key만 있으면 재시도 링크 복사/열기</div>
-                <div>4) 사용자에게 링크 전달 (60일 조회 가능)</div>
-              </div>
-              {resumeAdminResult && (
-                <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 text-sm text-gray-200 space-y-3">
-                  <div>
-                    <span className="text-gray-400">생성일:</span>{' '}
-                    <span>{resumeAdminResult.createdAt || '알 수 없음'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">만료:</span>{' '}
-                    <span>{resumeAdminResult.expiresAt || '알 수 없음'}</span>
-                  </div>
-                  {resumeAdminResult.savedId && (
-                    <div className="space-y-2">
-                      <div>
-                        <span className="text-gray-400">saved_id:</span>{' '}
-                        <span>{resumeAdminResult.savedId}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void (async () => {
-                            try {
-                              const link = await createResumeCodeLink({ savedId: String(resumeAdminResult.savedId) })
-                              await copyResumeLink(link)
-                            } catch (e: any) {
-                              alert(e?.message || '링크 생성에 실패했습니다.')
-                            }
-                          })()
-                        }}
-                        className="w-full bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded"
-                      >
-                        결과 링크 복사
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void (async () => {
-                            try {
-                              const link = await createResumeCodeLink({ savedId: String(resumeAdminResult.savedId) })
-                              window.open(link, '_blank')
-                            } catch (e: any) {
-                              alert(e?.message || '링크 생성에 실패했습니다.')
-                            }
-                          })()
-                        }}
-                        className="w-full bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-2 rounded"
-                      >
-                        결과 열기
-                      </button>
-                    </div>
-                  )}
-                  {!resumeAdminResult.savedId && resumeAdminResult.requestKey && (
-                    <div className="space-y-2">
-                      <div>
-                        <span className="text-gray-400">request_key:</span>{' '}
-                        <span>{resumeAdminResult.requestKey}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void (async () => {
-                            try {
-                              const link = await createResumeCodeLink({ requestKey: String(resumeAdminResult.requestKey) })
-                              await copyResumeLink(link)
-                            } catch (e: any) {
-                              alert(e?.message || '링크 생성에 실패했습니다.')
-                            }
-                          })()
-                        }}
-                        className="w-full bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded"
-                      >
-                        재시도 링크 복사
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void (async () => {
-                            try {
-                              const link = await createResumeCodeLink({ requestKey: String(resumeAdminResult.requestKey) })
-                              window.open(link, '_blank')
-                            } catch (e: any) {
-                              alert(e?.message || '링크 생성에 실패했습니다.')
-                            }
-                          })()
-                        }}
-                        className="w-full bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-2 rounded"
-                      >
-                        재시도 열기
-                      </button>
-                    </div>
-                  )}
-                  {!resumeAdminResult.savedId && !resumeAdminResult.requestKey && (
-                    <div className="text-yellow-300">복구 가능한 데이터가 없습니다.</div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 결제 재시도 예외 (24시간 경과 후 허용) 모달 */}
-      {showAllowRetryModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-md flex flex-col">
-            <div className="bg-gradient-to-r from-amber-600 to-amber-700 px-6 py-4 flex items-center justify-between rounded-t-lg">
-              <h2 className="text-xl font-bold text-white">재시도 예외 허용</h2>
-              <button
-                onClick={() => {
-                  if (allowRetryLoading) return
-                  setShowAllowRetryModal(false)
-                  setAllowRetryMessage(null)
-                }}
-                className="text-white hover:text-gray-200 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-amber-800 transition-colors"
-              >
-                ×
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <p className="text-sm text-gray-300">
-                결제 확인 후 24시간이 지나 만료된 고객에게 예외적으로 점사보기를 허용합니다. 주문번호(oid)와 허용 시간을 입력하세요.
-              </p>
-              <div>
-                <label className="block text-sm font-semibold text-white mb-2">주문번호 (oid)</label>
-                <input
-                  type="text"
-                  value={allowRetryOid}
-                  onChange={(e) => setAllowRetryOid(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  placeholder="payments 테이블의 oid"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-white mb-2">허용 시간 (시간)</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={720}
-                  value={allowRetryHours}
-                  onChange={(e) => setAllowRetryHours(Number(e.target.value) || 24)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
-                <p className="text-xs text-gray-400 mt-1">1~720 (최대 30일). 기본 24시간.</p>
-              </div>
-              {allowRetryMessage && (
-                <div className={`p-3 rounded-lg text-sm ${allowRetryMessage.type === 'ok' ? 'bg-green-900/50 text-green-200' : 'bg-red-900/50 text-red-200'}`}>
-                  {allowRetryMessage.text}
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={handleAllowRetrySubmit}
-                disabled={allowRetryLoading}
-                className="w-full bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-50"
-              >
-                {allowRetryLoading ? '처리 중...' : '허용'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 문의 관리 모달 */}
       {showInquiryModal && (

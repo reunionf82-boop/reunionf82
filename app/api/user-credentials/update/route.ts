@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getKSTNow } from '@/lib/payment-utils'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -85,6 +86,16 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       )
     }
+
+    // 결제 건에 점사 완료 반영 (관리자 결제 현황에서 정상 완료/다시보기 가능 확인용)
+    await supabase
+      .from('payments')
+      .update({
+        saved_id: savedIdNumber,
+        fortune_status: 'completed',
+        updated_at: getKSTNow()
+      })
+      .eq('request_key', normalizedRequestKey)
 
     return NextResponse.json({
       success: true,

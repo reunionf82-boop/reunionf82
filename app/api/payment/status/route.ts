@@ -35,22 +35,6 @@ export async function GET(request: NextRequest) {
     // 24시간 유효 기준: success면 completed_at, 아니면 created_at
     const completedAt = (data as any).completed_at || (data as any).created_at || null
 
-    // 운영자 예외: payment_retry_allowances에 있으면 24시간 경과해도 재시도 허용
-    let allowedRetry = false
-    let allowedUntil: string | null = null
-    const { data: allowance } = await supabase
-      .from('payment_retry_allowances')
-      .select('allowed_until')
-      .eq('oid', oid)
-      .maybeSingle()
-    if (allowance?.allowed_until) {
-      const until = new Date(allowance.allowed_until).getTime()
-      if (Number.isFinite(until) && Date.now() < until) {
-        allowedRetry = true
-        allowedUntil = allowance.allowed_until
-      }
-    }
-
     const headers = new Headers()
     headers.set('Cache-Control', 'no-store, no-cache, must-revalidate')
 
@@ -62,9 +46,7 @@ export async function GET(request: NextRequest) {
         success: true,
         status,
         contentId: data.content_id,
-        completedAt: completedAt || null,
-        allowedRetry: allowedRetry || undefined,
-        allowedUntil: allowedUntil || undefined
+        completedAt: completedAt || null
       },
       { headers }
     )

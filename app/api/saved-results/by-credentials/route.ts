@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { decrypt } from '@/lib/encryption'
+import { plainOrDecrypt } from '@/lib/encryption'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       if (!cred.saved_id) continue
       
       try {
-        const decryptedPhone = decrypt(cred.encrypted_phone)
+        const decryptedPhone = plainOrDecrypt(cred.encrypted_phone)
         const normalizedDecryptedPhone = normalizePhone(decryptedPhone.trim())
         
         // 전화번호가 일치하는 credential만 수집 (1단계 필터링)
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     
     for (const cred of phoneMatchedCredentials) {
       try {
-        const decryptedPassword = decrypt(cred.encrypted_password)
+        const decryptedPassword = plainOrDecrypt(cred.encrypted_password)
         const normalizedDecryptedPassword = decryptedPassword.trim()
         
         // 비밀번호가 정확히 일치하는 경우만 추가 (2단계 필터링)
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
         if (cred.saved_id !== result.id) continue
         
         try {
-          const decryptedPassword = decrypt(cred.encrypted_password)
+          const decryptedPassword = plainOrDecrypt(cred.encrypted_password)
           const normalizedDecryptedPassword = decryptedPassword.trim()
           
           // 전화번호는 이미 일치하므로 비밀번호만 확인

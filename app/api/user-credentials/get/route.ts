@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { decrypt } from '@/lib/encryption'
+import { plainOrDecrypt } from '@/lib/encryption'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -49,40 +49,13 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // 복호화
-    try {
-      let phone: string
-      let password: string
-      
-      try {
-        phone = decrypt(data.encrypted_phone)
-      } catch (e: any) {
-        return NextResponse.json(
-          { error: '휴대폰 번호 복호화 실패', details: e.message },
-          { status: 500 }
-        )
-      }
-      
-      try {
-        password = decrypt(data.encrypted_password)
-      } catch (e: any) {
-        return NextResponse.json(
-          { error: '비밀번호 복호화 실패', details: e.message },
-          { status: 500 }
-        )
-      }
-
-      return NextResponse.json({
-        success: true,
-        phone,
-        password
-      })
-    } catch (decryptError: any) {
-      return NextResponse.json(
-        { error: '복호화 실패', details: decryptError.message },
-        { status: 500 }
-      )
-    }
+    const phone = plainOrDecrypt(data.encrypted_phone)
+    const password = plainOrDecrypt(data.encrypted_password)
+    return NextResponse.json({
+      success: true,
+      phone,
+      password
+    })
   } catch (error: any) {
     return NextResponse.json(
       { error: '서버 오류가 발생했습니다.', details: error.message },

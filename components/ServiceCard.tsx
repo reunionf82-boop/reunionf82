@@ -15,10 +15,13 @@ interface Service {
   isFree?: boolean
   thumbnailImageUrl?: string
   thumbnailVideoUrl?: string
+  isExposed?: boolean
 }
 
 interface ServiceCardProps {
   service: Service
+  /** 관리자 언락 시 카드에 배포됨/미배포 뱃지 표시 */
+  showExposedBadge?: boolean
 }
 
 // 가격 포맷팅 함수 (3자리마다 콤마 삽입)
@@ -31,7 +34,7 @@ const formatPrice = (price: string): string => {
   return parseInt(numbers).toLocaleString('ko-KR')
 }
 
-export default function ServiceCard({ service }: ServiceCardProps) {
+export default function ServiceCard({ service, showExposedBadge }: ServiceCardProps) {
   const router = useRouter()
   
   // 동영상 썸네일이 있는지 확인
@@ -175,11 +178,24 @@ export default function ServiceCard({ service }: ServiceCardProps) {
 
       {/* 텍스트 영역 */}
       <div className="p-5 flex-1 flex flex-col">
-        {service.isNew && (
-          <span className="inline-block bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded mb-3 w-fit">
-            NEW
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {showExposedBadge && (
+            service.isExposed ? (
+              <span className="shrink-0 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded">
+                배포됨
+              </span>
+            ) : (
+              <span className="shrink-0 bg-gray-600 text-white text-xs font-bold px-2 py-1 rounded">
+                미배포
+              </span>
+            )
+          )}
+          {service.isNew && (
+            <span className="inline-block bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded w-fit">
+              NEW
+            </span>
+          )}
+        </div>
         <h3 className="text-lg font-bold text-gray-900 mb-2 leading-tight">
           {service.title}
         </h3>

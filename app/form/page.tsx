@@ -495,15 +495,17 @@ function FormContent() {
   // 결제 팝업 상태
   const [showPaymentPopup, setShowPaymentPopup] = useState(false)
   const [paymentProcessingMethod, setPaymentProcessingMethod] = useState<null | 'card' | 'mobile'>(null)
+  // 중복 결제/생성 확인 커스텀 팝업 (확인 시 진행할 콜백 저장)
+  const [showDuplicateConfirmPopup, setShowDuplicateConfirmPopup] = useState(false)
+  const [duplicateConfirmMessage, setDuplicateConfirmMessage] = useState('')
+  const duplicateConfirmResolveRef = useRef<((value: boolean) => void) | null>(null)
+  // 삭제 확인 커스텀 팝업
+  const [showDeleteConfirmPopup, setShowDeleteConfirmPopup] = useState(false)
+  const [deleteConfirmResultId, setDeleteConfirmResultId] = useState<string | null>(null)
   const [phoneNumber1, setPhoneNumber1] = useState('010')
   const [phoneNumber2, setPhoneNumber2] = useState('')
   const [phoneNumber3, setPhoneNumber3] = useState('')
   const [password, setPassword] = useState('')
-  const [showResumePopup, setShowResumePopup] = useState(false)
-  const [resumePhone, setResumePhone] = useState('010')
-  const [resumePassword, setResumePassword] = useState('')
-  const [resumeLoading, setResumeLoading] = useState(false)
-  const [confirmedOidExpired, setConfirmedOidExpired] = useState(false) // 결제 확인 후 24시간 초과 여부
   const [devUnlockEnabled, setDevUnlockEnabled] = useState(false)
   const [showDevUnlockModal, setShowDevUnlockModal] = useState(false)
   const [devUnlockPasswordInput, setDevUnlockPasswordInput] = useState('')
@@ -528,23 +530,6 @@ function FormContent() {
 
     return formatted.replace(/-+/g, '-')
   }
-  const formatResumePhoneDigits = (value: string) => {
-    let digits = String(value || '').replace(/[^0-9]/g, '')
-    if (!digits.startsWith('010')) {
-      digits = '010' + digits.replace(/^010/, '')
-    }
-    return digits.slice(0, 11)
-  }
-
-  const clearConfirmedOidState = () => {
-    if (typeof window === 'undefined') return
-    sessionStorage.removeItem('payment_confirmed_oid')
-    sessionStorage.removeItem('payment_confirmed_oid_at')
-    const url = new URL(window.location.href)
-    url.searchParams.delete('confirmedOid')
-    window.history.replaceState(null, '', url.toString())
-  }
-
   const loadDevUnlockConfig = useCallback(async () => {
     try {
       const response = await fetch('/api/dev-unlock/config', { cache: 'no-store' })
@@ -773,42 +758,6 @@ function FormContent() {
     }
   }, [searchParams])
 
-  // 결제 확인(confirmedOid) 후 24시간 유효 여부 (서버 completed_at 기준)
-  useEffect(() => {
-    if (typeof window === 'undefined' || !searchParams.get('confirmedOid')) return
-    const oid = searchParams.get('confirmedOid')
-    fetch(`/api/payment/status?oid=${encodeURIComponent(oid || '')}`, { cache: 'no-store' })
-      .then((res) => res.json())
-      .then((data) => {
-        // 운영자 예외: allowedRetry/allowedUntil 있으면 만료 아님으로 명시
-        if (data?.allowedRetry === true || (data?.allowedUntil && Date.now() < new Date(data.allowedUntil).getTime())) {
-          setConfirmedOidExpired(false)
-          return
-        }
-        const completedAt = data?.completedAt
-        if (completedAt) {
-          const ts = new Date(completedAt).getTime()
-          if (Number.isFinite(ts) && Date.now() - ts > 24 * 60 * 60 * 1000) {
-            setConfirmedOidExpired(true)
-          } else {
-            setConfirmedOidExpired(false)
-          }
-        } else {
-          // completed_at 없으면 세션 리다이렉트 시각으로 폴백
-          const at = sessionStorage.getItem('payment_confirmed_oid_at')
-          if (at) {
-            const ts = parseInt(at, 10)
-            if (Number.isFinite(ts) && Date.now() - ts > 24 * 60 * 60 * 1000) {
-              setConfirmedOidExpired(true)
-            } else {
-              setConfirmedOidExpired(false)
-            }
-          }
-        }
-      })
-      .catch(() => {})
-  }, [searchParams])
-
   // 사용자 정보 변경 시 LocalStorage에 자동 저장 (포털 토큰이 없을 때만)
   useEffect(() => {
     if (isLoadingFromStorage || formLocked) return // 로딩 중이거나 포털에서 받은 정보는 저장하지 않음
@@ -910,33 +859,31 @@ function FormContent() {
     checkPdfExists()
   }, [savedResults])
 
-  // 저장된 결과 삭제 (서버)
-  const deleteSavedResult = async (resultId: string) => {
+  // 저장된 결과 삭제 확인 팝업 띄우기
+  const deleteSavedResult = (resultId: string) => {
     if (typeof window === 'undefined') return
-    
-    // 삭제 확인
-    if (!confirm('정말로 이 결과를 삭제하시겠습니까?')) {
-      return
-    }
-    
+    setDeleteConfirmResultId(resultId)
+    setShowDeleteConfirmPopup(true)
+  }
+
+  // 삭제 확인 팝업에서 "삭제" 클릭 시 실제 삭제 수행
+  const handleConfirmDeleteResult = async () => {
+    const resultId = deleteConfirmResultId
+    setShowDeleteConfirmPopup(false)
+    setDeleteConfirmResultId(null)
+    if (!resultId) return
     try {
       const response = await fetch(`/api/saved-results/delete?id=${resultId}`, {
         method: 'DELETE'
       })
-      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         throw new Error(errorData.error || '저장된 결과 삭제 실패')
       }
-      
       const result = await response.json()
       if (result.success) {
-        // 즉시 로컬 상태에서 제거 (UI 즉시 업데이트)
         setSavedResults((prev) => prev.filter((item: any) => item.id !== resultId))
-        // 백그라운드에서 서버와 동기화
-        setTimeout(async () => {
-          await loadSavedResults()
-        }, 100)
+        setTimeout(async () => { await loadSavedResults() }, 100)
       } else {
         throw new Error(result.error || '저장된 결과 삭제에 실패했습니다.')
       }
@@ -2513,7 +2460,10 @@ function FormContent() {
           const updateRes = await fetch('/api/payment/complete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ oid: successOid || oid })
+            body: JSON.stringify({
+              oid: successOid || oid,
+              password: sessionStorage.getItem('payment_password') || null
+            })
           })
           const updateData = await updateRes.json()
 
@@ -2588,6 +2538,7 @@ function FormContent() {
                   userName: paymentUserName,
                   phoneNumber: sessionStorage.getItem('payment_phone') || '',
                   gender: (paymentUserGender as 'male' | 'female' | '') || null,
+                  password: sessionStorage.getItem('payment_password') || null,
                   status: 'success',
                   calendarType: (paymentUserCalendarType as 'solar' | 'lunar' | 'lunar-leap') || undefined,
                   birthYear: paymentUserYear ? parseInt(paymentUserYear, 10) : undefined,
@@ -2632,7 +2583,10 @@ function FormContent() {
               const minimalSaveResponse = await fetch('/api/payment/complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ oid })
+                body: JSON.stringify({
+                  oid,
+                  password: sessionStorage.getItem('payment_password') || null
+                })
               })
               if (minimalSaveResponse.ok) {
                 const minimalSaveData = await minimalSaveResponse.json()
@@ -2906,110 +2860,6 @@ function FormContent() {
     }
   }
 
-  const handleResumeSubmit = async () => {
-    if (resumeLoading) return
-    const normalizedPhone = resumePhone.replace(/[^0-9]/g, '')
-    if (!normalizedPhone || normalizedPhone.length < 8) {
-      showAlertMessage('휴대폰 번호를 정확히 입력해주세요.')
-      return
-    }
-    if (!resumePassword || resumePassword.length < 4) {
-      showAlertMessage('비밀번호를 4자리 이상 입력해주세요.')
-      return
-    }
-
-    setResumeLoading(true)
-    try {
-      // "재시도하기"는 pending 결제 복구(폼→점사보기)가 목적이므로, 먼저 confirm-pending 시도
-      // → pending 없을 때만 user-credentials/verify로 savedId/requestKey(점사결과 보기) 처리
-      const confirmRes = await fetch('/api/payment/confirm-pending', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: resumePhone, password: resumePassword })
-      })
-      const confirmData = await confirmRes.json().catch(() => ({}))
-      if (confirmRes.ok && confirmData?.success && confirmData?.oid) {
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('payment_oid', String(confirmData.oid))
-          sessionStorage.setItem('payment_content_id', String(confirmData.contentId || ''))
-          sessionStorage.setItem('form_content_id', String(confirmData.contentId || ''))
-          sessionStorage.setItem('payment_user_name', String(confirmData.userName || ''))
-          sessionStorage.setItem('payment_phone', String(confirmData.phoneNumber || ''))
-          sessionStorage.setItem('payment_user_gender', String(confirmData.gender || ''))
-          sessionStorage.setItem('payment_confirmed_oid', String(confirmData.oid))
-          sessionStorage.setItem('payment_confirmed_oid_at', String(Date.now()))
-        }
-        setShowResumePopup(false)
-        router.push(`/form?confirmedOid=${encodeURIComponent(confirmData.oid)}`)
-        return
-      }
-
-      const response = await fetch('/api/user-credentials/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: resumePhone,
-          password: resumePassword
-        })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data?.savedId) {
-          if (typeof window !== 'undefined') {
-            sessionStorage.setItem('result_savedId', String(data.savedId))
-          }
-          router.push(`/result?savedId=${encodeURIComponent(String(data.savedId))}`)
-          setShowResumePopup(false)
-          return
-        }
-        if (data?.requestKey) {
-          const rk = String(data.requestKey)
-          if (rk.startsWith('pending_')) {
-            const oid = rk.replace(/^pending_/, '')
-            const byCredRes = await fetch('/api/payment/confirm-pending-by-credentials', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ oid, phone: resumePhone, password: resumePassword })
-            })
-            const byCredData = await byCredRes.json().catch(() => ({}))
-            if (byCredRes.ok && byCredData?.success && byCredData?.oid) {
-              if (typeof window !== 'undefined') {
-                sessionStorage.setItem('payment_oid', String(byCredData.oid))
-                sessionStorage.setItem('payment_content_id', String(byCredData.contentId || ''))
-                sessionStorage.setItem('form_content_id', String(byCredData.contentId || ''))
-                sessionStorage.setItem('payment_user_name', String(byCredData.userName || ''))
-                sessionStorage.setItem('payment_phone', String(byCredData.phoneNumber || ''))
-                sessionStorage.setItem('payment_user_gender', String(byCredData.gender || ''))
-                sessionStorage.setItem('payment_confirmed_oid', String(byCredData.oid))
-                sessionStorage.setItem('payment_confirmed_oid_at', String(Date.now()))
-              }
-              setShowResumePopup(false)
-              router.push(`/form?confirmedOid=${encodeURIComponent(byCredData.oid)}`)
-              return
-            }
-          }
-          const tempRes = await fetch(`/api/temp-request/get?requestKey=${encodeURIComponent(rk)}`)
-          if (tempRes.ok) {
-            if (typeof window !== 'undefined') {
-              sessionStorage.setItem('result_requestKey', rk)
-              sessionStorage.setItem('result_stream', 'true')
-            }
-            router.push(`/result?requestKey=${encodeURIComponent(rk)}&stream=true`)
-            setShowResumePopup(false)
-            return
-          }
-        }
-      }
-
-      showAlertMessage('복구 가능한 기록이 없습니다.')
-    } catch (error) {
-      showAlertMessage('재시도 처리 중 오류가 발생했습니다.')
-    } finally {
-      setResumeLoading(false)
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -3042,112 +2892,6 @@ function FormContent() {
       return
     }
     
-    // 결제 확인(재시도)으로 온 경우: 이미 success로 전환된 결제이므로 결제창 없이 점사 시작 → 리절트(점사) 화면으로만 이동
-    const confirmedOid = searchParams.get('confirmedOid') || (typeof window !== 'undefined' ? sessionStorage.getItem('payment_confirmed_oid') : null)
-    if (confirmedOid && content?.id) {
-      try {
-        const statusUrl = (oid: string) => `/api/payment/status?oid=${encodeURIComponent(oid)}&_=${Date.now()}`
-        let statusData: any = await (await fetch(statusUrl(confirmedOid), { cache: 'no-store' })).json().catch(() => ({}))
-        // 재시도하기(3203) 직후 DB 반영이 늦을 수 있음 → pending이면 잠시 뒤 한 번 더 조회 (캐시 방지 파라미터로 재요청)
-        if (statusData.success && statusData.status === 'pending') {
-          await new Promise((r) => setTimeout(r, 1500))
-          statusData = await (await fetch(statusUrl(confirmedOid), { cache: 'no-store' })).json().catch(() => statusData)
-        }
-        const isSuccess = statusData.success && statusData.status === 'success'
-        const hasAllowance = statusData.allowedRetry === true || (statusData.allowedUntil && Date.now() < new Date(statusData.allowedUntil).getTime())
-        // 방금 재시도하기(3203)로 이 폼으로 넘어온 경우: confirm-pending 직후라 DB가 아직 pending일 수 있음 → 세션에 있으면 허용
-        const justConfirmedByRetry =
-          typeof window !== 'undefined' &&
-          sessionStorage.getItem('payment_confirmed_oid') === confirmedOid &&
-          sessionStorage.getItem('payment_confirmed_oid_at')
-        const pendingAllowed = statusData.status === 'pending' && (hasAllowance || !!justConfirmedByRetry)
-        // success이거나, pending인데 운영자 예외/방금 재시도 확인이 있으면 점사 진행
-        if (statusData.success && (isSuccess || pendingAllowed)) {
-          // 운영자 예외: allowedRetry/allowedUntil 있으면 24시간 무시
-          const allowed = hasAllowance
-          if (!allowed) {
-            const completedAt = statusData.completedAt
-            let ts = NaN
-            if (completedAt) ts = new Date(completedAt).getTime()
-            if (!Number.isFinite(ts) && typeof window !== 'undefined') {
-              const at = sessionStorage.getItem('payment_confirmed_oid_at')
-              if (at) ts = parseInt(at, 10)
-            }
-            if (Number.isFinite(ts) && Date.now() - ts > 24 * 60 * 60 * 1000) {
-              showAlertMessage('결제 확인 후 24시간이 지나 이용 기간이 만료되었습니다. 고객센터로 문의해 주세요.')
-              return
-            }
-          }
-          if (typeof window !== 'undefined') {
-            const phoneStr = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
-            sessionStorage.setItem('payment_oid', confirmedOid)
-            sessionStorage.setItem('payment_content_id', String(content.id))
-            sessionStorage.setItem('payment_user_name', name || '')
-            sessionStorage.setItem('payment_phone', phoneStr)
-            sessionStorage.setItem('payment_password', password || '')
-            sessionStorage.setItem('payment_user_gender', gender || '')
-            sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
-            sessionStorage.setItem('payment_user_year', year || '')
-            sessionStorage.setItem('payment_user_month', month || '')
-            sessionStorage.setItem('payment_user_day', day || '')
-            sessionStorage.setItem('payment_user_birth_hour', birthHour || '')
-            if (partnerName) {
-              sessionStorage.setItem('payment_partner_name', partnerName)
-              sessionStorage.setItem('payment_partner_gender', partnerGender || '')
-              sessionStorage.setItem('payment_partner_calendar_type', partnerCalendarType || 'solar')
-              sessionStorage.setItem('payment_partner_year', partnerYear || '')
-              sessionStorage.setItem('payment_partner_month', partnerMonth || '')
-              sessionStorage.setItem('payment_partner_day', partnerDay || '')
-              sessionStorage.setItem('payment_partner_birth_hour', partnerBirthHour || '')
-            }
-          }
-          setSubmitting(true)
-          const startTime = Date.now()
-          try {
-            await startFortuneTellingWithContent(
-              startTime,
-              content,
-              {
-                name: name,
-                gender: gender,
-                calendarType: calendarType,
-                year: year,
-                month: month,
-                day: day,
-                birthHour: birthHour || '',
-                partnerName: partnerName || '',
-                partnerGender: partnerGender || '',
-                partnerCalendarType: partnerCalendarType || 'solar',
-                partnerYear: partnerYear || '',
-                partnerMonth: partnerMonth || '',
-                partnerDay: partnerDay || '',
-                partnerBirthHour: partnerBirthHour || ''
-              },
-              true
-            )
-            // 점사 성공 시에만 재사용 방지: confirmedOid 표시/세션 제거 (오류 시에는 그대로 두어 재시도 가능)
-            clearConfirmedOidState()
-          } catch (err) {
-            setSubmitting(false)
-            showAlertMessage(err instanceof Error ? err.message : '점사 시작 중 오류가 발생했습니다.')
-          }
-          return
-        }
-        // 결제 상태가 success가 아님: 결제 팝업으로 넘기지 않고 안내만
-        const notFoundMsg = '결제 정보를 찾을 수 없습니다. 고객센터로 문의해 주세요.'
-        const pendingMsg = '결제 확인이 아직 완료되지 않았습니다. 아래 "이미 결제하셨나요? 재시도하기"에서 휴대폰 번호와 비밀번호(3203)로 재시도한 뒤 점사보기를 눌러 주세요.'
-        const otherMsg = '결제 상태를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.'
-        const msg = statusData.status === 'not_found' ? notFoundMsg : statusData.status === 'pending' ? pendingMsg : otherMsg
-        showAlertMessage(msg)
-        return
-      } catch (e) {
-        // status 확인 실패 시에도 결제 팝업으로 넘기지 않음 → 에러 안내 후 종료
-        showAlertMessage('결제 확인 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
-        return
-      }
-    }
-    
-    // 결제 팝업 표시 (confirmedOid가 없을 때만)
     setShowPaymentPopup(true)
   }
 
@@ -3174,6 +2918,33 @@ function FormContent() {
     if (!content.payment_code) {
       showAlertMessage('결제 코드가 설정되지 않은 컨텐츠입니다. 관리자에게 문의해주세요.')
       return
+    }
+
+    // 일주일 안에 같은 컨텐츠 결제 이력이 있으면 확인 팝업
+    const phoneNumberForCheck = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+    try {
+      const dupRes = await fetch('/api/payment/recent-duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contentId: content.id,
+          userName: name,
+          phoneNumber: phoneNumberForCheck
+        })
+      })
+      const dupData = await dupRes.json().catch(() => ({}))
+      if (dupData?.success && dupData?.hasRecent && dupData?.completedAt) {
+        const d = new Date(dupData.completedAt)
+        const dateStr = `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 ${d.getHours()}시 ${d.getMinutes()}분`
+        const ok = await new Promise<boolean>((resolve) => {
+          duplicateConfirmResolveRef.current = resolve
+          setDuplicateConfirmMessage(`이미 ${dateStr}에 같은 컨텐츠로 결제하신 이력이 있습니다.\n다시 결제하시겠습니까?`)
+          setShowDuplicateConfirmPopup(true)
+        })
+        if (!ok) return
+      }
+    } catch {
+      // 중복 조회 실패해도 결제는 진행
     }
 
     setSubmitting(true)
@@ -3203,6 +2974,7 @@ function FormContent() {
             userName: name,
             phoneNumber: phoneNumber,
             gender: (gender as 'male' | 'female' | '') || null,
+            password: password || null,
             status: 'pending',
             calendarType: calendarType || undefined,
             birthYear: year ? parseInt(year, 10) : undefined,
@@ -3238,7 +3010,7 @@ function FormContent() {
         return
       }
 
-      // pending 시점에도 본인정보(user_credentials) 저장 → 재시도 시 본인 확인으로 정상 진행 가능
+      // pending 시점에도 본인정보(user_credentials) 저장
       try {
         await fetch('/api/user-credentials/save', {
           method: 'POST',
@@ -3250,7 +3022,7 @@ function FormContent() {
           })
         })
       } catch {
-        // 본인정보 저장 실패해도 결제 진행은 계속 (관리자 비밀번호 3203 재시도로 보완 가능)
+        // 본인정보 저장 실패해도 결제 진행은 계속
       }
 
         // 주문번호 및 사용자 정보를 sessionStorage에 저장 (result 페이지에서 점사 시작 시 사용)
@@ -3503,7 +3275,7 @@ function FormContent() {
 
                 setSubmitting(false)
                 setPaymentProcessingMethod(null)
-                // 결제 재시도를 위해 결제정보 팝업은 닫지 않음
+                // 결제창을 닫은 경우 결제정보 팝업은 유지
               } else {
                 // localStorage에 성공 신호가 있으면 처리 (opener 호출이 실패했을 경우)
 
@@ -3532,6 +3304,147 @@ function FormContent() {
       setSubmitting(false)
       setPaymentProcessingMethod(null)
       showAlertMessage(error?.message || '결제 처리 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 결제 없이 임시 점사 결과 생성 (결제 팝업에서 사용)
+  const handleTemporaryResult = async () => {
+    // 휴대폰 번호와 비밀번호 검증
+    if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
+      showAlertMessage('휴대폰 번호를 모두 입력해주세요.')
+      return
+    }
+    if (!password || password.length < 4) {
+      showAlertMessage('비밀번호를 4자리 이상 입력해주세요.')
+      return
+    }
+    if (!content || !content.id) {
+      showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
+      return
+    }
+    if (!content.payment_code) {
+      showAlertMessage('결제 코드가 설정되지 않은 컨텐츠입니다. 관리자에게 문의해주세요.')
+      return
+    }
+
+    // 일주일 안에 같은 컨텐츠로 고객용 점사 결과 생성 이력이 있으면 확인 팝업
+    const phoneNumberForDup = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+    try {
+      const dupRes = await fetch('/api/payment/recent-duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contentId: content.id,
+          userName: name,
+          phoneNumber: phoneNumberForDup
+        })
+      })
+      const dupData = await dupRes.json().catch(() => ({}))
+      if (dupData?.success && dupData?.hasRecent && dupData?.completedAt) {
+        const d = new Date(dupData.completedAt)
+        const dateStr = `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 ${d.getHours()}시 ${d.getMinutes()}분`
+        const ok = await new Promise<boolean>((resolve) => {
+          duplicateConfirmResolveRef.current = resolve
+          setDuplicateConfirmMessage(`이미 ${dateStr}에 같은 컨텐츠로 고객용 점사 결과를 생성한 이력이 있습니다.\n다시 생성하시겠습니까?`)
+          setShowDuplicateConfirmPopup(true)
+        })
+        if (!ok) return
+      }
+    } catch {
+      // 중복 조회 실패해도 생성은 진행
+    }
+
+    setSubmitting(true)
+    try {
+      const { generateOrderId } = await import('@/lib/payment-utils')
+      const oid = generateOrderId()
+      const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+
+      // 결제 없이도 payment 기록은 success로 저장 (고객 정보 보존)
+      const saveResponse = await fetch('/api/payment/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          oid,
+          contentId: content.id,
+          paymentCode: content.payment_code,
+          name: content.content_name || '',
+          pay: parseInt(content.price || '0'),
+          paymentType: 'card',
+          userName: name,
+          phoneNumber: phoneNumber,
+          gender: (gender as 'male' | 'female' | '') || null,
+          password: password || null,
+          status: 'success',
+          calendarType: calendarType || undefined,
+          birthYear: year ? parseInt(year, 10) : undefined,
+          birthMonth: month ? parseInt(month, 10) : undefined,
+          birthDay: day ? parseInt(day, 10) : undefined,
+          birthHour: birthHour || undefined
+        })
+      })
+      if (!saveResponse.ok) {
+        const errorText = await saveResponse.text()
+        throw new Error(errorText || '결제 정보 저장에 실패했습니다.')
+      }
+      const saveData = await saveResponse.json().catch(() => ({}))
+      if (!saveData?.success) {
+        throw new Error(saveData?.error || '결제 정보 저장에 실패했습니다.')
+      }
+
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('payment_oid', oid)
+        sessionStorage.setItem('payment_method', 'card')
+        sessionStorage.setItem('payment_content_id', String(content.id))
+        sessionStorage.setItem('payment_user_name', name || '')
+        sessionStorage.setItem('payment_phone', phoneNumber)
+        sessionStorage.setItem('payment_password', password || '')
+        sessionStorage.setItem('payment_user_gender', gender || '')
+        sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
+        sessionStorage.setItem('payment_user_year', year || '')
+        sessionStorage.setItem('payment_user_month', month || '')
+        sessionStorage.setItem('payment_user_day', day || '')
+        sessionStorage.setItem('payment_user_birth_hour', birthHour || '')
+        if (partnerName) {
+          sessionStorage.setItem('payment_partner_name', partnerName)
+          sessionStorage.setItem('payment_partner_gender', partnerGender || '')
+          sessionStorage.setItem('payment_partner_calendar_type', partnerCalendarType || 'solar')
+          sessionStorage.setItem('payment_partner_year', partnerYear || '')
+          sessionStorage.setItem('payment_partner_month', partnerMonth || '')
+          sessionStorage.setItem('payment_partner_day', partnerDay || '')
+          sessionStorage.setItem('payment_partner_birth_hour', partnerBirthHour || '')
+        }
+      }
+
+      setShowPaymentPopup(false)
+      setPaymentProcessingMethod(null)
+
+      const startTime = Date.now()
+      await startFortuneTellingWithContent(
+        startTime,
+        content,
+        {
+          name: name,
+          gender: gender,
+          calendarType: calendarType,
+          year: year,
+          month: month,
+          day: day,
+          birthHour: birthHour || '',
+          partnerName: isGonghapType ? partnerName : '',
+          partnerGender: isGonghapType ? partnerGender : '',
+          partnerCalendarType: isGonghapType ? partnerCalendarType : 'solar',
+          partnerYear: isGonghapType ? partnerYear : '',
+          partnerMonth: isGonghapType ? partnerMonth : '',
+          partnerDay: isGonghapType ? partnerDay : '',
+          partnerBirthHour: isGonghapType ? partnerBirthHour : ''
+        },
+        true
+      )
+    } catch (error: any) {
+      showAlertMessage(error?.message || '임시 점사 처리 중 오류가 발생했습니다.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -3937,17 +3850,15 @@ function FormContent() {
         // 비동기 작업들은 Promise.allSettled로 병렬 처리하고, 실패해도 페이지 이동은 진행
         const asyncTasks = [saveTempRequestTask]
         
-        // ✅ 결제 성공 시 requestKey 기반으로 user_credentials 레코드 생성 (savedId는 나중에 update)
-        // - result/page.tsx의 saveResultToLocal에서 saved_id 업데이트
-        // - save API는 request_key 기준으로 idempotent하게 동작하도록 처리됨
+        // ✅ 결제 성공 시: 기존 pending_{oid} 행을 request_xxx로 교체 → 점사 완료 후 saved_id가 그 행에 들어가 나의 이용내역에서 다시보기 가능
         if (typeof window !== 'undefined') {
           const paymentPhone = sessionStorage.getItem('payment_phone') || ''
           const paymentPassword = sessionStorage.getItem('payment_password') || ''
           const fullPhoneNumber = paymentPhone || `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
           const userPassword = paymentPassword || password
+          const paymentOid = sessionStorage.getItem('payment_oid') || ''
+          const replaceRequestKey = paymentOid ? `pending_${paymentOid}` : undefined
           const credsKey = `user_credentials_saved_${requestKey}`
-          const confirmedOid = sessionStorage.getItem('payment_confirmed_oid') || ''
-          const replaceRequestKey = confirmedOid ? `pending_${confirmedOid}` : undefined
           if (!sessionStorage.getItem(credsKey)) {
             sessionStorage.setItem(credsKey, '1')
             asyncTasks.push(
@@ -4642,6 +4553,21 @@ function FormContent() {
             setShowLoadingPopup(false)
             setSubmitting(false)
             showAlertMessage(data.error || '스트리밍 중 오류가 발생했습니다.')
+            // 점사 비정상 종료 기록 (관리자 확인용)
+            const paymentOid = typeof window !== 'undefined' ? sessionStorage.getItem('payment_oid') : null
+            const requestKeyForStatus = typeof window !== 'undefined' ? sessionStorage.getItem('result_requestKey') : null
+            if (paymentOid || requestKeyForStatus) {
+              fetch('/api/payment/fortune-status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  oid: paymentOid || undefined,
+                  requestKey: requestKeyForStatus || undefined,
+                  fortuneStatus: 'failed',
+                  fortuneFailureReason: data.error || '스트리밍 오류'
+                })
+              }).catch(() => {})
+            }
           }
         })
         
@@ -4656,6 +4582,21 @@ function FormContent() {
         setShowLoadingPopup(false)
         setSubmitting(false)
         showAlertMessage(streamError?.message || '결제 처리 중 오류가 발생했습니다.\n\n개발자 도구 콘솔을 확인해주세요.')
+        // 점사 비정상 종료 기록 (관리자 확인용)
+        const paymentOid = typeof window !== 'undefined' ? sessionStorage.getItem('payment_oid') : null
+        const requestKeyForStatus = typeof window !== 'undefined' ? sessionStorage.getItem('result_requestKey') : null
+        if (paymentOid || requestKeyForStatus) {
+          fetch('/api/payment/fortune-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              oid: paymentOid || undefined,
+              requestKey: requestKeyForStatus || undefined,
+              fortuneStatus: 'failed',
+              fortuneFailureReason: streamError?.message || '점사 처리 중 오류'
+            })
+          }).catch(() => {})
+        }
       }
     } catch (error: any) {
       const errorMessage = error?.message || '결제 처리 중 오류가 발생했습니다.'
@@ -4802,25 +4743,9 @@ function FormContent() {
         <div 
           className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
-          onClick={(e) => {
-            // 결제 진행 중에는 닫기 불가
-            if (paymentProcessingMethod) return
-            // 오버레이 클릭 시 팝업 닫기 (팝업 내용 클릭 시에는 닫지 않음)
-            if (e.target === e.currentTarget) {
-              setShowPaymentPopup(false)
-              setPaymentProcessingMethod(null)
-              setPhoneNumber1('010')
-              setPhoneNumber2('')
-              setPhoneNumber3('')
-              setPassword('')
-            }
-          }}
         >
-          {/* 전체 화면 오버레이 - 헤더 포함 */}
-          <div 
-            className="absolute top-0 left-0 right-0 bottom-0 bg-black/60"
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          ></div>
+          {/* 전체 화면 오버레이 - 닫기는 우측 상단 X 버튼으로만 (바깥 클릭 시 닫히지 않음) */}
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
           {/* 팝업 컨테이너 */}
           <div 
             className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
@@ -4970,6 +4895,19 @@ function FormContent() {
                   )}
                 </button>
               </div>
+              {/* 결제 없이 임시 점사 결과 생성 (관리자 언락 시에만 표시) */}
+              {devUnlockEnabled && (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={handleTemporaryResult}
+                    disabled={submitting || paymentProcessingMethod !== null}
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {submitting ? '처리 중...' : '고객용 점사 결과 생성'}
+                  </button>
+                </div>
+              )}
 
               {/* 임시 결과 화면 이동 버튼 (개발용) */}
               {devUnlockEnabled && !devUnlockHideEnabled && (
@@ -5013,7 +4951,7 @@ function FormContent() {
                     }}
                     className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
                   >
-                    리절트로 이동 (임시)
+                    운영자 테스트용 점사
                   </button>
                 </div>
               )}
@@ -5022,18 +4960,13 @@ function FormContent() {
         </div>
       )}
 
-      {/* 개발용 버튼 잠금 해제 팝업 */}
+      {/* 개발용 버튼 잠금 해제 팝업 - 닫기는 오버레이 클릭 시에만 (패딩 영역 오클릭 방지) */}
       {showDevUnlockModal && (
         <div
           className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowDevUnlockModal(false)
-            }
-          }}
         >
-          <div className="absolute top-0 left-0 right-0 bottom-0 bg-black/60"></div>
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
           <div
             className="relative w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl"
             onClick={(e) => e.stopPropagation()}
@@ -5083,79 +5016,6 @@ function FormContent() {
         </div>
       )}
 
-      {/* 재시도 팝업 */}
-      {showResumePopup && (
-        <div
-          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
-          onClick={(e) => {
-            if (resumeLoading) return
-            if (e.target === e.currentTarget) {
-              setShowResumePopup(false)
-            }
-          }}
-        >
-          <div className="absolute top-0 left-0 right-0 bottom-0 bg-black/60"></div>
-          <div
-            className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
-              <h2 className="text-xl font-bold text-white">재시도</h2>
-              <button
-                type="button"
-                onClick={() => {
-                  if (resumeLoading) return
-                  setShowResumePopup(false)
-                }}
-                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
-                disabled={resumeLoading}
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">휴대폰 번호</label>
-                <input
-                  type="tel"
-                  inputMode="numeric"
-                  autoComplete="tel"
-                  value={formatInquiryPhone(resumePhone)}
-                  onChange={(e) => setResumePhone(formatResumePhoneDigits(e.target.value))}
-                  className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
-                  placeholder="010-1234-5678"
-                  maxLength={13}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">비밀번호</label>
-                <input
-                  type="password"
-                  value={resumePassword}
-                  onChange={(e) => setResumePassword(e.target.value)}
-                  className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
-                  placeholder="비밀번호 (4자리 이상)"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={handleResumeSubmit}
-                disabled={resumeLoading}
-                className="w-full bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {resumeLoading ? '처리 중...' : '재시도하기'}
-              </button>
-              <p className="text-xs text-gray-500">
-                결제 후 24시간 이내에만 재시도할 수 있습니다.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 동의 안내 팝업 */}
       {showAgreementAlert && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -5183,6 +5043,77 @@ function FormContent() {
               <button
                 onClick={() => setShowAgreementAlert(false)}
                 className="w-full bg-pink-500 hover:bg-pink-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 삭제 확인 커스텀 팝업 */}
+      {showDeleteConfirmPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4">
+              <p className="text-base text-gray-900 whitespace-pre-line leading-relaxed text-center">
+                정말로 이 결과를 삭제하시겠습니까?
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteConfirmPopup(false)
+                  setDeleteConfirmResultId(null)
+                }}
+                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 px-6 rounded-xl transition-colors"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteResult}
+                className="flex-1 bg-pink-500 hover:bg-pink-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 중복 결제/생성 확인 커스텀 팝업 */}
+      {showDuplicateConfirmPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10001] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4">
+              <p className="text-base text-gray-900 whitespace-pre-line leading-relaxed text-center">
+                {duplicateConfirmMessage}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  duplicateConfirmResolveRef.current?.(false)
+                  duplicateConfirmResolveRef.current = null
+                  setShowDuplicateConfirmPopup(false)
+                  setDuplicateConfirmMessage('')
+                }}
+                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 px-6 rounded-xl transition-colors"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  duplicateConfirmResolveRef.current?.(true)
+                  duplicateConfirmResolveRef.current = null
+                  setShowDuplicateConfirmPopup(false)
+                  setDuplicateConfirmMessage('')
+                }}
+                className="flex-1 bg-pink-500 hover:bg-pink-600 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
               >
                 확인
               </button>
@@ -6403,24 +6334,15 @@ function FormContent() {
               </div>
             </div>
 
-            {/* 결제 확인(재시도)으로 온 경우 안내 */}
-            {searchParams.get('confirmedOid') && (
-              <div className={`mb-4 p-4 rounded-xl text-sm ${confirmedOidExpired ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-green-50 border border-green-200 text-green-800'}`}>
-                {confirmedOidExpired
-                  ? '결제 확인 후 24시간이 지나 이용 기간이 만료되었습니다. 고객센터로 문의해 주세요.'
-                  : '결제가 확인되었습니다. 상기 본인정보를 확인(필요시 수정)하고 24시간 이내에 점사보기를 눌러 점사를 시작해주세요.'}
-              </div>
-            )}
-
             {/* 버튼 영역 */}
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting || loading || (!!searchParams.get('confirmedOid') && confirmedOidExpired)}
+                disabled={submitting || loading}
                 className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                {submitting ? '처리 중...' : (searchParams.get('confirmedOid') ? '점사보기' : '결제하기')}
+                {submitting ? '처리 중...' : '결제하기'}
               </button>
               <button
                 type="button"
@@ -6430,21 +6352,6 @@ function FormContent() {
                 이전으로
               </button>
             </div>
-            <div className="mt-3 text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  const storedPhone = typeof window !== 'undefined' ? (sessionStorage.getItem('payment_phone') || '') : ''
-                  setResumePhone(storedPhone || `${phoneNumber1}-${phoneNumber2}${phoneNumber3 ? '-' + phoneNumber3 : ''}`)
-                  setResumePassword('')
-                  setShowResumePopup(true)
-                }}
-                className="text-xs text-gray-500 hover:text-pink-500 underline underline-offset-4 transition-colors"
-              >
-                이미 결제하셨나요? 재시도하기
-              </button>
-            </div>
-
           </div>
           </div>
         </div>

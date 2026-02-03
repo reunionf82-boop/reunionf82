@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { oid } = body
+    const { oid, password } = body
 
     if (!oid) {
       return NextResponse.json({ success: false, error: '주문번호가 없습니다.' }, { status: 400 })
@@ -22,12 +22,17 @@ export async function POST(request: NextRequest) {
     // ⚠️ payments 테이블은 payment_code/name/pay/payment_type 등이 NOT NULL.
     // 여기서 upsert(삽입)를 시도하면 필수 컬럼 누락으로 삽입이 실패할 수 있음.
     // 따라서 "기존 레코드가 존재할 때만" status 업데이트를 수행한다.
+    const updatePayload: Record<string, any> = {
+      status: 'success',
+      completed_at: getKSTNow(), // KST 기준으로 저장
+    }
+    if (password != null && String(password).trim()) {
+      updatePayload.password = String(password).trim()
+    }
+
     const { data, error } = await supabase
       .from('payments')
-      .update({
-        status: 'success',
-        completed_at: getKSTNow(), // KST 기준으로 저장
-      })
+      .update(updatePayload)
       .eq('oid', oid)
       .select()
       .single()
