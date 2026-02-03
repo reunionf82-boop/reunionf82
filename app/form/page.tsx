@@ -3633,14 +3633,14 @@ function FormContent() {
       let currentModel = urlModelParam
       
       if (!currentModel) {
-        if (isPaymentSuccess) {
+        try {
+          // 점사보기 경로도 어드민 설정 모델 사용 (타임아웃 3초로 무한 대기 방지)
+          currentModel = await Promise.race([
+            getSelectedModel(),
+            new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+          ])
+        } catch (error) {
           currentModel = 'gemini-3-flash-preview'
-        } else {
-          try {
-            currentModel = await getSelectedModel()
-          } catch (error) {
-            currentModel = 'gemini-3-flash-preview'
-          }
         }
       }
 
