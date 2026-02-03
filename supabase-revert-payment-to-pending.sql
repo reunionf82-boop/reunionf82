@@ -18,3 +18,13 @@
 -- (C) 이름(user_name)으로 최근 success 1건 되돌리기
 -- UPDATE public.payments SET status = 'pending', completed_at = NULL, updated_at = NOW()
 -- WHERE id = (SELECT id FROM public.payments WHERE status = 'success' AND user_name = '김동관' ORDER BY created_at DESC LIMIT 1);
+
+-- 김동관 결제 1건 pending으로 되돌리기 (바로 실행용)
+UPDATE public.payments
+SET status = 'pending', completed_at = NULL, updated_at = NOW()
+WHERE id = (
+  SELECT id FROM public.payments
+  WHERE status = 'success' AND user_name = '김동관'
+  ORDER BY created_at DESC
+  LIMIT 1
+);

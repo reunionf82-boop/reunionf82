@@ -4,7 +4,7 @@ import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
 export const dynamic = 'force-dynamic'
 
 /**
- * 결제 재시도 예외 허용 (12시간 경과 후에도 점사보기 허용)
+ * 결제 재시도 예외 허용 (24시간 경과 후에도 점사보기 허용)
  * POST /api/admin/payment/allow-retry
  * body: { oid: string, hours?: number }  (hours 기본값 24)
  */

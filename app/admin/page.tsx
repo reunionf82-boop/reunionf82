@@ -112,7 +112,7 @@ export default function AdminPage() {
   // 결제 통계 대시보드 상태
   const [showPaymentStats, setShowPaymentStats] = useState(false)
   const [showTrafficStats, setShowTrafficStats] = useState(false)
-  // 결제 재시도 예외 (12시간 경과 후 허용)
+  // 결제 재시도 예외 (24시간 경과 후 허용)
   const [showAllowRetryModal, setShowAllowRetryModal] = useState(false)
   const [allowRetryOid, setAllowRetryOid] = useState('')
   const [allowRetryHours, setAllowRetryHours] = useState(24)
@@ -821,7 +821,7 @@ export default function AdminPage() {
                   setShowAllowRetryModal(true)
                 }}
                 className="bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200"
-                title="결제 재시도 예외 (12시간 경과 후 허용)"
+                title="결제 재시도 예외 (24시간 경과 후 허용)"
               >
                 재시도 예외 허용
               </button>
@@ -1786,7 +1786,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* 결제 재시도 예외 (12시간 경과 후 허용) 모달 */}
+      {/* 결제 재시도 예외 (24시간 경과 후 허용) 모달 */}
       {showAllowRetryModal && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-md flex flex-col">
@@ -1805,7 +1805,7 @@ export default function AdminPage() {
             </div>
             <div className="p-6 space-y-4">
               <p className="text-sm text-gray-300">
-                결제 확인 후 12시간이 지나 만료된 고객에게 예외적으로 점사보기를 허용합니다. 주문번호(oid)와 허용 시간을 입력하세요.
+                결제 확인 후 24시간이 지나 만료된 고객에게 예외적으로 점사보기를 허용합니다. 주문번호(oid)와 허용 시간을 입력하세요.
               </p>
               <div>
                 <label className="block text-sm font-semibold text-white mb-2">주문번호 (oid)</label>

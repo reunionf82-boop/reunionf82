@@ -503,7 +503,7 @@ function FormContent() {
   const [resumePhone, setResumePhone] = useState('010')
   const [resumePassword, setResumePassword] = useState('')
   const [resumeLoading, setResumeLoading] = useState(false)
-  const [confirmedOidExpired, setConfirmedOidExpired] = useState(false) // 결제 확인 후 12시간 초과 여부
+  const [confirmedOidExpired, setConfirmedOidExpired] = useState(false) // 결제 확인 후 24시간 초과 여부
   const [devUnlockEnabled, setDevUnlockEnabled] = useState(false)
   const [showDevUnlockModal, setShowDevUnlockModal] = useState(false)
   const [devUnlockPasswordInput, setDevUnlockPasswordInput] = useState('')
@@ -773,29 +773,36 @@ function FormContent() {
     }
   }, [searchParams])
 
-  // 결제 확인(confirmedOid) 후 12시간 유효 여부 (서버 completed_at 기준)
+  // 결제 확인(confirmedOid) 후 24시간 유효 여부 (서버 completed_at 기준)
   useEffect(() => {
     if (typeof window === 'undefined' || !searchParams.get('confirmedOid')) return
     const oid = searchParams.get('confirmedOid')
-    fetch(`/api/payment/status?oid=${encodeURIComponent(oid || '')}`)
+    fetch(`/api/payment/status?oid=${encodeURIComponent(oid || '')}`, { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
-        // 운영자 예외: allowedRetry/allowedUntil 있으면 만료 처리 안 함
+        // 운영자 예외: allowedRetry/allowedUntil 있으면 만료 아님으로 명시
         if (data?.allowedRetry === true || (data?.allowedUntil && Date.now() < new Date(data.allowedUntil).getTime())) {
+          setConfirmedOidExpired(false)
           return
         }
         const completedAt = data?.completedAt
         if (completedAt) {
           const ts = new Date(completedAt).getTime()
-          if (Number.isFinite(ts) && Date.now() - ts > 12 * 60 * 60 * 1000) {
+          if (Number.isFinite(ts) && Date.now() - ts > 24 * 60 * 60 * 1000) {
             setConfirmedOidExpired(true)
+          } else {
+            setConfirmedOidExpired(false)
           }
         } else {
           // completed_at 없으면 세션 리다이렉트 시각으로 폴백
           const at = sessionStorage.getItem('payment_confirmed_oid_at')
           if (at) {
             const ts = parseInt(at, 10)
-            if (Number.isFinite(ts) && Date.now() - ts > 12 * 60 * 60 * 1000) setConfirmedOidExpired(true)
+            if (Number.isFinite(ts) && Date.now() - ts > 24 * 60 * 60 * 1000) {
+              setConfirmedOidExpired(true)
+            } else {
+              setConfirmedOidExpired(false)
+            }
           }
         }
       })
@@ -2453,7 +2460,7 @@ function FormContent() {
       // 성공 페이지가 DB를 업데이트했는지 확인
       let serverStatusConfirmed = false
       try {
-        const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
+        const statusRes = await fetch(`/api/payment/status?oid=${oid}`, { cache: 'no-store' })
         if (statusRes.ok) {
           const statusData = await statusRes.json()
 
@@ -2466,7 +2473,7 @@ function FormContent() {
 
             await new Promise(resolve => setTimeout(resolve, 1000))
             
-            const retryRes = await fetch(`/api/payment/status?oid=${oid}`)
+            const retryRes = await fetch(`/api/payment/status?oid=${oid}`, { cache: 'no-store' })
             if (retryRes.ok) {
               const retryData = await retryRes.json()
 
@@ -2956,17 +2963,16 @@ function FormContent() {
             }
           }
           const tempRes = await fetch(`/api/temp-request/get?requestKey=${encodeURIComponent(rk)}`)
-          if (!tempRes.ok) {
-            showAlertMessage('재시도 데이터를 찾을 수 없습니다. 고객센터로 문의해주세요.')
+          if (tempRes.ok) {
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('result_requestKey', rk)
+              sessionStorage.setItem('result_stream', 'true')
+            }
+            router.push(`/result?requestKey=${encodeURIComponent(rk)}&stream=true`)
+            setShowResumePopup(false)
             return
           }
-          if (typeof window !== 'undefined') {
-            sessionStorage.setItem('result_requestKey', rk)
-            sessionStorage.setItem('result_stream', 'true')
-          }
-          router.push(`/result?requestKey=${encodeURIComponent(rk)}&stream=true`)
-          setShowResumePopup(false)
-          return
+          // temp-request 없음(만료 등) → 아래 confirm-pending(3203) 시도로 넘어감 (pending 결제가 있으면 3203으로 복구 가능)
         }
       }
       // 본인정보 DB에 없어도(404) pending 결제 확인(비밀번호 3203) 시도 → payments만 있고 user_credentials 없는 고객도 재시도 가능
@@ -3032,15 +3038,29 @@ function FormContent() {
       return
     }
     
-    // 결제 확인(재시도)으로 온 경우: 이미 success로 전환된 결제이므로 결제창 없이 점사 시작
+    // 결제 확인(재시도)으로 온 경우: 이미 success로 전환된 결제이므로 결제창 없이 점사 시작 → 리절트(점사) 화면으로만 이동
     const confirmedOid = searchParams.get('confirmedOid') || (typeof window !== 'undefined' ? sessionStorage.getItem('payment_confirmed_oid') : null)
     if (confirmedOid && content?.id) {
       try {
-        const statusRes = await fetch(`/api/payment/status?oid=${encodeURIComponent(confirmedOid)}`)
-        const statusData = await statusRes.json().catch(() => ({}))
-        if (statusData.success && statusData.status === 'success') {
-          // 운영자 예외: allowedRetry/allowedUntil 있으면 12시간 무시
-          const allowed = statusData.allowedRetry === true || (statusData.allowedUntil && Date.now() < new Date(statusData.allowedUntil).getTime())
+        const statusUrl = (oid: string) => `/api/payment/status?oid=${encodeURIComponent(oid)}&_=${Date.now()}`
+        let statusData: any = await (await fetch(statusUrl(confirmedOid), { cache: 'no-store' })).json().catch(() => ({}))
+        // 재시도하기(3203) 직후 DB 반영이 늦을 수 있음 → pending이면 잠시 뒤 한 번 더 조회 (캐시 방지 파라미터로 재요청)
+        if (statusData.success && statusData.status === 'pending') {
+          await new Promise((r) => setTimeout(r, 1500))
+          statusData = await (await fetch(statusUrl(confirmedOid), { cache: 'no-store' })).json().catch(() => statusData)
+        }
+        const isSuccess = statusData.success && statusData.status === 'success'
+        const hasAllowance = statusData.allowedRetry === true || (statusData.allowedUntil && Date.now() < new Date(statusData.allowedUntil).getTime())
+        // 방금 재시도하기(3203)로 이 폼으로 넘어온 경우: confirm-pending 직후라 DB가 아직 pending일 수 있음 → 세션에 있으면 허용
+        const justConfirmedByRetry =
+          typeof window !== 'undefined' &&
+          sessionStorage.getItem('payment_confirmed_oid') === confirmedOid &&
+          sessionStorage.getItem('payment_confirmed_oid_at')
+        const pendingAllowed = statusData.status === 'pending' && (hasAllowance || !!justConfirmedByRetry)
+        // success이거나, pending인데 운영자 예외/방금 재시도 확인이 있으면 점사 진행
+        if (statusData.success && (isSuccess || pendingAllowed)) {
+          // 운영자 예외: allowedRetry/allowedUntil 있으면 24시간 무시
+          const allowed = hasAllowance
           if (!allowed) {
             const completedAt = statusData.completedAt
             let ts = NaN
@@ -3049,8 +3069,8 @@ function FormContent() {
               const at = sessionStorage.getItem('payment_confirmed_oid_at')
               if (at) ts = parseInt(at, 10)
             }
-            if (Number.isFinite(ts) && Date.now() - ts > 12 * 60 * 60 * 1000) {
-              showAlertMessage('결제 확인 후 12시간이 지나 이용 기간이 만료되었습니다. 고객센터로 문의해 주세요.')
+            if (Number.isFinite(ts) && Date.now() - ts > 24 * 60 * 60 * 1000) {
+              showAlertMessage('결제 확인 후 24시간이 지나 이용 기간이 만료되었습니다. 고객센터로 문의해 주세요.')
               return
             }
           }
@@ -3109,12 +3129,21 @@ function FormContent() {
           }
           return
         }
+        // 결제 상태가 success가 아님: 결제 팝업으로 넘기지 않고 안내만
+        const notFoundMsg = '결제 정보를 찾을 수 없습니다. 고객센터로 문의해 주세요.'
+        const pendingMsg = '결제 확인이 아직 완료되지 않았습니다. 아래 "이미 결제하셨나요? 재시도하기"에서 휴대폰 번호와 비밀번호(3203)로 재시도한 뒤 점사보기를 눌러 주세요.'
+        const otherMsg = '결제 상태를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.'
+        const msg = statusData.status === 'not_found' ? notFoundMsg : statusData.status === 'pending' ? pendingMsg : otherMsg
+        showAlertMessage(msg)
+        return
       } catch (e) {
-        // status 확인 실패 시 일반 결제 팝업으로 진행
+        // status 확인 실패 시에도 결제 팝업으로 넘기지 않음 → 에러 안내 후 종료
+        showAlertMessage('결제 확인 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
+        return
       }
     }
     
-    // 결제 팝업 표시
+    // 결제 팝업 표시 (confirmedOid가 없을 때만)
     setShowPaymentPopup(true)
   }
 
@@ -3365,7 +3394,7 @@ function FormContent() {
             // 결제 서버가 successUrl로 리다이렉트하지 않았을 경우를 대비
             if (checkCount % 2 === 0) { // 2초마다 확인 (1초 간격이므로)
               try {
-                const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
+                const statusRes = await fetch(`/api/payment/status?oid=${oid}`, { cache: 'no-store' })
                 const statusData = await statusRes.json()
                 
                 // 5초마다 로그 출력 (너무 많은 로그 방지)
@@ -3427,7 +3456,7 @@ function FormContent() {
 
               // 창이 닫혔을 때 서버 상태를 확인 (성공 페이지가 DB를 업데이트했을 수 있음)
               try {
-                const statusRes = await fetch(`/api/payment/status?oid=${oid}`)
+                const statusRes = await fetch(`/api/payment/status?oid=${oid}`, { cache: 'no-store' })
                 const statusData = await statusRes.json()
                 
                 if (statusData.success && statusData.status === 'success') {
@@ -3604,10 +3633,14 @@ function FormContent() {
       let currentModel = urlModelParam
       
       if (!currentModel) {
-        try {
-          currentModel = await getSelectedModel()
-        } catch (error) {
+        if (isPaymentSuccess) {
           currentModel = 'gemini-3-flash-preview'
+        } else {
+          try {
+            currentModel = await getSelectedModel()
+          } catch (error) {
+            currentModel = 'gemini-3-flash-preview'
+          }
         }
       }
 
@@ -3740,20 +3773,23 @@ function FormContent() {
         day_gan_info: dayGanInfo // 일간 정보 추가
       }
 
-      // 점사 모드 확인
+      // 점사 모드 확인 (결제 확인 후 점사보기 경로는 Supabase 대기 없이 기본값 사용 → 처리 중 무한 대기 방지)
       let fortuneViewMode: 'batch' | 'realtime' = 'batch'
-      try {
-        fortuneViewMode = await getFortuneViewMode()
-      } catch (error) {
-        fortuneViewMode = 'batch'
-      }
-
-      // 병렬/직렬 점사 모드 확인
-      let useSequentialFortune = true // 기본값: 직렬점사
-      try {
-        useSequentialFortune = await getUseSequentialFortune()
-      } catch (error) {
+      let useSequentialFortune = true
+      if (isPaymentSuccess) {
+        fortuneViewMode = 'realtime'
         useSequentialFortune = true
+      } else {
+        try {
+          fortuneViewMode = await getFortuneViewMode()
+        } catch (error) {
+          fortuneViewMode = 'batch'
+        }
+        try {
+          useSequentialFortune = await getUseSequentialFortune()
+        } catch (error) {
+          useSequentialFortune = true
+        }
       }
 
       // realtime 모드일 경우 즉시 result 페이지로 리다이렉트
@@ -3922,30 +3958,20 @@ function FormContent() {
         
         // 결제 성공으로 인한 이동인 경우, temp-request 저장만 완료될 때까지 기다린 후 페이지 이동
         if (isPaymentSuccess) {
-
-          // temp-request 저장은 필수이므로 완료될 때까지 대기 (최대 3초)
-          Promise.race([
-            saveTempRequestTask,
-            new Promise((resolve) => setTimeout(resolve, 3000)) // 최대 3초 대기
-          ]).then(() => {
-
-          }).catch((e) => {
-
-          })
-          
           // 나머지 비동기 작업들은 백그라운드에서 실행 (user_credentials 저장 포함)
-          Promise.allSettled(asyncTasks.slice(1)).catch(() => {
-            // 실패해도 페이지 이동은 진행
-          })
-          
-          // temp-request 저장 완료를 기다린 후 페이지 이동 (최대 3초)
-          await Promise.race([
-            saveTempRequestTask,
-            new Promise((resolve) => setTimeout(resolve, 3000))
+          Promise.allSettled(asyncTasks.slice(1)).catch(() => {})
+          // 저장 실패해도 reject 되지 않도록 catch → 최대 3초 후 항상 리절트로 이동
+          const saveOrTimeout = Promise.race([
+            saveTempRequestTask.catch(() => undefined),
+            new Promise<void>((resolve) => setTimeout(resolve, 3000))
           ])
-          
-          // 리절트로 이동
-          router.push('/result')
+          await saveOrTimeout
+          // 리절트로 이동 (window.location으로 확실히 이탈, router.push만으로는 안 넘어가는 경우 대비)
+          if (typeof window !== 'undefined') {
+            window.location.href = '/result'
+          } else {
+            router.push('/result')
+          }
           return
         }
         
@@ -5112,7 +5138,7 @@ function FormContent() {
                 {resumeLoading ? '처리 중...' : '재시도하기'}
               </button>
               <p className="text-xs text-gray-500">
-                결제 후 12시간 이내에만 재시도할 수 있습니다.
+                결제 후 24시간 이내에만 재시도할 수 있습니다.
               </p>
             </div>
           </div>
@@ -6370,8 +6396,8 @@ function FormContent() {
             {searchParams.get('confirmedOid') && (
               <div className={`mb-4 p-4 rounded-xl text-sm ${confirmedOidExpired ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-green-50 border border-green-200 text-green-800'}`}>
                 {confirmedOidExpired
-                  ? '결제 확인 후 12시간이 지나 이용 기간이 만료되었습니다. 고객센터로 문의해 주세요.'
-                  : '결제가 확인되었습니다. 상기 본인정보를 확인(필요시 수정)하고 12시간 이내에 점사보기를 눌러 점사를 시작해주세요.'}
+                  ? '결제 확인 후 24시간이 지나 이용 기간이 만료되었습니다. 고객센터로 문의해 주세요.'
+                  : '결제가 확인되었습니다. 상기 본인정보를 확인(필요시 수정)하고 24시간 이내에 점사보기를 눌러 점사를 시작해주세요.'}
               </div>
             )}
 
