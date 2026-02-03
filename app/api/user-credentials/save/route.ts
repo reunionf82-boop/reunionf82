@@ -19,7 +19,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { requestKey, savedId, phone, password } = body
+    const { requestKey, savedId, phone, password, replaceRequestKey } = body
 
     if (!phone || !password) {
       return NextResponse.json(
@@ -34,6 +34,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    const normalizedReplaceKey = replaceRequestKey ? String(replaceRequestKey).trim() : ''
 
     // 60일 후 만료 시간 계산 (KST 기준)
     const nowKST = new Date(getKSTNow())
@@ -55,6 +57,37 @@ export async function POST(request: NextRequest) {
 
     const normalizedRequestKey = requestKey ? String(requestKey).trim() : ''
     const hasRequestKey = normalizedRequestKey.length > 0
+
+    // ✅ 재시도(점사보기) 경로: 기존 pending_oid row를 request_xxx로 교체 → 점사 완료 후 saved_id가 해당 row에 기록됨
+    if (hasRequestKey && normalizedReplaceKey) {
+      const { data: replaceRows, error: replaceError } = await supabase
+        .from('user_credentials')
+        .select('id, request_key, saved_id')
+        .eq('request_key', normalizedReplaceKey)
+        .limit(1)
+      if (!replaceError && replaceRows && replaceRows.length > 0) {
+        const { data: updated, error: updateError } = await supabase
+          .from('user_credentials')
+          .update({
+            request_key: normalizedRequestKey,
+            encrypted_phone: encryptedPhone,
+            encrypted_password: encryptedPassword,
+            expires_at: expiresAt.toISOString()
+          })
+          .eq('id', replaceRows[0].id)
+          .select()
+          .single()
+        if (!updateError && updated) {
+          return NextResponse.json({
+            success: true,
+            id: updated.id,
+            requestKey: updated.request_key,
+            savedId: updated.saved_id,
+            updated: true
+          })
+        }
+      }
+    }
 
     if (hasRequestKey) {
       // ✅ request_key가 이미 존재하면 업데이트로 처리 (중복 생성 방지)

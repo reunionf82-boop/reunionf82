@@ -3936,7 +3936,8 @@ function FormContent() {
           const fullPhoneNumber = paymentPhone || `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
           const userPassword = paymentPassword || password
           const credsKey = `user_credentials_saved_${requestKey}`
-          
+          const confirmedOid = sessionStorage.getItem('payment_confirmed_oid') || ''
+          const replaceRequestKey = confirmedOid ? `pending_${confirmedOid}` : undefined
           if (!sessionStorage.getItem(credsKey)) {
             sessionStorage.setItem(credsKey, '1')
             asyncTasks.push(
@@ -3946,7 +3947,8 @@ function FormContent() {
                 body: JSON.stringify({
                   requestKey: requestKey,
                   phone: fullPhoneNumber,
-                  password: userPassword
+                  password: userPassword,
+                  ...(replaceRequestKey ? { replaceRequestKey } : {})
                 })
               }).catch(() => {
                 // 저장 실패해도 페이지 이동은 진행
