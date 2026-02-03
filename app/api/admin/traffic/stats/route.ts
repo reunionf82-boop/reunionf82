@@ -77,12 +77,12 @@ export async function GET(request: NextRequest) {
 
     let pageViewsQuery = supabase
       .from('daily_page_views')
-      .select('day,page,view_count')
+      .select('day,page,source,view_count')
       .in('page', ALLOWED_PAGES)
 
     let uniqueViewsQuery = supabase
       .from('daily_unique_page_views')
-      .select('day,page')
+      .select('day,page,source')
       .in('page', ALLOWED_PAGES)
 
     if (rangeStart && rangeEnd) {
@@ -105,6 +105,8 @@ export async function GET(request: NextRequest) {
     const seriesMap: Record<string, { bucket: string; views: number; unique: number }> = {}
     const byPageViews: Record<string, number> = { home: 0, form: 0 }
     const byPageUnique: Record<string, number> = { home: 0, form: 0 }
+    const bySourceViews: Record<string, number> = { portal: 0, meta: 0, direct: 0 }
+    const bySourceUnique: Record<string, number> = { portal: 0, meta: 0, direct: 0 }
 
     const getBucket = (dayStr: string) => {
       if (viewMode === 'weekly') return getWeekStartDate(dayStr)
@@ -112,14 +114,24 @@ export async function GET(request: NextRequest) {
       return dayStr
     }
 
+    const normalizeSource = (s: string | null | undefined) => {
+      const v = (s || 'direct').toLowerCase().trim()
+      if (v === 'portal' || v === 'meta') return v
+      return 'direct'
+    }
+
     let totalViews = 0
     pageViews?.forEach((row: any) => {
       const dayStr = row.day as string
       const page = row.page as string
+      const src = normalizeSource(row.source)
       const count = Number(row.view_count) || 0
       totalViews += count
       if (byPageViews[page] !== undefined) {
         byPageViews[page] += count
+      }
+      if (bySourceViews[src] !== undefined) {
+        bySourceViews[src] += count
       }
       const bucket = getBucket(dayStr)
       if (!seriesMap[bucket]) {
@@ -132,9 +144,13 @@ export async function GET(request: NextRequest) {
     uniqueViews?.forEach((row: any) => {
       const dayStr = row.day as string
       const page = row.page as string
+      const src = normalizeSource(row.source)
       totalUnique += 1
       if (byPageUnique[page] !== undefined) {
         byPageUnique[page] += 1
+      }
+      if (bySourceUnique[src] !== undefined) {
+        bySourceUnique[src] += 1
       }
       const bucket = getBucket(dayStr)
       if (!seriesMap[bucket]) {
@@ -171,6 +187,11 @@ export async function GET(request: NextRequest) {
         byPage: {
           home: { views: byPageViews.home, unique: byPageUnique.home },
           form: { views: byPageViews.form, unique: byPageUnique.form },
+        },
+        bySource: {
+          portal: { views: bySourceViews.portal, unique: bySourceUnique.portal },
+          meta: { views: bySourceViews.meta, unique: bySourceUnique.meta },
+          direct: { views: bySourceViews.direct, unique: bySourceUnique.direct },
         },
         series,
         viewMode,

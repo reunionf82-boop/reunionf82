@@ -7,6 +7,16 @@ export const dynamic = 'force-dynamic'
 
 const ALLOWED_PAGES = new Set(['home', 'form'])
 
+/** utm_source / referrer / token(포털 전달) → portal | meta | direct */
+function normalizeSource(body: { utm_source?: string; source?: string; referrer?: string; token?: string }): string {
+  const utm = (body.utm_source || body.source || '').toLowerCase().trim()
+  const ref = (body.referrer || '').toLowerCase()
+  const hasPortalToken = !!body.token
+  if (hasPortalToken || utm === 'portal' || utm === 'fortune82' || ref.includes('fortune82')) return 'portal'
+  if (utm === 'facebook' || utm === 'instagram' || utm === 'meta' || ref.includes('facebook.com') || ref.includes('fb.com') || ref.includes('instagram.com')) return 'meta'
+  return 'direct'
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({} as any))
@@ -18,6 +28,8 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    const source = normalizeSource(body)
 
     const supabase = getAdminSupabaseClient()
 
@@ -42,9 +54,10 @@ export async function POST(req: NextRequest) {
         {
           page,
           day,
+          source,
           fingerprint_hash: fingerprintHash,
         },
-        { onConflict: 'page,day,fingerprint_hash', ignoreDuplicates: true }
+        { onConflict: 'page,day,source,fingerprint_hash', ignoreDuplicates: true }
       )
       .select('id')
 
@@ -53,7 +66,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { data: updatedCountData, error: countError } = await supabase
-      .rpc('increment_daily_page_view', { p_page: page, p_day: day })
+      .rpc('increment_daily_page_view', { p_page: page, p_day: day, p_source: source })
 
     if (countError) {
       throw countError
@@ -66,6 +79,7 @@ export async function POST(req: NextRequest) {
       .select('*', { count: 'exact', head: true })
       .eq('page', page)
       .eq('day', day)
+      .eq('source', source)
 
     if (uniqueCountError) {
       throw uniqueCountError

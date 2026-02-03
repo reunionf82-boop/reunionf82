@@ -151,10 +151,19 @@ function FormContent() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const body: Record<string, string> = { page: 'form' }
+    const utmSource = params.get('utm_source')
+    const utmMedium = params.get('utm_medium')
+    const token = params.get('token')
+    if (utmSource) body.utm_source = utmSource
+    if (utmMedium) body.utm_medium = utmMedium
+    if (token) body.token = token
+    if (document.referrer) body.referrer = document.referrer
     void fetch('/api/traffic/track', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ page: 'form' }),
+      body: JSON.stringify(body),
     })
   }, [])
   

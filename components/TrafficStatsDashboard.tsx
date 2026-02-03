@@ -11,6 +11,11 @@ interface TrafficStats {
     home: { views: number; unique: number }
     form: { views: number; unique: number }
   }
+  bySource?: {
+    portal: { views: number; unique: number }
+    meta: { views: number; unique: number }
+    direct: { views: number; unique: number }
+  }
   series: Array<{
     bucket: string
     views: number
@@ -224,6 +229,68 @@ export default function TrafficStatsDashboard({ isOpen, onClose }: TrafficStatsD
                   <div className="text-xs text-gray-400 mt-1">유니크 {stats.byPage.form.unique.toLocaleString()}</div>
                 </div>
               </div>
+
+              {stats.bySource && (() => {
+                const total = stats.bySource.portal.views + stats.bySource.meta.views + stats.bySource.direct.views
+                const pPortal = total > 0 ? (stats.bySource.portal.views / total) * 100 : 0
+                const pMeta = total > 0 ? (stats.bySource.meta.views / total) * 100 : 0
+                const pDirect = total > 0 ? (stats.bySource.direct.views / total) * 100 : 0
+                const pieStyle = total > 0
+                  ? {
+                      background: `conic-gradient(
+                        #fbbf24 0% ${pPortal}%,
+                        #60a5fa ${pPortal}% ${pPortal + pMeta}%,
+                        #9ca3af ${pPortal + pMeta}% 100%
+                      )`,
+                    }
+                  : undefined
+                return (
+                  <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
+                    <div className="text-white font-semibold mb-3">유입 경로</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                        <div className="text-amber-300 text-sm font-medium mb-1">포춘82 포털</div>
+                        <div className="text-lg font-bold text-white">{stats.bySource.portal.views.toLocaleString()}</div>
+                        <div className="text-xs text-gray-400">유니크 {stats.bySource.portal.unique.toLocaleString()}</div>
+                      </div>
+                      <div className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                        <div className="text-blue-300 text-sm font-medium mb-1">메타 광고</div>
+                        <div className="text-lg font-bold text-white">{stats.bySource.meta.views.toLocaleString()}</div>
+                        <div className="text-xs text-gray-400">유니크 {stats.bySource.meta.unique.toLocaleString()}</div>
+                      </div>
+                      <div className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                        <div className="text-gray-300 text-sm font-medium mb-1">기타 / 직접</div>
+                        <div className="text-lg font-bold text-white">{stats.bySource.direct.views.toLocaleString()}</div>
+                        <div className="text-xs text-gray-400">유니크 {stats.bySource.direct.unique.toLocaleString()}</div>
+                      </div>
+                    </div>
+                    {/* 유입 비율 원형 그래프 */}
+                    <div className="mt-5 pt-5 border-t border-gray-700 flex flex-col sm:flex-row items-center gap-6">
+                      <div className="flex-shrink-0 w-44 h-44 rounded-full border-2 border-gray-600 overflow-hidden bg-gray-700" style={pieStyle}>
+                        {total === 0 && (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <span className="text-gray-500 text-sm">데이터 없음</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 grid grid-cols-3 gap-3 w-full sm:w-auto">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-amber-400 flex-shrink-0" aria-hidden />
+                          <span className="text-gray-300 text-sm">포춘82 포털 <strong className="text-white">{pPortal.toFixed(1)}%</strong></span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-blue-400 flex-shrink-0" aria-hidden />
+                          <span className="text-gray-300 text-sm">메타 광고 <strong className="text-white">{pMeta.toFixed(1)}%</strong></span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-gray-400 flex-shrink-0" aria-hidden />
+                          <span className="text-gray-300 text-sm">기타/직접 <strong className="text-white">{pDirect.toFixed(1)}%</strong></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
 
               <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
                 <div className="text-white font-semibold mb-4">
