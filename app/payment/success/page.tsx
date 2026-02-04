@@ -1,10 +1,10 @@
 'use client'
 
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, type ReadonlyURLSearchParams } from 'next/navigation'
 import { Suspense, useEffect, useState } from 'react'
 
 function PaymentSuccessContent() {
-  const searchParams = useSearchParams()
+  const searchParams = useSearchParams() as ReadonlyURLSearchParams
   const oid = searchParams.get('oid')
   const [completeDone, setCompleteDone] = useState(false)
 

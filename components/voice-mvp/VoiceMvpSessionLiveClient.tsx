@@ -4,13 +4,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AudioRecorder } from '@/lib/voice-mvp/genai-live/audio-recorder'
 import { AudioStreamer } from '@/lib/voice-mvp/genai-live/audio-streamer'
-import { audioContext } from '@/lib/voice-mvp/genai-live/utils'
+import { audioContext, base64ToArrayBuffer } from '@/lib/voice-mvp/genai-live/utils'
 import VolMeterWorket from '@/lib/voice-mvp/genai-live/worklets/vol-meter'
-import { GenAILiveClient } from '@/lib/voice-mvp/genai-live/genai-live-client'
-import type { LiveClientOptions } from '@/lib/voice-mvp/genai-live/types'
-import { Modality, type LiveConnectConfig } from '@google/genai/web'
+import { Modality } from '@google/genai/web'
 
 type Msg = { role: 'user' | 'assistant' | 'system'; text: string }
+
+const CALENDAR_LABEL: Record<string, string> = {
+  solar: '양력',
+  lunar: '음력',
+  'lunar-leap': '음력(윤)',
+}
 
 function styleInstruction(style: string) {
   switch (style) {
@@ -62,16 +66,16 @@ const DEFAULT_VOICE_NAMES: Record<string, string> = {
   reunion: 'Aoede',
 }
 
-const LIVE_MODEL_FALLBACK = 'models/gemini-2.5-flash-native-audio-preview-12-2025'
+const LIVE_MODEL_FALLBACK = 'gemini-2.5-flash-native-audio-preview-12-2025'
 
 function normalizeLiveModel(base: string) {
   const trimmed = String(base || '').trim()
   if (!trimmed) return LIVE_MODEL_FALLBACK
-  const model = trimmed.includes('/') ? trimmed : `models/${trimmed}`
+  // Gemini Developer API Live는 models/ 접두어 없이 모델명을 사용
+  const model = trimmed.replace(/^models\//, '')
   if (model.includes('-exp')) return LIVE_MODEL_FALLBACK
-  if (model.includes('native-audio') || model.includes('gemini-live-2.5')) return model
-  if (!model.includes('-live')) return LIVE_MODEL_FALLBACK
-  return model
+  if (model.includes('native-audio')) return model
+  return LIVE_MODEL_FALLBACK
 }
 
 function getModeVoicePreset(snapshot: any, mode: string) {
@@ -104,6 +108,19 @@ function profileLine(p: any, label: string) {
   const genderRaw = String(p.gender || '').trim()
   const gender = genderRaw === 'male' ? '남성' : genderRaw === 'female' ? '여성' : genderRaw ? genderRaw : '(성별 없음)'
   return `${label}: ${name} / ${gender}`
+}
+
+function birthSummary(p: any) {
+  if (!p || typeof p !== 'object') return '(없음)'
+  const year = p.year ?? ''
+  const month = p.month ?? ''
+  const day = p.day ?? ''
+  const cal = p.calendarType || ''
+  const hour = p.birthHour || ''
+  const calLabel = CALENDAR_LABEL[cal] || cal || '양력'
+  const datePart = year && month && day ? `${year}년 ${month}월 ${day}일` : '(생년월일 없음)'
+  const hourPart = hour ? ` / 시각 ${hour}` : ''
+  return `${datePart} (${calLabel})${hourPart}`
 }
 
 function styleLabel(style: string) {
@@ -174,12 +191,6 @@ function LevelBar({
   )
 }
 
-function getPublicLiveApiKey(): string {
-  // ⚠️ 내부 MVP 전용: 브라우저에서 직접 Live API 연결을 위해 공개키를 사용.
-  // 운영용으로 갈 때는 서버 프록시/토큰 방식을 쓰는 게 안전.
-  return String(process.env.NEXT_PUBLIC_GEMINI_LIVE_API_KEY || '')
-}
-
 export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: string }) {
   const router = useRouter()
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
@@ -191,9 +202,17 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
   const [outVolume, setOutVolume] = useState(0)
   const [error, setError] = useState('')
   const [showManse, setShowManse] = useState(true)
-
-  const apiKey = useMemo(() => getPublicLiveApiKey(), [])
-  const clientRef = useRef<GenAILiveClient | null>(null)
+  const [showContext, setShowContext] = useState(false)
+  const [wsStatus, setWsStatus] = useState<'idle' | 'connecting' | 'open' | 'closed' | 'error'>('idle')
+  const [wsCloseCode, setWsCloseCode] = useState<number | null>(null)
+  const [wsCloseReason, setWsCloseReason] = useState<string>('')
+  const [wsLastError, setWsLastError] = useState<string>('')
+  const [wsLastServerError, setWsLastServerError] = useState<string>('')
+  const [wsInitSent, setWsInitSent] = useState(false)
+  const [wsOpenAt, setWsOpenAt] = useState<string>('')
+  const [wsLastServerMsg, setWsLastServerMsg] = useState<string>('')
+  const [wsLastServerAt, setWsLastServerAt] = useState<string>('')
+  const wsRef = useRef<WebSocket | null>(null)
   const recorderRef = useRef<AudioRecorder | null>(null)
   const streamerRef = useRef<AudioStreamer | null>(null)
   
@@ -220,6 +239,49 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
         'gemini-2.0-flash-001'
     ).trim()
     return normalizeLiveModel(base)
+  }, [session])
+
+  const liveContext = useMemo(() => {
+    const mode = String(session?.mode || '')
+    const persona =
+      (session?.routing_config_snapshot?.personas &&
+        typeof session.routing_config_snapshot.personas?.[mode] === 'string' &&
+        String(session.routing_config_snapshot.personas?.[mode] || '').trim()) ||
+      ''
+    const preset = getModeVoicePreset(session?.routing_config_snapshot, mode)
+    const voiceName = preset.voiceName
+    const selfLine = profileLine(session?.profile_self, '본인')
+    const partnerLine = profileLine(session?.profile_partner, '상대')
+    const selfBirth = birthSummary(session?.profile_self)
+    const partnerBirth = birthSummary(session?.profile_partner)
+    const manseSelfText = String(session?.manse_self?.manse_text || '').slice(0, 4000)
+    const mansePartnerText = String(session?.manse_partner?.manse_text || '').slice(0, 3000)
+    const situation = String(session?.situation || '').slice(0, 1500)
+    const systemText = `당신은 한국어로 대답하는 실시간 음성 상담사입니다.
+${persona ? `\n[페르소나]\n${persona}\n` : ''}
+- ${styleInstruction(preset.style)}
+- 상담 종류: ${mode}
+- 목표: 공감 + 구체적 조언 + 마지막에 질문 1개
+- 길이: 6~12문장
+`
+    const contextText = `### 기본 정보\n${selfLine}\n생년월일: ${selfBirth}\n\n### 만세력(본인)\n${manseSelfText || '(만세력 텍스트 없음)'}\n\n### 만세력(상대)\n${
+      mode === 'gunghap' ? `${partnerLine}\n생년월일: ${partnerBirth}\n${mansePartnerText || '(만세력 텍스트 없음)'}` : '(해당 없음)'
+    }\n\n### 상황\n${mode === 'reunion' ? situation || '(없음)' : '(해당 없음)'}\n`
+    return {
+      mode,
+      persona,
+      preset,
+      voiceName,
+      selfLine,
+      partnerLine,
+      selfBirth,
+      partnerBirth,
+      manseSelfText,
+      mansePartnerText,
+      situation,
+      systemText,
+      contextText,
+    }
   }, [session])
 
   useEffect(() => {
@@ -285,109 +347,8 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
   }, [])
 
   useEffect(() => {
-    if (!authenticated) return
-    if (!apiKey) {
-      setError('NEXT_PUBLIC_GEMINI_LIVE_API_KEY 가 설정되지 않았습니다.')
-      return
-    }
-
-    const opts: LiveClientOptions = {
-      apiKey,
-      httpOptions: {
-        apiVersion: 'v1beta',
-      },
-    } as any
-    const client = new GenAILiveClient(opts)
-    clientRef.current = client
-
-    const onOpen = () => {
-      setConnected(true)
-      isAiSpeakingRef.current = false // 연결 시 초기화
-    }
-    const onClose = (event?: CloseEvent) => {
-      setConnected(false)
-      isAiSpeakingRef.current = false
-      recorderRef.current?.stop()
-      streamerRef.current?.stop()
-      if (manualDisconnectRef.current) {
-        manualDisconnectRef.current = false
-        return
-      }
-      const code = event?.code ? ` (code ${event.code})` : ''
-      const reason = event?.reason ? `: ${event.reason}` : ''
-      setError(`Live 연결 종료${code}${reason}`)
-    }
-    const onError = (e: any) => {
-      setError(e?.message || 'Live 연결 오류')
-      recorderRef.current?.stop()
-      streamerRef.current?.stop()
-    }
-
-    const onAudio = (data: ArrayBuffer) => {
-      try {
-        // 기존 타임아웃 클리어 (오디오가 계속 오고 있음)
-        if (audioTimeoutRef.current) {
-          clearTimeout(audioTimeoutRef.current)
-          audioTimeoutRef.current = null
-        }
-        
-        // AI가 대답을 시작하는 시점 감지 (첫 번째 오디오 청크)
-        if (!isAiSpeakingRef.current) {
-          isAiSpeakingRef.current = true
-          
-          // t1-t4.mp3: 100% 확률로 랜덤 재생
-          const tSounds = [t1SoundRef.current, t2SoundRef.current, t3SoundRef.current, t4SoundRef.current].filter(Boolean)
-          if (tSounds.length > 0) {
-            const randomTSound = tSounds[Math.floor(Math.random() * tSounds.length)]
-            if (randomTSound) {
-              randomTSound.currentTime = 0
-              randomTSound.play().catch(() => {})
-            }
-          }
-          
-          // jong.mp3: 30% 확률로 재생
-          if (Math.random() < 0.3 && jongSoundRef.current) {
-            jongSoundRef.current.currentTime = 0
-            jongSoundRef.current.play().catch(() => {})
-          }
-        }
-        
-        streamerRef.current?.addPCM16(new Uint8Array(data))
-        
-        // 오디오 청크가 오지 않으면 스트림이 끝난 것으로 간주 (500ms 후 초기화)
-        audioTimeoutRef.current = setTimeout(() => {
-          isAiSpeakingRef.current = false
-          audioTimeoutRef.current = null
-        }, 500)
-      } catch {
-        // ignore
-      }
-    }
-    const onInterrupted = () => {
-      streamerRef.current?.stop()
-      isAiSpeakingRef.current = false // 끼어들기 시 초기화
-      if (audioTimeoutRef.current) {
-        clearTimeout(audioTimeoutRef.current)
-        audioTimeoutRef.current = null
-      }
-    }
-    const onContent = (c: any) => {
-      // 모델 텍스트도 받을 수 있음 (AUDIO 모드여도 텍스트 part가 올 수 있음)
-      const parts = c?.modelTurn?.parts || c?.serverContent?.modelTurn?.parts || []
-      const texts = (parts || [])
-        .map((p: any) => (typeof p?.text === 'string' ? p.text : ''))
-        .filter(Boolean)
-        .join('\n')
-      if (texts.trim()) {
-        setMessages((prev) => [...prev, { role: 'assistant', text: texts.trim() }])
-      }
-    }
-
-    client.on('open', onOpen).on('close', onClose).on('error', onError).on('audio', onAudio).on('interrupted', onInterrupted).on('content', onContent)
-
     return () => {
-      client.off('open', onOpen).off('close', onClose).off('error', onError).off('audio', onAudio).off('interrupted', onInterrupted).off('content', onContent)
-      client.disconnect()
+      wsRef.current?.close()
       recorderRef.current?.stop()
       streamerRef.current?.stop()
       if (audioTimeoutRef.current) {
@@ -395,12 +356,22 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
         audioTimeoutRef.current = null
       }
     }
-  }, [authenticated, apiKey])
+  }, [])
 
   const connect = async () => {
     setError('')
+    setWsLastError('')
+    setWsLastServerError('')
+    setWsLastServerMsg('')
+    setWsLastServerAt('')
+    setWsCloseCode(null)
+    setWsCloseReason('')
+    setWsInitSent(false)
+    setWsOpenAt('')
     try {
-      if (!clientRef.current) return
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        return
+      }
 
       // audio output
       if (!streamerRef.current) {
@@ -413,34 +384,13 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
       }
       await streamerRef.current.resume()
 
-      const mode = String(session?.mode || '')
-      const persona =
-        (session?.routing_config_snapshot?.personas &&
-          typeof session.routing_config_snapshot.personas?.[mode] === 'string' &&
-          String(session.routing_config_snapshot.personas?.[mode] || '').trim()) ||
-        ''
-      const preset = getModeVoicePreset(session?.routing_config_snapshot, mode)
-      // Use mode-specific voiceName from preset (from DB config)
-      const voiceName = preset.voiceName
-      // 참고: speakingRate는 현재 GenAI Live API에서 미지원 (preset.speakingRate는 향후 지원 시 사용)
-      const selfLine = profileLine(session?.profile_self, '본인')
-      const partnerLine = profileLine(session?.profile_partner, '상대')
-      const manseSelfText = String(session?.manse_self?.manse_text || '').slice(0, 4000)
-      const mansePartnerText = String(session?.manse_partner?.manse_text || '').slice(0, 3000)
-      const situation = String(session?.situation || '').slice(0, 1500)
+      const mode = liveContext.mode
+      const preset = liveContext.preset
+      const voiceName = liveContext.voiceName
+      const systemText = liveContext.systemText
+      const contextText = liveContext.contextText
 
-      const systemText = `당신은 한국어로 대답하는 실시간 음성 상담사입니다.
-${persona ? `\n[페르소나]\n${persona}\n` : ''}
-- ${styleInstruction(preset.style)}
-- 상담 종류: ${mode}
-- 목표: 공감 + 구체적 조언 + 마지막에 질문 1개
-- 길이: 6~12문장
-`
-      const contextText = `### 만세력(본인)\n${selfLine}\n${manseSelfText || '(없음)'}\n\n### 만세력(상대)\n${
-        mode === 'gunghap' ? `${partnerLine}\n${mansePartnerText || '(없음)'}` : '(해당 없음)'
-      }\n\n### 상황\n${mode === 'reunion' ? situation || '(없음)' : '(해당 없음)'}\n`
-
-      const config: LiveConnectConfig = {
+      const config: any = {
         responseModalities: [Modality.AUDIO],
         // voiceName은 캐릭터(모드)별로 DB에서 설정된 값을 사용
         // 참고: speakingRate는 현재 GenAI Live API의 SpeechConfig에서 지원되지 않음
@@ -452,9 +402,132 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
         },
       }
 
-      const connectedOk = await clientRef.current.connect(model, config)
-      if (!connectedOk) {
-        throw new Error('Live 연결 실패')
+      const envProxy = String(process.env.NEXT_PUBLIC_VERTEX_LIVE_PROXY_URL || '').trim()
+      const resolveWsUrl = () => {
+        if (envProxy) {
+          if (envProxy.startsWith('ws://') || envProxy.startsWith('wss://')) return envProxy
+          if (envProxy.startsWith('http://') || envProxy.startsWith('https://')) {
+            return envProxy.replace(/^http/, 'ws')
+          }
+          return `${window.location.origin}${envProxy.startsWith('/') ? '' : '/'}${envProxy}`.replace(/^http/, 'ws')
+        }
+        return `${window.location.origin.replace(/^http/, 'ws')}/api/voice-mvp/live-proxy`
+      }
+      if (!envProxy) {
+        const initUrl = `${window.location.origin}/api/voice-mvp/live-proxy`
+        try {
+          await fetch(initUrl, { method: 'GET', cache: 'no-store' })
+        } catch (e: any) {
+          throw new Error(e?.message || 'Live 프록시 초기화 실패')
+        }
+      }
+      const wsUrl = resolveWsUrl()
+      setWsStatus('connecting')
+      const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        setWsStatus('open')
+        setWsOpenAt(new Date().toISOString())
+        try {
+          ws.send(JSON.stringify({ type: 'ping' }))
+          setTimeout(() => {
+            try {
+              ws.send(JSON.stringify({ type: 'init', model, config }))
+              setWsInitSent(true)
+            } catch (e: any) {
+              setWsLastError(e?.message || 'init 전송 실패')
+              setWsInitSent(false)
+            }
+          }, 60)
+        } catch (e: any) {
+          setWsLastError(e?.message || 'init 전송 실패')
+          setWsInitSent(false)
+        }
+      }
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(String(event.data || '{}'))
+          setWsLastServerMsg(String(msg.type || 'unknown'))
+          setWsLastServerAt(new Date().toISOString())
+          if (msg.type === 'ready') {
+            setConnected(true)
+            isAiSpeakingRef.current = false
+            return
+          }
+          if (msg.type === 'audio' && msg.data) {
+            const buf = base64ToArrayBuffer(msg.data)
+            if (audioTimeoutRef.current) {
+              clearTimeout(audioTimeoutRef.current)
+              audioTimeoutRef.current = null
+            }
+            if (!isAiSpeakingRef.current) {
+              isAiSpeakingRef.current = true
+              const tSounds = [t1SoundRef.current, t2SoundRef.current, t3SoundRef.current, t4SoundRef.current].filter(Boolean)
+              if (tSounds.length > 0) {
+                const randomTSound = tSounds[Math.floor(Math.random() * tSounds.length)]
+                if (randomTSound) {
+                  randomTSound.currentTime = 0
+                  randomTSound.play().catch(() => {})
+                }
+              }
+              if (Math.random() < 0.3 && jongSoundRef.current) {
+                jongSoundRef.current.currentTime = 0
+                jongSoundRef.current.play().catch(() => {})
+              }
+            }
+            streamerRef.current?.addPCM16(new Uint8Array(buf))
+            audioTimeoutRef.current = setTimeout(() => {
+              isAiSpeakingRef.current = false
+              audioTimeoutRef.current = null
+            }, 500)
+            return
+          }
+          if (msg.type === 'text' && msg.text) {
+            setMessages((prev) => [...prev, { role: 'assistant', text: String(msg.text).trim() }])
+            return
+          }
+          if (msg.type === 'text' && String(msg.text || '') === 'pong') {
+            return
+          }
+          if (msg.type === 'interrupted') {
+            streamerRef.current?.stop()
+            isAiSpeakingRef.current = false
+            if (audioTimeoutRef.current) {
+              clearTimeout(audioTimeoutRef.current)
+              audioTimeoutRef.current = null
+            }
+            return
+          }
+          if (msg.type === 'error') {
+            setWsLastServerError(String(msg.message || 'Live 연결 오류'))
+            setError(msg.message || 'Live 연결 오류')
+            return
+          }
+        } catch {
+          // ignore
+        }
+      }
+      ws.onerror = () => {
+        setWsStatus('error')
+        setWsLastError('WebSocket 연결 오류')
+        setError('Live 연결 오류')
+      }
+      ws.onclose = (event) => {
+        setWsStatus('closed')
+        setWsCloseCode(typeof event?.code === 'number' ? event.code : null)
+        setWsCloseReason(event?.reason || '')
+        setConnected(false)
+        isAiSpeakingRef.current = false
+        recorderRef.current?.stop()
+        streamerRef.current?.stop()
+        if (manualDisconnectRef.current) {
+          manualDisconnectRef.current = false
+          return
+        }
+        const code = event?.code ? ` (code ${event.code})` : ''
+        const reason = event?.reason ? `: ${event.reason}` : ''
+        setError(`Live 연결 종료${code}${reason}`)
       }
 
       // ✅ 연결 시 jong.mp3 재생 (500ms 지연)
@@ -479,8 +552,8 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
       const recorder = recorderRef.current
 
       const onData = (base64: string) => {
-        if (clientRef.current?.status !== 'connected') return
-        clientRef.current?.sendRealtimeInput([{ mimeType: 'audio/pcm;rate=16000', data: base64 }])
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+        wsRef.current.send(JSON.stringify({ type: 'audio', data: base64, mimeType: 'audio/pcm;rate=16000' }))
       }
       recorder.off('data', onData as any).off('volume', setInVolume as any)
       if (!muted) recorder.on('data', onData as any).on('volume', setInVolume as any).start()
@@ -496,7 +569,10 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
     manualDisconnectRef.current = true
     recorderRef.current?.stop()
     streamerRef.current?.stop()
-    clientRef.current?.disconnect()
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'disconnect' }))
+      wsRef.current.close()
+    }
     setConnected(false)
     isAiSpeakingRef.current = false // 연결 해제 시 초기화
   }
@@ -588,6 +664,61 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
             </div>
           </div>
           <div className="h-1 bg-gradient-to-r from-pink-500 via-fuchsia-500 to-purple-500" />
+        </div>
+
+        {/* 컨텍스트 점검: 만세력/상황 주입 여부 확인 */}
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowContext((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50"
+          >
+            <span className="font-bold text-gray-900">컨텍스트 점검</span>
+            <span className="text-sm text-gray-500">{showContext ? '접기' : '펼치기'}</span>
+          </button>
+          {showContext && (
+            <div className="px-4 pb-4 text-xs text-gray-700 space-y-2">
+              <div>모드: <span className="font-mono">{liveContext.mode || '-'}</span></div>
+              <div>본인: <span className="font-mono">{liveContext.selfLine}</span></div>
+              <div>생년월일: <span className="font-mono">{liveContext.selfBirth}</span></div>
+              <div>만세력(본인) 길이: <span className="font-mono">{liveContext.manseSelfText.length}</span></div>
+              <div className="whitespace-pre-wrap bg-gray-50 border border-gray-200 rounded p-2 max-h-40 overflow-auto">
+                {liveContext.manseSelfText ? liveContext.manseSelfText.slice(0, 600) : '(없음)'}
+              </div>
+              {liveContext.mode === 'gunghap' && (
+                <>
+                  <div>상대: <span className="font-mono">{liveContext.partnerLine}</span></div>
+                  <div>생년월일(상대): <span className="font-mono">{liveContext.partnerBirth}</span></div>
+                  <div>만세력(상대) 길이: <span className="font-mono">{liveContext.mansePartnerText.length}</span></div>
+                  <div className="whitespace-pre-wrap bg-gray-50 border border-gray-200 rounded p-2 max-h-40 overflow-auto">
+                    {liveContext.mansePartnerText ? liveContext.mansePartnerText.slice(0, 600) : '(없음)'}
+                  </div>
+                </>
+              )}
+              {liveContext.mode === 'reunion' && (
+                <>
+                  <div>상황 길이: <span className="font-mono">{liveContext.situation.length}</span></div>
+                  <div className="whitespace-pre-wrap bg-gray-50 border border-gray-200 rounded p-2 max-h-40 overflow-auto">
+                    {liveContext.situation ? liveContext.situation.slice(0, 600) : '(없음)'}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* WS 상태 디버그 */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 text-xs text-gray-700 space-y-2">
+          <div className="font-bold text-gray-900">WS 상태</div>
+          <div>상태: <span className="font-mono">{wsStatus}</span></div>
+          <div>오픈 시각: <span className="font-mono">{wsOpenAt || '-'}</span></div>
+          <div>init 전송: <span className="font-mono">{wsInitSent ? 'yes' : 'no'}</span></div>
+          <div>마지막 수신: <span className="font-mono">{wsLastServerMsg || '-'}</span></div>
+          <div>수신 시각: <span className="font-mono">{wsLastServerAt || '-'}</span></div>
+          <div>닫힘 코드: <span className="font-mono">{wsCloseCode ?? '-'}</span></div>
+          <div>닫힘 사유: <span className="font-mono">{wsCloseReason || '-'}</span></div>
+          <div>클라이언트 오류: <span className="font-mono">{wsLastError || '-'}</span></div>
+          <div>서버 오류: <span className="font-mono">{wsLastServerError || '-'}</span></div>
         </div>
 
         {/* ✅ 만세력 표시 (세션 생성 시 서버에서 계산/고정된 데이터) */}

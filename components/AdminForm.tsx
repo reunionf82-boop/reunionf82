@@ -21,11 +21,12 @@ interface AdminFormProps {
 export default function AdminForm({ onAdd }: AdminFormProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const contentId = searchParams.get('id')
-  const duplicateId = searchParams.get('duplicate') // 복제할 컨텐츠 ID
-  const speakerParam = searchParams.get('speaker') // URL에서 화자 파라미터 가져오기
-  const ttsProviderParam = searchParams.get('ttsProvider') // URL에서 TTS 제공자 파라미터
-  const typecastVoiceIdParam = searchParams.get('typecastVoiceId') // URL에서 Typecast voice id 파라미터
+  const getParam = useCallback((key: string) => searchParams?.get(key) ?? null, [searchParams])
+  const contentId = getParam('id')
+  const duplicateId = getParam('duplicate') // 복제할 컨텐츠 ID
+  const speakerParam = getParam('speaker') // URL에서 화자 파라미터 가져오기
+  const ttsProviderParam = getParam('ttsProvider') // URL에서 TTS 제공자 파라미터
+  const typecastVoiceIdParam = getParam('typecastVoiceId') // URL에서 Typecast voice id 파라미터
   const isEditableTarget = useCallback((target: EventTarget | null) => {
     if (!target || !(target instanceof HTMLElement)) return false
     const tagName = target.tagName

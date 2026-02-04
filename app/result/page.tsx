@@ -97,6 +97,7 @@ function appendStreamChunk(prev: string, next: string): string {
 function ResultContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const getParam = useCallback((key: string) => searchParams?.get(key) ?? null, [searchParams])
   
   // sessionStorage에서 데이터 가져오기 (URL 파라미터 대신, 하위 호환성 유지)
   const [storageKey, setStorageKey] = useState<string | null>(null)
@@ -157,13 +158,13 @@ function ResultContent() {
     }
 
     // 2. URL 파라미터 확인 (나의 이용내역 다시보기: 새 창은 sessionStorage 없으므로 savedId 등 URL로 전달)
-    const urlStorageKey = searchParams.get('key')
-    const urlSavedId = searchParams.get('savedId')
-    const urlRequestKey = searchParams.get('requestKey')
-    const urlIsStreaming = searchParams.get('stream') === 'true'
-    const urlGeneratePdf = searchParams.get('generatePdf') === 'true'
-    const urlResumeToken = searchParams.get('resumeToken')
-    const urlResumeCode = searchParams.get('resume')
+    const urlStorageKey = getParam('key')
+    const urlSavedId = getParam('savedId')
+    const urlRequestKey = getParam('requestKey')
+    const urlIsStreaming = getParam('stream') === 'true'
+    const urlGeneratePdf = getParam('generatePdf') === 'true'
+    const urlResumeToken = getParam('resumeToken')
+    const urlResumeCode = getParam('resume')
 
     if (!urlStorageKey && !urlSavedId && !urlRequestKey && !urlResumeToken && !urlResumeCode) {
       router.replace('/form')

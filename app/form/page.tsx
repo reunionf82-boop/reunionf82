@@ -18,6 +18,7 @@ import jsPDF from 'jspdf'
 function FormContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const getParam = useCallback((key: string) => searchParams?.get(key) ?? null, [searchParams])
 
   const fetchContentsSafe = async () => {
     try {
@@ -63,8 +64,8 @@ function FormContent() {
       }
       
       // 결제 실패 URL 처리 (code, msg 파라미터)
-      const code = searchParams.get('code')
-      const msg = searchParams.get('msg')
+      const code = getParam('code')
+      const msg = getParam('msg')
       if (code || msg) {
         // code와 msg는 콘솔에만 표시
 
@@ -102,8 +103,8 @@ function FormContent() {
       }
       
       // 2. URL 파라미터 확인 (하위 호환성)
-      const urlTitle = searchParams.get('title')
-      const urlModel = searchParams.get('model')
+      const urlTitle = getParam('title')
+      const urlModel = getParam('model')
       
       if (urlTitle) {
         setTitle(urlTitle)
@@ -222,8 +223,8 @@ function FormContent() {
   // 이전 점사 자동 복구 (24시간 내)
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const portalToken = searchParams.get('token')
-    const directTitle = searchParams.get('title')
+    const portalToken = getParam('token')
+    const directTitle = getParam('title')
     if (portalToken || !directTitle) return
     if (sessionStorage.getItem('resume_auto_checked')) return
     sessionStorage.setItem('resume_auto_checked', '1')
@@ -683,7 +684,7 @@ function FormContent() {
   const [isLoadingFromStorage, setIsLoadingFromStorage] = useState(true) // LocalStorage 로딩 중 플래그
   
   useEffect(() => {
-    const token = searchParams.get('token')
+    const token = getParam('token')
     if (token) {
       // JWT 토큰 검증 및 사용자 정보 가져오기
       fetch('/api/portal/verify-token', {
@@ -2287,8 +2288,8 @@ function FormContent() {
       if (foundContent) {
         const exposed = foundContent?.is_exposed === true || foundContent?.is_exposed === 'true' || foundContent?.is_exposed === 1
         let previewAllowed = false
-        const portalToken = searchParams.get('token')
-        const directTitle = searchParams.get('title')
+        const portalToken = getParam('token')
+        const directTitle = getParam('title')
         if ((portalToken && portalToken.trim()) || (directTitle && directTitle.trim())) {
           previewAllowed = true
         }
@@ -3585,7 +3586,7 @@ function FormContent() {
       })
 
       // 현재 사용할 모델 확인 (최신 상태 - URL 파라미터 우선, 없으면 Supabase, 그것도 없으면 기본값)
-      const urlModelParam = searchParams.get('model')
+      const urlModelParam = getParam('model')
       let currentModel = urlModelParam
       
       if (!currentModel) {

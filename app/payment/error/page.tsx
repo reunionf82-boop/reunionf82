@@ -5,8 +5,9 @@ import { Suspense, useEffect } from 'react'
 
 function PaymentErrorContent() {
   const searchParams = useSearchParams()
-  const code = searchParams.get('code')
-  const msg = searchParams.get('msg')
+  const getParam = (key: string) => searchParams?.get(key) ?? null
+  const code = getParam('code')
+  const msg = getParam('msg')
 
   useEffect(() => {
     // opener에 오류 알림 (성공 페이지와 동일한 패턴)

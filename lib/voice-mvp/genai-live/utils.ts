@@ -10,12 +10,21 @@ export type GetAudioContextOptions = AudioContextOptions & {
 const map: Map<string, AudioContext> = new Map()
 
 export const audioContext: (options?: GetAudioContextOptions) => Promise<AudioContext> = (() => {
-  const didInteract = new Promise((res) => {
-    window.addEventListener('pointerdown', res, { once: true })
-    window.addEventListener('keydown', res, { once: true })
-  })
+  let didInteract: Promise<void> | null = null
+  const ensureInteract = () => {
+    if (didInteract || typeof window === 'undefined') return didInteract
+    didInteract = new Promise((res) => {
+      const handler = () => res()
+      window.addEventListener('pointerdown', handler, { once: true })
+      window.addEventListener('keydown', handler, { once: true })
+    })
+    return didInteract
+  }
 
   return async (options?: GetAudioContextOptions) => {
+    if (typeof window === 'undefined') {
+      throw new Error('AudioContext is only available in the browser')
+    }
     try {
       const a = new Audio()
       a.src =
@@ -29,7 +38,8 @@ export const audioContext: (options?: GetAudioContextOptions) => Promise<AudioCo
       if (options?.id) map.set(options.id, ctx)
       return ctx
     } catch {
-      await didInteract
+      const wait = ensureInteract()
+      if (wait) await wait
       if (options?.id && map.has(options.id)) {
         const ctx = map.get(options.id)
         if (ctx) return ctx
