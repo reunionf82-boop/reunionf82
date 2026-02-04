@@ -93,7 +93,7 @@ const buildVertexWsUrl = (model: string) => {
   const override = Deno.env.get('VERTEX_LIVE_WS_URL')
   if (override) return override
   const project = Deno.env.get('GOOGLE_CLOUD_PROJECT') || ''
-  const location = Deno.env.get('GOOGLE_CLOUD_LOCATION') || 'us-central1'
+  const location = Deno.env.get('GOOGLE_CLOUD_LOCATION') || 'asia-northeast3'
   if (!project) throw new Error('GOOGLE_CLOUD_PROJECT 환경 변수가 필요합니다.')
   const safeModel = model.replace(/^models\//, '')
   return `wss://${location}-aiplatform.googleapis.com/v1beta1/projects/${project}/locations/${location}/publishers/google/models/${safeModel}:bidiGenerateContent`

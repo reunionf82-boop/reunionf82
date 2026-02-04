@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { buildResultStyleManseBlock } from '@/lib/manse-ryeok-display'
 import { AudioRecorder } from '@/lib/voice-mvp/genai-live/audio-recorder'
 import { AudioStreamer } from '@/lib/voice-mvp/genai-live/audio-streamer'
 import { audioContext, base64ToArrayBuffer } from '@/lib/voice-mvp/genai-live/utils'
@@ -66,7 +67,99 @@ const DEFAULT_VOICE_NAMES: Record<string, string> = {
   reunion: 'Aoede',
 }
 
+/** 리절트 페이지와 동일한 만세력 스타일 (음성 MVP 내부만 적용) */
+const MANSE_RESULT_STYLES = `
+.voice-mvp-manse-wrapper .manse-ryeok-container { overflow-x: auto !important; }
+.voice-mvp-manse-wrapper .manse-header-line {
+  display: flex !important; flex-direction: column !important; gap: 6px !important;
+  align-items: center !important; justify-content: center !important; text-align: center !important;
+  padding: 10px 12px !important; margin: 0 0 10px 0 !important; border-radius: 14px !important;
+  border: 1px solid rgba(245, 158, 11, 0.25) !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 251, 235, 0.9) 100%) !important;
+  max-width: 100% !important;
+}
+.voice-mvp-manse-wrapper .manse-header-name {
+  font-size: 1.35rem !important; font-weight: 800 !important; color: #111827 !important; line-height: 1.2 !important;
+}
+.voice-mvp-manse-wrapper .manse-header-badges {
+  display: flex !important; flex-wrap: wrap !important; gap: 6px !important;
+  justify-content: center !important; align-items: center !important; max-width: 100% !important;
+}
+.voice-mvp-manse-wrapper .manse-header-badge {
+  display: inline-flex !important; align-items: center !important; gap: 6px !important;
+  padding: 6px 10px !important; border-radius: 9999px !important;
+  border: 1px solid rgba(209, 213, 219, 0.8) !important; background: rgba(255, 255, 255, 0.75) !important;
+  color: #374151 !important; font-size: 0.85rem !important; line-height: 1 !important;
+  max-width: 100% !important; white-space: nowrap !important;
+}
+.voice-mvp-manse-wrapper .manse-header-badge strong { color: #111827 !important; font-weight: 800 !important; }
+.voice-mvp-manse-wrapper .manse-ryeok-container {
+  padding: 8px !important;
+  background: linear-gradient(135deg, rgba(212, 168, 83, 0.05) 0%, rgba(139, 90, 43, 0.03) 100%) !important;
+  border-radius: 20px !important; width: 100% !important; max-width: 100% !important;
+  overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; box-sizing: border-box !important;
+}
+.voice-mvp-manse-wrapper .manse-ryeok-table,
+.voice-mvp-manse-wrapper .manse-ryeok-container .manse-ryeok-table,
+.voice-mvp-manse-wrapper .manse-ryeok-container table {
+  width: 100% !important; border-collapse: separate !important; border-spacing: 0 !important;
+  background: linear-gradient(135deg, #fefbf3 0%, #faf6eb 50%, #f5efe0 100%) !important;
+  border-radius: 16px !important; overflow: hidden !important;
+  box-shadow: 0 4px 20px rgba(139, 90, 43, 0.12), 0 2px 8px rgba(139, 90, 43, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+  border: 2px solid transparent !important; background-clip: padding-box !important;
+  position: relative !important; margin: 1.5rem 0 !important;
+}
+.voice-mvp-manse-wrapper .manse-ryeok-table::before,
+.voice-mvp-manse-wrapper .manse-ryeok-container .manse-ryeok-table::before {
+  content: '' !important; position: absolute !important; inset: -2px !important;
+  background: linear-gradient(135deg, #d4a853 0%, #c9956c 25%, #8b5a2b 50%, #c9956c 75%, #d4a853 100%) !important;
+  border-radius: 18px !important; z-index: -1 !important;
+}
+.voice-mvp-manse-wrapper .manse-ryeok-table th,
+.voice-mvp-manse-wrapper .manse-ryeok-container .manse-ryeok-table th {
+  background: linear-gradient(180deg, #8b5a2b 0%, #6d4422 100%) !important; color: #fef8e8 !important;
+  font-weight: 700 !important; padding: 12px 8px !important; text-align: center !important;
+  font-size: 0.8rem !important; letter-spacing: 0.05em !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important; border-bottom: 2px solid #d4a853 !important; white-space: nowrap !important;
+}
+.voice-mvp-manse-wrapper .manse-ryeok-table td,
+.voice-mvp-manse-wrapper .manse-ryeok-container .manse-ryeok-table td {
+  padding: 12px 8px !important; text-align: center !important; font-size: 0.9rem !important;
+  font-weight: 600 !important; color: #4a3520 !important;
+  border-bottom: 1px solid rgba(139, 90, 43, 0.15) !important; background: transparent !important;
+  position: relative !important; white-space: nowrap !important; vertical-align: middle !important;
+}
+.voice-mvp-manse-wrapper .manse-ryeok-table td:not(:last-child),
+.voice-mvp-manse-wrapper .manse-ryeok-container .manse-ryeok-table td:not(:last-child) {
+  border-right: 1px solid rgba(139, 90, 43, 0.12) !important;
+}
+.voice-mvp-manse-wrapper .manse-two-line { display: inline-block !important; white-space: normal !important; line-height: 1.15 !important; }
+.voice-mvp-manse-wrapper .manse-two-line-kor { display: block !important; font-weight: 700 !important; line-height: 1.15 !important; }
+.voice-mvp-manse-wrapper .manse-two-line-hanja { display: block !important; font-weight: 600 !important; opacity: 0.9 !important; line-height: 1.15 !important; margin-top: 2px !important; }
+.voice-mvp-manse-wrapper .manse-element-wood { color: #1e40af !important; text-shadow: 0 1px 2px rgba(30, 64, 175, 0.2) !important; }
+.voice-mvp-manse-wrapper .manse-element-fire { color: #991b1b !important; text-shadow: 0 1px 2px rgba(153, 27, 27, 0.2) !important; }
+.voice-mvp-manse-wrapper .manse-element-earth { color: #d97706 !important; text-shadow: 0 1px 2px rgba(217, 119, 6, 0.2) !important; }
+.voice-mvp-manse-wrapper .manse-element-metal { color: #6b7280 !important; text-shadow: 0 1px 2px rgba(107, 114, 128, 0.2) !important; }
+.voice-mvp-manse-wrapper .manse-element-water { color: #1f2937 !important; text-shadow: 0 1px 2px rgba(31, 41, 55, 0.3) !important; }
+.voice-mvp-manse-wrapper .manse-ganzi-char { font-size: 1.2em !important; font-weight: 700 !important; }
+`
+
 const LIVE_MODEL_FALLBACK = 'gemini-2.5-flash-native-audio-preview-12-2025'
+
+const AUTO_RECONNECT_MAX = 3
+const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
+
+const PRIMARY_REGION = 'asia-northeast3'
+const FAILOVER_REGIONS = ['us-central1']
+const REGIONS = [PRIMARY_REGION, ...FAILOVER_REGIONS]
+const SESSION_FAILOVER_AFTER_MS = 9 * 60 * 1000
+const FAILOVER_CHECK_INTERVAL_MS = 60 * 1000
+
+function getNextRegion(current: string): string {
+  const i = REGIONS.indexOf(current)
+  if (i < 0) return PRIMARY_REGION
+  return REGIONS[(i + 1) % REGIONS.length]
+}
 
 function normalizeLiveModel(base: string) {
   const trimmed = String(base || '').trim()
@@ -226,8 +319,33 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
   const isFirstConnectionRef = useRef<boolean>(true) // 최초 연결 여부 추적
   const audioTimeoutRef = useRef<NodeJS.Timeout | null>(null) // 오디오 스트림 종료 감지용 타임아웃
   const manualDisconnectRef = useRef(false)
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null) // keepalive: Nginx/프록시 유휴 타임아웃 방지
+  const lastResumptionHandleRef = useRef<string>('') // 세션 재개용 (서버가 보낸 마지막 newHandle)
+  const wasConnectedRef = useRef(false)
+  const autoReconnectCountRef = useRef(0)
+  const autoReconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sessionStartTimeRef = useRef<number | null>(null)
+  const failoverCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const plannedFailoverRef = useRef(false)
+  const currentRegionRef = useRef(PRIMARY_REGION)
+  const failoverRegionRef = useRef<string | null>(null)
+  const conversationContextForReconnectRef = useRef<string | null>(null)
+  const messagesRef = useRef<Msg[]>([])
+  const pendingWsRef = useRef<WebSocket | null>(null)
+  const closingForSwapRef = useRef(false)
+
+  messagesRef.current = messages
 
   const snapshot = session?.routing_config_snapshot
+  /** 리절트 페이지와 동일한 만세력 블록(헤더+컨테이너+오행 스타일 테이블) */
+  const manseSelfBlockHtml = useMemo(() => {
+    const table = session?.manse_self?.manse_table
+    return table ? buildResultStyleManseBlock(String(table)) : ''
+  }, [session?.manse_self?.manse_table])
+  const mansePartnerBlockHtml = useMemo(() => {
+    const table = session?.manse_partner?.manse_table
+    return table ? buildResultStyleManseBlock(String(table)) : ''
+  }, [session?.manse_partner?.manse_table])
   const voiceStyle = useMemo(() => String(snapshot?.voice_style || 'calm').trim() || 'calm', [snapshot])
   const voiceGender = useMemo(() => (String(snapshot?.voice_gender || 'female').trim() === 'male' ? 'male' : 'female'), [snapshot])
   const selectedVoiceName = useMemo(() => pickVoiceName(snapshot), [snapshot])
@@ -348,6 +466,20 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
 
   useEffect(() => {
     return () => {
+      if (autoReconnectTimeoutRef.current) {
+        clearTimeout(autoReconnectTimeoutRef.current)
+        autoReconnectTimeoutRef.current = null
+      }
+      if (failoverCheckIntervalRef.current) {
+        clearInterval(failoverCheckIntervalRef.current)
+        failoverCheckIntervalRef.current = null
+      }
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current)
+        pingIntervalRef.current = null
+      }
+      pendingWsRef.current?.close()
+      pendingWsRef.current = null
       wsRef.current?.close()
       recorderRef.current?.stop()
       streamerRef.current?.stop()
@@ -357,6 +489,127 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
       }
     }
   }, [])
+
+  const connectPendingFailoverRef = useRef<() => void>(() => {})
+
+  const startFailoverCheckInterval = useCallback(() => {
+    if (failoverCheckIntervalRef.current) {
+      clearInterval(failoverCheckIntervalRef.current)
+      failoverCheckIntervalRef.current = null
+    }
+    failoverCheckIntervalRef.current = setInterval(() => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+      if (pendingWsRef.current != null) return
+      const start = sessionStartTimeRef.current
+      if (start == null || Date.now() - start < SESSION_FAILOVER_AFTER_MS) return
+      clearInterval(failoverCheckIntervalRef.current!)
+      failoverCheckIntervalRef.current = null
+      plannedFailoverRef.current = true
+      const list = messagesRef.current.filter((m) => m.role === 'assistant' || m.role === 'system')
+      const contextLines = list.map((m) => (m.role === 'assistant' ? `상담사: ${m.text}` : `시스템: ${m.text}`))
+      conversationContextForReconnectRef.current = contextLines.slice(-50).join('\n')
+      failoverRegionRef.current = getNextRegion(currentRegionRef.current)
+      setError('다른 리전과 연결 중... (상담은 계속됩니다)')
+      connectPendingFailoverRef.current()
+    }, FAILOVER_CHECK_INTERVAL_MS)
+  }, [])
+
+  const connectPendingFailover = useCallback(() => {
+    const region = failoverRegionRef.current
+    const priorContext = conversationContextForReconnectRef.current
+    if (!region) return
+    const envProxy = String(process.env.NEXT_PUBLIC_VERTEX_LIVE_PROXY_URL || '').trim()
+    const resolveWsUrl = () => {
+      if (envProxy) {
+        if (envProxy.startsWith('ws://') || envProxy.startsWith('wss://')) return envProxy
+        if (envProxy.startsWith('http://') || envProxy.startsWith('https://')) return envProxy.replace(/^http/, 'ws')
+        return `${window.location.origin}${envProxy.startsWith('/') ? '' : '/'}${envProxy}`.replace(/^http/, 'ws')
+      }
+      return `${window.location.origin.replace(/^http/, 'ws')}/api/voice-mvp/live-proxy`
+    }
+    const wsUrl = resolveWsUrl()
+    const pendingWs = new WebSocket(wsUrl)
+    pendingWsRef.current = pendingWs
+
+    let systemText = liveContext.systemText
+    if (priorContext) systemText = `${systemText}\n\n[이전 상담 맥락 (이어서 상담해 주세요)]\n${priorContext}`
+    const config = {
+      responseModalities: [Modality.AUDIO],
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: liveContext.preset.voiceName } } },
+      systemInstruction: { parts: [{ text: `${systemText}\n\n${liveContext.contextText}` }] },
+    }
+
+    pendingWs.onopen = () => {
+      pendingWs.send(JSON.stringify({ type: 'ping' }))
+      setTimeout(() => {
+        try {
+          pendingWs.send(JSON.stringify({ type: 'init', model, config, region }))
+        } catch {
+          pendingWsRef.current = null
+          plannedFailoverRef.current = false
+          setError('리전 전환 준비 실패.')
+        }
+      }, 60)
+    }
+
+    pendingWs.onmessage = (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(String(event.data || '{}'))
+        if (msg.type === 'ready') {
+          closingForSwapRef.current = true
+          const oldWs = wsRef.current
+          wsRef.current = pendingWsRef.current
+          pendingWsRef.current = null
+          if (pingIntervalRef.current) {
+            clearInterval(pingIntervalRef.current)
+            pingIntervalRef.current = null
+          }
+          oldWs?.close()
+          sessionStartTimeRef.current = Date.now()
+          currentRegionRef.current = region
+          conversationContextForReconnectRef.current = null
+          failoverRegionRef.current = null
+          pingIntervalRef.current = setInterval(() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ type: 'ping' }))
+          }, 30000)
+          startFailoverCheckInterval()
+          setError('')
+          setMessages((prev) => [...prev, { role: 'system', text: '리전 전환 완료. 상담이 이어집니다.' }])
+          return
+        }
+        if (msg.type === 'audio' && msg.data) {
+          const buf = base64ToArrayBuffer(msg.data)
+          streamerRef.current?.addPCM16(new Uint8Array(buf))
+          return
+        }
+        if (msg.type === 'text' && msg.text) {
+          setMessages((prev) => [...prev, { role: 'assistant', text: String(msg.text).trim() }])
+          return
+        }
+        if (msg.type === 'interrupted') {
+          streamerRef.current?.stop()
+          isAiSpeakingRef.current = false
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    pendingWs.onerror = () => {
+      pendingWsRef.current = null
+      plannedFailoverRef.current = false
+      setError('리전 전환 실패. 현재 연결 유지 중.')
+    }
+    pendingWs.onclose = () => {
+      if (pendingWsRef.current === pendingWs) {
+        pendingWsRef.current = null
+        plannedFailoverRef.current = false
+        setError('리전 전환 실패. 현재 연결 유지 중.')
+      }
+    }
+  }, [liveContext, model, startFailoverCheckInterval])
+
+  connectPendingFailoverRef.current = connectPendingFailover
 
   const connect = async () => {
     setError('')
@@ -387,13 +640,16 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
       const mode = liveContext.mode
       const preset = liveContext.preset
       const voiceName = liveContext.voiceName
-      const systemText = liveContext.systemText
+      let systemText = liveContext.systemText
       const contextText = liveContext.contextText
+      const priorContext = conversationContextForReconnectRef.current
+      if (priorContext) {
+        systemText = `${systemText}\n\n[이전 상담 맥락 (이어서 상담해 주세요)]\n${priorContext}`
+        conversationContextForReconnectRef.current = null
+      }
 
       const config: any = {
         responseModalities: [Modality.AUDIO],
-        // voiceName은 캐릭터(모드)별로 DB에서 설정된 값을 사용
-        // 참고: speakingRate는 현재 GenAI Live API의 SpeechConfig에서 지원되지 않음
         speechConfig: {
           voiceConfig: { prebuiltVoiceConfig: { voiceName } },
         },
@@ -431,9 +687,20 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
         setWsOpenAt(new Date().toISOString())
         try {
           ws.send(JSON.stringify({ type: 'ping' }))
+          const resumptionHandle = lastResumptionHandleRef.current || undefined
+          if (resumptionHandle) lastResumptionHandleRef.current = ''
+          const region = failoverRegionRef.current || currentRegionRef.current
+          if (failoverRegionRef.current) failoverRegionRef.current = null
+          currentRegionRef.current = region
           setTimeout(() => {
             try {
-              ws.send(JSON.stringify({ type: 'init', model, config }))
+              ws.send(JSON.stringify({
+                type: 'init',
+                model,
+                config,
+                ...(resumptionHandle ? { resumptionHandle } : {}),
+                region,
+              }))
               setWsInitSent(true)
             } catch (e: any) {
               setWsLastError(e?.message || 'init 전송 실패')
@@ -451,8 +718,25 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
           setWsLastServerMsg(String(msg.type || 'unknown'))
           setWsLastServerAt(new Date().toISOString())
           if (msg.type === 'ready') {
+            wasConnectedRef.current = true
+            autoReconnectCountRef.current = 0
+            sessionStartTimeRef.current = Date.now()
             setConnected(true)
             isAiSpeakingRef.current = false
+            if (pingIntervalRef.current) {
+              clearInterval(pingIntervalRef.current)
+              pingIntervalRef.current = null
+            }
+            pingIntervalRef.current = setInterval(() => {
+              if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'ping' }))
+              }
+            }, 30000)
+            startFailoverCheckInterval()
+            return
+          }
+          if (msg.type === 'sessionResumptionUpdate' && msg.newHandle != null) {
+            lastResumptionHandleRef.current = String(msg.newHandle)
             return
           }
           if (msg.type === 'audio' && msg.data) {
@@ -500,8 +784,17 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
             return
           }
           if (msg.type === 'error') {
-            setWsLastServerError(String(msg.message || 'Live 연결 오류'))
-            setError(msg.message || 'Live 연결 오류')
+            if (pingIntervalRef.current) {
+              clearInterval(pingIntervalRef.current)
+              pingIntervalRef.current = null
+            }
+            const errMsg = String(msg.message || 'Live 연결 오류')
+            const hint = msg.hint ? ` ${msg.hint}` : ''
+            setWsLastServerError(errMsg)
+            setError(errMsg + hint)
+            if (msg.code === 'SESSION_END' || /Live 연결 종료/.test(errMsg)) {
+              wsRef.current?.close()
+            }
             return
           }
         } catch {
@@ -514,6 +807,15 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
         setError('Live 연결 오류')
       }
       ws.onclose = (event) => {
+        if (failoverCheckIntervalRef.current) {
+          clearInterval(failoverCheckIntervalRef.current)
+          failoverCheckIntervalRef.current = null
+        }
+        sessionStartTimeRef.current = null
+        if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current)
+          pingIntervalRef.current = null
+        }
         setWsStatus('closed')
         setWsCloseCode(typeof event?.code === 'number' ? event.code : null)
         setWsCloseReason(event?.reason || '')
@@ -523,11 +825,29 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
         streamerRef.current?.stop()
         if (manualDisconnectRef.current) {
           manualDisconnectRef.current = false
+          wasConnectedRef.current = false
+          return
+        }
+        if (plannedFailoverRef.current) return
+        if (closingForSwapRef.current) {
+          closingForSwapRef.current = false
           return
         }
         const code = event?.code ? ` (code ${event.code})` : ''
         const reason = event?.reason ? `: ${event.reason}` : ''
-        setError(`Live 연결 종료${code}${reason}`)
+        setError(`Live 연결 종료${code}${reason}. 다시 연결해 주세요.`)
+
+        if (wasConnectedRef.current && autoReconnectCountRef.current < AUTO_RECONNECT_MAX) {
+          const attempt = autoReconnectCountRef.current
+          autoReconnectCountRef.current += 1
+          const delay = AUTO_RECONNECT_DELAYS[Math.min(attempt, AUTO_RECONNECT_DELAYS.length - 1)]
+          setError(`연결이 끊겼습니다. ${delay / 1000}초 후 자동 재연결 시도 중... (${autoReconnectCountRef.current}/${AUTO_RECONNECT_MAX})`)
+          autoReconnectTimeoutRef.current = setTimeout(() => {
+            autoReconnectTimeoutRef.current = null
+            wsRef.current = null
+            connect()
+          }, delay)
+        }
       }
 
       // ✅ 연결 시 jong.mp3 재생 (500ms 지연)
@@ -721,9 +1041,10 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
           <div>서버 오류: <span className="font-mono">{wsLastServerError || '-'}</span></div>
         </div>
 
-        {/* ✅ 만세력 표시 (세션 생성 시 서버에서 계산/고정된 데이터) */}
-        {session?.manse_self?.manse_table ? (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        {/* ✅ 만세력 표시 (리절트 페이지와 동일한 헤더+컨테이너+오행 스타일) */}
+        {manseSelfBlockHtml ? (
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden voice-mvp-manse-wrapper">
+            <style dangerouslySetInnerHTML={{ __html: MANSE_RESULT_STYLES }} />
             <button
               type="button"
               onClick={() => setShowManse((v) => !v)}
@@ -736,15 +1057,14 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
               <div className="px-4 pb-4">
                 <div
                   className="w-full overflow-x-auto"
-                  // 내부 MVP: 서버에서 생성한 HTML 테이블만 렌더링 (사용자 입력 HTML 아님)
-                  dangerouslySetInnerHTML={{ __html: String(session.manse_self.manse_table || '') }}
+                  dangerouslySetInnerHTML={{ __html: manseSelfBlockHtml }}
                 />
-                {session?.mode === 'gunghap' && session?.manse_partner?.manse_table ? (
+                {session?.mode === 'gunghap' && mansePartnerBlockHtml ? (
                   <div className="mt-6">
                     <div className="font-semibold text-gray-800 mb-2">상대 만세력</div>
                     <div
                       className="w-full overflow-x-auto"
-                      dangerouslySetInnerHTML={{ __html: String(session.manse_partner.manse_table || '') }}
+                      dangerouslySetInnerHTML={{ __html: mansePartnerBlockHtml }}
                     />
                   </div>
                 ) : null}

@@ -38,7 +38,7 @@ export const config = {
 
 const getVertexClient = () => {
   const project = String(process.env.GOOGLE_CLOUD_PROJECT || '').trim()
-  const location = String(process.env.GOOGLE_CLOUD_LOCATION || 'us-central1').trim()
+  const location = String(process.env.GOOGLE_CLOUD_LOCATION || 'asia-northeast3').trim()
   if (!project) {
     throw new Error('GOOGLE_CLOUD_PROJECT가 설정되지 않았습니다.')
   }

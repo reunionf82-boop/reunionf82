@@ -5,26 +5,28 @@ const { GoogleGenAI } = require('@google/genai')
 
 const PORT = Number(process.env.VERTEX_LIVE_PROXY_PORT || 4001)
 const PROJECT = String(process.env.GOOGLE_CLOUD_PROJECT || '').trim()
-const LOCATION = String(process.env.GOOGLE_CLOUD_LOCATION || 'us-central1').trim()
+const LOCATION = String(process.env.GOOGLE_CLOUD_LOCATION || 'asia-northeast3').trim()
 
 if (!PROJECT) {
   console.error('GOOGLE_CLOUD_PROJECT 환경 변수가 필요합니다.')
   process.exit(1)
 }
 
-const ai = new GoogleGenAI({
-  vertexai: true,
-  project: PROJECT,
-  location: LOCATION,
-})
-
+// 기본 리전(연결별로 init.region 으로 덮어쓸 수 있음, Multi-region Failover용)
 const wss = new WebSocketServer({ port: PORT })
 
 const normalizeConfig = (cfg) => {
   const responseModalities = Array.isArray(cfg?.responseModalities)
     ? cfg.responseModalities
     : ['AUDIO']
-  return { ...cfg, responseModalities }
+  return {
+    ...cfg,
+    responseModalities,
+    // 세션 수명 연장: 압축 없으면 오디오 전용도 약 10~15분 제한. 슬라이딩 윈도우로 연장.
+    contextWindowCompression: cfg?.contextWindowCompression ?? { slidingWindow: {} },
+    // 약 10분마다 서버가 연결을 끊을 수 있음. 재개 토큰을 받아 재연결 시 컨텍스트 유지.
+    sessionResumption: cfg?.sessionResumption ?? {},
+  }
 }
 
 wss.on('connection', (ws) => {
@@ -46,6 +48,15 @@ wss.on('connection', (ws) => {
     },
     onmessage: (msg) => {
       try {
+        // 세션 재개 토큰 전달 (재연결 시 클라이언트가 resumptionHandle 로 보내면 이어서 상담 가능)
+        const resumption = msg?.sessionResumptionUpdate
+        if (resumption && (resumption.newHandle || resumption.resumable === false)) {
+          send({
+            type: 'sessionResumptionUpdate',
+            newHandle: resumption.newHandle || '',
+            resumable: resumption.resumable !== false,
+          })
+        }
         const turn = msg?.serverContent?.modelTurn
         const parts = turn?.parts || []
         const texts = []
@@ -65,7 +76,13 @@ wss.on('connection', (ws) => {
     },
     onclose: () => {
       connected = false
-      send({ type: 'error', message: 'Live 연결 종료' })
+      console.log('[vertex-live-proxy] Vertex Live 세션 종료 (제한~10분 또는 네트워크)')
+      send({
+        type: 'error',
+        message: 'Live 연결 종료',
+        code: 'SESSION_END',
+        hint: '세션 제한(약 10분) 또는 네트워크로 종료됐을 수 있습니다. 다시 연결해 주세요.',
+      })
     },
   }
 
@@ -78,8 +95,18 @@ wss.on('connection', (ws) => {
       }
       if (parsed.type === 'init') {
         const model = String(parsed.model || '').replace(/^models\//, '')
-        const config = normalizeConfig(parsed.config || {})
-        liveSession = await ai.live.connect({ model, config, callbacks })
+        const region = String(parsed.region || '').trim() || LOCATION
+        const aiClient = new GoogleGenAI({
+          vertexai: true,
+          project: PROJECT,
+          location: region,
+        })
+        const rawConfig = parsed.config || {}
+        const config = normalizeConfig(rawConfig)
+        if (String(parsed.resumptionHandle || '').trim()) {
+          config.sessionResumption = { ...config.sessionResumption, handle: String(parsed.resumptionHandle).trim() }
+        }
+        liveSession = await aiClient.live.connect({ model, config, callbacks })
         return
       }
       if (parsed.type === 'audio' && connected && liveSession) {
