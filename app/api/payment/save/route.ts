@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
 import { getKSTNow } from '@/lib/payment-utils'
+import { logPaymentEvent } from '@/lib/payment-event-log'
 
 /**
  * 결제 정보 저장 API
@@ -49,10 +50,19 @@ export async function POST(request: NextRequest) {
     // if (!oid || !contentId || !paymentCode || !name || !pay || !paymentType) {
     // pending 저장 시에는 결제 정보가 다 있지만, update 시에는 oid만 있을 수도 있음.
     // 여기서는 pending 저장용으로 다 받는다고 가정.
-    const missingPay = pay === undefined || pay === null || Number.isNaN(Number(pay))
+    const payNum = Number(pay)
+    const missingPay = pay === undefined || pay === null || !Number.isFinite(payNum) || payNum <= 0
     if (!oid || !contentId || !paymentCode || !name || missingPay || !paymentType) {
       return NextResponse.json(
-        { success: false, error: '필수 파라미터가 누락되었습니다.' },
+        { success: false, error: '필수 파라미터가 누락되었거나 결제 금액이 올바르지 않습니다.' },
+        { status: 400 }
+      )
+    }
+
+    const codeStr = String(paymentCode).trim()
+    if (!codeStr || codeStr.length < 4) {
+      return NextResponse.json(
+        { success: false, error: '결제 코드가 올바르지 않습니다.' },
         { status: 400 }
       )
     }
@@ -78,9 +88,9 @@ export async function POST(request: NextRequest) {
     const upsertData: any = {
       oid,
       content_id: contentId,
-      payment_code: String(paymentCode).slice(0, 4),
+      payment_code: codeStr.slice(0, 4),
       name: name?.substring(0, 200),
-      pay: parseInt(String(pay)),
+      pay: Math.floor(payNum),
       payment_type: paymentType,
       user_name: plainUserName,
       phone_number: plainPhoneNumber,
@@ -169,11 +179,28 @@ export async function POST(request: NextRequest) {
     }
 
     if (error) {
-
+      if (paymentStatus === 'pending') {
+        await logPaymentEvent(supabase, {
+          oid,
+          requestKey: `pending_${oid}`,
+          eventType: 'payment_pending_failed',
+          success: false,
+          message: error.message || '결제 정보 저장 실패'
+        })
+      }
       return NextResponse.json(
         { success: false, error: error.message || '결제 정보 저장에 실패했습니다.' },
         { status: 500 }
       )
+    }
+
+    if (paymentStatus === 'pending') {
+      await logPaymentEvent(supabase, {
+        oid,
+        requestKey: `pending_${oid}`,
+        eventType: 'payment_pending_saved',
+        success: true
+      })
     }
 
     return NextResponse.json({

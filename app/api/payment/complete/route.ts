@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
 import { getKSTNow } from '@/lib/payment-utils'
+import { logPaymentEvent } from '@/lib/payment-event-log'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,12 +39,30 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
+      await logPaymentEvent(supabase, {
+        oid,
+        eventType: 'payment_complete_error',
+        success: false,
+        message: error.message
+      })
       return NextResponse.json({ success: false, error: error.message }, { status: 500 })
     }
-    
+
     if (!data) {
+      await logPaymentEvent(supabase, {
+        oid,
+        eventType: 'payment_complete_not_found',
+        success: false,
+        message: '결제 정보를 찾을 수 없습니다.'
+      })
       return NextResponse.json({ success: false, error: '결제 정보를 찾을 수 없습니다.' }, { status: 404 })
     }
+
+    await logPaymentEvent(supabase, {
+      oid,
+      eventType: 'payment_complete_ok',
+      success: true
+    })
     return NextResponse.json({ success: true, data })
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 })

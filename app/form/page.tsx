@@ -2395,6 +2395,15 @@ function FormContent() {
       
       isProcessing = true
 
+      // ✅ 결제 성공 시 sessionStorage에 oid 확실히 보존 (replaceRequestKey용 — 팝업/탭 전환으로 유실 방지)
+      if (typeof window !== 'undefined' && oid) {
+        try {
+          sessionStorage.setItem('payment_oid', oid)
+        } catch {
+          // 무시
+        }
+      }
+
       // ✅ 결제 창 닫기 (성공 시)
       try {
         if (paymentWindowRef.current && !paymentWindowRef.current.closed) {
@@ -2960,6 +2969,22 @@ function FormContent() {
     setPaymentProcessingMethod(paymentMethod)
 
     try {
+      // 결제 가능 여부 검증 (유료 서비스 필수)
+      const priceNum = parseInt(String(content?.price || '0'), 10)
+      if (!Number.isFinite(priceNum) || priceNum <= 0) {
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
+        showAlertMessage('결제 금액 정보가 올바르지 않습니다. 잠시 후 다시 시도해 주세요.')
+        return
+      }
+      const paymentCodeStr = String(content?.payment_code || '').trim()
+      if (!paymentCodeStr || paymentCodeStr.length < 4) {
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
+        showAlertMessage('결제 코드가 설정되지 않았습니다. 관리자에게 문의해 주세요.')
+        return
+      }
+
       // 1. 주문번호 생성 (가장 먼저 수행)
       const { generateOrderId } = await import('@/lib/payment-utils')
       const oid = generateOrderId()

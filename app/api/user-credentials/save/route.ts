@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getKSTNow } from '@/lib/payment-utils'
+import { logPaymentEvent } from '@/lib/payment-event-log'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -53,7 +54,8 @@ export async function POST(request: NextRequest) {
         .select('id, request_key, saved_id')
         .eq('request_key', normalizedReplaceKey)
         .limit(1)
-        if (!replaceError && replaceRows && replaceRows.length > 0) {
+
+      if (!replaceError && replaceRows && replaceRows.length > 0) {
         const { data: updated, error: updateError } = await supabase
           .from('user_credentials')
           .update({
@@ -71,6 +73,14 @@ export async function POST(request: NextRequest) {
             .from('payments')
             .update({ request_key: normalizedRequestKey, updated_at: getKSTNow() })
             .eq('request_key', normalizedReplaceKey)
+          const oidFromReplace = normalizedReplaceKey.replace(/^pending_/, '')
+          await logPaymentEvent(supabase, {
+            oid: oidFromReplace || undefined,
+            requestKey: normalizedReplaceKey,
+            eventType: 'uc_replace_ok',
+            success: true,
+            meta: { newRequestKey: normalizedRequestKey }
+          })
           return NextResponse.json({
             success: true,
             id: updated.id,
@@ -79,6 +89,24 @@ export async function POST(request: NextRequest) {
             updated: true
           })
         }
+      }
+
+      // 폴백: user_credentials에 pending_oid 행이 없어도(초기 저장 실패 등) payments.request_key는 갱신 → pending에서 빠져나감
+      const { error: paymentUpdateError } = await supabase
+        .from('payments')
+        .update({ request_key: normalizedRequestKey, updated_at: getKSTNow() })
+        .eq('request_key', normalizedReplaceKey)
+      const oidFromReplace = normalizedReplaceKey.replace(/^pending_/, '')
+      await logPaymentEvent(supabase, {
+        oid: oidFromReplace || undefined,
+        requestKey: normalizedReplaceKey,
+        eventType: 'uc_replace_fallback',
+        success: !paymentUpdateError,
+        message: paymentUpdateError ? paymentUpdateError.message : undefined,
+        meta: { hadReplaceRow: !!(replaceRows && replaceRows.length > 0) }
+      })
+      if (!paymentUpdateError) {
+        // 신규 user_credentials 행은 아래 hasRequestKey 분기에서 생성됨
       }
     }
 
@@ -160,10 +188,29 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
+      if (normalizedRequestKey.startsWith('pending_')) {
+        const oidFromKey = normalizedRequestKey.replace(/^pending_/, '')
+        await logPaymentEvent(supabase, {
+          oid: oidFromKey || undefined,
+          requestKey: normalizedRequestKey,
+          eventType: 'uc_pending_failed',
+          success: false,
+          message: error.message
+        })
+      }
       return NextResponse.json(
         { error: '인증 정보 저장에 실패했습니다.', details: error.message },
         { status: 500 }
       )
+    }
+    if (normalizedRequestKey.startsWith('pending_')) {
+      const oidFromKey = normalizedRequestKey.replace(/^pending_/, '')
+      await logPaymentEvent(supabase, {
+        oid: oidFromKey || undefined,
+        requestKey: normalizedRequestKey,
+        eventType: 'uc_pending_saved',
+        success: true
+      })
     }
     return NextResponse.json({
       success: true,

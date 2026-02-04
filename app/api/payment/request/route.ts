@@ -27,6 +27,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const payNum = Number(pay)
+    if (!Number.isFinite(payNum) || payNum <= 0) {
+      return NextResponse.json(
+        { success: false, error: '결제 금액이 올바르지 않습니다.' },
+        { status: 400 }
+      )
+    }
+
+    const codeStr = String(paymentCode).trim()
+    if (!codeStr || codeStr.length < 4) {
+      return NextResponse.json(
+        { success: false, error: '결제 코드가 올바르지 않습니다.' },
+        { status: 400 }
+      )
+    }
+
     // 주문번호 생성 (클라이언트에서 보낸 oid가 있으면 사용, 없으면 생성)
     const oid = clientOid || generateOrderId()
 
@@ -46,9 +62,9 @@ export async function POST(request: NextRequest) {
     // 결제 요청 데이터 준비
     // (성공/실패 리다이렉트 URL도 포함시켜 결제사가 우리 페이지로 돌아오게 함)
     const formData = {
-      code: paymentCode,
+      code: codeStr.slice(0, 4),
       name: truncateStringByBytes(name, 50), // 최대 50byte 제한 (한글 고려)
-      pay: pay.toString(),
+      pay: String(payNum),
       oid,
       successUrl,
       failUrl,
