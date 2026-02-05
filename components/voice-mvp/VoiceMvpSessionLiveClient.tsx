@@ -305,6 +305,7 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
   const [wsOpenAt, setWsOpenAt] = useState<string>('')
   const [wsLastServerMsg, setWsLastServerMsg] = useState<string>('')
   const [wsLastServerAt, setWsLastServerAt] = useState<string>('')
+  const [wsConnectionUrl, setWsConnectionUrl] = useState<string>('')
   const wsRef = useRef<WebSocket | null>(null)
   const recorderRef = useRef<AudioRecorder | null>(null)
   const streamerRef = useRef<AudioStreamer | null>(null)
@@ -678,6 +679,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
         }
       }
       const wsUrl = resolveWsUrl()
+      setWsConnectionUrl(wsUrl)
       setWsStatus('connecting')
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
@@ -1030,6 +1032,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
         {/* WS 상태 디버그 */}
         <div className="bg-white border border-gray-200 rounded-xl p-4 text-xs text-gray-700 space-y-2">
           <div className="font-bold text-gray-900">WS 상태</div>
+          <div>연결 URL: <span className="font-mono break-all">{wsConnectionUrl || '-'}</span></div>
           <div>상태: <span className="font-mono">{wsStatus}</span></div>
           <div>오픈 시각: <span className="font-mono">{wsOpenAt || '-'}</span></div>
           <div>init 전송: <span className="font-mono">{wsInitSent ? 'yes' : 'no'}</span></div>
