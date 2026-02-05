@@ -72,11 +72,13 @@ wss.on('connection', (ws) => {
       }
     },
     onerror: (e) => {
+      console.error('[vertex-live-proxy] Vertex onerror:', e?.message || e?.code || e)
       send({ type: 'error', message: e?.message || 'Live 오류' })
     },
-    onclose: () => {
+    onclose: (...args) => {
       connected = false
-      console.log('[vertex-live-proxy] Vertex Live 세션 종료 (제한~10분 또는 네트워크)')
+      const [code, reason] = args.length >= 2 ? args : [args[0]?.code, args[0]?.reason]
+      console.log('[vertex-live-proxy] Vertex onclose code=%s reason=%s', code, reason)
       send({
         type: 'error',
         message: 'Live 연결 종료',
@@ -96,17 +98,24 @@ wss.on('connection', (ws) => {
       if (parsed.type === 'init') {
         const model = String(parsed.model || '').replace(/^models\//, '')
         const region = String(parsed.region || '').trim() || LOCATION
-        const aiClient = new GoogleGenAI({
-          vertexai: true,
-          project: PROJECT,
-          location: region,
-        })
-        const rawConfig = parsed.config || {}
-        const config = normalizeConfig(rawConfig)
-        if (String(parsed.resumptionHandle || '').trim()) {
-          config.sessionResumption = { ...config.sessionResumption, handle: String(parsed.resumptionHandle).trim() }
+        console.log('[vertex-live-proxy] init model=%s region=%s', model, region)
+        try {
+          const aiClient = new GoogleGenAI({
+            vertexai: true,
+            project: PROJECT,
+            location: region,
+          })
+          const rawConfig = parsed.config || {}
+          const config = normalizeConfig(rawConfig)
+          if (String(parsed.resumptionHandle || '').trim()) {
+            config.sessionResumption = { ...config.sessionResumption, handle: String(parsed.resumptionHandle).trim() }
+          }
+          liveSession = await aiClient.live.connect({ model, config, callbacks })
+          console.log('[vertex-live-proxy] Vertex connect OK')
+        } catch (err) {
+          console.error('[vertex-live-proxy] Vertex connect error:', err?.message || err)
+          send({ type: 'error', message: err?.message || 'Vertex 연결 실패' })
         }
-        liveSession = await aiClient.live.connect({ model, config, callbacks })
         return
       }
       if (parsed.type === 'audio' && connected && liveSession) {
