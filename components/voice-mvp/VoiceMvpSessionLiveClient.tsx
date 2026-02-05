@@ -758,7 +758,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
                   randomTSound.play().catch(() => {})
                 }
               }
-              if (Math.random() < 0.3 && jongSoundRef.current) {
+              if (Math.random() < 0.05 && jongSoundRef.current) {
                 jongSoundRef.current.currentTime = 0
                 jongSoundRef.current.play().catch(() => {})
               }
@@ -853,9 +853,8 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
         }
       }
 
-      // ✅ 연결 시 jong.mp3 재생 (500ms 지연)
-      // 최초 연결 시: 100% 확률, 이후 연결 시: 5% 확률
-      const shouldPlayJong = isFirstConnectionRef.current ? true : Math.random() < 0.05
+      // ✅ 연결 시 jong.mp3 재생 (500ms 지연) — 확률 5% 이내
+      const shouldPlayJong = Math.random() < 0.05
       if (shouldPlayJong && jongSoundRef.current) {
         setTimeout(() => {
           if (jongSoundRef.current) {
