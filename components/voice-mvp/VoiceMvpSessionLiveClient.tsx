@@ -149,9 +149,9 @@ const LIVE_MODEL_FALLBACK = 'gemini-2.5-flash-native-audio-preview-12-2025'
 const AUTO_RECONNECT_MAX = 3
 const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
 
-// Cloudways에서 asia-northeast3 시 1008(Publisher Model) 발생 → us-central1 사용. 복구 시 'asia-northeast3'로 되돌리기
+// Cloudways에서 asia-northeast3 시 1008 발생 → us-central1 사용. 9분 로테이션은 동작 리전만 사용(실서버는 us-central1→us-central1)
 const PRIMARY_REGION = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_VERTEX_LIVE_PRIMARY_REGION) || 'us-central1'
-const FAILOVER_REGIONS = PRIMARY_REGION === 'us-central1' ? ['asia-northeast3'] : ['us-central1']
+const FAILOVER_REGIONS = PRIMARY_REGION === 'us-central1' ? ['us-central1'] : ['us-central1']
 const REGIONS = [PRIMARY_REGION, ...FAILOVER_REGIONS]
 const SESSION_FAILOVER_AFTER_MS = 9 * 60 * 1000
 const FAILOVER_CHECK_INTERVAL_MS = 60 * 1000
