@@ -17,6 +17,7 @@ export class AudioStreamer {
   public gainNode: GainNode
   public source: AudioBufferSourceNode
   private endOfQueueAudioSource: AudioBufferSourceNode | null = null
+  private extraDestinations: AudioNode[] = []
 
   public onComplete = () => {}
 
@@ -25,6 +26,12 @@ export class AudioStreamer {
     this.source = this.context.createBufferSource()
     this.gainNode.connect(this.context.destination)
     this.addPCM16 = this.addPCM16.bind(this)
+  }
+
+  /** gainNode에 추가 destination 연결 (예: MediaStreamDestination for recording) */
+  connectExtraDestination(dest: AudioNode) {
+    this.extraDestinations.push(dest)
+    this.gainNode.connect(dest)
   }
 
   async addWorklet<T extends (d: any) => void>(workletName: string, workletSrc: string, handler: T): Promise<this> {
@@ -162,6 +169,10 @@ export class AudioStreamer {
       this.gainNode.disconnect()
       this.gainNode = this.context.createGain()
       this.gainNode.connect(this.context.destination)
+      // 추가 destination 재연결 (녹음용 등)
+      for (const dest of this.extraDestinations) {
+        try { this.gainNode.connect(dest) } catch { /* ignore */ }
+      }
     }, 200)
   }
 

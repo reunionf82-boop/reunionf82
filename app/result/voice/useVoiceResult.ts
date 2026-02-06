@@ -38,6 +38,60 @@ function normalizeLiveModel(base: string) {
   return LIVE_MODEL_FALLBACK
 }
 
+/* ── PCM16 base64 → WAV Blob 변환 ────────── */
+function pcm16Base64ToWavBlob(chunks: string[], sampleRate = 24000): Blob {
+  // base64 → raw PCM bytes
+  const binaryStrings = chunks.map((b64) => atob(b64))
+  let totalLen = 0
+  for (const s of binaryStrings) totalLen += s.length
+  const pcm = new Uint8Array(totalLen)
+  let offset = 0
+  for (const s of binaryStrings) {
+    for (let i = 0; i < s.length; i++) pcm[offset++] = s.charCodeAt(i)
+  }
+  const numChannels = 1
+  const bitsPerSample = 16
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8)
+  const blockAlign = numChannels * (bitsPerSample / 8)
+  const dataSize = pcm.length
+  const buffer = new ArrayBuffer(44 + dataSize)
+  const view = new DataView(buffer)
+  const writeStr = (off: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)) }
+  writeStr(0, 'RIFF')
+  view.setUint32(4, 36 + dataSize, true)
+  writeStr(8, 'WAVE')
+  writeStr(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true) // PCM
+  view.setUint16(22, numChannels, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, byteRate, true)
+  view.setUint16(32, blockAlign, true)
+  view.setUint16(34, bitsPerSample, true)
+  writeStr(36, 'data')
+  view.setUint32(40, dataSize, true)
+  new Uint8Array(buffer, 44).set(pcm)
+  return new Blob([buffer], { type: 'audio/wav' })
+}
+
+/** Supabase 스토리지 등 외부 오디오 URL을 같은 오리진 프록시로 바꿔, AudioContext/녹음 믹스 시 CORS 오류를 방지합니다. */
+function getAudioSrc(url: string): string {
+  if (typeof url !== 'string' || !url.trim()) return url
+  try {
+    const u = new URL(url)
+    const base = typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_SUPABASE_URL : ''
+    if (!base) return url
+    const host = u.hostname.toLowerCase()
+    const allowed = new URL(base).hostname.toLowerCase()
+    if (host === allowed || host.endsWith('.supabase.co') || host.endsWith('.supabase.in')) {
+      return `/api/proxy/audio?url=${encodeURIComponent(url)}`
+    }
+  } catch {
+    // ignore
+  }
+  return url
+}
+
 function styleInstruction(style: string) {
   switch (style) {
     case 'bright':
@@ -103,9 +157,24 @@ export function useVoiceResult() {
   const pendingWsRef = useRef<WebSocket | null>(null)
   const closingForSwapRef = useRef(false)
 
+  /* ── 음성 대화 저장용 refs ──────────────── */
+  const audioChunksRef = useRef<string[]>([]) // AI 오디오 base64 청크 누적 (fallback용)
+  const [savingConversation, setSavingConversation] = useState(false)
+  const conversationSavedRef = useRef(false) // 중복 저장 방지
+  const leaveAfterSaveRef = useRef(false) // 저장 후 /form 이동용
+
+  /* ── 나가기 전 저장 확인 모달 ───────────── */
+  const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false)
+
+  // 양방향 오디오 녹음 (MediaRecorder: 마이크 + AI 출력 믹스)
+  const mixedMediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mixedChunksRef = useRef<Blob[]>([])
+  const mixedDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null)
+  const micSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null)
+
   // 효과음
   const startSoundRef = useRef<HTMLAudioElement | null>(null)
-  const bubbleSoundRef = useRef<HTMLAudioElement | null>(null)
+  const conversationSoundsRef = useRef<(HTMLAudioElement | null)[]>([])
   const bubbleProbRef = useRef(0)
   const startSoundPlayedRef = useRef(false)
 
@@ -132,8 +201,8 @@ export function useVoiceResult() {
         }
         contentIdRef.current = cid
 
-        // 콘텐츠 상세 로드
-        const res = await fetch(`/api/content/${cid}?full=true`, { cache: 'no-store' })
+        // 콘텐츠 상세 로드 (캐시 무효화: 저장 후 소리 설정이 바로 반영되도록)
+        const res = await fetch(`/api/content/${cid}?full=true&_t=${Date.now()}`, { cache: 'no-store' })
         if (!res.ok) throw new Error('콘텐츠를 불러올 수 없습니다.')
         const data = await res.json()
         const c = data?.data || data?.content || data
@@ -164,51 +233,35 @@ export function useVoiceResult() {
         setContentData(c)
 
         // 효과음 세팅
-        console.log('[VoiceResult] sound setup: start_url=', c?.voice_start_sound_url, 'bubble_url=', c?.voice_bubble_sound_url, 'prob_pct=', c?.voice_bubble_sound_probability_pct)
+        const convSounds = c?.voice_conversation_sounds
+        const soundList = Array.isArray(convSounds) && convSounds.length > 0
+          ? convSounds
+          : (c?.voice_bubble_sound_url ? [{ label: '방울 소리', url: c.voice_bubble_sound_url }] : [])
+        const probPct = typeof c?.voice_conversation_sound_probability_pct === 'number'
+          ? c.voice_conversation_sound_probability_pct
+          : (c?.voice_bubble_sound_probability_pct ?? 0)
+        console.log('[VoiceResult] sound setup: start_url=', c?.voice_start_sound_url, 'conversation_sounds=', soundList.length, 'prob_pct=', probPct)
         if (c?.voice_start_sound_url) {
-          const startAudio = new Audio(c.voice_start_sound_url)
+          const startAudio = new Audio()
+          startAudio.crossOrigin = 'anonymous'
+          startAudio.src = getAudioSrc(c.voice_start_sound_url)
           startAudio.preload = 'auto'
           startAudio.addEventListener('canplaythrough', () => console.log('[VoiceResult] start sound loaded & ready'))
           startAudio.addEventListener('error', (e) => console.error('[VoiceResult] start sound load error:', e))
           startSoundRef.current = startAudio
-
-          // 페이지 진입 시 시작소리 자동 재생 시도
-          const tryPlayStartSound = () => {
-            if (startSoundPlayedRef.current) return
-            startSoundPlayedRef.current = true
-            startAudio.play().then(() => {
-              console.log('[VoiceResult] start sound auto-played successfully')
-            }).catch(() => {
-              console.log('[VoiceResult] auto-play blocked, waiting for user interaction...')
-              startSoundPlayedRef.current = false // 리셋해서 interaction에서 재시도
-              // 사용자 첫 터치/클릭 시 재생
-              const playOnInteraction = () => {
-                if (startSoundPlayedRef.current) return
-                startSoundPlayedRef.current = true
-                startAudio.play().then(() => {
-                  console.log('[VoiceResult] start sound played on user interaction')
-                }).catch((e) => { console.warn('[VoiceResult] start sound play failed even on interaction:', e?.message) })
-                document.removeEventListener('click', playOnInteraction)
-                document.removeEventListener('touchstart', playOnInteraction)
-              }
-              document.addEventListener('click', playOnInteraction, { once: true })
-              document.addEventListener('touchstart', playOnInteraction, { once: true })
-            })
-          }
-          // canplaythrough이 이미 발생했을 수 있으므로 readyState도 체크
-          if (startAudio.readyState >= 4) {
-            tryPlayStartSound()
-          } else {
-            startAudio.addEventListener('canplaythrough', tryPlayStartSound, { once: true })
-          }
+          // 시작 소리는 상담 연결(ready) 시 한 번 재생하여 녹음에 포함됨 (페이지 로드 시 재생 제거)
         }
-        if (c?.voice_bubble_sound_url) {
-          bubbleSoundRef.current = new Audio(c.voice_bubble_sound_url)
-          bubbleSoundRef.current.preload = 'auto'
-          bubbleSoundRef.current.addEventListener('canplaythrough', () => console.log('[VoiceResult] bubble sound loaded & ready'))
-          bubbleSoundRef.current.addEventListener('error', (e) => console.error('[VoiceResult] bubble sound load error:', e))
-        }
-        bubbleProbRef.current = (c?.voice_bubble_sound_probability_pct || 0) / 100
+        conversationSoundsRef.current = soundList
+          .filter((s: any) => s?.url)
+          .map((s: any) => {
+            const a = new Audio()
+            a.crossOrigin = 'anonymous'
+            a.src = getAudioSrc(s.url)
+            a.preload = 'auto'
+            a.addEventListener('error', (e) => console.error('[VoiceResult] conversation sound load error:', e))
+            return a
+          })
+        bubbleProbRef.current = probPct / 100
 
         // 만세력 계산: sessionStorage → 없으면 oid로 API 조회 (모바일 팝업 등 fallback)
         let gender = sessionStorage.getItem('payment_user_gender') || 'male'
@@ -277,6 +330,81 @@ export function useVoiceResult() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, contentData])
 
+  /* ── 페이지 이탈 시 대화 저장 (뒤로가기, 탭 닫기 등) ── */
+  useEffect(() => {
+    // sendBeacon으로 텍스트 대화만 빠르게 저장 (오디오 업로드는 불가)
+    const saveViaBeacon = () => {
+      if (conversationSavedRef.current) return
+      if (!sessionStartedRef.current) return // 상담이 시작된 적 없으면 skip
+      conversationSavedRef.current = true
+      const msgs = messagesRef.current.filter((m) => m.role !== 'system' && m.text !== 'pong' && m.text !== 'ping')
+      const userName = sessionStorage.getItem('payment_user_name') || ''
+      const phone = sessionStorage.getItem('payment_phone') || ''
+      const password = sessionStorage.getItem('payment_password') || ''
+      const contentTitle = contentData?.content_name || '음성 상담'
+      const cid = contentIdRef.current ? parseInt(contentIdRef.current, 10) : null
+      // sendBeacon은 FormData 또는 Blob만 가능 → JSON Blob 사용
+      const payload = JSON.stringify({
+        title: contentTitle,
+        html: '', // NOT NULL 제약 대응
+        result_type: 'voice',
+        voice_messages: msgs.map((m) => ({ role: m.role, text: m.text })),
+        voice_audio_url: null, // beacon에서는 오디오 업로드 불가
+        voice_duration_seconds: totalSeconds - remainingSeconds > 0 ? totalSeconds - remainingSeconds : null,
+        content_id: cid,
+        userName,
+        // 추가: credentials 정보 (서버에서 user_credentials 생성용)
+        _beacon_phone: phone,
+        _beacon_password: password,
+      })
+      const blob = new Blob([payload], { type: 'application/json' })
+      navigator.sendBeacon('/api/saved-results/save-voice-beacon', blob)
+      console.log('[VoiceResult] beacon save sent')
+    }
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!conversationSavedRef.current && sessionStartedRef.current) {
+        saveViaBeacon()
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    const handlePageHide = () => {
+      if (!conversationSavedRef.current && sessionStartedRef.current) {
+        saveViaBeacon()
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('pagehide', handlePageHide)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('pagehide', handlePageHide)
+    }
+  }, [contentData, totalSeconds, remainingSeconds])
+
+  /* ── 브라우저 뒤로가기 시 저장 확인 모달 ── */
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const key = 'voice-leave-confirm'
+    history.pushState({ [key]: true }, '', window.location.href)
+    const onPopState = () => {
+      if (!sessionStartedRef.current || conversationSavedRef.current) return
+      history.pushState({ [key]: true }, '', window.location.href)
+      setShowLeaveConfirmModal(true)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  /* ── 저장 완료 후 나가기 처리 ───────────── */
+  useEffect(() => {
+    if (!savingConversation && leaveAfterSaveRef.current) {
+      leaveAfterSaveRef.current = false
+      router.push('/form')
+    }
+  }, [savingConversation, router])
+
   /* ── 정리 ──────────────────────────────── */
   useEffect(() => {
     return () => {
@@ -294,10 +422,8 @@ export function useVoiceResult() {
         startSoundRef.current.pause()
         startSoundRef.current = null
       }
-      if (bubbleSoundRef.current) {
-        bubbleSoundRef.current.pause()
-        bubbleSoundRef.current = null
-      }
+      conversationSoundsRef.current.forEach((a) => { a?.pause(); try { (a as any).src = '' } catch { /* ignore */ } })
+      conversationSoundsRef.current = []
     }
   }, [])
 
@@ -313,12 +439,21 @@ export function useVoiceResult() {
     const userName = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_name') || '' : ''
 
     const counselorName = String(contentData.voice_counselor_name || '').trim()
+    const pitch = contentData.voice_pitch != null && contentData.voice_pitch !== ''
+    const rate = contentData.voice_speaking_rate != null && contentData.voice_speaking_rate !== ''
+    const gain = contentData.voice_volume_gain != null && contentData.voice_volume_gain !== ''
+    const speechParams: string[] = []
+    if (pitch && Number.isFinite(Number(contentData.voice_pitch))) speechParams.push(`음높이 ${contentData.voice_pitch} semitone`)
+    if (rate && Number.isFinite(Number(contentData.voice_speaking_rate))) speechParams.push(`말하는 속도 ${contentData.voice_speaking_rate}배`)
+    if (gain && Number.isFinite(Number(contentData.voice_volume_gain))) speechParams.push(`음량 gain ${contentData.voice_volume_gain}dB`)
+    const speechLine = speechParams.length > 0 ? `\n[음성 연출] ${speechParams.join(', ')}로 전달해 주세요.\n` : ''
+
     const systemText = `당신은 한국어로 대답하는 실시간 음성 상담사입니다.
 ${persona ? `\n[페르소나]\n${persona}\n` : ''}
 - ${styleInstruction(style)}
 - 목표: 공감 + 구체적 조언 + 마지막에 질문 1개
 - 길이: 6~12문장
-
+${speechLine}
 [첫 인사 규칙]
 - 상담이 시작되면 유저가 말하기 전에 당신이 먼저 인사를 건네세요.
 - "${counselorName || '상담사'}"로서 따뜻하고 신비로운 분위기로 내담자의 이름을 부르며 짧게 인사하세요.
@@ -462,7 +597,9 @@ ${manseText || '(만세력 없음)'}
   }
 
   /* ── 내부 disconnect ───────────────────── */
-  function disconnectInternal() {
+  const saveConversationRef = useRef<() => Promise<void>>()
+
+  function disconnectInternal(skipSave = false) {
     manualDisconnectRef.current = true
     recorderRef.current?.stop()
     streamerRef.current?.stop()
@@ -473,11 +610,24 @@ ${manseText || '(만세력 없음)'}
     setConnected(false)
     isAiSpeakingRef.current = false
     if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null }
+    // MediaRecorder 중지 (양방향 녹음)
+    try {
+      if (mixedMediaRecorderRef.current && mixedMediaRecorderRef.current.state !== 'inactive') {
+        mixedMediaRecorderRef.current.stop()
+      }
+    } catch { /* ignore */ }
+    // 마이크 소스 정리
+    try { micSourceNodeRef.current?.disconnect() } catch { /* ignore */ }
+    // 상담 종료 시 대화 저장 (skipSave=true: 추가 결제 후 재진입용)
+    if (!skipSave && !conversationSavedRef.current) {
+      setTimeout(() => { saveConversationRef.current?.() }, 100)
+    }
   }
 
   /* ── connect ───────────────────────────── */
   const connect = useCallback(async () => {
     setError('')
+    startSoundPlayedRef.current = false // 이번 연결에서 ready 시 종소리 1회 재생
     try {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return
 
@@ -493,7 +643,7 @@ ${manseText || '(만세력 없음)'}
           audio.volume = origVol
         }).catch(() => {})
       }
-      unlockAudio(bubbleSoundRef.current)
+      conversationSoundsRef.current.forEach((a) => unlockAudio(a))
 
       // audio output
       if (!streamerRef.current) {
@@ -503,6 +653,53 @@ ${manseText || '(만세력 없음)'}
           setOutVolume(ev.data.volume)
         })
         streamerRef.current = streamer
+
+        // 양방향 오디오 녹음 설정: AI 출력 + 마이크 → MediaRecorder
+        try {
+          const dest = outCtx.createMediaStreamDestination()
+          mixedDestinationRef.current = dest
+          // AI 출력(gainNode)을 녹음 destination에도 연결 (stop() 시 재연결도 자동)
+          streamer.connectExtraDestination(dest)
+          // 마이크 스트림을 AI 출력 AudioContext에 소스로 연결
+          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+          const micSource = outCtx.createMediaStreamSource(micStream)
+          micSource.connect(dest) // 마이크 → 녹음 destination
+          micSourceNodeRef.current = micSource
+          // 시작 소리·방울 소리도 녹음에 포함 (재생은 그대로 들리도록 destination에도 연결)
+          if (startSoundRef.current) {
+            try {
+              const startSource = outCtx.createMediaElementSource(startSoundRef.current)
+              startSource.connect(dest)
+              startSource.connect(outCtx.destination)
+            } catch (e: any) {
+              console.warn('[VoiceResult] start sound to mix failed:', e?.message)
+            }
+          }
+          conversationSoundsRef.current.forEach((audio) => {
+            if (!audio) return
+            try {
+              const source = outCtx.createMediaElementSource(audio)
+              source.connect(dest)
+              source.connect(outCtx.destination)
+            } catch (e: any) {
+              console.warn('[VoiceResult] conversation sound to mix failed:', e?.message)
+            }
+          })
+          // MediaRecorder 시작
+          const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+            ? 'audio/webm;codecs=opus'
+            : 'audio/webm'
+          const mr = new MediaRecorder(dest.stream, { mimeType })
+          mixedChunksRef.current = []
+          mr.ondataavailable = (e) => {
+            if (e.data.size > 0) mixedChunksRef.current.push(e.data)
+          }
+          mr.start(1000) // 1초마다 데이터 수집
+          mixedMediaRecorderRef.current = mr
+          console.log('[VoiceResult] Mixed audio recording started (mic + AI)')
+        } catch (recErr: any) {
+          console.warn('[VoiceResult] Mixed recording setup failed:', recErr?.message)
+        }
       }
       await streamerRef.current.resume()
 
@@ -570,7 +767,12 @@ ${manseText || '(만세력 없음)'}
               if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ type: 'ping' }))
             }, 30000)
             startFailoverCheckInterval()
-            // 시작 사운드는 페이지 진입 시 자동 재생됨 (connect 시점 제거)
+            // 시작 종소리 재생 (녹음에 포함되도록 연결 후 재생)
+            if (startSoundRef.current && !startSoundPlayedRef.current) {
+              startSoundPlayedRef.current = true
+              startSoundRef.current.currentTime = 0
+              startSoundRef.current.play().catch((e: unknown) => console.warn('[VoiceResult] start sound play on ready:', (e as Error)?.message))
+            }
             // 타이머 시작
             startTimer()
 
@@ -612,21 +814,48 @@ ${manseText || '(만세력 없음)'}
             if (audioTimeoutRef.current) { clearTimeout(audioTimeoutRef.current); audioTimeoutRef.current = null }
             if (!isAiSpeakingRef.current) {
               isAiSpeakingRef.current = true
-              // 방울 소리 (확률적)
+              // 대화중 소리 (확률적, 목록 중 랜덤 1개)
+              const list = conversationSoundsRef.current.filter(Boolean) as HTMLAudioElement[]
               const roll = Math.random()
               const prob = bubbleProbRef.current
-              console.log('[VoiceResult] bubble check: roll=', roll.toFixed(3), 'prob=', prob, 'hasSound=', !!bubbleSoundRef.current)
-              if (bubbleSoundRef.current && roll < prob) {
-                bubbleSoundRef.current.currentTime = 0
-                bubbleSoundRef.current.play().catch((e) => { console.warn('[VoiceResult] bubble play failed:', e?.message) })
+              if (list.length > 0 && roll < prob) {
+                const chosen = list[Math.floor(Math.random() * list.length)]
+                chosen.currentTime = 0
+                chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
               }
             }
             streamerRef.current?.addPCM16(new Uint8Array(buf))
+            // AI 오디오 청크 누적 (다시듣기용)
+            audioChunksRef.current.push(msg.data)
             audioTimeoutRef.current = setTimeout(() => { isAiSpeakingRef.current = false; audioTimeoutRef.current = null }, 500)
             return
           }
           if (msg.type === 'text' && msg.text) {
-            setMessages((prev) => [...prev, { role: 'assistant', text: String(msg.text).trim() }])
+            const txt = String(msg.text).trim()
+            // ping/pong 시스템 메시지 필터링
+            if (txt !== 'pong' && txt !== 'ping') {
+              setMessages((prev) => [...prev, { role: 'assistant', text: txt }])
+            }
+            return
+          }
+          // 음성 전사(transcription): AI 출력 + 사용자 입력 텍스트
+          // 같은 role의 연속 전사 → 마지막 메시지에 이어 붙임 (토큰 단위로 오므로)
+          if (msg.type === 'transcript' && msg.text) {
+            const role = msg.role === 'user' ? 'user' : 'assistant'
+            const txt = String(msg.text).trim()
+            if (txt) {
+              setMessages((prev) => {
+                const last = prev.length > 0 ? prev[prev.length - 1] : null
+                if (last && last.role === role) {
+                  // 같은 role → 기존 메시지에 이어 붙임
+                  const updated = [...prev]
+                  updated[updated.length - 1] = { ...last, text: last.text + ' ' + txt }
+                  return updated
+                }
+                // 다른 role → 새 메시지
+                return [...prev, { role, text: txt }]
+              })
+            }
             return
           }
           if (msg.type === 'interrupted') {
@@ -686,8 +915,12 @@ ${manseText || '(만세력 없음)'}
   }, [systemAndContext, model, voiceName, muted, startFailoverCheckInterval, startTimer])
 
   /* ── disconnect ─────────────────────────── */
-  const disconnect = useCallback(() => {
-    disconnectInternal()
+  const disconnect = useCallback(async () => {
+    disconnectInternal(true) // skipSave=true, 직접 saveConversation 호출
+    // disconnect 후 바로 saveConversation 실행 (await으로 완료 대기)
+    if (!conversationSavedRef.current) {
+      await saveConversationRef.current?.()
+    }
   }, [])
 
   /* ── toggleMute ─────────────────────────── */
@@ -704,9 +937,9 @@ ${manseText || '(만세력 없음)'}
   /* ── 추가 결제 닫기 ─────────────────────── */
   const dismissExtendPopup = useCallback(() => {
     setShowExtendPopup(false)
-    // 시간이 이미 0 이하이면 상담 종료
+    // 시간이 이미 0 이하이면 상담 종료 (대화 저장 포함)
     if (remainingSeconds <= 0) {
-      disconnectInternal()
+      disconnectInternal() // 기본적으로 대화 저장 트리거됨
     }
   }, [remainingSeconds])
 
@@ -966,10 +1199,184 @@ ${manseText || '(만세력 없음)'}
     }
   }, [contentData, connected, extendPaymentProcessing, startTimer])
 
+  /* ── 상담 종료 시 대화 + 오디오 저장 ────── */
+  const saveConversation = useCallback(async () => {
+    if (conversationSavedRef.current) return
+    if (savingConversation) return
+    conversationSavedRef.current = true
+    setSavingConversation(true)
+    const msgs = messagesRef.current.filter((m) => m.role !== 'system' && m.text !== 'pong' && m.text !== 'ping')
+    console.log('[VoiceResult] saveConversation start: msgs=', msgs.length, 'audioChunks=', audioChunksRef.current.length)
+
+    try {
+      let voiceAudioUrl: string | null = null
+
+      // 1) 양방향 오디오 녹음 (마이크+AI) 업로드 우선, 없으면 AI 전용 PCM fallback
+      if (mixedChunksRef.current.length > 0) {
+        // 양방향 믹스 녹음이 있는 경우 (WebM/Opus)
+        try {
+          const mixedBlob = new Blob(mixedChunksRef.current, { type: mixedChunksRef.current[0]?.type || 'audio/webm' })
+          console.log('[VoiceResult] Mixed audio size:', (mixedBlob.size / 1024 / 1024).toFixed(2), 'MB')
+          const ext = mixedBlob.type.includes('webm') ? 'webm' : 'ogg'
+          const formData = new FormData()
+          formData.append('file', mixedBlob, `voice_${Date.now()}.${ext}`)
+          const uploadRes = await fetch('/api/voice-upload', { method: 'POST', body: formData })
+          if (uploadRes.ok) {
+            const uploadData = await uploadRes.json()
+            voiceAudioUrl = uploadData.url || null
+            console.log('[VoiceResult] mixed audio uploaded:', voiceAudioUrl)
+          } else {
+            console.warn('[VoiceResult] mixed audio upload failed:', uploadRes.status)
+          }
+        } catch (e: any) {
+          console.warn('[VoiceResult] mixed audio upload error:', e?.message)
+        }
+      }
+      // fallback: 양방향 녹음 실패 시 AI 전용 PCM 청크 사용
+      if (!voiceAudioUrl && audioChunksRef.current.length > 0) {
+        try {
+          const wavBlob = pcm16Base64ToWavBlob(audioChunksRef.current)
+          console.log('[VoiceResult] WAV fallback size:', (wavBlob.size / 1024 / 1024).toFixed(2), 'MB')
+          const formData = new FormData()
+          formData.append('file', wavBlob, `voice_${Date.now()}.wav`)
+          const uploadRes = await fetch('/api/voice-upload', { method: 'POST', body: formData })
+          if (uploadRes.ok) {
+            const uploadData = await uploadRes.json()
+            voiceAudioUrl = uploadData.url || null
+            console.log('[VoiceResult] WAV fallback uploaded:', voiceAudioUrl)
+          } else {
+            console.warn('[VoiceResult] WAV upload failed:', uploadRes.status)
+          }
+        } catch (e: any) {
+          console.warn('[VoiceResult] WAV conversion/upload error:', e?.message)
+        }
+      }
+
+      // 2) 상담 시간(초) 계산
+      const durationSeconds = totalSeconds - remainingSeconds
+
+      // 3) saved_results에 voice 타입으로 저장
+      const userName = sessionStorage.getItem('payment_user_name') || ''
+      const contentTitle = contentData?.content_name || '음성 상담'
+
+      // voice 전용 필드로 저장
+      let savedId: string | null = null
+      const voicePayload = {
+        title: contentTitle,
+        html: '', // NOT NULL 제약 대응: 빈 문자열
+        result_type: 'voice',
+        voice_messages: msgs.map((m) => ({ role: m.role, text: m.text })),
+        voice_audio_url: voiceAudioUrl,
+        voice_duration_seconds: durationSeconds > 0 ? durationSeconds : null,
+        content_id: contentIdRef.current ? parseInt(contentIdRef.current, 10) : null,
+        userName,
+      }
+
+      let saveRes = await fetch('/api/saved-results/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(voicePayload),
+      })
+
+      if (!saveRes.ok) {
+        // voice 컬럼이 아직 없을 수 있음 → 기본 필드 + result_type으로 재시도
+        const errDetail = await saveRes.text().catch(() => '')
+        console.warn('[VoiceResult] voice save failed (status:', saveRes.status, errDetail, '), retrying with basic fields...')
+        const fallbackPayload = {
+          title: contentTitle,
+          html: `<p>음성 상담 기록</p><p>상담시간: ${durationSeconds > 0 ? `${Math.floor(durationSeconds / 60)}분 ${durationSeconds % 60}초` : '알 수 없음'}</p>${msgs.length > 0 ? `<h3>대화 내용</h3>${msgs.map((m) => `<p><strong>${m.role === 'assistant' ? '상담사' : userName || '나'}:</strong> ${m.text}</p>`).join('')}` : ''}`,
+          result_type: 'voice',
+          userName,
+        }
+        saveRes = await fetch('/api/saved-results/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(fallbackPayload),
+        })
+        if (!saveRes.ok) {
+          const errText = await saveRes.text().catch(() => '')
+          console.error('[VoiceResult] fallback save also failed:', saveRes.status, errText)
+          return
+        }
+      }
+
+      const saveData = await saveRes.json()
+      savedId = saveData?.data?.id || null
+      console.log('[VoiceResult] conversation saved, savedId:', savedId)
+
+      // 4) user_credentials에 savedId 연결 (나의 이용내역에서 조회 가능하도록)
+      if (savedId) {
+        const phone = sessionStorage.getItem('payment_phone') || ''
+        const password = sessionStorage.getItem('payment_password') || ''
+        const requestKey = sessionStorage.getItem('result_request_key') || sessionStorage.getItem('payment_request_key') || ''
+        console.log('[VoiceResult] linking credentials: phone=', phone ? 'YES' : 'NO', 'password=', password ? 'YES' : 'NO', 'requestKey=', requestKey || '(none)')
+        if (phone && password) {
+          try {
+            const credRes = await fetch('/api/user-credentials/save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                savedId: parseInt(savedId, 10),
+                phone,
+                password,
+                requestKey: requestKey || undefined,
+              }),
+            })
+            if (credRes.ok) {
+              console.log('[VoiceResult] user credentials linked to savedId:', savedId)
+            } else {
+              const credErr = await credRes.text().catch(() => '')
+              console.error('[VoiceResult] user-credentials save failed:', credRes.status, credErr)
+            }
+          } catch (e: any) {
+            console.error('[VoiceResult] user-credentials save error:', e?.message)
+          }
+        } else {
+          console.warn('[VoiceResult] phone or password missing in sessionStorage, cannot link credentials')
+        }
+      }
+    } catch (e: any) {
+      console.error('[VoiceResult] saveConversation error:', e?.message)
+    } finally {
+      setSavingConversation(false)
+    }
+  }, [contentData, totalSeconds, remainingSeconds, savingConversation])
+
+  // ref 업데이트 (disconnectInternal에서 사용)
+  saveConversationRef.current = saveConversation
+
   /* ── 시간 종료 후 폼 이동 (점사형 전용 — 음성형은 미사용) ── */
   const goBackToForm = useCallback(() => {
     router.push('/form')
   }, [router])
+
+  /* ── 나가기 전 저장 확인: 이전/홈 시 모달 표시 ── */
+  const requestLeave = useCallback(() => {
+    if (conversationSavedRef.current) {
+      router.push('/form')
+      return
+    }
+    if (sessionStartedRef.current) {
+      setShowLeaveConfirmModal(true)
+      return
+    }
+    router.push('/form')
+  }, [router])
+
+  const handleLeaveWithSave = useCallback(() => {
+    setShowLeaveConfirmModal(false)
+    leaveAfterSaveRef.current = true
+    disconnect()
+  }, [disconnect])
+
+  const handleLeaveWithoutSave = useCallback(() => {
+    setShowLeaveConfirmModal(false)
+    router.push('/form')
+  }, [router])
+
+  const handleLeaveCancel = useCallback(() => {
+    setShowLeaveConfirmModal(false)
+  }, [])
 
   /* ── 시간 포맷 ──────────────────────────── */
   const formatTime = useCallback((sec: number) => {
@@ -1006,5 +1413,14 @@ ${manseText || '(만세력 없음)'}
     setSelectedExtendOption,
     extendPaymentProcessing,
     handleExtendPayment,
+    // 대화 저장
+    savingConversation,
+    saveConversation,
+    // 나가기 전 저장 확인 모달
+    showLeaveConfirmModal,
+    requestLeave,
+    handleLeaveWithSave,
+    handleLeaveWithoutSave,
+    handleLeaveCancel,
   }
 }

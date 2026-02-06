@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { buildProtectedHtml, extractImageUrlsFromHtml } from './voice-form-html'
 
@@ -9,6 +9,11 @@ export interface VoiceTimeOption {
   minutes: number
   price: number
   label: string
+}
+
+export interface VoiceConversationSound {
+  label: string
+  url: string
 }
 
 export interface VoiceFormData {
@@ -32,9 +37,17 @@ export interface VoiceFormData {
   voice_counselor_name: string
   voice_persona_prompt: string
   voice_start_sound_url: string
-  voice_bubble_sound_url: string
-  voice_bubble_sound_probability_pct: number
+  /** 대화중 소리 목록 (라벨 + URL). 여러 개 추가 가능 */
+  voice_conversation_sounds: VoiceConversationSound[]
+  /** 대화중 소리 발현 확률 % */
+  voice_conversation_sound_probability_pct: number
   voice_time_options: VoiceTimeOption[]
+  /** 음높이 (semitones) -20~20. 차분:-0.5~-1.5, 밝음:+2 이상 */
+  voice_pitch: number | ''
+  /** 발화 속도 0.25~4.0. 별님아씨 추천 0.8~0.9 */
+  voice_speaking_rate: number | ''
+  /** 음량 증폭(dB) -96~16 */
+  voice_volume_gain: number | ''
 }
 
 /** 이미지 → WebP 변환 (화질 열화 없이 lossless) */
@@ -86,9 +99,12 @@ const INITIAL_FORM: VoiceFormData = {
   voice_counselor_name: '',
   voice_persona_prompt: '',
   voice_start_sound_url: '',
-  voice_bubble_sound_url: '',
-  voice_bubble_sound_probability_pct: 5,
+  voice_conversation_sounds: [],
+  voice_conversation_sound_probability_pct: 5,
   voice_time_options: [{ minutes: 5, price: 3000, label: '5분' }],
+  voice_pitch: '',
+  voice_speaking_rate: '',
+  voice_volume_gain: '',
 }
 
 export function useVoiceForm() {
@@ -112,6 +128,20 @@ export function useVoiceForm() {
   const [htmlPreviewMode, setHtmlPreviewMode] = useState<HtmlPreviewModeType>('pc')
   const htmlPreviewIframeRef = useRef<HTMLIFrameElement>(null)
   const [form, setForm] = useState<VoiceFormData>(INITIAL_FORM)
+  const initialFormSnapshotRef = useRef<string | null>(null)
+  /** 저장 직후 기준 스냅샷. 저장 후 수정 없이 취소하면 팝업 안 띄우기 위해 사용 */
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null)
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false)
+
+  const toFormSnapshot = (f: VoiceFormData) => JSON.stringify({ ...f, voice_time_options: f.voice_time_options })
+  const baselineSnapshot = lastSavedSnapshot ?? initialFormSnapshotRef.current
+  const isDirty = useMemo(() => {
+    if (baselineSnapshot === null) return false
+    return toFormSnapshot(form) !== baselineSnapshot
+  }, [form, baselineSnapshot])
+
+  const goBack = () => { window.location.href = '/admin' }
 
   // 인증 체크
   useEffect(() => {
@@ -127,7 +157,7 @@ export function useVoiceForm() {
     return () => { cancelled = true }
   }, [router])
 
-  // 다음 결제코드
+  // 다음 결제코드 (신규 추가 시 초기 스냅샷도 이 시점에 설정)
   useEffect(() => {
     if (!authenticated) return
     fetch('/api/admin/content/next-payment-code?type=voice', { cache: 'no-store' })
@@ -135,11 +165,17 @@ export function useVoiceForm() {
       .then((d) => {
         if (d?.nextPaymentCode) {
           setNextPaymentCode(d.nextPaymentCode)
-          setForm((f) => ({ ...f, payment_code: d.nextPaymentCode }))
+          setForm((f) => {
+            const next = { ...f, payment_code: d.nextPaymentCode }
+            if (!loadId) initialFormSnapshotRef.current = toFormSnapshot(next)
+            return next
+          })
+        } else if (!loadId) {
+          initialFormSnapshotRef.current = toFormSnapshot(INITIAL_FORM)
         }
       })
-      .catch(() => {})
-  }, [authenticated])
+      .catch(() => { if (!loadId) initialFormSnapshotRef.current = toFormSnapshot(INITIAL_FORM) })
+  }, [authenticated, loadId])
 
   // 기존 데이터 로드
   useEffect(() => {
@@ -160,7 +196,7 @@ export function useVoiceForm() {
           const arr = typeof timeOpts === 'string' ? JSON.parse(timeOpts) : timeOpts
           if (Array.isArray(arr) && arr.length > 0) parsedTimeOpts = arr
         }
-        setForm({
+        const loadedForm: VoiceFormData = {
           content_type: 'voice',
           content_name: (c.content_name ?? '') + (duplicateId ? ' (복사)' : ''),
           book_cover_thumbnail: c.book_cover_thumbnail ?? '',
@@ -181,10 +217,27 @@ export function useVoiceForm() {
           voice_counselor_name: c.voice_counselor_name ?? '',
           voice_persona_prompt: c.voice_persona_prompt ?? '',
           voice_start_sound_url: c.voice_start_sound_url ?? '',
-          voice_bubble_sound_url: c.voice_bubble_sound_url ?? '',
-          voice_bubble_sound_probability_pct: typeof c.voice_bubble_sound_probability_pct === 'number' ? c.voice_bubble_sound_probability_pct : 5,
+          voice_conversation_sounds: (() => {
+            const raw = c.voice_conversation_sounds
+            if (Array.isArray(raw) && raw.length > 0) {
+              return raw.map((s: any) => ({ label: s?.label ?? '', url: s?.url ?? '' }))
+            }
+            if (c.voice_bubble_sound_url) {
+              return [{ label: '방울 소리', url: c.voice_bubble_sound_url }]
+            }
+            return []
+          })(),
+          voice_conversation_sound_probability_pct: typeof c.voice_conversation_sound_probability_pct === 'number'
+            ? c.voice_conversation_sound_probability_pct
+            : (typeof c.voice_bubble_sound_probability_pct === 'number' ? c.voice_bubble_sound_probability_pct : 5),
           voice_time_options: parsedTimeOpts,
-        })
+          voice_pitch: c.voice_pitch != null && c.voice_pitch !== '' ? Number(c.voice_pitch) : '',
+          voice_speaking_rate: c.voice_speaking_rate != null && c.voice_speaking_rate !== '' ? Number(c.voice_speaking_rate) : '',
+          voice_volume_gain: c.voice_volume_gain != null && c.voice_volume_gain !== '' ? Number(c.voice_volume_gain) : '',
+        }
+        setForm(loadedForm)
+        initialFormSnapshotRef.current = JSON.stringify({ ...loadedForm, voice_time_options: loadedForm.voice_time_options })
+        setLastSavedSnapshot(null)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -314,6 +367,39 @@ export function useVoiceForm() {
     })
   }
 
+  const addConversationSound = () => {
+    setForm((f) => ({ ...f, voice_conversation_sounds: [...f.voice_conversation_sounds, { label: '', url: '' }] }))
+  }
+  const removeConversationSound = (index: number) => {
+    setForm((f) => ({
+      ...f,
+      voice_conversation_sounds: f.voice_conversation_sounds.filter((_, i) => i !== index),
+    }))
+  }
+  const updateConversationSound = (index: number, key: keyof VoiceConversationSound, value: string) => {
+    setForm((f) => {
+      const list = [...f.voice_conversation_sounds]
+      if (!list[index]) list[index] = { label: '', url: '' }
+      list[index] = { ...list[index], [key]: value }
+      return { ...f, voice_conversation_sounds: list }
+    })
+  }
+  const handleConversationSoundFileUpload = async (index: number, file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('folder', 'voice')
+    const res = await fetch('/api/admin/upload', { method: 'POST', body: fd })
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || '업로드 실패')
+    const data = await res.json()
+    const url = data?.url ?? ''
+    setForm((f) => {
+      const list = [...f.voice_conversation_sounds]
+      if (!list[index]) list[index] = { label: '', url: '' }
+      list[index] = { ...list[index], url }
+      return { ...f, voice_conversation_sounds: list }
+    })
+  }
+
   // 저장
   const handleSave = async () => {
     if (!form.content_name?.trim()) { alert('컨텐츠명을 입력하세요.'); return }
@@ -331,12 +417,21 @@ export function useVoiceForm() {
         menu_items: [],
         preview_thumbnails: [],
         voice_time_options: JSON.stringify(form.voice_time_options),
+        voice_conversation_sounds: form.voice_conversation_sounds,
+        voice_conversation_sound_probability_pct: form.voice_conversation_sound_probability_pct,
+        voice_pitch: rest.voice_pitch === '' || rest.voice_pitch == null ? null : Number(rest.voice_pitch),
+        voice_speaking_rate: rest.voice_speaking_rate === '' || rest.voice_speaking_rate == null ? null : Number(rest.voice_speaking_rate),
+        voice_volume_gain: rest.voice_volume_gain === '' || rest.voice_volume_gain == null ? null : Number(rest.voice_volume_gain),
       }
       if (!id) delete body.id
       const res = await fetch('/api/admin/content/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || '저장 실패')
-      alert('저장되었습니다.')
+      const savedSnapshot = toFormSnapshot(form)
+      initialFormSnapshotRef.current = savedSnapshot
+      setLastSavedSnapshot(savedSnapshot)
+      setShowSaveSuccess(true)
+      setTimeout(() => setShowSaveSuccess(false), 2500)
       if (!id && data?.data?.id) router.replace('/admin/form/voice?id=' + data.data.id)
     } catch (e: unknown) { alert((e as Error)?.message || '저장 실패') }
     finally { setSaving(false) }
@@ -349,6 +444,10 @@ export function useVoiceForm() {
     showContentImagesModal, currentImageType, contentImages, uploadingContentImageIndex,
     showHtmlPreview, htmlPreviewContent, htmlPreviewTitle, htmlPreviewMode, setHtmlPreviewMode,
     htmlPreviewIframeRef,
+    isDirty,
+    showCancelConfirm, setShowCancelConfirm,
+    showSaveSuccess, setShowSaveSuccess,
+    goBack,
     // handlers
     handleFileUpload, requestFileDelete, deleteConfirm, deleting, confirmFileDelete, cancelFileDelete,
     handleFileDrop, handleDragOver,
@@ -356,6 +455,7 @@ export function useVoiceForm() {
     handleRemoveContentImage, handleCloseContentImagesModal,
     handleOpenHtmlPreview, setShowHtmlPreview,
     addTimeOption, removeTimeOption, updateTimeOption,
+    addConversationSound, removeConversationSound, updateConversationSound, handleConversationSoundFileUpload,
     handleSave,
   }
 }

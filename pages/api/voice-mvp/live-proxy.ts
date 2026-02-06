@@ -29,10 +29,11 @@ type ClientTextMessage = {
 type ClientMessage = ClientInitMessage | ClientAudioMessage | ClientTextMessage | { type: 'disconnect' } | { type: 'ping' }
 
 type AnyServerMessage = {
-  type: 'audio' | 'text' | 'interrupted' | 'error' | 'ready'
+  type: 'audio' | 'text' | 'interrupted' | 'error' | 'ready' | 'transcript'
   data?: string
   text?: string
   message?: string
+  role?: 'user' | 'assistant'
 }
 
 export const config = {
@@ -63,7 +64,10 @@ const normalizeConfig = (cfg: LiveConnectConfig): LiveConnectConfig => {
     responseModalities,
     // AI가 먼저 말하도록 (실서버 포함)
     proactivity: (cfg as any)?.proactivity ?? { proactiveAudio: true },
-  }
+    // 음성 전사 활성화 (AI 출력 + 사용자 입력 모두 텍스트로 전사)
+    outputAudioTranscription: (cfg as any)?.outputAudioTranscription ?? {},
+    inputAudioTranscription: (cfg as any)?.inputAudioTranscription ?? {},
+  } as LiveConnectConfig
 }
 
 const partsFromMessage = (msg: LiveServerMessage): Part[] => {
@@ -135,6 +139,20 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
             send({ type: 'ready' })
           },
           onmessage: (msg: LiveServerMessage) => {
+            const msgAny = msg as any
+            // 디버그: serverContent 키 로깅
+            const sc = msgAny?.serverContent
+            if (sc) {
+              const keys = Object.keys(sc).filter((k: string) => k !== 'modelTurn')
+              if (keys.length > 0) {
+                console.log('[live-proxy] serverContent keys:', keys.join(', '))
+              }
+            }
+            const topKeys = Object.keys(msgAny || {}).filter((k: string) => k !== 'serverContent' && k !== 'sessionResumptionUpdate')
+            if (topKeys.length > 0) {
+              console.log('[live-proxy] top-level msg keys:', topKeys.join(', '))
+            }
+
             const parts = partsFromMessage(msg)
             const texts: string[] = []
             for (const part of parts) {
@@ -150,8 +168,20 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
             if (texts.length > 0) {
               send({ type: 'text', text: texts.join('\n') })
             }
-            if ((msg as any)?.serverContent?.interrupted) {
+            if (sc?.interrupted) {
               send({ type: 'interrupted' })
+            }
+            // AI 출력 음성 전사 (serverContent 내부 + 최상위 양쪽 확인)
+            const outputTranscript = sc?.outputTranscription?.text || msgAny?.outputTranscription?.text
+            if (typeof outputTranscript === 'string' && outputTranscript.trim()) {
+              console.log('[live-proxy] OUTPUT transcript:', outputTranscript.substring(0, 80))
+              send({ type: 'transcript', role: 'assistant', text: outputTranscript.trim() })
+            }
+            // 사용자 입력 음성 전사 (serverContent 내부 + 최상위 양쪽 확인)
+            const inputTranscript = sc?.inputTranscription?.text || msgAny?.inputTranscription?.text
+            if (typeof inputTranscript === 'string' && inputTranscript.trim()) {
+              console.log('[live-proxy] INPUT transcript:', inputTranscript.substring(0, 80))
+              send({ type: 'transcript', role: 'user', text: inputTranscript.trim() })
             }
           },
           onerror: (e: any) => {

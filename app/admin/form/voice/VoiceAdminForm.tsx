@@ -46,7 +46,7 @@ export default function VoiceAdminForm() {
             <h1 className="text-2xl font-bold">음성형 컨텐츠 {h.id ? '수정' : '추가'}</h1>
           </div>
           <div className="flex gap-3">
-            <button type="button" onClick={() => { if (confirm('변경 사항을 취소하시겠습니까?')) window.location.href = '/admin' }}
+            <button type="button" onClick={() => { if (h.isDirty) h.setShowCancelConfirm(true); else h.goBack(); }}
               className="bg-gray-700 hover:bg-gray-600 text-white font-semibold px-6 py-2 rounded-lg">
               취소
             </button>
@@ -56,6 +56,28 @@ export default function VoiceAdminForm() {
             </button>
           </div>
         </div>
+
+        {/* 취소 확인 커스텀 모달 */}
+        {h.showCancelConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => h.setShowCancelConfirm(false)}>
+            <div className="bg-gray-800 rounded-xl shadow-xl border border-gray-600 p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+              <p className="text-gray-200 mb-6">변경 사항을 취소하시겠습니까?</p>
+              <div className="flex gap-3 justify-end">
+                <button type="button" onClick={() => h.setShowCancelConfirm(false)}
+                  className="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-500 text-white font-medium">아니오</button>
+                <button type="button" onClick={() => { h.setShowCancelConfirm(false); h.goBack(); }}
+                  className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium">예</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 저장 완료 커스텀 토스트 */}
+        {h.showSaveSuccess && (
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 px-6 py-3 rounded-xl bg-emerald-600 text-white font-medium shadow-lg">
+            저장되었습니다.
+          </div>
+        )}
 
         {h.loading ? (
           <div className="text-gray-400">로딩 중...</div>
@@ -247,6 +269,33 @@ export default function VoiceAdminForm() {
                     </select>
                   </div>
                 </div>
+                {/* 음성 파라미터: Pitch, Speaking Rate, Volume Gain (API 지원 시 적용, 현재는 프롬프트로 전달) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Pitch (음높이, semitones)</label>
+                    <input type="number" step={0.5} min={-20} max={20}
+                      value={h.form.voice_pitch === '' ? '' : h.form.voice_pitch}
+                      onChange={(e) => h.setForm((f) => ({ ...f, voice_pitch: e.target.value === '' ? '' : parseFloat(e.target.value) || '' }))}
+                      className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                      placeholder="-20~20 (차분:-0.5~-1.5, 밝음:+2)" />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Speaking Rate (발화 속도)</label>
+                    <input type="number" step={0.05} min={0.25} max={4}
+                      value={h.form.voice_speaking_rate === '' ? '' : h.form.voice_speaking_rate}
+                      onChange={(e) => h.setForm((f) => ({ ...f, voice_speaking_rate: e.target.value === '' ? '' : parseFloat(e.target.value) || '' }))}
+                      className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                      placeholder="0.25~4 (별님아씨 추천 0.8~0.9)" />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Volume Gain (dB)</label>
+                    <input type="number" step={0.5} min={-96} max={16}
+                      value={h.form.voice_volume_gain === '' ? '' : h.form.voice_volume_gain}
+                      onChange={(e) => h.setForm((f) => ({ ...f, voice_volume_gain: e.target.value === '' ? '' : parseFloat(e.target.value) || '' }))}
+                      className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                      placeholder="-96~16 (속삭임 시 +2 등)" />
+                  </div>
+                </div>
                 <div>
                   <label className="block text-sm text-gray-300 mb-1">페르소나 프롬프트</label>
                   <textarea value={h.form.voice_persona_prompt} onChange={(e) => h.setForm((f) => ({ ...f, voice_persona_prompt: e.target.value }))}
@@ -268,7 +317,7 @@ export default function VoiceAdminForm() {
                     </div>
                     {h.form.voice_start_sound_url && (
                       <div className="mt-2 flex items-center gap-2">
-                        <audio src={h.form.voice_start_sound_url} controls className="w-full" />
+                        <audio src={h.form.voice_start_sound_url} controls className="max-w-full h-8" />
                         <button type="button" onClick={() => h.requestFileDelete('voice_start_sound_url', '시작소리')}
                           className="bg-red-500 hover:bg-red-600 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0">&times;</button>
                       </div>
@@ -276,32 +325,67 @@ export default function VoiceAdminForm() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-300 mb-1">대화중 방울 소리 (MP3, 드래그&amp;드롭 가능)</label>
-                  <div
-                    className="border-2 border-dashed border-gray-600 hover:border-violet-500 rounded-lg p-4 transition-colors"
-                    onDragOver={h.handleDragOver}
-                    onDrop={(e) => h.handleFileDrop(e, 'voice_bubble_sound_url', 'audio/')}
-                  >
-                    <div className="flex gap-2 flex-wrap items-center">
-                      <input type="file" accept=".mp3,.wav,.ogg,.m4a,audio/*" className="hidden" id="voice-bubble-sound"
-                        onChange={(e) => { const f = e.target.files?.[0]; if (f) h.handleFileUpload(f, 'voice_bubble_sound_url').catch((err: Error) => alert(err.message)); e.target.value = '' }} />
-                      <label htmlFor="voice-bubble-sound" className="px-4 py-2 bg-gray-700 rounded-lg cursor-pointer text-sm hover:bg-gray-600 transition">MP3 업로드</label>
-                      <input value={h.form.voice_bubble_sound_url} onChange={(e) => h.setForm((f) => ({ ...f, voice_bubble_sound_url: e.target.value }))}
-                        className="flex-1 min-w-0 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm" placeholder="URL 입력 또는 파일 드래그&amp;드롭" />
-                    </div>
-                    {h.form.voice_bubble_sound_url && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <audio src={h.form.voice_bubble_sound_url} controls className="w-full" />
-                        <button type="button" onClick={() => h.requestFileDelete('voice_bubble_sound_url', '방울 소리')}
-                          className="bg-red-500 hover:bg-red-600 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0">&times;</button>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm text-gray-300">대화중 소리</label>
+                    <button type="button" onClick={h.addConversationSound}
+                      className="text-sm text-violet-400 hover:text-violet-300 font-medium">+ 소리 추가</button>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-2">라벨로 어떤 소리인지 적고, MP3 URL 또는 드래그&amp;드롭으로 등록하세요.</p>
+                  <div className="space-y-3">
+                    {h.form.voice_conversation_sounds.map((sound, idx) => (
+                      <div
+                        key={idx}
+                        className="border-2 border-dashed border-gray-600 hover:border-violet-500 rounded-lg p-4 transition-colors bg-gray-900/50"
+                        onDragOver={h.handleDragOver}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          const file = e.dataTransfer.files?.[0]
+                          if (file && (file.type.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'm4a'].includes((file.name.split('.').pop() || '').toLowerCase()))) {
+                            h.handleConversationSoundFileUpload(idx, file).catch((err: Error) => alert(err?.message || '업로드 실패'))
+                          }
+                        }}
+                      >
+                        <div className="flex gap-3 flex-wrap items-start">
+                          <div className="w-32 shrink-0">
+                            <label className="block text-xs text-gray-400 mb-1">라벨</label>
+                            <input
+                              value={sound.label}
+                              onChange={(e) => h.updateConversationSound(idx, 'label', e.target.value)}
+                              className="w-full bg-gray-800 border border-gray-600 rounded-lg px-2 py-1.5 text-white text-sm"
+                              placeholder="예: 방울 소리"
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <label className="block text-xs text-gray-400 mb-1">URL 또는 파일</label>
+                            <div className="flex gap-2">
+                              <input type="file" accept=".mp3,.wav,.ogg,.m4a,audio/*" className="hidden" id={`voice-conv-sound-${idx}`}
+                                onChange={(e) => { const f = e.target.files?.[0]; if (f) h.handleConversationSoundFileUpload(idx, f).catch((err: Error) => alert(err?.message)); e.target.value = '' }} />
+                              <label htmlFor={`voice-conv-sound-${idx}`} className="px-3 py-1.5 bg-gray-700 rounded-lg cursor-pointer text-xs hover:bg-gray-600 transition shrink-0">MP3 업로드</label>
+                              <input
+                                value={sound.url}
+                                onChange={(e) => h.updateConversationSound(idx, 'url', e.target.value)}
+                                className="flex-1 min-w-0 bg-gray-800 border border-gray-600 rounded-lg px-2 py-1.5 text-white text-sm"
+                                placeholder="URL 또는 파일 드래그&amp;드롭"
+                              />
+                            </div>
+                          </div>
+                          <button type="button" onClick={() => h.removeConversationSound(idx)}
+                            className="bg-red-500 hover:bg-red-600 text-white text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-5">×</button>
+                        </div>
+                        {sound.url && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <audio src={sound.url} controls className="max-w-full h-8" />
+                          </div>
+                        )}
                       </div>
-                    )}
+                    ))}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-300 mb-1">대화중 방울 소리 발현 확률 (%)</label>
-                  <input type="number" min={0} max={100} value={h.form.voice_bubble_sound_probability_pct}
-                    onChange={(e) => h.setForm((f) => ({ ...f, voice_bubble_sound_probability_pct: parseInt(e.target.value, 10) || 0 }))}
+                  <label className="block text-sm text-gray-300 mb-1">대화중 소리 발현 확률 (%)</label>
+                  <input type="number" min={0} max={100} value={h.form.voice_conversation_sound_probability_pct}
+                    onChange={(e) => h.setForm((f) => ({ ...f, voice_conversation_sound_probability_pct: parseInt(e.target.value, 10) || 0 }))}
                     className="w-24 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white" />
                 </div>
               </div>
@@ -369,7 +453,7 @@ export default function VoiceAdminForm() {
 
             {/* 하단 저장/취소 버튼 */}
             <div className="flex justify-end gap-3 pt-2">
-              <button type="button" onClick={() => { if (confirm('변경 사항을 취소하시겠습니까?')) window.location.href = '/admin' }}
+              <button type="button" onClick={() => { if (h.isDirty) h.setShowCancelConfirm(true); else h.goBack(); }}
                 className="bg-gray-700 hover:bg-gray-600 text-white font-semibold px-6 py-2 rounded-lg">
                 취소
               </button>

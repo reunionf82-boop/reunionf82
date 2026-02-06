@@ -29,8 +29,13 @@ export async function GET(
     const fullContent = url.searchParams.get('full') === 'true'
     
     if (fullContent) {
-      // 전체 content 반환 (menu_items 포함)
-      return NextResponse.json(content)
+      // 전체 content 반환 (menu_items 포함) — 음성 설정(시작/대화중 소리) 등 최신값 보장을 위해 캐시 비활성화
+      return NextResponse.json(content, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+        },
+      })
     }
 
     // TTS 설정만 반환 (기존 동작 유지)

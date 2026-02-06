@@ -37,6 +37,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# optional: ffmpeg binary (large, deploy separately)
+/bin/ffmpeg
+
 
 
 

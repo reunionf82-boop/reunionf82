@@ -55,6 +55,17 @@ export async function GET(request: NextRequest) {
         )
       }
 
+      // 음성형일 때 content_id로 어드민 컨텐츠의 상담사명 조회
+      let voice_counselor_name: string | null = null
+      if (data.content_id) {
+        const { data: contentRow } = await supabase
+          .from('contents')
+          .select('voice_counselor_name')
+          .eq('id', data.content_id)
+          .maybeSingle()
+        voice_counselor_name = contentRow?.voice_counselor_name ?? null
+      }
+
       const savedDateUTC = new Date(data.saved_at)
       const kstOptions: Intl.DateTimeFormatOptions = {
         timeZone: 'Asia/Seoul',
@@ -89,7 +100,15 @@ export async function GET(request: NextRequest) {
             model: data.model,
             processingTime: data.processing_time,
             userName: data.user_name,
-            pdf_generated: data.pdf_generated || false
+            pdf_generated: data.pdf_generated || false,
+            // 음성형 필드
+            result_type: data.result_type || 'fortune',
+            voice_messages: data.voice_messages || null,
+            voice_audio_url: data.voice_audio_url || null,
+            voice_audio_url_m4a: data.voice_audio_url_m4a || null,
+            voice_duration_seconds: data.voice_duration_seconds || null,
+            content_id: data.content_id || null,
+            voice_counselor_name: voice_counselor_name || null,
           }
         },
         {
@@ -166,17 +185,24 @@ export async function GET(request: NextRequest) {
       const second = parts.find(p => p.type === 'second')?.value || ''
       const savedAtKST = `${year}. ${month}. ${day}. ${hour}:${minute}:${second}`
       
-      const result = {
+      const result: Record<string, unknown> = {
         id: item.id.toString(),
         title: item.title,
         html: item.html,
         savedAt: savedAtKST,
-        savedAtISO: item.saved_at, // UTC로 저장된 원본 날짜 (12시간/60일 경과 여부 확인용)
+        savedAtISO: item.saved_at,
         content: item.content,
         model: item.model,
         processingTime: item.processing_time,
         userName: item.user_name,
-        pdf_generated: item.pdf_generated || false // PDF 생성 여부
+        pdf_generated: item.pdf_generated || false,
+      }
+      if (item.result_type === 'voice' || item.voice_audio_url != null) {
+        result.voice_audio_url = item.voice_audio_url || null
+        result.voice_audio_url_m4a = item.voice_audio_url_m4a || null
+        result.voice_duration_seconds = item.voice_duration_seconds ?? null
+        result.voice_messages = item.voice_messages ?? null
+        result.content_id = item.content_id ?? null
       }
       return result
     })

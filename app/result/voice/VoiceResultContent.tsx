@@ -1,7 +1,6 @@
 'use client'
 
 import { useRef, useEffect, useCallback } from 'react'
-import Link from 'next/link'
 import { useVoiceResult } from './useVoiceResult'
 
 /* 만세력 스타일 (voice-mvp에서 가져옴). 모바일: 가로 스크롤 없이 폰트/패딩 축소로 맞춤 */
@@ -276,9 +275,13 @@ export default function VoiceResultContent() {
       <div className="min-h-screen bg-white text-gray-900 flex items-center justify-center">
         <div className="text-center max-w-md px-4">
           <p className="text-red-500 mb-4">{h.error}</p>
-          <Link href="/form" className="inline-flex items-center px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-medium">
+          <button
+            type="button"
+            onClick={h.requestLeave}
+            className="inline-flex items-center px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-medium"
+          >
             돌아가기
-          </Link>
+          </button>
         </div>
       </div>
     )
@@ -294,10 +297,31 @@ export default function VoiceResultContent() {
     <div className="min-h-screen bg-white text-gray-900 flex flex-col">
       {/* 상단 바 */}
       <header className="w-full bg-white/90 backdrop-blur border-b border-gray-200">
-        <div className="mx-auto max-w-2xl px-4 h-14 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-900 truncate">{h.contentData?.content_name || '음성 상담'}</h2>
-          <div className="flex items-center gap-3">
-            {/* 타이머 */}
+        <div className="mx-auto max-w-2xl px-4 h-14 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={h.requestLeave}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+              aria-label="이전"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={h.requestLeave}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+              aria-label="홈"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+            </button>
+          </div>
+          <h2 className="text-lg font-bold text-gray-900 truncate min-w-0 flex-1 text-center">{h.contentData?.content_name || '음성 상담'}</h2>
+          <div className="flex items-center gap-3 shrink-0 w-14 justify-end">
             <span className={`font-mono font-bold text-lg ${timerColor}`}>
               {h.formatTime(h.remainingSeconds)}
             </span>
@@ -401,16 +425,34 @@ export default function VoiceResultContent() {
               <button
                 type="button"
                 onClick={h.disconnect}
-                className="group relative overflow-hidden rounded-2xl transition-all duration-300 active:scale-[0.97]"
+                disabled={h.savingConversation}
+                className="group relative overflow-hidden rounded-2xl transition-all duration-300 active:scale-[0.97] disabled:opacity-50"
               >
                 <div className="absolute inset-0 bg-gradient-to-br from-gray-100 to-gray-200 group-hover:from-gray-200 group-hover:to-gray-300 transition-all duration-300" />
                 <div className="relative flex items-center justify-center gap-2 py-4 px-6">
-                  <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
-                  </svg>
-                  <span className="text-gray-700 font-semibold text-[15px]">종료</span>
+                  {h.savingConversation ? (
+                    <svg className="animate-spin w-5 h-5 text-gray-600" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
+                    </svg>
+                  )}
+                  <span className="text-gray-700 font-semibold text-[15px]">
+                    {h.savingConversation ? '저장 중...' : '종료'}
+                  </span>
                 </div>
               </button>
+            </div>
+          ) : h.savingConversation ? (
+            <div className="w-full flex flex-col items-center gap-3 py-6">
+              <svg className="animate-spin w-8 h-8 text-violet-500" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-gray-600 font-semibold text-base">상담 내용 저장 중...</span>
             </div>
           ) : (
             <button
@@ -441,7 +483,7 @@ export default function VoiceResultContent() {
           {!h.connected && h.remainingSeconds <= 0 ? (
             <button
               type="button"
-              onClick={h.goBackToForm}
+              onClick={h.requestLeave}
               className="group relative w-full overflow-hidden rounded-2xl transition-all duration-300 active:scale-[0.98]"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-violet-600 to-indigo-600 group-hover:from-violet-500 group-hover:to-indigo-500 transition-all duration-300" />
@@ -532,6 +574,43 @@ export default function VoiceResultContent() {
                 className="px-4 py-3 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium transition-all disabled:opacity-50"
               >
                 닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* 나가기 전 저장 확인 모달 (이전/홈/브라우저 뒤로가기) */}
+      {h.showLeaveConfirmModal ? (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">상담 내용을 저장할까요?</h3>
+            <p className="text-gray-500 text-sm mb-5">
+              소리와 텍스트를 저장하면 나중에 다시 들어서 들을 수 있습니다.
+            </p>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={h.handleLeaveWithSave}
+                disabled={h.savingConversation}
+                className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-all disabled:opacity-50"
+              >
+                {h.savingConversation ? '저장 중...' : '저장하고 나가기'}
+              </button>
+              <button
+                type="button"
+                onClick={h.handleLeaveWithoutSave}
+                disabled={h.savingConversation}
+                className="w-full py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium transition-all disabled:opacity-50"
+              >
+                저장 안 하고 나가기
+              </button>
+              <button
+                type="button"
+                onClick={h.handleLeaveCancel}
+                className="w-full py-3 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-600 font-medium transition-all"
+              >
+                취소
               </button>
             </div>
           </div>

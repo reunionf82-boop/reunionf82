@@ -22,6 +22,11 @@ interface SavedResult {
   user_name?: string
   content?: any
   pdf_generated?: boolean
+  result_type?: string // 'fortune' | 'voice'
+  voice_messages?: Array<{ role: string; text: string }>
+  voice_audio_url?: string
+  voice_duration_seconds?: number
+  content_id?: number
 }
 
 export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = true, contentId }: MyHistoryPopupProps) {
@@ -465,6 +470,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
       }
 
       if (result.success && result.data) {
+        console.log('[MyHistory] raw results:', JSON.stringify(result.data.map((r: any) => ({ id: r.id, result_type: r.result_type, has_voice_msgs: !!r.voice_messages, has_voice_audio: !!r.voice_audio_url }))))
         setSavedResults(result.data)
         setShowResults(true)
       } else {
@@ -2476,19 +2482,36 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                   <p className="text-gray-500">저장된 이용내역이 없습니다.</p>
                 </div>
               ) : (
-                savedResults.map((result) => (
+                savedResults.map((result) => {
+                  // voice 판별: result_type이 'voice'이거나, voice_messages/voice_audio_url이 존재
+                  const isVoice = result.result_type === 'voice' || !!result.voice_messages || !!result.voice_audio_url
+                  const hasAudio = isVoice && !!result.voice_audio_url
+                  return (
                   <div
                     key={result.id}
-                    className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition-shadow"
+                    className={`border rounded-lg p-4 bg-white hover:shadow-md transition-shadow ${isVoice ? 'border-violet-200' : 'border-gray-200'}`}
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
-                        <h3 className="text-lg font-bold text-gray-900 mb-1">
-                          {result.title || '저장된 결과'}
-                        </h3>
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-lg font-bold text-gray-900">
+                            {result.title || '저장된 결과'}
+                          </h3>
+                          {isVoice && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                              음성상담
+                            </span>
+                          )}
+                        </div>
                         {formatUserInfoLine(result) && (
                           <p className="text-sm text-gray-700">
                             {formatUserInfoLine(result)}
+                          </p>
+                        )}
+                        {isVoice && result.voice_duration_seconds != null && result.voice_duration_seconds > 0 && (
+                          <p className="text-sm text-gray-600">
+                            상담시간: {Math.floor(result.voice_duration_seconds / 60)}분 {result.voice_duration_seconds % 60}초
                           </p>
                         )}
                         <p className="text-sm text-gray-500">
@@ -2501,11 +2524,10 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      {/* 컨텐츠별 리뷰 이벤트 배너는 제거 - 상단에 기본 배너만 한 번 표시됨 */}
-
                       {/* 버튼: 글자 길이에 맞게 + 우측 정렬 */}
                       <div className="flex justify-end gap-2 flex-wrap">
-                        {!result.pdf_generated && (
+                        {/* 점사형: PDF 생성 */}
+                        {!isVoice && !result.pdf_generated && (
                           <button
                             onClick={() => handleGeneratePdfClick(result)}
                             disabled={pdfGeneratingMap[result.id]}
@@ -2537,12 +2559,40 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                             )}
                           </button>
                         )}
-                        <button
-                          onClick={() => handleView(result.id)}
-                          className="inline-flex items-center justify-center whitespace-nowrap bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200"
-                        >
-                          다시보기
-                        </button>
+
+                        {/* 음성형: 다시보기 (텍스트 대화) */}
+                        {isVoice ? (
+                          <button
+                            onClick={() => window.open(`/result/voice/replay?id=${result.id}`, '_blank')}
+                            className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap bg-violet-500 hover:bg-violet-600 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
+                            대화보기
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleView(result.id)}
+                            className="inline-flex items-center justify-center whitespace-nowrap bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200"
+                          >
+                            다시보기
+                          </button>
+                        )}
+
+                        {/* 음성형: 다시듣기 (오디오 재생) */}
+                        {isVoice && hasAudio && (
+                          <button
+                            onClick={() => window.open(`/result/voice/replay?id=${result.id}&autoplay=1`, '_blank')}
+                            className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M12 6a7.975 7.975 0 015.657 2.343M12 6v12m0 0l-3-3m3 3l3-3" />
+                            </svg>
+                            다시듣기
+                          </button>
+                        )}
+
                         <button
                           onClick={() => handleDeleteClick(result.id)}
                           className="inline-flex items-center justify-center whitespace-nowrap bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200"
@@ -2558,7 +2608,8 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                       </button>
                     </div>
                   </div>
-                ))
+                  )
+                })
               )}
 
               <div className="pt-4">

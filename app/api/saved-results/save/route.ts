@@ -19,11 +19,18 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { title, html, content, model, processingTime, userName } = body
+    const {
+      title, html, content, model, processingTime, userName,
+      // 음성형 결과 필드
+      result_type, voice_messages, voice_audio_url, voice_duration_seconds, content_id,
+    } = body
 
-    if (!title || !html) {
+    const isVoice = result_type === 'voice'
+
+    // 점사형: title + html 필수 / 음성형: title 필수
+    if (!title || (!isVoice && !html)) {
       return NextResponse.json(
-        { error: '제목과 HTML 내용은 필수입니다.' },
+        { error: isVoice ? '제목은 필수입니다.' : '제목과 HTML 내용은 필수입니다.' },
         { status: 400 }
       )
     }
@@ -32,18 +39,29 @@ export async function POST(request: NextRequest) {
     const savedAtKST = getKSTNow()
 
     // 저장된 결과를 Supabase에 저장 (KST 시간으로 저장)
+    const insertData: Record<string, any> = {
+      title,
+      html: html || (isVoice ? '' : null),
+      content: content || null,
+      model: model || 'gemini-3-flash-preview',
+      processing_time: processingTime || null,
+      user_name: userName || null,
+      saved_at: savedAtKST,
+      created_at: savedAtKST, // KST 기준으로 저장
+    }
+
+    // 음성형 필드 추가
+    if (isVoice) {
+      insertData.result_type = 'voice'
+      insertData.voice_messages = voice_messages || null
+      insertData.voice_audio_url = voice_audio_url || null
+      insertData.voice_duration_seconds = voice_duration_seconds || null
+      insertData.content_id = content_id || null
+    }
+
     const { data, error } = await supabase
       .from('saved_results')
-      .insert({
-        title,
-        html,
-        content: content || null,
-        model: model || 'gemini-3-flash-preview',
-        processing_time: processingTime || null,
-        user_name: userName || null,
-        saved_at: savedAtKST,
-        created_at: savedAtKST // KST 기준으로 저장
-      })
+      .insert(insertData)
       .select()
       .single()
 
@@ -91,7 +109,12 @@ export async function POST(request: NextRequest) {
           content: data.content,
           model: data.model,
           processingTime: data.processing_time,
-          userName: data.user_name
+          userName: data.user_name,
+          resultType: data.result_type || 'fortune',
+          voiceMessages: data.voice_messages || null,
+          voiceAudioUrl: data.voice_audio_url || null,
+          voiceDurationSeconds: data.voice_duration_seconds || null,
+          contentId: data.content_id || null,
         }
       },
       {

@@ -28,6 +28,9 @@ const normalizeConfig = (cfg) => {
     contextWindowCompression: cfg?.contextWindowCompression ?? { slidingWindow: {} },
     // 약 10분마다 서버가 연결을 끊을 수 있음. 재개 토큰을 받아 재연결 시 컨텍스트 유지.
     sessionResumption: cfg?.sessionResumption ?? {},
+    // 음성 전사 활성화 (AI 출력 + 사용자 입력 모두 텍스트로 전사)
+    outputAudioTranscription: cfg?.outputAudioTranscription ?? {},
+    inputAudioTranscription: cfg?.inputAudioTranscription ?? {},
   }
 }
 
@@ -50,6 +53,20 @@ wss.on('connection', (ws) => {
     },
     onmessage: (msg) => {
       try {
+        // 디버그: serverContent의 모든 키 로깅 (transcription 확인용)
+        const sc = msg?.serverContent
+        if (sc) {
+          const keys = Object.keys(sc).filter(k => k !== 'modelTurn')
+          if (keys.length > 0) {
+            console.log('[vertex-live-proxy] serverContent keys:', keys.join(', '))
+          }
+        }
+        // 최상위 키 로깅 (serverContent 밖에 transcription이 있는 경우 확인)
+        const topKeys = Object.keys(msg || {}).filter(k => k !== 'serverContent' && k !== 'sessionResumptionUpdate')
+        if (topKeys.length > 0) {
+          console.log('[vertex-live-proxy] top-level msg keys:', topKeys.join(', '))
+        }
+
         // 세션 재개 토큰 전달 (재연결 시 클라이언트가 resumptionHandle 로 보내면 이어서 상담 가능)
         const resumption = msg?.sessionResumptionUpdate
         if (resumption && (resumption.newHandle || resumption.resumable === false)) {
@@ -69,6 +86,20 @@ wss.on('connection', (ws) => {
         }
         if (texts.length > 0) send({ type: 'text', text: texts.join('\n') })
         if (msg?.serverContent?.interrupted) send({ type: 'interrupted' })
+
+        // AI 출력 음성 전사 (outputAudioTranscription)
+        // serverContent 내부 + 최상위 레벨 양쪽 확인
+        const outputTranscript = sc?.outputTranscription?.text || msg?.outputTranscription?.text
+        if (typeof outputTranscript === 'string' && outputTranscript.trim()) {
+          console.log('[vertex-live-proxy] OUTPUT transcript:', outputTranscript.substring(0, 80))
+          send({ type: 'transcript', role: 'assistant', text: outputTranscript.trim() })
+        }
+        // 사용자 입력 음성 전사 (inputAudioTranscription)
+        const inputTranscript = sc?.inputTranscription?.text || msg?.inputTranscription?.text
+        if (typeof inputTranscript === 'string' && inputTranscript.trim()) {
+          console.log('[vertex-live-proxy] INPUT transcript:', inputTranscript.substring(0, 80))
+          send({ type: 'transcript', role: 'user', text: inputTranscript.trim() })
+        }
       } catch {
         // ignore
       }

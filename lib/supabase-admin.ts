@@ -100,6 +100,8 @@ export interface ContentData {
   voice_start_sound_url?: string
   voice_bubble_sound_url?: string
   voice_bubble_sound_probability_pct?: number
+  voice_conversation_sounds?: Array<{ label: string; url: string }>
+  voice_conversation_sound_probability_pct?: number
   voice_time_options?: Array<{ minutes: number; price: number; label: string }>
   created_at?: string
   updated_at?: string
