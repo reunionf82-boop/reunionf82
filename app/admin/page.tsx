@@ -459,6 +459,10 @@ export default function AdminPage() {
     router.push(`/admin/form?speaker=${speaker}&ttsProvider=${ttsProvider}&typecastVoiceId=${encodeURIComponent(typecastVoiceId)}`)
   }
 
+  const handleAddVoice = () => {
+    router.push('/admin/form/voice')
+  }
+
   const handleFortuneModeChange = async (mode: 'batch' | 'realtime') => {
     try {
       const response = await fetch('/api/admin/settings/save', {
@@ -510,13 +514,20 @@ export default function AdminPage() {
     }
   }
 
+  const isVoiceContent = (content: any) => {
+    // content_type이 명시적으로 voice이거나, voice 전용 필드가 존재하면 음성형으로 판단
+    return content.content_type === 'voice' || !!content.voice_model || !!content.voice_persona_prompt
+  }
+
   const handleContentClick = (content: any) => {
-    router.push(`/admin/form?id=${content.id}`)
+    const basePath = isVoiceContent(content) ? '/admin/form/voice' : '/admin/form'
+    router.push(`${basePath}?id=${content.id}`)
   }
 
   const handleDuplicate = async (e: React.MouseEvent, content: any) => {
     e.stopPropagation() // 클릭 이벤트 전파 방지 (부모 div의 handleContentClick 실행 방지)
-    router.push(`/admin/form?duplicate=${content.id}`)
+    const basePath = isVoiceContent(content) ? '/admin/form/voice' : '/admin/form'
+    router.push(`${basePath}?duplicate=${content.id}`)
   }
 
   // 리뷰 이벤트 관리 모달 열기
@@ -635,7 +646,13 @@ export default function AdminPage() {
               onClick={handleAdd}
               className="bg-pink-500 hover:bg-pink-600 text-white font-semibold px-6 py-3 rounded-lg transition-colors duration-200"
             >
-              추가
+              점사형 추가
+            </button>
+            <button
+              onClick={handleAddVoice}
+              className="bg-violet-500 hover:bg-violet-600 text-white font-semibold px-6 py-3 rounded-lg transition-colors duration-200"
+            >
+              음성형 추가
             </button>
           </div>
           
@@ -1402,58 +1419,131 @@ export default function AdminPage() {
         )}
 
         {/* 컨텐츠 목록 */}
-        <div className="space-y-2">
+        <div className="space-y-6">
           {loading ? (
             <div className="text-center text-gray-400 py-12">로딩 중...</div>
           ) : contents.length === 0 ? (
             <div className="text-center text-gray-400 py-12">컨텐츠가 없습니다.</div>
           ) : (
-            contents.map((content, index) => (
-              <div
-                key={content.id}
-                onClick={() => handleContentClick(content)}
-                className="bg-gray-800 rounded-lg p-4 cursor-pointer hover:bg-gray-700 transition-colors border border-gray-700"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {(content?.is_exposed === true || content?.is_exposed === 'true' || content?.is_exposed === 1) ? (
-                      <span className="shrink-0 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded">
-                        배포됨
-                      </span>
-                    ) : (
-                      <span className="shrink-0 bg-gray-600 text-white text-xs font-bold px-2 py-1 rounded">
-                        미배포
-                      </span>
-                    )}
-                    <span className="text-white truncate">{content.content_name || '이름 없음'}</span>
+            <>
+              {/* 점사형 컨텐츠 */}
+              {contents.filter((c) => !isVoiceContent(c)).length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="bg-pink-500 text-white text-xs font-bold px-2.5 py-1 rounded">점사형</span>
+                    <span className="text-gray-400 text-sm">{contents.filter((c) => !isVoiceContent(c)).length}개</span>
+                    <div className="flex-1 border-t border-pink-500/30" />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={(e) => handleOpenReviewModal(e, content.id)}
-                      className="bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
-                      title="리뷰 관리"
-                    >
-                      리뷰 관리
-                    </button>
-                    <button
-                      onClick={(e) => handleOpenReviewEventModal(e, content)}
-                      className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
-                      title="리뷰 이벤트"
-                    >
-                      리뷰 이벤트
-                    </button>
-                    <button
-                      onClick={(e) => handleDuplicate(e, content)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
-                      title="복제"
-                    >
-                      복제
-                    </button>
-                    <span className="text-gray-400 text-sm">#{index + 1}</span>
+                  <div className="space-y-2">
+                    {contents.filter((c) => !isVoiceContent(c)).map((content, index) => (
+                      <div
+                        key={content.id}
+                        onClick={() => handleContentClick(content)}
+                        className="bg-gray-800 rounded-lg p-4 cursor-pointer hover:bg-gray-700 transition-colors border border-gray-700 border-l-4 border-l-pink-500"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {(content?.is_exposed === true || content?.is_exposed === 'true' || content?.is_exposed === 1) ? (
+                              <span className="shrink-0 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded">
+                                배포됨
+                              </span>
+                            ) : (
+                              <span className="shrink-0 bg-gray-600 text-white text-xs font-bold px-2 py-1 rounded">
+                                미배포
+                              </span>
+                            )}
+                            <span className="text-white truncate">{content.content_name || '이름 없음'}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={(e) => handleOpenReviewModal(e, content.id)}
+                              className="bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
+                              title="리뷰 관리"
+                            >
+                              리뷰 관리
+                            </button>
+                            <button
+                              onClick={(e) => handleOpenReviewEventModal(e, content)}
+                              className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
+                              title="리뷰 이벤트"
+                            >
+                              리뷰 이벤트
+                            </button>
+                            <button
+                              onClick={(e) => handleDuplicate(e, content)}
+                              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
+                              title="복제"
+                            >
+                              복제
+                            </button>
+                            <span className="text-gray-400 text-sm">#{index + 1}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
-            ))
+              )}
+
+              {/* 음성형 컨텐츠 */}
+              {contents.filter((c) => isVoiceContent(c)).length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="bg-violet-500 text-white text-xs font-bold px-2.5 py-1 rounded">음성형</span>
+                    <span className="text-gray-400 text-sm">{contents.filter((c) => isVoiceContent(c)).length}개</span>
+                    <div className="flex-1 border-t border-violet-500/30" />
+                  </div>
+                  <div className="space-y-2">
+                    {contents.filter((c) => isVoiceContent(c)).map((content, index) => (
+                      <div
+                        key={content.id}
+                        onClick={() => handleContentClick(content)}
+                        className="bg-gray-800 rounded-lg p-4 cursor-pointer hover:bg-gray-700 transition-colors border border-gray-700 border-l-4 border-l-violet-500"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {(content?.is_exposed === true || content?.is_exposed === 'true' || content?.is_exposed === 1) ? (
+                              <span className="shrink-0 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded">
+                                배포됨
+                              </span>
+                            ) : (
+                              <span className="shrink-0 bg-gray-600 text-white text-xs font-bold px-2 py-1 rounded">
+                                미배포
+                              </span>
+                            )}
+                            <span className="text-white truncate">{content.content_name || '이름 없음'}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={(e) => handleOpenReviewModal(e, content.id)}
+                              className="bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
+                              title="리뷰 관리"
+                            >
+                              리뷰 관리
+                            </button>
+                            <button
+                              onClick={(e) => handleOpenReviewEventModal(e, content)}
+                              className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
+                              title="리뷰 이벤트"
+                            >
+                              리뷰 이벤트
+                            </button>
+                            <button
+                              onClick={(e) => handleDuplicate(e, content)}
+                              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
+                              title="복제"
+                            >
+                              복제
+                            </button>
+                            <span className="text-gray-400 text-sm">#{index + 1}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

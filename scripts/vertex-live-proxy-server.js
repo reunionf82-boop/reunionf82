@@ -125,6 +125,12 @@ wss.on('connection', (ws) => {
         })
         return
       }
+      // 텍스트 메시지 → Gemini Live sendClientContent (AI가 먼저 말하도록 트리거)
+      if (parsed.type === 'text' && connected && liveSession) {
+        console.log('[vertex-live-proxy] sendClientContent text:', parsed.text?.slice(0, 80))
+        liveSession.sendClientContent({ turns: [{ role: 'user', parts: [{ text: parsed.text }] }], turnComplete: true })
+        return
+      }
       if (parsed.type === 'disconnect') {
         ws.close()
       }

@@ -265,6 +265,8 @@ function FormContent() {
   
   const [content, setContent] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  // 음성형 시간 상품 선택 (voice_time_options 중 선택된 인덱스)
+  const [selectedVoiceTimeIdx, setSelectedVoiceTimeIdx] = useState<number>(0)
   const introductionIframeRef = useRef<HTMLIFrameElement>(null)
   const recommendationIframeRef = useRef<HTMLIFrameElement>(null)
   const menuItemsIframeRef = useRef<HTMLIFrameElement>(null)
@@ -648,8 +650,12 @@ function FormContent() {
   const [cachedThumbnailVideoUrl, setCachedThumbnailVideoUrl] = useState<string | null>(null)
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      // 글로벌 키 + title별 키 모두 확인
+      const storedTitle = sessionStorage.getItem('form_title') || ''
       const storedThumbnailImageUrl = sessionStorage.getItem('form_thumbnail_image_url')
+        || (storedTitle ? sessionStorage.getItem(`form_thumbnail_image_url:${storedTitle}`) : null)
       const storedThumbnailVideoUrl = sessionStorage.getItem('form_thumbnail_video_url')
+        || (storedTitle ? sessionStorage.getItem(`form_thumbnail_video_url:${storedTitle}`) : null)
       if (storedThumbnailImageUrl) {
         setCachedThumbnailImageUrl(storedThumbnailImageUrl)
       }
@@ -662,8 +668,11 @@ function FormContent() {
   // title이 변경될 때 sessionStorage에서 썸네일 다시 확인 (result에서 돌아올 때)
   useEffect(() => {
     if (typeof window !== 'undefined' && title) {
-      const storedThumbnailImageUrl = sessionStorage.getItem('form_thumbnail_image_url')
-      const storedThumbnailVideoUrl = sessionStorage.getItem('form_thumbnail_video_url')
+      // title별 키 우선, 글로벌 키 폴백
+      const storedThumbnailImageUrl = sessionStorage.getItem(`form_thumbnail_image_url:${title}`)
+        || sessionStorage.getItem('form_thumbnail_image_url')
+      const storedThumbnailVideoUrl = sessionStorage.getItem(`form_thumbnail_video_url:${title}`)
+        || sessionStorage.getItem('form_thumbnail_video_url')
       if (storedThumbnailImageUrl && !cachedThumbnailImageUrl) {
         setCachedThumbnailImageUrl(storedThumbnailImageUrl)
       }
@@ -676,8 +685,8 @@ function FormContent() {
   // 궁합형 여부 확인
   const isGonghapType = content?.content_type === 'gonghap'
   
-  const thumbnailImageUrl = cachedThumbnailImageUrl || content?.thumbnail_url || null
-  const thumbnailVideoUrl = cachedThumbnailVideoUrl || content?.thumbnail_video_url || null
+  const thumbnailImageUrl = cachedThumbnailImageUrl || content?.thumbnail_url || content?.book_cover_thumbnail || null
+  const thumbnailVideoUrl = cachedThumbnailVideoUrl || content?.thumbnail_video_url || content?.book_cover_thumbnail_video || null
   const hasVideo = !!thumbnailVideoUrl
 
   // 포털 연동: JWT 토큰에서 사용자 정보 자동 입력
@@ -2316,6 +2325,14 @@ function FormContent() {
         }
       }
       
+      // voice_time_options: JSONB가 문자열로 내려올 수 있으므로 파싱 보장
+      if (foundContent && foundContent.voice_time_options) {
+        try {
+          const raw = foundContent.voice_time_options
+          foundContent.voice_time_options = typeof raw === 'string' ? JSON.parse(raw) : raw
+        } catch { foundContent.voice_time_options = [] }
+      }
+
       setContent(foundContent || null)
 
       // ✅ UX 개선: 폼 본문을 빨리 보여주고(로딩 해제),
@@ -2984,8 +3001,17 @@ function FormContent() {
     setPaymentProcessingMethod(paymentMethod)
 
     try {
+      // 음성형: 항상 첫 번째 시간 상품 사용 (추가 시간은 보이스 화면 내 결제)
+      const isVoiceContent = content?.content_type === 'voice'
+      const voiceTimeOptions = isVoiceContent ? (content?.voice_time_options || []) : []
+      const selectedVoiceOption = isVoiceContent && voiceTimeOptions.length > 0
+        ? voiceTimeOptions[0]
+        : null
+
       // 결제 가능 여부 검증 (유료 서비스 필수)
-      const priceNum = parseInt(String(content?.price || '0'), 10)
+      const priceNum = selectedVoiceOption
+        ? selectedVoiceOption.price
+        : parseInt(String(content?.price || '0'), 10)
       if (!Number.isFinite(priceNum) || priceNum <= 0) {
         setSubmitting(false)
         setPaymentProcessingMethod(null)
@@ -3018,7 +3044,7 @@ function FormContent() {
             contentId: content.id,
             paymentCode: content.payment_code,
             name: content.content_name || '',
-            pay: parseInt(content.price || '0'),
+            pay: priceNum,
             paymentType: paymentMethod,
             userName: name,
             phoneNumber: phoneNumber,
@@ -3029,7 +3055,11 @@ function FormContent() {
             birthYear: year ? parseInt(year, 10) : undefined,
             birthMonth: month ? parseInt(month, 10) : undefined,
             birthDay: day ? parseInt(day, 10) : undefined,
-            birthHour: birthHour || undefined
+            birthHour: birthHour || undefined,
+            ...(selectedVoiceOption ? {
+              voice_minutes: selectedVoiceOption.minutes,
+              voice_time_option: JSON.stringify(selectedVoiceOption),
+            } : {})
           })
         })
         
@@ -3082,6 +3112,11 @@ function FormContent() {
           sessionStorage.setItem('payment_user_name', name)
           sessionStorage.setItem('payment_phone', `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`)
           sessionStorage.setItem('payment_password', password) // 비밀번호도 저장
+          // 음성형: 시간상품 정보 저장
+          if (selectedVoiceOption) {
+            sessionStorage.setItem('payment_voice_minutes', String(selectedVoiceOption.minutes))
+            sessionStorage.setItem('payment_voice_time_option', JSON.stringify(selectedVoiceOption))
+          }
           // 점사 시작에 필요한 사용자 정보 저장
           sessionStorage.setItem('payment_user_gender', gender)
           sessionStorage.setItem('payment_user_calendar_type', calendarType)
@@ -3112,7 +3147,7 @@ function FormContent() {
           contentId: content.id,
           paymentCode: content.payment_code,
           name: content.content_name || '',
-          pay: parseInt(content.price || '0'),
+          pay: priceNum,
           userName: name,
           phoneNumber: `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`,
           oid
@@ -3545,6 +3580,30 @@ function FormContent() {
       const userPartnerDay = userInfo?.partnerDay || partnerDay
       const userPartnerBirthHour = userInfo?.partnerBirthHour || partnerBirthHour
       
+      // 음성형 컨텐츠는 점사 로직이 필요 없으므로 바로 result/voice로 이동
+      if (contentData.content_type === 'voice' || content?.content_type === 'voice') {
+        // 음성형에 필요한 sessionStorage 데이터 저장
+        if (typeof window !== 'undefined') {
+          const voiceContentId = String(contentData.id || content?.id || '')
+          sessionStorage.setItem('result_content_id', voiceContentId)
+          sessionStorage.setItem('payment_content_id', voiceContentId)
+          sessionStorage.setItem('result_content_name', contentData.content_name || content?.content_name || '')
+        }
+        setShowLoadingPopup(false)
+        setSubmitting(false)
+        const resultPath = '/result/voice'
+        if (isPaymentSuccess) {
+          if (typeof window !== 'undefined') {
+            window.location.href = resultPath
+          } else {
+            router.push(resultPath)
+          }
+        } else {
+          router.push(resultPath)
+        }
+        return
+      }
+
       // 상품 메뉴 소제목 파싱
       const menuSubtitles = contentData.menu_subtitle ? contentData.menu_subtitle.split('\n').filter((s: string) => s.trim()) : []
       const interpretationTools = contentData.interpretation_tool ? contentData.interpretation_tool.split('\n').filter((s: string) => s.trim()) : []
@@ -3938,10 +3997,11 @@ function FormContent() {
           ])
           await saveOrTimeout
           // 리절트로 이동 (window.location으로 확실히 이탈, router.push만으로는 안 넘어가는 경우 대비)
+          const resultPath = content?.content_type === 'voice' ? '/result/voice' : '/result'
           if (typeof window !== 'undefined') {
-            window.location.href = '/result'
+            window.location.href = resultPath
           } else {
-            router.push('/result')
+            router.push(resultPath)
           }
           return
         }
@@ -3958,7 +4018,7 @@ function FormContent() {
         }
         
         // 리절트로 이동
-        router.push('/result')
+        router.push(content?.content_type === 'voice' ? '/result/voice' : '/result')
         return
       }
 
@@ -4295,7 +4355,7 @@ function FormContent() {
           if (typeof window !== 'undefined') {
             sessionStorage.setItem('result_data', JSON.stringify(resultData))
           }
-          router.push('/result')
+          router.push(content?.content_type === 'voice' ? '/result/voice' : '/result')
         } catch (error: any) {
           showAlertMessage('점사 처리 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'))
           setSubmitting(false)
@@ -4584,7 +4644,7 @@ function FormContent() {
                 }
                 setShowLoadingPopup(false)
                 setSubmitting(false)
-                router.push('/result')
+                router.push(content?.content_type === 'voice' ? '/result/voice' : '/result')
               } catch (e: any) {
                 showAlertMessage('결과 저장에 실패했습니다. 다시 시도해주세요.')
                 setShowLoadingPopup(false)
@@ -4910,6 +4970,11 @@ function FormContent() {
                   <span>다시보기 시, 입력한 휴대폰/비밀번호가 필요합니다.</span>
                 </p>
               </div>
+
+              {/* 음성형: 첫 번째 시간 상품을 자동 사용 (UI 표시 안 함) */}
+              {false && (
+                <div className="mb-6"></div>
+              )}
 
               {/* 결제 버튼 */}
               <div className="flex gap-3">

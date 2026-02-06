@@ -283,9 +283,10 @@ export default function Home() {
           price: content.price || '',
           isNew: content.is_new || false,
           isFree: !content.price || content.price === '' || content.price === '0',
-          thumbnailImageUrl: content.thumbnail_url || '',
-          thumbnailVideoUrl: content.thumbnail_video_url || '',
+          thumbnailImageUrl: content.thumbnail_url || content.book_cover_thumbnail || '',
+          thumbnailVideoUrl: content.thumbnail_video_url || content.book_cover_thumbnail_video || '',
           isExposed,
+          contentType: content.content_type || 'fortune',
         }
       })
       setServices(convertedServices)

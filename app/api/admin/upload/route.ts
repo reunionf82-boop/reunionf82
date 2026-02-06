@@ -77,34 +77,38 @@ export async function POST(req: NextRequest) {
     
     // 파일 타입 확인 (MIME 타입과 확장자 모두 확인)
     const isImageByType = mimeType.startsWith('image/')
-    const isVideoByType = mimeType === 'video/webm'
+    const isVideoByType = mimeType.startsWith('video/')
     // iPhone/카톡 등에서 자주 오는 확장자까지 허용
     const isImageByExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'jfif', 'bmp', 'heic', 'heif', 'svg'].includes(fileExt)
-    const isVideoByExt = ['webm'].includes(fileExt)
+    const isVideoByExt = ['webm', 'mp4', 'mov'].includes(fileExt)
+    // 오디오 파일 허용 (음성형 시작/방울 소리 등)
+    const isAudioByType = mimeType.startsWith('audio/')
+    const isAudioByExt = ['mp3', 'wav', 'ogg', 'm4a'].includes(fileExt)
     
     const isImage = isImageByType || isImageByExt
     const isVideo = isVideoByType || isVideoByExt
+    const isAudio = isAudioByType || isAudioByExt
     
-    if (!isImage && !isVideo) {
+    if (!isImage && !isVideo && !isAudio) {
       return NextResponse.json(
-        { error: '지원하는 파일 형식: 이미지 (JPEG, PNG, GIF, WebP), 동영상 (WebM)' },
+        { error: '지원하는 파일 형식: 이미지 (JPEG, PNG, GIF, WebP), 동영상 (MP4, WebM, MOV), 오디오 (MP3, WAV)' },
         { status: 400 }
       )
     }
 
-    // 파일 크기 제한 (동영상은 50MB, 이미지는 10MB)
+    // 파일 크기 제한 (동영상은 50MB, 이미지/오디오는 10MB)
     const maxSize = isVideo ? 50 * 1024 * 1024 : 10 * 1024 * 1024
     if (file.size > maxSize) {
       return NextResponse.json(
-        { error: isVideo ? '동영상 파일 크기는 50MB를 초과할 수 없습니다.' : '이미지 파일 크기는 10MB를 초과할 수 없습니다.' },
+        { error: isVideo ? '동영상 파일 크기는 50MB를 초과할 수 없습니다.' : '파일 크기는 10MB를 초과할 수 없습니다.' },
         { status: 400 }
       )
     }
 
-    // 동영상은 확장자 엄격 체크 (WebM만 지원)
+    // 동영상은 확장자 체크 (MP4, WebM, MOV 지원)
     if (isVideo && !isVideoByExt) {
       return NextResponse.json(
-        { error: '동영상 파일의 확장자가 올바르지 않습니다. (WebM만 지원)' },
+        { error: '동영상 파일의 확장자가 올바르지 않습니다. (MP4, WebM, MOV 지원)' },
         { status: 400 }
       )
     }
@@ -114,7 +118,7 @@ export async function POST(req: NextRequest) {
     const mimeExt = mimeExtRaw
       ? (mimeExtRaw.includes('+xml') ? 'svg' : mimeExtRaw).replace('jpeg', 'jpg')
       : ''
-    const finalFileExt = fileExt || (isVideo ? 'webm' : (mimeExt || 'jpg'))
+    const finalFileExt = fileExt || (isVideo ? 'mp4' : isAudio ? 'mp3' : (mimeExt || 'jpg'))
     const baseFileName = `${Date.now()}-${Math.random().toString(36).substring(7)}`
     
     // 동영상인 경우 확장자를 포함한 파일명 사용 (WebM과 MP4를 구분하기 위해)
@@ -137,7 +141,7 @@ export async function POST(req: NextRequest) {
       .upload(filePath, body, {
         cacheControl: '3600',
         upsert: false,
-        contentType: mimeType || (isVideo ? 'video/webm' : `image/${finalFileExt}`)
+        contentType: mimeType || (isVideo ? `video/${finalFileExt}` : isAudio ? `audio/${finalFileExt}` : `image/${finalFileExt}`)
       })
 
     if (uploadError) {
@@ -201,7 +205,7 @@ export async function POST(req: NextRequest) {
         bucket: 'thumbnails',
         filePath,
         folder: folder || null,
-        contentType: mimeType || (isVideo ? 'video/webm' : `image/${finalFileExt}`),
+        contentType: mimeType || (isVideo ? `video/${finalFileExt}` : isAudio ? `audio/${finalFileExt}` : `image/${finalFileExt}`),
         verified: true,
       },
     })

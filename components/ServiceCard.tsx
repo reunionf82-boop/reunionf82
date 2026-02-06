@@ -16,6 +16,7 @@ interface Service {
   thumbnailImageUrl?: string
   thumbnailVideoUrl?: string
   isExposed?: boolean
+  contentType?: string
 }
 
 interface ServiceCardProps {
@@ -57,6 +58,8 @@ export default function ServiceCard({ service, showExposedBadge }: ServiceCardPr
         if (typeof service.id === 'number') {
           sessionStorage.setItem('form_content_id', String(service.id))
         }
+        // content_type 저장 (voice 분기용)
+        sessionStorage.setItem('form_content_type', service.contentType || 'fortune')
         // 재회보기 클릭 시 폼 자동복구를 1회 스킵
         sessionStorage.setItem('skip_resume_once', '1')
         // ✅ 썸네일 캐시는 "컨텐츠별(title별)"로 분리해서 저장 (다른 폼에서 섞이는 버그 방지)
@@ -80,6 +83,8 @@ export default function ServiceCard({ service, showExposedBadge }: ServiceCardPr
         if (typeof service.id === 'number') {
           sessionStorage.setItem('form_content_id', String(service.id))
         }
+        // content_type 저장 (voice 분기용)
+        sessionStorage.setItem('form_content_type', service.contentType || 'fortune')
         // 재회보기 클릭 시 폼 자동복구를 1회 스킵
         sessionStorage.setItem('skip_resume_once', '1')
         // ✅ 썸네일 캐시는 "컨텐츠별(title별)"로 분리해서 저장 (다른 폼에서 섞이는 버그 방지)

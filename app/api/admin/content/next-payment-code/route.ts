@@ -55,6 +55,12 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // type 쿼리 파라미터: voice이면 8000~, 그 외(점사형)이면 1001~
+    const contentType = request.nextUrl.searchParams.get('type')
+    const isVoice = contentType === 'voice'
+    const rangeStart = isVoice ? 8001 : 1001
+    const rangeEnd = 9999
+
     // 존재하는 payment_code를 Set으로 변환 (빠른 조회를 위해)
     const existingCodeSet = new Set<string>()
     if (existingCodes && existingCodes.length > 0) {
@@ -70,9 +76,9 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // 1001부터 순차적으로 증가하면서 DB에 없는 첫 번째 값 찾기
-    let nextCode = 1001
-    while (nextCode <= 9999) {
+    // rangeStart부터 순차적으로 증가하면서 DB에 없는 첫 번째 값 찾기
+    let nextCode = rangeStart
+    while (nextCode <= rangeEnd) {
       const codeStr = String(nextCode).padStart(4, '0')
       if (!existingCodeSet.has(codeStr)) {
         // 이 코드가 DB에 없으므로 사용 가능
@@ -81,15 +87,15 @@ export async function GET(request: NextRequest) {
       nextCode++
     }
 
-    // 9999를 넘으면 에러 발생 (VARCHAR(4) 제한)
-    if (nextCode > 9999) {
+    // 범위를 넘으면 에러 발생
+    if (nextCode > rangeEnd) {
       return NextResponse.json(
-        { error: '결제 코드가 최대값(9999)을 초과했습니다. 관리자에게 문의하세요.' },
+        { error: '결제 코드가 최대값(' + rangeEnd + ')을 초과했습니다. 관리자에게 문의하세요.' },
         { status: 500 }
       )
     }
 
-    // 4자리로 포맷팅 (예: 1001, 1002, ...)
+    // 4자리로 포맷팅 (예: 1001, 1002, ... 또는 8001, 8002, ...)
     const nextPaymentCode = String(nextCode).padStart(4, '0')
 
     return NextResponse.json({

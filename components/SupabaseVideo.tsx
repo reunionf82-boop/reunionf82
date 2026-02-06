@@ -22,6 +22,23 @@ export default function SupabaseVideo({
   const containerRef = useRef<HTMLDivElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
 
+  // 전체 URL인지 확인
+  const isFullUrl = (input: string): boolean => {
+    if (!input) return false
+    const s = String(input).trim()
+    return s.startsWith('http://') || s.startsWith('https://')
+  }
+
+  // 전체 URL에서 확장자 추출
+  const getExtFromUrl = (input: string): string => {
+    if (!input) return ''
+    const s = String(input).trim().split('?')[0].split('#')[0]
+    const last = s.split('/').pop() || ''
+    const dotIdx = last.lastIndexOf('.')
+    if (dotIdx < 0) return ''
+    return last.substring(dotIdx + 1).toLowerCase()
+  }
+
   const normalizeVideoBaseName = (input: string): string => {
     if (!input) return ''
     let s = String(input).trim()
@@ -45,12 +62,14 @@ export default function SupabaseVideo({
       s = s.split('/').pop() || s
     }
     // remove extension
-    s = s.replace(/\.webm$/i, '')
+    s = s.replace(/\.(webm|mp4|mov)$/i, '')
     return s
   }
 
-  // videoBaseName은 데이터가 섞여 들어올 수 있어(경로/확장자 포함 등) 정규화해서 사용
-  const fileName = normalizeVideoBaseName(videoBaseName)
+  // videoBaseName이 전체 URL이면 그대로 사용, 아니면 기존 로직 유지
+  const fullVideoUrl = isFullUrl(videoBaseName) ? String(videoBaseName).trim() : ''
+  const fullVideoExt = fullVideoUrl ? getExtFromUrl(fullVideoUrl) : ''
+  const fileName = fullVideoUrl ? '' : normalizeVideoBaseName(videoBaseName)
   
   // Supabase Storage URL 기본 경로 가져오기
   const getBucketUrl = (): string => {
@@ -120,8 +139,8 @@ export default function SupabaseVideo({
     video.addEventListener('loadeddata', handleLoadedData)
     video.addEventListener('loadstart', handleLoadStart)
 
-    // 동영상 로딩 시작 (fileName이 비었으면 로드하지 않음)
-    if (fileName) {
+    // 동영상 로딩 시작 (fileName 또는 fullVideoUrl이 있어야 로드)
+    if (fileName || fullVideoUrl) {
       video.load()
 
       // 일부 브라우저에서 자동재생/로딩 타이밍이 꼬이면 canplay 이벤트가 늦게 오거나 안 오는 경우가 있어
@@ -153,7 +172,7 @@ export default function SupabaseVideo({
       video.removeEventListener('loadeddata', handleLoadedData)
       video.removeEventListener('loadstart', handleLoadStart)
     }
-  }, [fileName, BUCKET_URL, thumbnailImageUrl])
+  }, [fileName, fullVideoUrl, BUCKET_URL, thumbnailImageUrl])
 
   // className에 h-auto가 포함되어 있으면 반응형 모드 (이미지 비율 유지)
   const isResponsive = className.includes('h-auto')
@@ -193,7 +212,11 @@ export default function SupabaseVideo({
         playsInline
         preload="auto"
       >
-        {fileName ? <source src={`${BUCKET_URL}/${fileName}.webm`} type="video/webm" /> : null}
+        {fullVideoUrl ? (
+          <source src={fullVideoUrl} type={fullVideoExt === 'mp4' ? 'video/mp4' : fullVideoExt === 'mov' ? 'video/quicktime' : 'video/webm'} />
+        ) : fileName ? (
+          <source src={`${BUCKET_URL}/${fileName}.webm`} type="video/webm" />
+        ) : null}
         죄송합니다. 동영상을 지원하지 않는 브라우저입니다.
       </video>
     </div>

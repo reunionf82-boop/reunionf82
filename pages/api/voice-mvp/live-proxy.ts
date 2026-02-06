@@ -21,7 +21,12 @@ type ClientAudioMessage = {
   mimeType?: string
 }
 
-type ClientMessage = ClientInitMessage | ClientAudioMessage | { type: 'disconnect' } | { type: 'ping' }
+type ClientTextMessage = {
+  type: 'text'
+  text: string
+}
+
+type ClientMessage = ClientInitMessage | ClientAudioMessage | ClientTextMessage | { type: 'disconnect' } | { type: 'ping' }
 
 type AnyServerMessage = {
   type: 'audio' | 'text' | 'interrupted' | 'error' | 'ready'
@@ -221,6 +226,12 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
               liveSession.sendRealtimeInput({
                 audio: { data: parsed.data, mimeType },
               })
+              return
+            }
+            // 텍스트 메시지 → Gemini Live sendClientContent (AI가 먼저 말하도록 트리거)
+            if (parsed.type === 'text' && connected && liveSession) {
+              console.log('[live-proxy] sendClientContent text:', String(parsed.text || '').slice(0, 80))
+              liveSession.sendClientContent({ turns: [{ role: 'user', parts: [{ text: parsed.text }] }], turnComplete: true })
               return
             }
             if (parsed.type === 'disconnect') {

@@ -25,7 +25,7 @@ export interface ContentData {
   id?: number
   role_prompt?: string
   restrictions?: string
-  content_type?: 'saju' | 'gonghap'
+  content_type?: 'saju' | 'gonghap' | 'fortune' | 'voice'
   content_name?: string
   thumbnail_url?: string
   thumbnail_video_url?: string // 컨텐츠명 동영상 썸네일 (WebM 파일명, 확장자 제외)
@@ -89,6 +89,18 @@ export interface ContentData {
   book_cover_thumbnail_video?: string // 북커버 동영상 썸네일 (WebM 파일명, 확장자 제외)
   ending_book_cover_thumbnail?: string // 엔딩북커버 이미지 썸네일 (마지막 대제목 밑, 9:16 비율)
   ending_book_cover_thumbnail_video?: string // 엔딩북커버 동영상 썸네일 (WebM 파일명, 확장자 제외)
+  // 음성형 전용 필드
+  voice_model?: string
+  voice_advisor_video_url?: string
+  voice_gender?: string
+  voice_style?: string
+  voice_tendency?: string
+  voice_name?: string
+  voice_persona_prompt?: string
+  voice_start_sound_url?: string
+  voice_bubble_sound_url?: string
+  voice_bubble_sound_probability_pct?: number
+  voice_time_options?: Array<{ minutes: number; price: number; label: string }>
   created_at?: string
   updated_at?: string
 }

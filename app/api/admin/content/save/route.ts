@@ -233,8 +233,10 @@ export async function POST(req: NextRequest) {
           })
         }
         
-        // 1001부터 순차적으로 증가하면서 DB에 없는 첫 번째 값 찾기
-        let nextCode = 1001
+        // content_type이 voice이면 8001~, 아니면 1001~ 시작
+        const isVoice = dataWithoutId.content_type === 'voice'
+        const rangeStart = isVoice ? 8001 : 1001
+        let nextCode = rangeStart
         while (nextCode <= 9999) {
           const codeStr = String(nextCode).padStart(4, '0')
           if (!existingCodeSet.has(codeStr)) {
@@ -252,7 +254,7 @@ export async function POST(req: NextRequest) {
           )
         }
         
-        // 4자리로 포맷팅 (예: 1001, 1002, ...)
+        // 4자리로 포맷팅 (예: 1001, 1002, ... 또는 8001, 8002, ...)
         dataWithoutId.payment_code = String(nextCode).padStart(4, '0')
       } else {
         // 클라이언트에서 payment_code를 전송한 경우, 4글자 제한 검증
