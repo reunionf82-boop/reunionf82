@@ -6405,11 +6405,11 @@ function FormContent() {
           </div>
         </div>
 
-        {/* 점사 완료 인원 표시 */}
+        {/* 점사 완료 인원 표시: 40 + 실제 점사 완료 건수 */}
         {content?.id && (
           <div className="mb-4 text-center">
             <p className="text-sm text-gray-600">
-              <span className="font-semibold text-pink-600">{completedCount.toLocaleString()}</span>명이 이용하셨습니다.
+              <span className="font-semibold text-pink-600">{(40 + completedCount).toLocaleString()}</span>명이 이용하셨습니다.
             </p>
           </div>
         )}
