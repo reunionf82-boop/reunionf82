@@ -84,7 +84,7 @@ function getAudioSrc(url: string): string {
     const host = u.hostname.toLowerCase()
     const allowed = new URL(base).hostname.toLowerCase()
     if (host === allowed || host.endsWith('.supabase.co') || host.endsWith('.supabase.in')) {
-      return `/api/proxy/audio?url=${encodeURIComponent(url)}`
+      return `/api/proxy/audio?url=${encodeURIComponent(url)}&_t=${Date.now()}`
     }
   } catch {
     // ignore

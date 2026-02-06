@@ -47,7 +47,8 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=3600',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        'Pragma': 'no-cache',
         'Access-Control-Allow-Origin': '*',
       },
     })
