@@ -164,7 +164,8 @@ export class AudioStreamer {
       this.checkInterval = null
     }
 
-    this.gainNode.gain.linearRampToValueAtTime(0, this.context.currentTime + 0.1)
+    // 즉시 음소거 (나가기 후 다른 화면에서 소리 남는 현상 방지)
+    this.gainNode.gain.setValueAtTime(0, this.context.currentTime)
     setTimeout(() => {
       this.gainNode.disconnect()
       this.gainNode = this.context.createGain()

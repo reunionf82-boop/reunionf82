@@ -353,6 +353,10 @@ export default function VoiceResultContent() {
           </div>
         )}
 
+        {/* 모바일 볼륨 안내 */}
+        <p className="text-gray-500 text-xs text-center md:hidden">
+          모바일에서 볼륨 키는 통화 음량을 조절합니다. 미디어 음량으로 들으시려면 기기에서 볼륨 키를 누른 뒤 표시되는 음량 종류(미디어/통화)를 바꿔 보세요.
+        </p>
         {/* 오디오 이퀄라이저 */}
         <div className="overflow-hidden">
           <AudioEqualizer

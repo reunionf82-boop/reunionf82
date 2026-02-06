@@ -610,6 +610,17 @@ ${manseText || '(만세력 없음)'}
     setConnected(false)
     isAiSpeakingRef.current = false
     if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null }
+    // 나가기 직후 폼 화면에서 소리 안 나도록 모든 오디오 즉시 정지
+    if (startSoundRef.current) {
+      startSoundRef.current.pause()
+      startSoundRef.current.currentTime = 0
+    }
+    conversationSoundsRef.current.forEach((a) => {
+      if (a) {
+        a.pause()
+        try { (a as HTMLAudioElement).src = '' } catch { /* ignore */ }
+      }
+    })
     // MediaRecorder 중지 (양방향 녹음)
     try {
       if (mixedMediaRecorderRef.current && mixedMediaRecorderRef.current.state !== 'inactive') {
@@ -790,9 +801,8 @@ ${manseText || '(만세력 없음)'}
                 ? `[시스템] 내담자 "${userName2}"님이 접속했습니다. 먼저 따뜻하게 인사한 후 만세력을 기반으로 약 20초가량 사주 재물운 운세 재회운을 얘기해 주세요.`
                 : `[시스템] 내담자가 접속했습니다. 먼저 따뜻하게 인사한 후 만세력을 기반으로 약 20초가량 사주 재물운 운세 재회운을 얘기해 주세요.`
             }
-            console.log('[VoiceResult] sending greet trigger (resumed=%s):', isResumedSession, greetTrigger)
-            // 실서버 지연 대비: 트리거를 800ms 후 전송 (proactiveAudio가 먼저 처리되도록)
-            setTimeout(() => {
+            // AI가 바로 말하게 트리거를 최대한 빨리 전송 (시작 소리를 AI 말로 착각하는 것 방지)
+            const sendGreet = () => {
               try {
                 if (ws.readyState === WebSocket.OPEN) {
                   ws.send(JSON.stringify({ type: 'text', text: greetTrigger }))
@@ -800,13 +810,15 @@ ${manseText || '(만세력 없음)'}
               } catch (e: any) {
                 console.warn('[VoiceResult] greet trigger failed:', e?.message)
               }
-            }, 800)
-            // 마이크는 AI가 먼저 말할 시간(1.8초) 후에 시작 — 오디오가 트리거보다 먼저 가는 것 방지
+            }
+            sendGreet()
+            setTimeout(sendGreet, 100)
+            // 마이크는 AI가 먼저 말할 시간(1.5초) 후에 시작
             setTimeout(() => {
               if (recorderRef.current && wsRef.current?.readyState === WebSocket.OPEN && !muted) {
                 recorderRef.current.start().catch(() => {})
               }
-            }, 1800)
+            }, 1500)
             return
           }
           if (msg.type === 'audio' && msg.data) {
@@ -1371,6 +1383,7 @@ ${manseText || '(만세력 없음)'}
 
   const handleLeaveWithoutSave = useCallback(() => {
     setShowLeaveConfirmModal(false)
+    disconnectInternal(true) // 폼으로 나가기 전 오디오·연결 즉시 정리 (저장 없음)
     router.push('/form')
   }, [router])
 
