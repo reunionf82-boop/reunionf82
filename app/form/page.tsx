@@ -3113,6 +3113,13 @@ function FormContent() {
           sessionStorage.setItem('payment_user_name', name)
           sessionStorage.setItem('payment_phone', `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`)
           sessionStorage.setItem('payment_password', password) // 비밀번호도 저장
+          // 음성형: oid와 content_id를 localStorage에도 저장 (모바일에서 sessionStorage 유실 대비)
+          if (content?.content_type === 'voice') {
+            try {
+              localStorage.setItem('voice_payment_oid', oid)
+              localStorage.setItem('voice_content_id', String(content.id))
+            } catch { /* ignore */ }
+          }
           // 음성형: 시간상품 정보 저장
           if (selectedVoiceOption) {
             sessionStorage.setItem('payment_voice_minutes', String(selectedVoiceOption.minutes))
@@ -3490,6 +3497,13 @@ function FormContent() {
         sessionStorage.setItem('payment_user_month', month || '')
         sessionStorage.setItem('payment_user_day', day || '')
         sessionStorage.setItem('payment_user_birth_hour', birthHour || '')
+        // 음성형: oid와 content_id를 localStorage에도 저장 (모바일 만세력 fallback)
+        if (content?.content_type === 'voice') {
+          try {
+            localStorage.setItem('voice_payment_oid', oid)
+            localStorage.setItem('voice_content_id', String(content.id))
+          } catch { /* ignore */ }
+        }
         if (partnerName) {
           sessionStorage.setItem('payment_partner_name', partnerName)
           sessionStorage.setItem('payment_partner_gender', partnerGender || '')
@@ -5036,6 +5050,21 @@ function FormContent() {
                         return
                       }
                       
+                      // 음성형: sessionStorage에 사용자 정보 저장 (모바일 만세력 표시용)
+                      if (typeof window !== 'undefined') {
+                        sessionStorage.setItem('payment_content_id', String(content.id))
+                        sessionStorage.setItem('result_content_id', String(content.id))
+                        sessionStorage.setItem('payment_user_name', name || '')
+                        sessionStorage.setItem('payment_user_gender', gender || '')
+                        sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
+                        sessionStorage.setItem('payment_user_year', year || '')
+                        sessionStorage.setItem('payment_user_month', month || '')
+                        sessionStorage.setItem('payment_user_day', day || '')
+                        sessionStorage.setItem('payment_user_birth_hour', birthHour || '')
+                        if (content?.content_type === 'voice') {
+                          try { localStorage.setItem('voice_content_id', String(content.id)) } catch { /* ignore */ }
+                        }
+                      }
                       // 결제 완료와 동일한 방식으로 startFortuneTellingWithContent 호출
                       const startTime = Date.now()
                       try {

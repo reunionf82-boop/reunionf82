@@ -119,7 +119,11 @@ export function useVoiceResult() {
     if (typeof window === 'undefined') return
     ;(async () => {
       try {
-        const cid = sessionStorage.getItem('result_content_id') || sessionStorage.getItem('payment_content_id')
+        const cid =
+          sessionStorage.getItem('result_content_id') ||
+          sessionStorage.getItem('payment_content_id') ||
+          localStorage.getItem('voice_content_id') ||
+          null
         const storedVoiceMin = sessionStorage.getItem('payment_voice_minutes')
         if (!cid) {
           setError('결제 정보를 찾을 수 없습니다.')
@@ -216,7 +220,14 @@ export function useVoiceResult() {
         let userName = sessionStorage.getItem('payment_user_name') || ''
 
         if (!year || !month || !day) {
-          const oid = sessionStorage.getItem('payment_oid') || (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oid') : null)
+          // oid를 여러 소스에서 탐색 (모바일에서 sessionStorage가 유실될 수 있으므로)
+          const oid =
+            sessionStorage.getItem('payment_oid') ||
+            (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oid') : null) ||
+            localStorage.getItem('payment_success_oid') ||
+            localStorage.getItem('voice_payment_oid') ||
+            null
+          console.log('[VoiceResult] manse fallback oid:', oid, '(year/month/day missing)')
           if (oid) {
             try {
               const manseRes = await fetch(`/api/payment/manse-data?oid=${encodeURIComponent(oid)}`, { cache: 'no-store' })
