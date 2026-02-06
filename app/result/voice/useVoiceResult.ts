@@ -84,7 +84,10 @@ function getAudioSrc(url: string): string {
     const host = u.hostname.toLowerCase()
     const allowed = new URL(base).hostname.toLowerCase()
     if (host === allowed || host.endsWith('.supabase.co') || host.endsWith('.supabase.in')) {
-      return `/api/proxy/audio?url=${encodeURIComponent(url)}&_t=${Date.now()}`
+      // Supabase CDN 캐시 무효화: 원본 URL에 v= 쿼리 추가 → 변경된 파일이 바로 반영되도록
+      const sep = u.search ? '&' : '?'
+      const bustedUrl = `${url}${sep}v=${Date.now()}`
+      return `/api/proxy/audio?url=${encodeURIComponent(bustedUrl)}`
     }
   } catch {
     // ignore
