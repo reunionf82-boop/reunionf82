@@ -22,6 +22,8 @@ const normalizeConfig = (cfg) => {
   return {
     ...cfg,
     responseModalities,
+    // AI가 먼저 말하도록 (실서버 포함)
+    proactivity: cfg?.proactivity ?? { proactiveAudio: true },
     // 세션 수명 연장: 압축 없으면 오디오 전용도 약 10~15분 제한. 슬라이딩 윈도우로 연장.
     contextWindowCompression: cfg?.contextWindowCompression ?? { slidingWindow: {} },
     // 약 10분마다 서버가 연결을 끊을 수 있음. 재개 토큰을 받아 재연결 시 컨텍스트 유지.

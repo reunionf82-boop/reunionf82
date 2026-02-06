@@ -206,14 +206,39 @@ export function useVoiceResult() {
         }
         bubbleProbRef.current = (c?.voice_bubble_sound_probability_pct || 0) / 100
 
-        // 만세력 계산
-        const gender = sessionStorage.getItem('payment_user_gender') || 'male'
-        const year = parseInt(sessionStorage.getItem('payment_user_year') || '0', 10)
-        const month = parseInt(sessionStorage.getItem('payment_user_month') || '0', 10)
-        const day = parseInt(sessionStorage.getItem('payment_user_day') || '0', 10)
-        const calendarType = (sessionStorage.getItem('payment_user_calendar_type') || 'solar') as CalendarType
-        const birthHour = sessionStorage.getItem('payment_user_birth_hour') || null
-        const userName = sessionStorage.getItem('payment_user_name') || ''
+        // 만세력 계산: sessionStorage → 없으면 oid로 API 조회 (모바일 팝업 등 fallback)
+        let gender = sessionStorage.getItem('payment_user_gender') || 'male'
+        let year = parseInt(sessionStorage.getItem('payment_user_year') || '0', 10)
+        let month = parseInt(sessionStorage.getItem('payment_user_month') || '0', 10)
+        let day = parseInt(sessionStorage.getItem('payment_user_day') || '0', 10)
+        let calendarType = (sessionStorage.getItem('payment_user_calendar_type') || 'solar') as CalendarType
+        let birthHour = sessionStorage.getItem('payment_user_birth_hour') || null
+        let userName = sessionStorage.getItem('payment_user_name') || ''
+
+        if (!year || !month || !day) {
+          const oid = sessionStorage.getItem('payment_oid') || (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oid') : null)
+          if (oid) {
+            try {
+              const manseRes = await fetch(`/api/payment/manse-data?oid=${encodeURIComponent(oid)}`, { cache: 'no-store' })
+              if (manseRes.ok) {
+                const manseJson = await manseRes.json()
+                const d = manseJson?.data
+                if (d?.birthYear != null && d?.birthMonth != null && d?.birthDay != null) {
+                  year = Number(d.birthYear)
+                  month = Number(d.birthMonth)
+                  day = Number(d.birthDay)
+                  birthHour = d.birthHour ?? null
+                  gender = d.gender === 'female' ? 'female' : 'male'
+                  calendarType = (d.calendarType || 'solar') as CalendarType
+                  userName = d.userName || ''
+                  console.log('[VoiceResult] manse data from API (oid fallback)')
+                }
+              }
+            } catch (err) {
+              console.warn('[VoiceResult] manse-data fetch failed:', err)
+            }
+          }
+        }
 
         if (year && month && day) {
           const input: BirthInput = { name: userName, gender: gender as 'male' | 'female', year, month, day, calendarType, birthHour }
@@ -553,6 +578,7 @@ ${manseText || '(만세력 없음)'}
                 : `[시스템] 내담자가 접속했습니다. 먼저 따뜻하게 인사한 후 만세력을 기반으로 약 20초가량 사주 재물운 운세 재회운을 얘기해 주세요.`
             }
             console.log('[VoiceResult] sending greet trigger (resumed=%s):', isResumedSession, greetTrigger)
+            // 실서버 지연 대비: 트리거를 800ms 후 전송 (proactiveAudio가 먼저 처리되도록)
             setTimeout(() => {
               try {
                 if (ws.readyState === WebSocket.OPEN) {
@@ -561,7 +587,13 @@ ${manseText || '(만세력 없음)'}
               } catch (e: any) {
                 console.warn('[VoiceResult] greet trigger failed:', e?.message)
               }
-            }, 300) // ready 후 300ms 대기 후 전송 (세션 안정화)
+            }, 800)
+            // 마이크는 AI가 먼저 말할 시간(1.8초) 후에 시작 — 오디오가 트리거보다 먼저 가는 것 방지
+            setTimeout(() => {
+              if (recorderRef.current && wsRef.current?.readyState === WebSocket.OPEN && !muted) {
+                recorderRef.current.start().catch(() => {})
+              }
+            }, 1800)
             return
           }
           if (msg.type === 'audio' && msg.data) {
@@ -627,15 +659,14 @@ ${manseText || '(만세력 없음)'}
         }
       }
 
-      // mic
+      // mic — 핸들러만 등록, start()는 'ready' 수신 후 1.8초 뒤에 호출 (AI가 먼저 말하도록)
       if (!recorderRef.current) recorderRef.current = new AudioRecorder(16000)
       const recorder = recorderRef.current
       const onData = (base64: string) => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
         wsRef.current.send(JSON.stringify({ type: 'audio', data: base64, mimeType: 'audio/pcm;rate=16000' }))
       }
-      recorder.off('data', onData as any).off('volume', setInVolume as any)
-      if (!muted) recorder.on('data', onData as any).on('volume', setInVolume as any).start()
+      recorder.off('data', onData as any).off('volume', setInVolume as any).on('data', onData as any).on('volume', setInVolume as any)
 
       setMessages([])
     } catch (e: any) {

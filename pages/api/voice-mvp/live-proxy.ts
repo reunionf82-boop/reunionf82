@@ -61,6 +61,8 @@ const normalizeConfig = (cfg: LiveConnectConfig): LiveConnectConfig => {
   return {
     ...cfg,
     responseModalities,
+    // AI가 먼저 말하도록 (실서버 포함)
+    proactivity: (cfg as any)?.proactivity ?? { proactiveAudio: true },
   }
 }
 

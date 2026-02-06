@@ -2677,7 +2677,8 @@ function FormContent() {
                 partnerDay: sessionStorage.getItem('payment_partner_day') || '',
                 partnerBirthHour: sessionStorage.getItem('payment_partner_birth_hour') || ''
               },
-              true // 결제 성공으로 인한 이동 플래그
+              true, // 결제 성공으로 인한 이동 플래그
+              oid // 모바일 만세력 fallback용
             )
 
           } catch (error) {
@@ -3561,7 +3562,8 @@ function FormContent() {
       partnerDay?: string
       partnerBirthHour?: string
     },
-    isPaymentSuccess?: boolean // 결제 성공으로 인한 이동 플래그
+    isPaymentSuccess?: boolean, // 결제 성공으로 인한 이동 플래그
+    paymentOid?: string // 결제 oid (모바일 등에서 만세력 fallback용으로 result URL에 전달)
   ) => {
     try {
       // 사용자 정보: 파라미터가 있으면 사용, 없으면 state 사용
@@ -3591,7 +3593,7 @@ function FormContent() {
         }
         setShowLoadingPopup(false)
         setSubmitting(false)
-        const resultPath = '/result/voice'
+        const resultPath = paymentOid ? `/result/voice?oid=${encodeURIComponent(paymentOid)}` : '/result/voice'
         if (isPaymentSuccess) {
           if (typeof window !== 'undefined') {
             window.location.href = resultPath

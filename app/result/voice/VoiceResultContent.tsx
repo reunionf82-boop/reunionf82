@@ -4,9 +4,9 @@ import { useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useVoiceResult } from './useVoiceResult'
 
-/* 만세력 스타일 (voice-mvp에서 가져옴) */
+/* 만세력 스타일 (voice-mvp에서 가져옴). 모바일: 가로 스크롤 없이 폰트/패딩 축소로 맞춤 */
 const MANSE_STYLES = `
-.voice-result-manse .manse-ryeok-container { overflow-x: auto !important; }
+.voice-result-manse .manse-ryeok-container { overflow-x: hidden !important; max-width: 100% !important; }
 .voice-result-manse .manse-header-line {
   display: flex !important; flex-direction: column !important; gap: 6px !important;
   align-items: center !important; justify-content: center !important; text-align: center !important;
@@ -34,7 +34,7 @@ const MANSE_STYLES = `
   padding: 8px !important;
   background: linear-gradient(135deg, rgba(212, 168, 83, 0.05) 0%, rgba(139, 90, 43, 0.03) 100%) !important;
   border-radius: 20px !important; width: 100% !important; max-width: 100% !important;
-  overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; box-sizing: border-box !important;
+  overflow-x: hidden !important; box-sizing: border-box !important;
 }
 .voice-result-manse .manse-ryeok-table,
 .voice-result-manse .manse-ryeok-container .manse-ryeok-table,
@@ -45,6 +45,7 @@ const MANSE_STYLES = `
   box-shadow: 0 4px 20px rgba(139, 90, 43, 0.12), 0 2px 8px rgba(139, 90, 43, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
   border: 2px solid transparent !important; background-clip: padding-box !important;
   position: relative !important; margin: 1.5rem 0 !important;
+  table-layout: fixed !important;
 }
 .voice-result-manse .manse-ryeok-table th,
 .voice-result-manse .manse-ryeok-container .manse-ryeok-table th {
@@ -69,6 +70,23 @@ const MANSE_STYLES = `
 .voice-result-manse .manse-element-metal { color: #6b7280 !important; }
 .voice-result-manse .manse-element-water { color: #1f2937 !important; }
 .voice-result-manse .manse-ganzi-char { font-size: 1.2em !important; font-weight: 700 !important; }
+@media (max-width: 639px) {
+  .voice-result-manse .manse-ryeok-container { overflow-x: hidden !important; }
+  .voice-result-manse .manse-header-line { padding: 8px 10px !important; }
+  .voice-result-manse .manse-header-name { font-size: 1.1rem !important; }
+  .voice-result-manse .manse-header-badge { padding: 4px 8px !important; font-size: 0.75rem !important; }
+  .voice-result-manse .manse-ryeok-table th,
+  .voice-result-manse .manse-ryeok-container .manse-ryeok-table th {
+    padding: 6px 4px !important; font-size: 0.6rem !important;
+  }
+  .voice-result-manse .manse-ryeok-table td,
+  .voice-result-manse .manse-ryeok-container .manse-ryeok-table td {
+    padding: 6px 4px !important; font-size: 0.65rem !important;
+  }
+  .voice-result-manse .manse-ganzi-char { font-size: 0.95em !important; }
+  .voice-result-manse .manse-two-line-kor,
+  .voice-result-manse .manse-two-line-hanja { font-size: 0.85em !important; }
+}
 `
 
 /* ── 캔버스 기반 오디오 이퀄라이저 ─────────────────── */
@@ -321,30 +339,32 @@ export default function VoiceResultContent() {
           />
         </div>
 
-        {/* 만세력 (접기/펼치기) */}
-        {h.manseBlockHtml ? (
-          <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden voice-result-manse">
-            <style dangerouslySetInnerHTML={{ __html: MANSE_STYLES }} />
-            <button
-              type="button"
-              onClick={() => h.setShowManse((v: boolean) => !v)}
-              className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100 transition"
+        {/* 만세력 (접기/펼치기) — 모바일에서도 표시되도록 섹션 항상 렌더, 스크롤 영역 min-w-0 */}
+        <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden voice-result-manse min-w-0">
+          <style dangerouslySetInnerHTML={{ __html: MANSE_STYLES }} />
+          <button
+            type="button"
+            onClick={() => h.setShowManse((v: boolean) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100 transition"
+          >
+            <span className="font-bold text-gray-700 text-sm">사주 만세력</span>
+            <svg
+              className={`w-5 h-5 text-gray-400 transition-transform duration-200 shrink-0 ${h.showManse ? 'rotate-180' : ''}`}
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
             >
-              <span className="font-bold text-gray-700 text-sm">사주 만세력</span>
-              <svg
-                className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${h.showManse ? 'rotate-180' : ''}`}
-                fill="none" stroke="currentColor" viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {h.showManse ? (
-              <div className="px-4 pb-4">
-                <div className="w-full overflow-x-auto" dangerouslySetInnerHTML={{ __html: h.manseBlockHtml }} />
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {h.showManse ? (
+            <div className="px-4 pb-4 min-w-0 overflow-hidden">
+              {h.manseBlockHtml ? (
+                <div className="w-full max-w-full overflow-hidden" dangerouslySetInnerHTML={{ __html: h.manseBlockHtml }} />
+              ) : (
+                <p className="text-gray-500 text-sm py-2">생년월일 정보가 없어 만세력을 표시할 수 없습니다.</p>
+              )}
+            </div>
+          ) : null}
+        </div>
 
         {/* 하단 컨트롤 */}
         <div className="mt-auto pb-4 space-y-3">
