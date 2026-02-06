@@ -494,6 +494,7 @@ function FormContent() {
   
   // 리뷰 관련 상태
   const [clickCount, setClickCount] = useState<number>(0)
+  const [completedCount, setCompletedCount] = useState<number>(0) // 점사 완료 건수 (이용 인원 표시용)
   const [reviews, setReviews] = useState<any[]>([])
   const [bestReviews, setBestReviews] = useState<any[]>([])
   const [activeReviewTab, setActiveReviewTab] = useState<'reviews' | 'best'>('reviews')
@@ -2336,6 +2337,19 @@ function FormContent() {
             }
           } catch (e) {
             // 무시 (UX 우선)
+          }
+        })()
+
+        // 점사 완료 건수 로드 (이용 인원 표시용)
+        void (async () => {
+          try {
+            const res = await fetch('/api/stats/completed-count')
+            if (res.ok) {
+              const data = await res.json()
+              setCompletedCount(data.total_count ?? 0)
+            }
+          } catch (e) {
+            // 무시
           }
         })()
 
@@ -6391,11 +6405,11 @@ function FormContent() {
           </div>
         </div>
 
-        {/* 클릭 수 표시 */}
+        {/* 점사 완료 인원 표시 */}
         {content?.id && (
           <div className="mb-4 text-center">
             <p className="text-sm text-gray-600">
-              <span className="font-semibold text-pink-600">{clickCount.toLocaleString()}</span>명이 이용하셨습니다.
+              <span className="font-semibold text-pink-600">{completedCount.toLocaleString()}</span>명이 이용하셨습니다.
             </p>
           </div>
         )}
