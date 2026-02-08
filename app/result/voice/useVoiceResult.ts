@@ -790,38 +790,54 @@ ${manseText || '(만세력 없음)'}
             // 타이머 시작
             startTimer()
 
-            // AI 첫 인사 트리거 (proactiveAudio + sendClientContent)
+            // AI 첫 인사 트리거: 콘텐츠(어드민) 설정 우선, 없으면 API/기본값. {{userName}} 치환
             const userName2 = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_name') || '' : ''
-            let greetTrigger: string
-            if (isResumedSession) {
-              // 추가 결제 후 이어서 상담
-              greetTrigger = userName2
-                ? `[시스템] 내담자 "${userName2}"님이 추가 결제 후 다시 접속했습니다. "다시 오셨군요" 등의 자연스러운 인사와 함께, 이전 대화 맥락을 기억하면서 이어서 상담해 주세요.`
-                : `[시스템] 내담자가 추가 결제 후 다시 접속했습니다. 이전 대화 맥락을 기억하면서 자연스럽게 이어서 상담해 주세요.`
-            } else {
-              // 첫 상담
-              greetTrigger = userName2
+            const defaultInitial =
+              userName2
                 ? `[시스템] 내담자 "${userName2}"님이 접속했습니다. 먼저 따뜻하게 인사한 후 만세력을 기반으로 약 20초가량 사주 재물운 운세 재회운을 얘기해 주세요.`
                 : `[시스템] 내담자가 접속했습니다. 먼저 따뜻하게 인사한 후 만세력을 기반으로 약 20초가량 사주 재물운 운세 재회운을 얘기해 주세요.`
-            }
-            // AI가 바로 말하게 트리거를 최대한 빨리 전송 (시작 소리를 AI 말로 착각하는 것 방지)
-            const sendGreet = () => {
-              try {
-                if (ws.readyState === WebSocket.OPEN) {
-                  ws.send(JSON.stringify({ type: 'text', text: greetTrigger }))
+            const defaultResumed =
+              userName2
+                ? `[시스템] 내담자 "${userName2}"님이 추가 결제 후 다시 접속했습니다. "다시 오셨군요" 등의 자연스러운 인사와 함께, 이전 대화 맥락을 기억하면서 이어서 상담해 주세요.`
+                : `[시스템] 내담자가 추가 결제 후 다시 접속했습니다. 이전 대화 맥락을 기억하면서 자연스럽게 이어서 상담해 주세요.`
+            ;(async () => {
+              let greetTrigger: string
+              const fromContent = isResumedSession
+                ? String(contentData?.voice_resumed_greet_prompt ?? '').trim()
+                : String(contentData?.voice_initial_greet_prompt ?? '').trim()
+              if (fromContent) {
+                greetTrigger = fromContent.replace(/\{\{userName\}\}/g, userName2 || '')
+              } else {
+                try {
+                  const res = await fetch('/api/voice-mvp/initial-greet', { cache: 'no-store' })
+                  const data = await res.json().catch(() => ({} as { initial?: string | null; resumed?: string | null }))
+                  const raw = isResumedSession
+                    ? (data.resumed ?? defaultResumed)
+                    : (data.initial ?? defaultInitial)
+                  greetTrigger = typeof raw === 'string' && raw.trim()
+                    ? raw.replace(/\{\{userName\}\}/g, userName2 || '')
+                    : (isResumedSession ? defaultResumed : defaultInitial)
+                } catch {
+                  greetTrigger = isResumedSession ? defaultResumed : defaultInitial
                 }
-              } catch (e: any) {
-                console.warn('[VoiceResult] greet trigger failed:', e?.message)
               }
-            }
-            sendGreet()
-            setTimeout(sendGreet, 100)
-            // 마이크는 AI가 먼저 말할 시간(1.5초) 후에 시작
-            setTimeout(() => {
-              if (recorderRef.current && wsRef.current?.readyState === WebSocket.OPEN && !muted) {
-                recorderRef.current.start().catch(() => {})
+              const sendGreet = () => {
+                try {
+                  if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'text', text: greetTrigger }))
+                  }
+                } catch (e: any) {
+                  console.warn('[VoiceResult] greet trigger failed:', e?.message)
+                }
               }
-            }, 1500)
+              sendGreet()
+              setTimeout(sendGreet, 100)
+              setTimeout(() => {
+                if (recorderRef.current && wsRef.current?.readyState === WebSocket.OPEN && !muted) {
+                  recorderRef.current.start().catch(() => {})
+                }
+              }, 1500)
+            })()
             return
           }
           if (msg.type === 'audio' && msg.data) {

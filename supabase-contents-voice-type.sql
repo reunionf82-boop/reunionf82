@@ -29,6 +29,12 @@ COMMENT ON COLUMN contents.voice_tendency IS '음성형: 성향';
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS voice_persona_prompt TEXT;
 COMMENT ON COLUMN contents.voice_persona_prompt IS '음성형: 페르소나/시스템 프롬프트';
 
+-- 음성 상담 최초 인사 (접속 시 AI에 주입). {{userName}} 치환
+ALTER TABLE contents ADD COLUMN IF NOT EXISTS voice_initial_greet_prompt TEXT;
+COMMENT ON COLUMN contents.voice_initial_greet_prompt IS '음성형: 첫 상담 시 접속 후 AI 최초 인사 지시문';
+ALTER TABLE contents ADD COLUMN IF NOT EXISTS voice_resumed_greet_prompt TEXT;
+COMMENT ON COLUMN contents.voice_resumed_greet_prompt IS '음성형: 재접속 시 AI 인사 지시문';
+
 -- 시작소리 mp3 URL
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS voice_start_sound_url TEXT;
 COMMENT ON COLUMN contents.voice_start_sound_url IS '음성형: 시작 시 재생 mp3 URL';

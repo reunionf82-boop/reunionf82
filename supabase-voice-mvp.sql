@@ -57,6 +57,9 @@ alter table public.voice_mvp_config add column if not exists persona_shinjeom te
 alter table public.voice_mvp_config add column if not exists persona_fortune text;
 alter table public.voice_mvp_config add column if not exists persona_gunghap text;
 alter table public.voice_mvp_config add column if not exists persona_reunion text;
+-- 음성 상담 최초 20초 AI 인사 지시문 (재회 결과 페이지용). {{userName}} 있으면 내담자 이름으로 치환
+alter table public.voice_mvp_config add column if not exists initial_greet_prompt text;
+alter table public.voice_mvp_config add column if not exists resumed_greet_prompt text;
 alter table public.voice_mvp_config add column if not exists voice_gender text;
 alter table public.voice_mvp_config add column if not exists voice_style text;
 alter table public.voice_mvp_config add column if not exists voice_name_female text;

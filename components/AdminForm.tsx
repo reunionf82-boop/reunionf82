@@ -2475,8 +2475,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             name="summary"
             value={formData.summary}
             onChange={handleChange}
-            rows={2}
-            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-y"
+            rows={1}
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"
             placeholder="요약을 입력하세요"
           />
         </div>

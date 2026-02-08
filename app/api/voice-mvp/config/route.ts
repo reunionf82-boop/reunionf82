@@ -96,6 +96,8 @@ export async function POST(req: NextRequest) {
       persona_fortune: typeof body.persona_fortune === 'string' ? body.persona_fortune : undefined,
       persona_gunghap: typeof body.persona_gunghap === 'string' ? body.persona_gunghap : undefined,
       persona_reunion: typeof body.persona_reunion === 'string' ? body.persona_reunion : undefined,
+      initial_greet_prompt: typeof body.initial_greet_prompt === 'string' ? body.initial_greet_prompt : undefined,
+      resumed_greet_prompt: typeof body.resumed_greet_prompt === 'string' ? body.resumed_greet_prompt : undefined,
       updated_at: new Date().toISOString(),
     }
 
@@ -157,6 +159,8 @@ export async function POST(req: NextRequest) {
         persona_fortune: updateData.persona_fortune ?? null,
         persona_gunghap: updateData.persona_gunghap ?? null,
         persona_reunion: updateData.persona_reunion ?? null,
+        initial_greet_prompt: updateData.initial_greet_prompt ?? null,
+        resumed_greet_prompt: updateData.resumed_greet_prompt ?? null,
         updated_at: new Date().toISOString(),
       })
       .select('*')

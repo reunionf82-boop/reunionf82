@@ -97,6 +97,8 @@ export interface ContentData {
   voice_tendency?: string
   voice_name?: string
   voice_persona_prompt?: string
+  voice_initial_greet_prompt?: string
+  voice_resumed_greet_prompt?: string
   voice_start_sound_url?: string
   voice_bubble_sound_url?: string
   voice_bubble_sound_probability_pct?: number

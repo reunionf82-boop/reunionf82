@@ -302,6 +302,15 @@ export default function VoiceAdminForm() {
                     className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white min-h-[120px]" placeholder="애기동자 페르소나/말투/제한 사항 등" />
                 </div>
                 <div>
+                  <label className="block text-sm text-gray-300 mb-1">음성 상담 최초 인사 (접속 시 AI에 주입)</label>
+                  <p className="text-gray-400 text-xs mb-1">접속 후 약 20초 동안 AI가 먼저 말할 내용. <code className="bg-gray-700 px-1 rounded">{'{{userName}}'}</code> 있으면 내담자 이름으로 치환됩니다.</p>
+                  <textarea value={h.form.voice_initial_greet_prompt} onChange={(e) => h.setForm((f) => ({ ...f, voice_initial_greet_prompt: e.target.value }))}
+                    className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white min-h-[80px] mb-2" placeholder="첫 상담 시 (예: [시스템] 내담자가 접속했습니다. 먼저 따뜻하게 인사한 후 ...)" />
+                  <label className="block text-sm text-gray-300 mb-1 mt-3">재접속 시 (추가 결제 후)</label>
+                  <textarea value={h.form.voice_resumed_greet_prompt} onChange={(e) => h.setForm((f) => ({ ...f, voice_resumed_greet_prompt: e.target.value }))}
+                    className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white min-h-[80px]" placeholder="재접속 시 (예: [시스템] 내담자가 추가 결제 후 다시 접속했습니다. ...)" />
+                </div>
+                <div>
                   <label className="block text-sm text-gray-300 mb-1">시작소리 (MP3, 드래그&amp;드롭 가능)</label>
                   <div
                     className="border-2 border-dashed border-gray-600 hover:border-violet-500 rounded-lg p-4 transition-colors"
@@ -429,8 +438,8 @@ export default function VoiceAdminForm() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">요약</label>
-                  <textarea value={h.form.summary} onChange={(e) => h.setForm((f) => ({ ...f, summary: e.target.value }))} rows={4}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 resize-y" placeholder="요약을 입력하세요" />
+                  <textarea value={h.form.summary} onChange={(e) => h.setForm((f) => ({ ...f, summary: e.target.value }))} rows={1}
+                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 resize-none" placeholder="요약을 입력하세요" />
                 </div>
                 {(['introduction', 'recommendation', 'menu_composition'] as const).map((field) => {
                   const labels = { introduction: '소개', recommendation: '추천', menu_composition: '상품 메뉴 구성' }

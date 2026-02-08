@@ -25,6 +25,10 @@ type Config = {
   persona_fortune?: string
   persona_gunghap?: string
   persona_reunion?: string
+  /** 음성 상담 최초 20초 AI 인사 지시문 (재회 결과 페이지). {{userName}} 치환 */
+  initial_greet_prompt?: string
+  /** 재접속 시 AI 인사 지시문 */
+  resumed_greet_prompt?: string
 }
 
 const DEFAULT_SHINJEOM_PERSONA = `핵심은 "신내림 30일된 애기동자 컨셉으로 해보려교." 입니다.
@@ -65,6 +69,8 @@ export default function VoiceMvpAdminClient() {
     persona_fortune: '',
     persona_gunghap: '',
     persona_reunion: '',
+    initial_greet_prompt: '',
+    resumed_greet_prompt: '',
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -134,6 +140,8 @@ export default function VoiceMvpAdminClient() {
             persona_fortune: typeof cfg.data.persona_fortune === 'string' ? cfg.data.persona_fortune : '',
             persona_gunghap: typeof cfg.data.persona_gunghap === 'string' ? cfg.data.persona_gunghap : '',
             persona_reunion: typeof cfg.data.persona_reunion === 'string' ? cfg.data.persona_reunion : '',
+            initial_greet_prompt: typeof cfg.data.initial_greet_prompt === 'string' ? cfg.data.initial_greet_prompt : '',
+            resumed_greet_prompt: typeof cfg.data.resumed_greet_prompt === 'string' ? cfg.data.resumed_greet_prompt : '',
           })
         }
       } else {
@@ -232,12 +240,12 @@ export default function VoiceMvpAdminClient() {
             )}
           </div>
 
-          <div className="bg-gray-800 rounded-xl border border-gray-700 p-5 h-full flex flex-col">
-            <div className="font-bold mb-4">페르소나 (유형별)</div>
+          <div className="bg-gray-800 rounded-xl border border-gray-700 p-5 h-full flex flex-col min-h-0">
+            <div className="font-bold mb-4 shrink-0">페르소나 (유형별)</div>
             {loading ? (
               <div className="text-gray-400">로딩 중...</div>
             ) : (
-              <div className="space-y-4 flex-1">
+              <div className="space-y-4 flex-1 min-h-0 overflow-y-auto">
                 <PersonaVoiceRow
                   title="사주"
                   gender={config.voice_gender_saju || 'female'}
@@ -312,6 +320,23 @@ export default function VoiceMvpAdminClient() {
                   value={config.persona_reunion || ''}
                   onChange={(v) => setConfig((c) => ({ ...c, persona_reunion: v }))}
                 />
+                <div className="border-t border-gray-700/70 pt-4" />
+                <div className="bg-gray-700/40 border border-gray-600 rounded-lg p-4 space-y-3">
+                  <div className="text-sm font-bold text-gray-100">음성 상담 최초 인사 (재회 결과 페이지)</div>
+                  <p className="text-gray-400 text-xs">
+                    AI가 접속 후 약 20초 동안 먼저 말할 내용 지시. <code className="bg-gray-600 px-1 rounded">{'{{userName}}'}</code> 있으면 내담자 이름으로 치환됩니다.
+                  </p>
+                  <TextArea
+                    label="첫 상담 시"
+                    value={config.initial_greet_prompt || ''}
+                    onChange={(v) => setConfig((c) => ({ ...c, initial_greet_prompt: v }))}
+                  />
+                  <TextArea
+                    label="재접속 시 (추가 결제 후)"
+                    value={config.resumed_greet_prompt || ''}
+                    onChange={(v) => setConfig((c) => ({ ...c, resumed_greet_prompt: v }))}
+                  />
+                </div>
 
                 <button
                   type="button"

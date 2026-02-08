@@ -36,6 +36,9 @@ export interface VoiceFormData {
   voice_name: string
   voice_counselor_name: string
   voice_persona_prompt: string
+  /** 음성 상담 최초 인사 (접속 시 AI 주입). {{userName}} 치환 */
+  voice_initial_greet_prompt: string
+  voice_resumed_greet_prompt: string
   voice_start_sound_url: string
   /** 대화중 소리 목록 (라벨 + URL). 여러 개 추가 가능 */
   voice_conversation_sounds: VoiceConversationSound[]
@@ -98,6 +101,8 @@ const INITIAL_FORM: VoiceFormData = {
   voice_name: 'Aoede',
   voice_counselor_name: '',
   voice_persona_prompt: '',
+  voice_initial_greet_prompt: '',
+  voice_resumed_greet_prompt: '',
   voice_start_sound_url: '',
   voice_conversation_sounds: [],
   voice_conversation_sound_probability_pct: 5,
@@ -216,6 +221,8 @@ export function useVoiceForm() {
           voice_name: c.voice_name ?? 'Aoede',
           voice_counselor_name: c.voice_counselor_name ?? '',
           voice_persona_prompt: c.voice_persona_prompt ?? '',
+          voice_initial_greet_prompt: c.voice_initial_greet_prompt ?? '',
+          voice_resumed_greet_prompt: c.voice_resumed_greet_prompt ?? '',
           voice_start_sound_url: c.voice_start_sound_url ?? '',
           voice_conversation_sounds: (() => {
             const raw = c.voice_conversation_sounds
