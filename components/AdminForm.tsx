@@ -187,6 +187,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     isFree: false,
     showNew: false,
     showExposed: false,
+    typecastEnabled: false,
     contentName: '',
     thumbnailImageUrl: '', // 이미지 썸네일 (JPG)
     thumbnailVideoUrl: '', // 동영상 썸네일 (WebM 파일명, 확장자 제외)
@@ -216,6 +217,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     ttsSpeaker: speakerParam || 'nara', // URL 파라미터 또는 기본값: nara
     ttsProvider: ttsProviderParam === 'typecast' ? 'typecast' : 'naver', // 기본: naver
     typecastVoiceId: typecastVoiceIdParam || 'tc_5ecbbc6099979700087711d8',
+    summaryMaxChars: '500', // 기본 500자, 0이면 점사 요약 비활성화
     previewThumbnailImageUrls: ['', '', ''], // 재회상품 미리보기 이미지 썸네일 3개
     bookCoverThumbnailImageUrl: '', // 북커버 이미지 썸네일
     bookCoverThumbnailVideoUrl: '', // 북커버 동영상 썸네일 (WebM 파일명, 확장자 제외)
@@ -589,6 +591,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         })),
         is_new: formData.showNew,
         is_exposed: formData.showExposed,
+        typecast_enabled: formData.typecastEnabled,
+        summary_max_chars: formData.summaryMaxChars === '' ? 500 : (() => { const n = Number(formData.summaryMaxChars); return Number.isFinite(n) ? n : 500; })(),
         tts_speaker: formData.ttsSpeaker || 'nara',
         tts_provider: formData.ttsProvider === 'typecast' ? 'typecast' : 'naver',
         typecast_voice_id: (formData.typecastVoiceId || '').trim(),
@@ -751,6 +755,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         isFree: data.content_type === 'gonghap',
         showNew: data.is_new || false,
         showExposed: data.is_exposed || false,
+        typecastEnabled: (data as any).typecast_enabled === true,
+        summaryMaxChars: (data as any).summary_max_chars != null && (data as any).summary_max_chars > 0 ? String((data as any).summary_max_chars) : (data as any).summary_max_chars === 0 ? '0' : '500',
         contentName: data.content_name || '',
         thumbnailImageUrl: (data.thumbnail_url && data.thumbnail_url.trim()) ? data.thumbnail_url.trim() : '',
         thumbnailVideoUrl: (data.thumbnail_video_url && data.thumbnail_video_url.trim()) ? data.thumbnail_video_url.trim() : '',
@@ -1023,7 +1029,15 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       
       const data = result.data
       setInitialData(null) // 복제 모드이므로 initialData를 null로 설정 (새 컨텐츠로 인식)
-      
+
+      // API 응답 필드명이 snake_case인 경우 대비 (contents 테이블 컬럼명)
+      const thumbUrl = (data as any).thumbnail_url ?? data.thumbnail_url
+      const thumbVideoUrl = (data as any).thumbnail_video_url ?? data.thumbnail_video_url
+      const bookCover = (data as any).book_cover_thumbnail ?? data.book_cover_thumbnail
+      const bookCoverVideo = (data as any).book_cover_thumbnail_video ?? data.book_cover_thumbnail_video
+      const endingBookCover = (data as any).ending_book_cover_thumbnail ?? data.ending_book_cover_thumbnail
+      const endingBookCoverVideo = (data as any).ending_book_cover_thumbnail_video ?? data.ending_book_cover_thumbnail_video
+
       // content_name에 "복사본" 추가
       const duplicatedContentName = data.content_name ? `${data.content_name} (복사본)` : '새 컨텐츠 (복사본)'
       
@@ -1035,16 +1049,19 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         isFree: data.content_type === 'gonghap',
         showNew: data.is_new || false,
         showExposed: data.is_exposed || false,
+        typecastEnabled: (data as any).typecast_enabled === true,
+        summaryMaxChars: (data as any).summary_max_chars != null && (data as any).summary_max_chars > 0 ? String((data as any).summary_max_chars) : (data as any).summary_max_chars === 0 ? '0' : '500',
         contentName: duplicatedContentName,
-        // 컨텐츠명 썸네일: 이미지 썸네일이 없고 동영상 썸네일만 있으면 동적 생성 (대메뉴/소메뉴와 동일한 Fallback 로직)
+        // 컨텐츠명 썸네일: 이미지 + 동영상 모두 복제 (이미지 없고 동영상만 있으면 동적 생성 URL)
         thumbnailImageUrl: (() => {
-          let imageUrl = (data.thumbnail_url && data.thumbnail_url.trim()) ? data.thumbnail_url.trim() : ''
-          if (!imageUrl && data.thumbnail_video_url) {
-            imageUrl = getThumbnailUrl(`${data.thumbnail_video_url}.jpg`)
+          const raw = typeof thumbUrl === 'string' && thumbUrl.trim() ? thumbUrl.trim() : ''
+          if (raw) return raw
+          if (typeof thumbVideoUrl === 'string' && thumbVideoUrl.trim()) {
+            return getThumbnailUrl(`${thumbVideoUrl.trim()}.jpg`)
           }
-          return imageUrl
+          return ''
         })(),
-        thumbnailVideoUrl: data.thumbnail_video_url || '',
+        thumbnailVideoUrl: typeof thumbVideoUrl === 'string' && thumbVideoUrl.trim() ? thumbVideoUrl.trim() : '',
         summary: data.summary || '',
         introduction: data.introduction || '',
         recommendation: data.recommendation || '',
@@ -1091,24 +1108,26 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           }
           return thumbnails.slice(0, 3)
         })(),
-        // 북커버 썸네일: 이미지 썸네일이 없고 동영상 썸네일만 있으면 동적 생성 (대메뉴/소메뉴와 동일한 Fallback 로직)
+        // 북커버 썸네일: 이미지 + 동영상 모두 복제
         bookCoverThumbnailImageUrl: (() => {
-          let imageUrl = (data.book_cover_thumbnail && data.book_cover_thumbnail.trim()) ? data.book_cover_thumbnail.trim() : ''
-          if (!imageUrl && data.book_cover_thumbnail_video) {
-            imageUrl = getThumbnailUrl(`${data.book_cover_thumbnail_video}.jpg`)
+          const raw = typeof bookCover === 'string' && bookCover.trim() ? bookCover.trim() : ''
+          if (raw) return raw
+          if (typeof bookCoverVideo === 'string' && bookCoverVideo.trim()) {
+            return getThumbnailUrl(`${bookCoverVideo.trim()}.jpg`)
           }
-          return imageUrl
+          return ''
         })(),
-        bookCoverThumbnailVideoUrl: data.book_cover_thumbnail_video || '',
-        // 엔딩북커버 썸네일: 이미지 썸네일이 없고 동영상 썸네일만 있으면 동적 생성 (대메뉴/소메뉴와 동일한 Fallback 로직)
+        bookCoverThumbnailVideoUrl: typeof bookCoverVideo === 'string' && bookCoverVideo.trim() ? bookCoverVideo.trim() : '',
+        // 엔딩북커버 썸네일: 이미지 + 동영상 모두 복제
         endingBookCoverThumbnailImageUrl: (() => {
-          let imageUrl = (data.ending_book_cover_thumbnail && data.ending_book_cover_thumbnail.trim()) ? data.ending_book_cover_thumbnail.trim() : ''
-          if (!imageUrl && data.ending_book_cover_thumbnail_video) {
-            imageUrl = getThumbnailUrl(`${data.ending_book_cover_thumbnail_video}.jpg`)
+          const raw = typeof endingBookCover === 'string' && endingBookCover.trim() ? endingBookCover.trim() : ''
+          if (raw) return raw
+          if (typeof endingBookCoverVideo === 'string' && endingBookCoverVideo.trim()) {
+            return getThumbnailUrl(`${endingBookCoverVideo.trim()}.jpg`)
           }
-          return imageUrl
+          return ''
         })(),
-        endingBookCoverThumbnailVideoUrl: data.ending_book_cover_thumbnail_video || '',
+        endingBookCoverThumbnailVideoUrl: typeof endingBookCoverVideo === 'string' && endingBookCoverVideo.trim() ? endingBookCoverVideo.trim() : '',
       })
       
       // 동영상 파일 상태 확인
@@ -1120,31 +1139,31 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         const hasSubtitlesInMenuItems = data.menu_items.some((item: any) => item.subtitles && Array.isArray(item.subtitles))
         
         if (hasSubtitlesInMenuItems) {
-          // 새 구조
+          // 새 구조 — loadContent와 동일한 필드 사용: thumbnailImageUrl, thumbnailVideoUrl (UI/저장이 이 필드를 참조함)
           const firstItem = data.menu_items[0]
-          const firstMenuSubtitles = firstItem.subtitles && firstItem.subtitles.length > 0 
+          const firstMenuSubtitles = firstItem.subtitles && firstItem.subtitles.length > 0
             ? firstItem.subtitles.map((s: any, idx: number) => {
-                // 소메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
                 let subtitleThumbnailImageUrl = s.thumbnail_image_url || s.thumbnail || ''
                 if (!subtitleThumbnailImageUrl && s.thumbnail_video_url) {
                   subtitleThumbnailImageUrl = getThumbnailUrl(`${s.thumbnail_video_url}.jpg`)
                 }
                 return {
-                  id: Date.now() + idx,
+                  id: s.id || Date.now() + idx,
                   subtitle: s.subtitle || '',
                   interpretation_tool: s.interpretation_tool || '',
-                  thumbnail: subtitleThumbnailImageUrl,
+                  thumbnailImageUrl: subtitleThumbnailImageUrl,
+                  thumbnailVideoUrl: s.thumbnail_video_url || '',
                   detailMenus: (s.detailMenus || []).map((dm: any) => {
-                    // 상세메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
                     let detailMenuThumbnailImageUrl = dm.thumbnail_image_url || dm.thumbnail || ''
                     if (!detailMenuThumbnailImageUrl && dm.thumbnail_video_url) {
                       detailMenuThumbnailImageUrl = getThumbnailUrl(`${dm.thumbnail_video_url}.jpg`)
                     }
                     return {
-                      id: Date.now() + Math.random(),
+                      id: dm.id || Date.now() + Math.random(),
                       detailMenu: dm.detailMenu || '',
                       interpretation_tool: dm.interpretation_tool || '',
-                      thumbnail: detailMenuThumbnailImageUrl
+                      thumbnailImageUrl: detailMenuThumbnailImageUrl,
+                      thumbnailVideoUrl: dm.thumbnail_video_url || ''
                     }
                   })
                 }
@@ -1152,12 +1171,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             : [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
           
           const firstMenuValue = firstItem.value || ''
-          // 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
           let firstMenuThumbnailImageUrl = firstItem.thumbnail_image_url || firstItem.thumbnail || ''
           if (!firstMenuThumbnailImageUrl && firstItem.thumbnail_video_url) {
-            // 동영상 파일명에서 썸네일 이미지 URL 생성 (예: video.webm -> video.jpg)
-            const videoBaseName = firstItem.thumbnail_video_url
-            firstMenuThumbnailImageUrl = getThumbnailUrl(`${videoBaseName}.jpg`)
+            firstMenuThumbnailImageUrl = getThumbnailUrl(`${firstItem.thumbnail_video_url}.jpg`)
           }
           setFirstMenuField({
             value: firstMenuValue,
@@ -1166,58 +1182,33 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             thumbnailVideoUrl: firstItem.thumbnail_video_url || '',
             subtitles: firstMenuValue.trim().length > 0 && firstMenuSubtitles.length === 0
               ? [{ id: Date.now(), subtitle: '', interpretation_tool: '', detailMenus: [] }]
-              : firstMenuSubtitles.map((s: any) => ({
-                  ...s,
-                  thumbnailImageUrl: (() => {
-                    const imageUrl = s.thumbnail_image_url || s.thumbnail || ''
-                    const videoUrl = s.thumbnail_video_url || ''
-                    // 소메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
-                    if (!imageUrl && videoUrl) {
-                      return getThumbnailUrl(`${videoUrl}.jpg`)
-                    }
-                    return imageUrl
-                  })(),
-                  thumbnailVideoUrl: s.thumbnail_video_url || '',
-                  detailMenus: (s.detailMenus || []).map((dm: any) => ({
-                    ...dm,
-                    thumbnailImageUrl: (() => {
-                      const imageUrl = dm.thumbnail_image_url || dm.thumbnail || ''
-                      const videoUrl = dm.thumbnail_video_url || ''
-                      // 상세메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
-                      if (!imageUrl && videoUrl) {
-                        return getThumbnailUrl(`${videoUrl}.jpg`)
-                      }
-                      return imageUrl
-                    })(),
-                    thumbnailVideoUrl: dm.thumbnail_video_url || ''
-                  }))
-                }))
+              : firstMenuSubtitles
           })
           
           setMenuFields(data.menu_items.slice(1).map((item: any, idx: number) => {
             const menuSubtitles = item.subtitles && item.subtitles.length > 0
               ? item.subtitles.map((s: any, subIdx: number) => {
-                  // 소메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
                   let subtitleThumbnailImageUrl = s.thumbnail_image_url || s.thumbnail || ''
                   if (!subtitleThumbnailImageUrl && s.thumbnail_video_url) {
                     subtitleThumbnailImageUrl = getThumbnailUrl(`${s.thumbnail_video_url}.jpg`)
                   }
                   return {
-                    id: Date.now() + idx * 1000 + subIdx,
+                    id: s.id || Date.now() + idx * 1000 + subIdx,
                     subtitle: s.subtitle || '',
                     interpretation_tool: s.interpretation_tool || '',
-                    thumbnail: subtitleThumbnailImageUrl,
+                    thumbnailImageUrl: subtitleThumbnailImageUrl,
+                    thumbnailVideoUrl: s.thumbnail_video_url || '',
                     detailMenus: (s.detailMenus || []).map((dm: any) => {
-                      // 상세메뉴: 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
                       let detailMenuThumbnailImageUrl = dm.thumbnail_image_url || dm.thumbnail || ''
                       if (!detailMenuThumbnailImageUrl && dm.thumbnail_video_url) {
                         detailMenuThumbnailImageUrl = getThumbnailUrl(`${dm.thumbnail_video_url}.jpg`)
                       }
                       return {
-                        id: Date.now() + Math.random(),
+                        id: dm.id || Date.now() + Math.random(),
                         detailMenu: dm.detailMenu || '',
                         interpretation_tool: dm.interpretation_tool || '',
-                        thumbnail: detailMenuThumbnailImageUrl
+                        thumbnailImageUrl: detailMenuThumbnailImageUrl,
+                        thumbnailVideoUrl: dm.thumbnail_video_url || ''
                       }
                     })
                   }
@@ -1225,16 +1216,16 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               : [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '', detailMenus: [] }]
             
             const menuValue = item.value || ''
-            // 동영상 썸네일이 있지만 이미지 썸네일이 없으면 동영상 파일명에서 썸네일 이미지 URL 생성
             let menuThumbnailImageUrl = item.thumbnail_image_url || item.thumbnail || ''
             if (!menuThumbnailImageUrl && item.thumbnail_video_url) {
-              const videoBaseName = item.thumbnail_video_url
-              menuThumbnailImageUrl = getThumbnailUrl(`${videoBaseName}.jpg`)
+              menuThumbnailImageUrl = getThumbnailUrl(`${item.thumbnail_video_url}.jpg`)
             }
             return {
-              id: Date.now() + idx + 1000,
+              id: item.id || Date.now() + idx + 1000,
               value: menuValue,
               thumbnail: menuThumbnailImageUrl,
+              thumbnailImageUrl: menuThumbnailImageUrl,
+              thumbnailVideoUrl: item.thumbnail_video_url || '',
               subtitles: menuValue.trim().length > 0 && menuSubtitles.length === 0
                 ? [{ id: Date.now() + idx * 1000, subtitle: '', interpretation_tool: '', detailMenus: [] }]
                 : menuSubtitles
@@ -1367,6 +1358,8 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         })),
         is_new: formData.showNew,
         is_exposed: formData.showExposed,
+        typecast_enabled: formData.typecastEnabled,
+        summary_max_chars: formData.summaryMaxChars === '' ? 500 : (() => { const n = Number(formData.summaryMaxChars); return Number.isFinite(n) ? n : 500; })(),
         tts_speaker: formData.ttsSpeaker || 'nara',
         tts_provider: formData.ttsProvider === 'typecast' ? 'typecast' : 'naver',
         typecast_voice_id: (formData.typecastVoiceId || '').trim(),
@@ -2201,6 +2194,34 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
             <label htmlFor="showNew" className="text-sm font-medium text-gray-300">
               NEW
             </label>
+          </div>
+          <div className="flex items-center gap-2 border border-amber-500 rounded-lg px-4 py-2">
+            <input
+              type="checkbox"
+              id="typecastEnabled"
+              name="typecastEnabled"
+              checked={formData.typecastEnabled}
+              onChange={(e) => setFormData(prev => ({ ...prev, typecastEnabled: e.target.checked }))}
+              className="w-5 h-5 text-amber-500 bg-gray-700 border-2 border-amber-500 rounded focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-gray-800"
+            />
+            <label htmlFor="typecastEnabled" className="text-sm font-medium text-gray-300">
+              타입캐스트
+            </label>
+          </div>
+          <div className="flex items-center gap-2 border border-sky-500 rounded-lg px-3 py-2" title="기본 500자. 0이면 점사 요약 버튼 비표시">
+            <label htmlFor="summaryMaxChars" className="text-sm font-medium text-gray-300 whitespace-nowrap">
+              요약 글자수
+            </label>
+            <input
+              type="number"
+              id="summaryMaxChars"
+              min={0}
+              max={2000}
+              placeholder="500"
+              value={formData.summaryMaxChars}
+              onChange={(e) => setFormData(prev => ({ ...prev, summaryMaxChars: e.target.value.replace(/\D/g, '') }))}
+              className="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm text-right focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-800"
+            />
           </div>
           <div className="flex items-center gap-2 border border-green-500 rounded-lg px-4 py-2 ml-auto">
             <input

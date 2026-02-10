@@ -48,11 +48,14 @@ export async function GET(
     // 중요: voice id가 존재해도 "선택된 제공자"를 강제하지 않는다.
     // provider는 오직 contents.tts_provider가 명시적으로 typecast일 때만 override 신호를 내려준다.
     const provider = (content as any).tts_provider === 'typecast' ? 'typecast' : null
+    // 컨텐츠별 타입캐스트 온/오프 (false면 이 컨텐츠는 타입캐스트 미사용)
+    const contentTypecastEnabled = (content as any).typecast_enabled === true
 
     return NextResponse.json({
       tts_speaker: content.tts_speaker || 'nara',
       tts_provider: provider, // null이면 클라이언트는 app_settings 값을 유지
-      typecast_voice_id: typecastVoiceId
+      typecast_voice_id: typecastVoiceId,
+      typecast_enabled: contentTypecastEnabled,
     })
   } catch (error: any) {
     return NextResponse.json(

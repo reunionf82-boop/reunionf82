@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import WebSocket, { WebSocketServer } from 'ws'
 import { GoogleGenAI } from '@google/genai'
 import { Modality, type LiveCallbacks, type LiveConnectConfig, type LiveServerMessage, type Part } from '@google/genai'
+import { hasNonKoreanScript, normalizeVoiceMessagesToKorean } from '@/lib/voice-transcript-korean'
 
 type WsWithSession = {
   send: (data: string) => void
@@ -171,17 +172,39 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
             if (sc?.interrupted) {
               send({ type: 'interrupted' })
             }
-            // AI 출력 음성 전사 (serverContent 내부 + 최상위 양쪽 확인)
+            // AI 출력 음성 전사: 일본어 등은 한글 발음대로 표기 후 전송
             const outputTranscript = sc?.outputTranscription?.text || msgAny?.outputTranscription?.text
             if (typeof outputTranscript === 'string' && outputTranscript.trim()) {
-              console.log('[live-proxy] OUTPUT transcript:', outputTranscript.substring(0, 80))
-              send({ type: 'transcript', role: 'assistant', text: outputTranscript.trim() })
+              const raw = outputTranscript.trim()
+              ;(async () => {
+                let textToSend = raw
+                if (hasNonKoreanScript(raw)) {
+                  try {
+                    const normalized = await normalizeVoiceMessagesToKorean([{ role: 'assistant', text: raw }])
+                    textToSend = normalized[0]?.text ?? raw
+                  } catch {
+                    // 실패 시 원문 전송
+                  }
+                }
+                send({ type: 'transcript', role: 'assistant', text: textToSend })
+              })()
             }
-            // 사용자 입력 음성 전사 (serverContent 내부 + 최상위 양쪽 확인)
+            // 사용자 입력 음성 전사: 일본어 등은 한글 발음대로 표기 후 전송 (예: ちょっと待って → 조또마떼)
             const inputTranscript = sc?.inputTranscription?.text || msgAny?.inputTranscription?.text
             if (typeof inputTranscript === 'string' && inputTranscript.trim()) {
-              console.log('[live-proxy] INPUT transcript:', inputTranscript.substring(0, 80))
-              send({ type: 'transcript', role: 'user', text: inputTranscript.trim() })
+              const raw = inputTranscript.trim()
+              ;(async () => {
+                let textToSend = raw
+                if (hasNonKoreanScript(raw)) {
+                  try {
+                    const normalized = await normalizeVoiceMessagesToKorean([{ role: 'user', text: raw }])
+                    textToSend = normalized[0]?.text ?? raw
+                  } catch {
+                    // 실패 시 원문 전송
+                  }
+                }
+                send({ type: 'transcript', role: 'user', text: textToSend })
+              })()
             }
           },
           onerror: (e: any) => {

@@ -17,12 +17,12 @@ export async function POST(req: NextRequest) {
     
     const supabase = getAdminSupabaseClient()
     const body = await req.json()
-    const { model, speaker, fortune_view_mode, use_sequential_fortune, tts_provider, typecast_voice_id, home_html, dev_unlock_password, dev_unlock_duration_minutes, dev_unlock_hide_enabled } = body
+    const { model, speaker, fortune_view_mode, use_sequential_fortune, tts_provider, typecast_voice_id, typecast_enabled, summary_max_chars, home_html, dev_unlock_password, dev_unlock_duration_minutes, dev_unlock_hide_enabled } = body
 
     // 기존 레코드 조회
     const { data: existingRows, error: existingError } = await supabase
       .from('app_settings')
-      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html, dev_unlock_password_hash, dev_unlock_duration_minutes, dev_unlock_hide_enabled')
+      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, typecast_enabled, summary_max_chars, home_html, dev_unlock_password_hash, dev_unlock_duration_minutes, dev_unlock_hide_enabled')
       .eq('id', 1)
       // ✅ id=1 행이 중복이어도 single-coercion 에러를 피하기 위해 배열로 받고 첫 행만 사용
       .limit(1)
@@ -42,6 +42,8 @@ export async function POST(req: NextRequest) {
       use_sequential_fortune?: boolean
       selected_tts_provider?: string
       selected_typecast_voice_id?: string
+      typecast_enabled?: boolean
+      summary_max_chars?: number
       home_html?: string
       dev_unlock_password_hash?: string | null
       dev_unlock_duration_minutes?: number | null
@@ -108,6 +110,25 @@ export async function POST(req: NextRequest) {
       updateData.selected_typecast_voice_id = ''
     }
 
+    // typecast_enabled 업데이트 (타입캐스트 온/오프)
+    if (typecast_enabled !== undefined && typecast_enabled !== null) {
+      updateData.typecast_enabled = Boolean(typecast_enabled)
+    } else if (existing) {
+      updateData.typecast_enabled = (existing as any).typecast_enabled === true
+    } else {
+      updateData.typecast_enabled = false
+    }
+
+    // summary_max_chars 업데이트 (점사 요약 글자수)
+    if (summary_max_chars !== undefined && summary_max_chars !== null) {
+      const num = parseInt(String(summary_max_chars), 10)
+      updateData.summary_max_chars = Number.isFinite(num) && num > 0 ? num : 500
+    } else if (existing) {
+      updateData.summary_max_chars = typeof (existing as any).summary_max_chars === 'number' && (existing as any).summary_max_chars > 0 ? (existing as any).summary_max_chars : 500
+    } else {
+      updateData.summary_max_chars = 500
+    }
+
     // home_html 업데이트 (빈값 허용)
     if (home_html !== undefined && home_html !== null) {
       updateData.home_html = String(home_html)
@@ -162,7 +183,7 @@ export async function POST(req: NextRequest) {
         .from('app_settings')
         .update(updateData)
         .eq('id', 1)
-        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html, dev_unlock_password_hash, dev_unlock_duration_minutes, dev_unlock_hide_enabled')
+        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, typecast_enabled, summary_max_chars, home_html, dev_unlock_password_hash, dev_unlock_duration_minutes, dev_unlock_hide_enabled')
       
       if (updateError) {
 
@@ -182,7 +203,7 @@ export async function POST(req: NextRequest) {
           id: 1,
           ...updateData
         })
-        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html, dev_unlock_password_hash, dev_unlock_duration_minutes, dev_unlock_hide_enabled')
+        .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, typecast_enabled, summary_max_chars, home_html, dev_unlock_password_hash, dev_unlock_duration_minutes, dev_unlock_hide_enabled')
       
       if (insertError) {
 
@@ -204,6 +225,8 @@ export async function POST(req: NextRequest) {
       use_sequential_fortune: (savedData as any).use_sequential_fortune ?? updateData.use_sequential_fortune ?? false,
       tts_provider: (savedData as any).selected_tts_provider || updateData.selected_tts_provider || 'naver',
       typecast_voice_id: (savedData as any).selected_typecast_voice_id || updateData.selected_typecast_voice_id || '',
+      typecast_enabled: (savedData as any).typecast_enabled === true,
+      summary_max_chars: typeof (savedData as any).summary_max_chars === 'number' && (savedData as any).summary_max_chars > 0 ? (savedData as any).summary_max_chars : 500,
       home_html: String((savedData as any).home_html || updateData.home_html || ''),
       dev_unlock_password_set: Boolean((savedData as any).dev_unlock_password_hash || updateData.dev_unlock_password_hash),
       dev_unlock_duration_minutes: (savedData as any).dev_unlock_duration_minutes ?? updateData.dev_unlock_duration_minutes ?? null,

@@ -9,7 +9,7 @@ export async function GET() {
     const supabase = getAdminSupabaseClient()
     const { data, error } = await supabase
       .from('app_settings')
-      .select('id, selected_tts_provider, selected_typecast_voice_id')
+      .select('id, selected_tts_provider, selected_typecast_voice_id, typecast_enabled')
       .eq('id', 1)
       .maybeSingle()
 
@@ -18,6 +18,7 @@ export async function GET() {
         // 안전한 기본값: 네이버 (설정 조회 실패 시 Typecast 결제 오류 방지)
         tts_provider: 'naver',
         typecast_voice_id: 'tc_5ecbbc6099979700087711d8',
+        typecast_enabled: false,
       }, {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -27,12 +28,14 @@ export async function GET() {
       })
     }
 
-    const provider = (data as any).selected_tts_provider === 'typecast' ? 'typecast' : 'naver'
+    const typecastEnabled = (data as any).typecast_enabled === true
+    const provider = typecastEnabled && (data as any).selected_tts_provider === 'typecast' ? 'typecast' : 'naver'
     const voiceId = String((data as any).selected_typecast_voice_id || '').trim() || 'tc_5ecbbc6099979700087711d8'
 
     return NextResponse.json({
       tts_provider: provider,
       typecast_voice_id: voiceId,
+      typecast_enabled: typecastEnabled,
     }, {
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -46,6 +49,7 @@ export async function GET() {
       // 안전한 기본값: 네이버 (설정 조회 실패 시 Typecast 결제 오류 방지)
       tts_provider: 'naver',
       typecast_voice_id: 'tc_5ecbbc6099979700087711d8',
+      typecast_enabled: false,
     }, {
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',

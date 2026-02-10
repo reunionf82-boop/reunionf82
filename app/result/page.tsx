@@ -324,6 +324,9 @@ function ResultContent() {
   const [streamingFinished, setStreamingFinished] = useState(false) // 스트리밍 완료 여부 (realtime)
   const [showCompletionPopup, setShowCompletionPopup] = useState(false) // 점사 완료 팝업
   const completionPopupShownRef = useRef(false)
+  const [showSummaryPopup, setShowSummaryPopup] = useState(false) // 점사 요약 팝업
+  const [summaryText, setSummaryText] = useState<string>('')
+  const [summaryLoading, setSummaryLoading] = useState(false)
   const thumbnailHtmlCacheRef = useRef<Map<number, string>>(new Map()) // 썸네일 HTML 캐시 (메뉴 인덱스별)
   const manseHtmlCacheRef = useRef<Map<number, string>>(new Map()) // 만세력 HTML 캐시 (메뉴 인덱스별)
   const autoSavedRef = useRef(false) // 자동 저장 여부 (중복 저장 방지)
@@ -605,6 +608,10 @@ function ResultContent() {
         }
         
         setResultData(parsedData)
+        // 저장된 점사 요약이 있으면 미리 채워 두어 버튼 클릭 시 API 재호출 없이 표시
+        if (savedResult.fortune_summary && String(savedResult.fortune_summary).trim()) {
+          setSummaryText(String(savedResult.fortune_summary).trim())
+        }
         // ✅ 저장된 결과 화면에서는 스트리밍이 아닌 "완료 상태"로 렌더링해야 본문이 보인다.
         // 사용자가 fortuneViewMode를 realtime로 설정했더라도 savedId로 진입한 경우는 완료된 HTML을 즉시 표시.
         setIsStreamingActive(false)
@@ -3968,10 +3975,12 @@ ${fontFace ? fontFace : ''}
       }
 
       // 1-1. app_settings의 TTS provider/voice id (공개 설정 API)
+      let typecastEnabled = true
       try {
         const ttsResp = await fetch('/api/settings/tts', { cache: 'no-store' })
         if (ttsResp.ok) {
           const ttsJson = await ttsResp.json()
+          typecastEnabled = ttsJson?.typecast_enabled === true
           ttsProvider = ttsJson?.tts_provider === 'naver' ? 'naver' : 'typecast'
           typecastVoiceId = (typeof ttsJson?.typecast_voice_id === 'string' && ttsJson.typecast_voice_id.trim() !== '')
             ? ttsJson.typecast_voice_id.trim()
@@ -3991,13 +4000,13 @@ ${fontFace ? fontFace : ''}
           } else {
           }
 
-          // 컨텐츠별 provider/voice id는 "명시적으로 타입캐스트가 설정된 경우에만" override
-          // (contents.tts_provider 기본값이 naver이면, 전역 설정(app_settings)을 덮어쓰는 문제가 생김)
-          if ((freshContent as any)?.tts_provider === 'typecast') {
+          // 컨텐츠별 provider/voice id는 "전역 타입캐스트 ON + 이 컨텐츠 타입캐스트 ON + 명시적 typecast 설정"일 때만 override
+          const contentTypecastOn = (freshContent as any)?.typecast_enabled === true
+          if (typecastEnabled && contentTypecastOn && (freshContent as any)?.tts_provider === 'typecast') {
             ttsProvider = 'typecast'
           }
           const vc = String((freshContent as any)?.typecast_voice_id || '').trim()
-          if (vc) {
+          if (typecastEnabled && contentTypecastOn && vc) {
             typecastVoiceId = vc
           }
           
@@ -4436,10 +4445,12 @@ ${fontFace ? fontFace : ''}
       }
 
       // 1-1. app_settings의 TTS provider/voice id
+      let typecastEnabled = true
       try {
         const ttsResp = await fetch('/api/settings/tts', { cache: 'no-store' })
         if (ttsResp.ok) {
           const ttsJson = await ttsResp.json()
+          typecastEnabled = ttsJson?.typecast_enabled === true
           ttsProvider = ttsJson?.tts_provider === 'naver' ? 'naver' : 'typecast'
           typecastVoiceId = (typeof ttsJson?.typecast_voice_id === 'string' && ttsJson.typecast_voice_id.trim() !== '')
             ? ttsJson.typecast_voice_id.trim()
@@ -4464,12 +4475,13 @@ ${fontFace ? fontFace : ''}
             savedResult.content.tts_speaker = freshContent.tts_speaker
           }
 
-          // 컨텐츠별 provider/voice id는 "명시적으로 타입캐스트가 설정된 경우에만" override
-          if ((freshContent as any)?.tts_provider === 'typecast') {
+          // 컨텐츠별: 전역 타입캐스트 ON + 이 컨텐츠 타입캐스트 ON + 명시적 typecast 설정일 때만 override
+          const contentTypecastOn = (freshContent as any)?.typecast_enabled === true
+          if (typecastEnabled && contentTypecastOn && (freshContent as any)?.tts_provider === 'typecast') {
             ttsProvider = 'typecast'
           }
           const vc = String((freshContent as any)?.typecast_voice_id || '').trim()
-          if (vc) {
+          if (typecastEnabled && contentTypecastOn && vc) {
             typecastVoiceId = vc
           }
           if (savedResult.content) {
@@ -5883,12 +5895,14 @@ ${fontFace ? fontFace : ''}
                   <h1>${saved.title}</h1>
                 </div>
                 ${safeBookCoverHtml}
+                ${(contentObj && (contentObj as any).typecast_enabled === true) ? `
                 <div class="tts-button-container">
                   <button id="ttsButton" class="tts-button">
                     <span id="ttsIcon">🔊</span>
                     <span id="ttsText">점사 듣기</span>
                   </button>
                 </div>
+                ` : ''}
                 ${safeTocHtml}
                 <div id="contentHtml">${safeHtml}</div>
               </div>
@@ -6131,12 +6145,14 @@ ${fontFace ? fontFace : ''}
                     // undefined/null이면 네이버로 (실제 전역 설정은 /api/settings/tts로 덮어씀)
                     let ttsProvider = (window.savedContentTtsProvider === 'typecast') ? 'typecast' : 'naver';
                     let typecastVoiceId = window.savedContentTypecastVoiceId || 'tc_5ecbbc6099979700087711d8';
+                    let typecastEnabled = true;
                     
                     // 관리자 기본값(app_settings)도 반영
                     try {
                       const ttsResp = await fetch('/api/settings/tts', { cache: 'no-store' });
                       if (ttsResp.ok) {
                         const ttsJson = await ttsResp.json();
+                        typecastEnabled = ttsJson && ttsJson.typecast_enabled === true;
                         if (ttsJson && ttsJson.tts_provider) {
                           ttsProvider = (ttsJson.tts_provider === 'naver') ? 'naver' : 'typecast';
                         }
@@ -6147,7 +6163,7 @@ ${fontFace ? fontFace : ''}
                       }
                     } catch (e) {}
                     
-                    // content.id가 있으면 Supabase에서 최신 화자 정보 조회
+                    // content.id가 있으면 Supabase에서 최신 화자 정보 조회 (타입캐스트 온일 때만 컨텐츠 typecast 적용)
                     if (window.savedContentId) {
                       try {
                         
@@ -6165,11 +6181,12 @@ ${fontFace ? fontFace : ''}
                           window.savedContentSpeaker = speaker; // 전역 변수 업데이트
                         } else {
                         }
-                        if (data.tts_provider === 'typecast') {
+                        const contentTypecastOn = data.typecast_enabled === true;
+                        if (typecastEnabled && contentTypecastOn && data.tts_provider === 'typecast') {
                           ttsProvider = 'typecast';
                           window.savedContentTtsProvider = ttsProvider;
                         }
-                        if (data.typecast_voice_id) {
+                        if (typecastEnabled && contentTypecastOn && data.typecast_voice_id) {
                           const vc = String(data.typecast_voice_id || '').trim();
                           if (vc) {
                             typecastVoiceId = vc;
@@ -6588,9 +6605,8 @@ ${fontFace ? fontFace : ''}
       {/* 플로팅 배너 - 점사율 로딩바 + 나의 사주명식 보기 + 목차로 이동 */}
       {parsedMenus.length > 0 && (
         <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
-          {/* 점사율 로딩바 (목차로 이동 버튼 위에 수직 배치, 시작 위치 맞춤) */}
-          {/* ✅ 조건 강화: streamingFinished가 true이거나 점사율이 100%이면 숨김 */}
-          {!streamingFinished && isStreamingActive && totalSubtitles > 0 && revealedCount < totalSubtitles && (
+          {/* 점사율 로딩바 (스트리밍 중) / 점사 요약 버튼 (스트리밍 끝난 뒤, 같은 위치) */}
+          {!streamingFinished && isStreamingActive && totalSubtitles > 0 && revealedCount < totalSubtitles ? (
             <div 
               className="relative overflow-visible py-0.5" 
               style={{ width: tocButtonWidth ? `${tocButtonWidth}px` : 'fit-content', minWidth: '120px' }}
@@ -6614,11 +6630,51 @@ ${fontFace ? fontFace : ''}
                 </span>
               </div>
             </div>
-          )}
+          ) : savedId && resultData?.content?.summary_max_chars !== 0 ? (
+            <button
+              type="button"
+              disabled={summaryLoading}
+              onClick={async () => {
+                // 이미 state에 저장된 요약이 있으면 API 호출 없이 팝업만 표시
+                if (summaryText.trim()) {
+                  setShowSummaryPopup(true)
+                  return
+                }
+                setShowSummaryPopup(true)
+                setSummaryLoading(true)
+                try {
+                  const getRes = await fetch(`/api/saved-results/summary?id=${encodeURIComponent(savedId)}`)
+                  const getData = await getRes.json().catch(() => ({}))
+                  if (getData.success && getData.summary) {
+                    setSummaryText(getData.summary)
+                    setSummaryLoading(false)
+                    return
+                  }
+                  const res = await fetch('/api/saved-results/summarize', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: Number(savedId) }),
+                  })
+                  const data = await res.json().catch(() => ({}))
+                  if (data.success && data.summary) {
+                    setSummaryText(data.summary)
+                  } else {
+                    setSummaryText(data.error || '요약 생성에 실패했습니다.')
+                  }
+                } catch {
+                  setSummaryText('요약 요청 중 오류가 발생했습니다.')
+                } finally {
+                  setSummaryLoading(false)
+                }
+              }}
+              className="bg-amber-500/90 hover:bg-amber-500 text-white font-semibold px-4 py-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap text-sm disabled:opacity-70"
+            >
+              {summaryLoading ? '요약 중...' : '점사 요약'}
+            </button>
+          ) : null}
           
-          {/* 나의 사주명식 보기 + 목차로 이동 버튼 (같은 줄에 배치) */}
+          {/* 나의 사주명식 보기 + 목차로 이동 버튼 (한 줄에 2개) */}
           <div className="flex items-center gap-2">
-            {/* 나의 사주명식 보기 버튼 (목차로 이동 버튼 왼쪽) */}
             {parsedMenus.length > 0 && parsedMenus[0].manseHtml && (
           <button
                 onClick={() => setShowMansePopup(true)}
@@ -6627,7 +6683,6 @@ ${fontFace ? fontFace : ''}
                 나의 사주명식 보기
               </button>
             )}
-            
             {/* 목차로 이동 버튼 (타이틀 내용에 맞게 너비 자동 조정) */}
             <button
               ref={tocButtonRef}
@@ -6643,6 +6698,47 @@ ${fontFace ? fontFace : ''}
         </div>
       )}
       
+      {/* 점사 요약 팝업 */}
+      {showSummaryPopup && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col max-h-[85vh] min-h-0">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between shrink-0">
+              <h2 className="text-lg font-bold text-gray-900">점사 요약</h2>
+              <button
+                type="button"
+                onClick={() => setShowSummaryPopup(false)}
+                className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto overflow-x-hidden flex-1 min-h-0 overscroll-contain" tabIndex={0}>
+              {summaryLoading ? (
+                <div className="flex flex-col items-center gap-3">
+                  <p className="text-gray-500 text-center">요약을 생성하고 있습니다...</p>
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-pink-200 border-t-pink-500" />
+                </div>
+              ) : summaryText ? (
+                <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{summaryText}</p>
+              ) : (
+                <p className="text-gray-500 text-center">요약 내용이 없습니다.</p>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowSummaryPopup(false)}
+                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-semibold py-2.5 rounded-xl transition-colors"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 나의 사주명식 보기 팝업 */}
       {showMansePopup && parsedMenus.length > 0 && parsedMenus[0].manseHtml && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-2 sm:p-4">
@@ -6758,7 +6854,7 @@ ${fontFace ? fontFace : ''}
 
           {/* ✅ 만세력 위 1줄(사주명식 정보 라인)은 만세력 블록 내부에서만 별도 스타일로 표시 */}
           
-          {html && (
+          {html && (content as any)?.typecast_enabled === true && (
             <div className="mb-4 flex flex-col items-center gap-2">
               <button
                 onClick={handleTextToSpeech}

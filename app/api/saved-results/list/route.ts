@@ -109,6 +109,7 @@ export async function GET(request: NextRequest) {
             voice_duration_seconds: data.voice_duration_seconds || null,
             content_id: data.content_id || null,
             voice_counselor_name: voice_counselor_name || null,
+            fortune_summary: data.fortune_summary ?? null,
           }
         },
         {

@@ -269,7 +269,6 @@ export default function AdminPage() {
           : 'tc_5ecbbc6099979700087711d8'
         setSelectedTypecastVoiceId(loadedVoiceId)
       }
-
       if (data.dev_unlock_password_set !== undefined) {
         setDevUnlockPasswordSet(Boolean(data.dev_unlock_password_set))
       }

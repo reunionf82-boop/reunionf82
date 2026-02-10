@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     // 직접 모든 필드를 조회하여 실제 DB 값을 확인
     const { data: rows, error } = await supabase
       .from('app_settings')
-      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, home_html, updated_at, dev_unlock_password_hash, dev_unlock_duration_minutes, dev_unlock_hide_enabled')
+      .select('id, selected_model, selected_speaker, fortune_view_mode, use_sequential_fortune, selected_tts_provider, selected_typecast_voice_id, typecast_enabled, summary_max_chars, home_html, updated_at, dev_unlock_password_hash, dev_unlock_duration_minutes, dev_unlock_hide_enabled')
       .eq('id', 1)
       // ✅ id=1 행이 중복이어도 single-coercion 에러를 피하기 위해 배열로 받고 첫 행만 사용
       .limit(1)
@@ -104,6 +104,9 @@ export async function GET(req: NextRequest) {
     const finalTypecastVoiceId = (typecastVoiceIdValue != null && String(typecastVoiceIdValue).trim() !== '')
       ? String(typecastVoiceIdValue).trim()
       : 'tc_5ecbbc6099979700087711d8'
+    const finalTypecastEnabled = (data as any).typecast_enabled === true
+    const summaryMaxChars = (data as any).summary_max_chars
+    const finalSummaryMaxChars = typeof summaryMaxChars === 'number' && summaryMaxChars > 0 ? summaryMaxChars : 500
 
     // 디버깅: 최종 반환 값 확인
 
@@ -114,6 +117,8 @@ export async function GET(req: NextRequest) {
       use_sequential_fortune: finalUseSequentialFortune,
       tts_provider: finalTtsProvider,
       typecast_voice_id: finalTypecastVoiceId,
+      typecast_enabled: finalTypecastEnabled,
+      summary_max_chars: finalSummaryMaxChars,
       home_html: String((data as any).home_html || ''),
       dev_unlock_password_set: Boolean((data as any).dev_unlock_password_hash),
       dev_unlock_duration_minutes: (data as any).dev_unlock_duration_minutes ?? null,

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getKSTNow } from '@/lib/payment-utils'
+import { normalizeVoiceMessagesToKorean } from '@/lib/voice-transcript-korean'
+import { summarizeVoiceConversation, normalizePhoneForVoice } from '@/lib/voice-summary'
 
 // Next.js 캐싱 방지 설정 (프로덕션 환경에서 항상 최신 데이터 가져오기)
 export const dynamic = 'force-dynamic'
@@ -23,6 +25,8 @@ export async function POST(request: NextRequest) {
       title, html, content, model, processingTime, userName,
       // 음성형 결과 필드
       result_type, voice_messages, voice_audio_url, voice_duration_seconds, content_id,
+      phone,
+      injected_summary_item_refs,
     } = body
 
     const isVoice = result_type === 'voice'
@@ -50,13 +54,25 @@ export async function POST(request: NextRequest) {
       created_at: savedAtKST, // KST 기준으로 저장
     }
 
-    // 음성형 필드 추가
+    // 음성형 필드 추가 (저장 시 대화 문장을 모두 한국어로 정규화)
     if (isVoice) {
       insertData.result_type = 'voice'
-      insertData.voice_messages = voice_messages || null
+      let finalVoiceMessages = voice_messages || null
+      if (Array.isArray(finalVoiceMessages) && finalVoiceMessages.length > 0) {
+        try {
+          finalVoiceMessages = await normalizeVoiceMessagesToKorean(finalVoiceMessages)
+        } catch {
+          /* 실패 시 원본 유지 */
+        }
+      }
+      insertData.voice_messages = finalVoiceMessages
       insertData.voice_audio_url = voice_audio_url || null
       insertData.voice_duration_seconds = voice_duration_seconds || null
       insertData.content_id = content_id || null
+    } else {
+      // 점사형: content_id 저장 (요약 시 컨텐츠별 글자수 조회용)
+      const fortuneContentId = content?.id ?? content_id
+      if (fortuneContentId != null) insertData.content_id = Number(fortuneContentId)
     }
 
     const { data, error } = await supabase
@@ -70,6 +86,46 @@ export async function POST(request: NextRequest) {
         { error: '저장된 결과 저장에 실패했습니다.', details: error.message },
         { status: 500 }
       )
+    }
+
+    // 음성형: 대화 요약(핵심 포인트·주요 일정) 생성 후 voice_conversation_summaries에 저장 (같은 전화번호 = 같은 사람, 재접속 시 안부 문맥용)
+    const voiceMsgsForSummary = isVoice ? insertData.voice_messages : null
+    if (isVoice && Array.isArray(voiceMsgsForSummary) && voiceMsgsForSummary.length > 0) {
+      const phoneNorm = normalizePhoneForVoice(phone ?? '')
+      if (phoneNorm) {
+        try {
+          const summary = await summarizeVoiceConversation(voiceMsgsForSummary)
+          if (summary.corePoints.length > 0 || summary.keyDates.length > 0) {
+            await supabase.from('voice_conversation_summaries').insert({
+              phone_normalized: phoneNorm,
+              saved_result_id: data.id,
+              content_id: content_id != null ? Number(content_id) : null,
+              summary_json: summary,
+              created_at: savedAtKST,
+            })
+          }
+        } catch {
+          /* 요약 실패해도 저장 결과는 이미 성공 */
+        }
+      }
+      // 이번 세션에서 안부로 물어본 항목 기록 (다음엔 다시 물어보지 않음)
+      if (Array.isArray(injected_summary_item_refs) && injected_summary_item_refs.length > 0) {
+        for (const ref of injected_summary_item_refs) {
+          const s = String(ref).trim()
+          if (!s) continue
+          const numPart = s.split('_')[0]
+          const summaryId = parseInt(numPart, 10)
+          if (!Number.isFinite(summaryId) || summaryId < 1) continue
+          try {
+            await supabase.from('voice_summary_asked').upsert(
+              { summary_id: summaryId, item_ref: s, asked_at: savedAtKST },
+              { onConflict: 'summary_id,item_ref' }
+            )
+          } catch {
+            /* 무시 */
+          }
+        }
+      }
     }
 
     // 저장된 UTC 시간을 한국 시간(KST, UTC+9)으로 변환하여 포맷팅

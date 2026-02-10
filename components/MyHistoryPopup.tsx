@@ -27,6 +27,8 @@ interface SavedResult {
   voice_audio_url?: string
   voice_duration_seconds?: number
   content_id?: number
+  fortune_summary?: string | null
+  summary_max_chars?: number | null // 0이면 점사 요약 버튼 비표시
 }
 
 export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = true, contentId }: MyHistoryPopupProps) {
@@ -45,6 +47,9 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
   const [showDeleteConfirmPopup, setShowDeleteConfirmPopup] = useState<number | null>(null) // 삭제 확인 팝업 (resultId)
   const [pdfGeneratingMap, setPdfGeneratingMap] = useState<Record<number, boolean>>({}) // PDF 생성 중 상태 (result.id별)
   const [pdfProgressMap, setPdfProgressMap] = useState<Record<number, number>>({}) // PDF 생성 진행률 (result.id별, 0-100)
+  const [showSummaryPopup, setShowSummaryPopup] = useState<boolean>(false)
+  const [summaryContent, setSummaryContent] = useState<string>('')
+  const [summaryLoading, setSummaryLoading] = useState<boolean>(false)
   
   // 로컬 스토리지에서 배너 데이터 가져오기
   const getBannersFromStorage = (): { basic: string; details: string[] } | null => {
@@ -511,6 +516,39 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
   const handleView = (resultId: number) => {
     if (typeof window !== 'undefined') {
       window.open(`/result?savedId=${resultId}`, '_blank')
+    }
+  }
+
+  const handleSummaryClick = async (result: SavedResult) => {
+    if (result.fortune_summary && result.fortune_summary.trim()) {
+      setSummaryContent(result.fortune_summary.trim())
+      setShowSummaryPopup(true)
+      return
+    }
+    setSummaryLoading(true)
+    setSummaryContent('')
+    setShowSummaryPopup(true)
+    try {
+      const res = await fetch('/api/saved-results/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: result.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (data.success && data.summary) {
+        setSummaryContent(data.summary)
+        setSavedResults(prev =>
+          prev.map(item =>
+            item.id === result.id ? { ...item, fortune_summary: data.summary } : item
+          )
+        )
+      } else {
+        setSummaryContent(data.error || '요약 생성에 실패했습니다.')
+      }
+    } catch {
+      setSummaryContent('요약 요청 중 오류가 발생했습니다.')
+    } finally {
+      setSummaryLoading(false)
     }
   }
 
@@ -2572,12 +2610,23 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                             대화보기
                           </button>
                         ) : (
-                          <button
-                            onClick={() => handleView(result.id)}
-                            className="inline-flex items-center justify-center whitespace-nowrap bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200"
-                          >
-                            다시보기
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleView(result.id)}
+                              className="inline-flex items-center justify-center whitespace-nowrap bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200"
+                            >
+                              다시보기
+                            </button>
+                            {result.summary_max_chars !== 0 && (
+                              <button
+                                onClick={() => handleSummaryClick(result)}
+                                disabled={summaryLoading}
+                                className="inline-flex items-center justify-center whitespace-nowrap bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200 disabled:opacity-70"
+                              >
+                                점사 요약
+                              </button>
+                            )}
+                          </>
                         )}
 
                         {/* 음성형: 다시듣기 (오디오 재생) */}
@@ -2675,6 +2724,45 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                   생성하기
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 점사 요약 팝업 */}
+      {showSummaryPopup && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10000] p-4" onClick={() => setShowSummaryPopup(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] min-h-0 overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between shrink-0">
+              <h3 className="text-lg font-bold text-gray-900">점사 요약</h3>
+              <button
+                onClick={() => setShowSummaryPopup(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto overflow-x-hidden flex-1 min-h-0 overscroll-contain" tabIndex={0}>
+              {summaryLoading ? (
+                <div className="flex flex-col items-center gap-3">
+                  <p className="text-gray-500 text-center">요약을 생성하고 있습니다...</p>
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-pink-200 border-t-pink-500" />
+                </div>
+              ) : summaryContent ? (
+                <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{summaryContent}</p>
+              ) : (
+                <p className="text-gray-500 text-center">요약 내용이 없습니다.</p>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 shrink-0">
+              <button
+                onClick={() => setShowSummaryPopup(false)}
+                className="w-full bg-pink-500 hover:bg-pink-600 text-white font-semibold py-2.5 rounded-xl transition-colors"
+              >
+                닫기
+              </button>
             </div>
           </div>
         </div>

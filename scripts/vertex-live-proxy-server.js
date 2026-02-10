@@ -1,4 +1,23 @@
 /* eslint-disable no-console */
+const path = require('path')
+const fs = require('fs')
+
+// 개발 로컬 실행 시 .env.local 로드 (dotenv 패키지 없이)
+try {
+  const envPath = path.join(__dirname, '..', '.env.local')
+  if (fs.existsSync(envPath)) {
+    const content = fs.readFileSync(envPath, 'utf8')
+    content.split('\n').forEach((line) => {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/)
+      if (m) {
+        const key = m[1]
+        const val = m[2].replace(/^["']|["']$/g, '').trim()
+        if (!process.env[key]) process.env[key] = val
+      }
+    })
+  }
+} catch (e) { /* ignore */ }
+
 const WebSocket = require('ws')
 const { Server: WebSocketServer } = WebSocket
 const { GoogleGenAI } = require('@google/genai')

@@ -179,6 +179,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 컨텐츠별 요약 글자수 조회 (점사 요약 버튼 노출 여부: 0이면 비표시)
+    const contentIds = Array.from(new Set((verifiedResults as any[]).map((r: any) => r.content_id).filter((id: any) => id != null)))
+    if (contentIds.length > 0) {
+      const { data: contentRows } = await supabase
+        .from('contents')
+        .select('id, summary_max_chars')
+        .in('id', contentIds)
+      const charsByContentId: Record<number, number | null> = {}
+      ;(contentRows || []).forEach((r: any) => {
+        charsByContentId[r.id] = r.summary_max_chars
+      })
+      verifiedResults.forEach((r: any) => {
+        r.summary_max_chars = r.content_id != null ? charsByContentId[r.content_id] : undefined
+      })
+    }
+
     return NextResponse.json({
       success: true,
       data: verifiedResults

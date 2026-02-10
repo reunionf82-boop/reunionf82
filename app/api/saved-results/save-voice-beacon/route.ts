@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getKSTNow } from '@/lib/payment-utils'
+import { normalizeVoiceMessagesToKorean } from '@/lib/voice-transcript-korean'
+import { summarizeVoiceConversation, normalizePhoneForVoice } from '@/lib/voice-summary'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -25,6 +27,7 @@ export async function POST(request: NextRequest) {
       title, html, result_type, voice_messages, voice_audio_url,
       voice_duration_seconds, content_id, userName,
       _beacon_phone, _beacon_password,
+      _beacon_injected_summary_item_refs,
     } = body
 
     if (!title && !voice_messages) {
@@ -34,6 +37,15 @@ export async function POST(request: NextRequest) {
     const savedAtKST = getKSTNow()
 
     const isVoice = result_type === 'voice'
+    let finalVoiceMessages = voice_messages || null
+    if (isVoice && Array.isArray(finalVoiceMessages) && finalVoiceMessages.length > 0) {
+      try {
+        finalVoiceMessages = await normalizeVoiceMessagesToKorean(finalVoiceMessages)
+      } catch {
+        /* 실패 시 원본 유지 */
+      }
+    }
+
     const insertData: Record<string, any> = {
       title: title || '음성 상담',
       html: html || (isVoice ? '' : null),
@@ -45,7 +57,7 @@ export async function POST(request: NextRequest) {
     // voice 필드 추가 (컬럼이 있을 때만 동작)
     if (result_type === 'voice') {
       insertData.result_type = 'voice'
-      insertData.voice_messages = voice_messages || null
+      insertData.voice_messages = finalVoiceMessages
       insertData.voice_audio_url = voice_audio_url || null
       insertData.voice_duration_seconds = voice_duration_seconds || null
       insertData.content_id = content_id || null
@@ -87,6 +99,45 @@ export async function POST(request: NextRequest) {
     // voice 저장 성공 → credentials 연결
     if (data && _beacon_phone && _beacon_password) {
       await linkCredentials(data.id, _beacon_phone, _beacon_password)
+    }
+
+    // 음성형: 대화 요약 생성 후 voice_conversation_summaries에 저장
+    if (data && isVoice && Array.isArray(finalVoiceMessages) && finalVoiceMessages.length > 0) {
+      const phoneNorm = normalizePhoneForVoice(_beacon_phone ?? '')
+      if (phoneNorm) {
+        try {
+          const summary = await summarizeVoiceConversation(finalVoiceMessages)
+          if (summary.corePoints.length > 0 || summary.keyDates.length > 0) {
+            await supabase.from('voice_conversation_summaries').insert({
+              phone_normalized: phoneNorm,
+              saved_result_id: data.id,
+              content_id: content_id != null ? Number(content_id) : null,
+              summary_json: summary,
+              created_at: savedAtKST,
+            })
+          }
+        } catch {
+          /* 요약 실패해도 저장은 성공 */
+        }
+      }
+      // 이번 세션에서 안부로 물어본 항목 기록
+      const refs = _beacon_injected_summary_item_refs
+      if (Array.isArray(refs) && refs.length > 0) {
+        for (const ref of refs) {
+          const s = String(ref).trim()
+          if (!s) continue
+          const summaryId = parseInt(s.split('_')[0], 10)
+          if (!Number.isFinite(summaryId) || summaryId < 1) continue
+          try {
+            await supabase.from('voice_summary_asked').upsert(
+              { summary_id: summaryId, item_ref: s, asked_at: savedAtKST },
+              { onConflict: 'summary_id,item_ref' }
+            )
+          } catch {
+            /* 무시 */
+          }
+        }
+      }
     }
 
     return NextResponse.json({ success: true, id: data?.id })

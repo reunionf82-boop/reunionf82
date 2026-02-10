@@ -1005,10 +1005,12 @@ function FormContent() {
       let typecastVoiceId = 'tc_5ecbbc6099979700087711d8'
 
       // app_settings 기본값(공개 설정 API)도 반영
+      let typecastEnabled = true
       try {
         const ttsResp = await fetch('/api/settings/tts', { cache: 'no-store' })
         if (ttsResp.ok) {
           const ttsJson = await ttsResp.json()
+          typecastEnabled = ttsJson?.typecast_enabled === true
           ttsProvider = ttsJson?.tts_provider === 'naver' ? 'naver' : 'typecast'
           typecastVoiceId = (typeof ttsJson?.typecast_voice_id === 'string' && ttsJson.typecast_voice_id.trim() !== '')
             ? ttsJson.typecast_voice_id.trim()
@@ -1017,16 +1019,15 @@ function FormContent() {
       } catch (e) {
       }
 
-      // 컨텐츠별 override:
-      // - provider가 'typecast'로 명시된 경우에만 타입캐스트로 전환
-      // - voice id는 "타입캐스트일 때 사용할 값"일 뿐, 제공자를 강제하지 않는다
+      // 컨텐츠별 override: 전역 타입캐스트 ON + 이 컨텐츠 타입캐스트 ON + 명시적 typecast일 때만
+      const contentTypecastOn = (savedResult.content as any)?.typecast_enabled === true
       const contentVoiceId = (savedResult.content?.typecast_voice_id && String(savedResult.content.typecast_voice_id).trim() !== '')
         ? String(savedResult.content.typecast_voice_id).trim()
         : ''
-      if (contentVoiceId) {
+      if (typecastEnabled && contentTypecastOn && contentVoiceId) {
         typecastVoiceId = contentVoiceId
       }
-      if (savedResult.content?.tts_provider === 'typecast') {
+      if (typecastEnabled && contentTypecastOn && savedResult.content?.tts_provider === 'typecast') {
         ttsProvider = 'typecast'
       }
 
@@ -2942,7 +2943,77 @@ function FormContent() {
       showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
       return
     }
-    
+
+    // 0원(무료) 음성: 팝업 없이 바로 무료 시작
+    const isVoiceContent = content?.content_type === 'voice' || !!(content?.voice_model ?? content?.voice_persona_prompt ?? (Array.isArray(content?.voice_time_options) && content.voice_time_options.length > 0)) || (typeof content?.content_name === 'string' && content.content_name.includes('음성'))
+    const voiceTimeOptions = isVoiceContent ? (content?.voice_time_options || []) : []
+    const selectedVoiceOption = isVoiceContent && voiceTimeOptions.length > 0 ? voiceTimeOptions[0] : null
+    const priceNum = selectedVoiceOption ? selectedVoiceOption.price : parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
+    if (isVoiceContent && Number.isFinite(priceNum) && priceNum <= 0) {
+      setSubmitting(true)
+      const { generateOrderId } = await import('@/lib/payment-utils')
+      const oid = generateOrderId()
+      const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('payment_oid', oid)
+        sessionStorage.setItem('payment_method', 'card')
+        sessionStorage.setItem('payment_content_id', String(content.id))
+        sessionStorage.setItem('payment_user_name', name)
+        sessionStorage.setItem('payment_phone', phoneNumber)
+        sessionStorage.setItem('payment_password', password || '')
+        sessionStorage.setItem('payment_user_gender', gender || '')
+        sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
+        sessionStorage.setItem('payment_user_year', year || '')
+        sessionStorage.setItem('payment_user_month', month || '')
+        sessionStorage.setItem('payment_user_day', day || '')
+        sessionStorage.setItem('payment_user_birth_hour', birthHour || '')
+        if (partnerName) {
+          sessionStorage.setItem('payment_partner_name', partnerName)
+          sessionStorage.setItem('payment_partner_gender', partnerGender || '')
+          sessionStorage.setItem('payment_partner_calendar_type', partnerCalendarType || 'solar')
+          sessionStorage.setItem('payment_partner_year', partnerYear || '')
+          sessionStorage.setItem('payment_partner_month', partnerMonth || '')
+          sessionStorage.setItem('payment_partner_day', partnerDay || '')
+          sessionStorage.setItem('payment_partner_birth_hour', partnerBirthHour || '')
+        }
+        try {
+          localStorage.setItem('voice_payment_oid', oid)
+          localStorage.setItem('voice_content_id', String(content.id))
+        } catch { /* ignore */ }
+        if (selectedVoiceOption) {
+          sessionStorage.setItem('payment_voice_minutes', String(selectedVoiceOption.minutes))
+          sessionStorage.setItem('payment_voice_time_option', JSON.stringify(selectedVoiceOption))
+        }
+      }
+      try {
+        await startFortuneTellingWithContent(
+          Date.now(),
+          content,
+          {
+            name,
+            gender: gender as 'male' | 'female' | '' || '',
+            calendarType: (calendarType as 'solar' | 'lunar' | 'lunar-leap') || 'solar',
+            year: year || '',
+            month: month || '',
+            day: day || '',
+            birthHour: birthHour || '',
+            partnerName: partnerName || '',
+            partnerGender: (partnerGender as 'male' | 'female' | '') || '',
+            partnerCalendarType: (partnerCalendarType as 'solar' | 'lunar' | 'lunar-leap') || 'solar',
+            partnerYear: partnerYear || '',
+            partnerMonth: partnerMonth || '',
+            partnerDay: partnerDay || '',
+            partnerBirthHour: partnerBirthHour || ''
+          },
+          true,
+          oid
+        )
+      } finally {
+        setSubmitting(false)
+      }
+      return
+    }
+
     setShowPaymentPopup(true)
   }
 
@@ -3002,17 +3073,93 @@ function FormContent() {
     setPaymentProcessingMethod(paymentMethod)
 
     try {
-      // 음성형: 항상 첫 번째 시간 상품 사용 (추가 시간은 보이스 화면 내 결제)
-      const isVoiceContent = content?.content_type === 'voice'
-      const voiceTimeOptions = isVoiceContent ? (content?.voice_time_options || []) : []
-      const selectedVoiceOption = isVoiceContent && voiceTimeOptions.length > 0
-        ? voiceTimeOptions[0]
-        : null
+      // 음성형: 팝업과 동일한 판별 + voice_time_options 파싱 (문자열 JSON 지원)
+      const rawOpts = content?.voice_time_options
+      let voiceTimeOptions: Array<{ minutes: number; price: number; label: string }> = []
+      if (Array.isArray(rawOpts)) voiceTimeOptions = rawOpts
+      else if (typeof rawOpts === 'string' && rawOpts.trim()) {
+        try { voiceTimeOptions = JSON.parse(rawOpts) } catch { voiceTimeOptions = [] }
+      }
+      const isVoiceContent =
+        content?.content_type === 'voice' ||
+        !!content?.voice_model ||
+        !!content?.voice_persona_prompt ||
+        (Array.isArray(voiceTimeOptions) && voiceTimeOptions.length > 0) ||
+        (typeof content?.content_name === 'string' && content.content_name.includes('음성'))
+      const selectedVoiceOption = isVoiceContent && voiceTimeOptions.length > 0 ? voiceTimeOptions[0] : null
+
+      // PG 진행 여부: 팝업 이용금액과 동일하게 content.price 기준으로 0원 여부 판단 (voice_time_options[0] 아님)
+      const displayedPriceNum = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
+      const isFreeVoice = isVoiceContent && (!Number.isFinite(displayedPriceNum) || displayedPriceNum <= 0)
+      const priceNum = selectedVoiceOption != null && Number.isFinite(selectedVoiceOption.price)
+        ? selectedVoiceOption.price
+        : displayedPriceNum
+
+      // 보이스 대표 가격 0원: PG 없이 바로 보이스 화면으로 이동 (무료 체험 후 30초 남을 때 시간 상품 결제 유도)
+      if (isFreeVoice) {
+        setShowPaymentPopup(false)
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
+        const { generateOrderId } = await import('@/lib/payment-utils')
+        const oid = generateOrderId()
+        const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('payment_oid', oid)
+          sessionStorage.setItem('payment_method', 'card')
+          sessionStorage.setItem('payment_content_id', String(content.id))
+          sessionStorage.setItem('payment_user_name', name)
+          sessionStorage.setItem('payment_phone', phoneNumber)
+          sessionStorage.setItem('payment_password', password || '')
+          sessionStorage.setItem('payment_user_gender', gender || '')
+          sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
+          sessionStorage.setItem('payment_user_year', year || '')
+          sessionStorage.setItem('payment_user_month', month || '')
+          sessionStorage.setItem('payment_user_day', day || '')
+          sessionStorage.setItem('payment_user_birth_hour', birthHour || '')
+          if (partnerName) {
+            sessionStorage.setItem('payment_partner_name', partnerName)
+            sessionStorage.setItem('payment_partner_gender', partnerGender || '')
+            sessionStorage.setItem('payment_partner_calendar_type', partnerCalendarType || 'solar')
+            sessionStorage.setItem('payment_partner_year', partnerYear || '')
+            sessionStorage.setItem('payment_partner_month', partnerMonth || '')
+            sessionStorage.setItem('payment_partner_day', partnerDay || '')
+            sessionStorage.setItem('payment_partner_birth_hour', partnerBirthHour || '')
+          }
+          try {
+            localStorage.setItem('voice_payment_oid', oid)
+            localStorage.setItem('voice_content_id', String(content.id))
+          } catch { /* ignore */ }
+          if (selectedVoiceOption) {
+            sessionStorage.setItem('payment_voice_minutes', String(selectedVoiceOption.minutes))
+            sessionStorage.setItem('payment_voice_time_option', JSON.stringify(selectedVoiceOption))
+          }
+        }
+        await startFortuneTellingWithContent(
+          Date.now(),
+          content,
+          {
+            name,
+            gender: gender as 'male' | 'female' | '' || '',
+            calendarType: (calendarType as 'solar' | 'lunar' | 'lunar-leap') || 'solar',
+            year: year || '',
+            month: month || '',
+            day: day || '',
+            birthHour: birthHour || '',
+            partnerName: partnerName || '',
+            partnerGender: (partnerGender as 'male' | 'female' | '') || '',
+            partnerCalendarType: (partnerCalendarType as 'solar' | 'lunar' | 'lunar-leap') || 'solar',
+            partnerYear: partnerYear || '',
+            partnerMonth: partnerMonth || '',
+            partnerDay: partnerDay || '',
+            partnerBirthHour: partnerBirthHour || ''
+          },
+          true,
+          oid
+        )
+        return
+      }
 
       // 결제 가능 여부 검증 (유료 서비스 필수)
-      const priceNum = selectedVoiceOption
-        ? selectedVoiceOption.price
-        : parseInt(String(content?.price || '0'), 10)
       if (!Number.isFinite(priceNum) || priceNum <= 0) {
         setSubmitting(false)
         setPaymentProcessingMethod(null)
@@ -4915,7 +5062,15 @@ function FormContent() {
                   <div className="flex justify-between items-center pt-2 border-t border-pink-300">
                     <span className="text-sm font-medium text-gray-700">이용금액</span>
                     <span className="text-xl font-bold text-pink-500 text-right">
-                      {content?.price ? `${parseInt(content.price).toLocaleString()}원` : '금액 정보 없음'}
+                      {content?.price != null && String(content.price).trim() !== '' ? (
+                        (() => {
+                          const num = parseInt(String(content.price).replace(/[^0-9]/g, ''), 10)
+                          if (!Number.isFinite(num) || num <= 0) {
+                            return <>0원<span className="text-emerald-600 font-semibold">(무료)</span></>
+                          }
+                          return `${num.toLocaleString()}원`
+                        })()
+                      ) : '금액 정보 없음'}
                     </span>
                   </div>
                 </div>
@@ -4992,39 +5147,66 @@ function FormContent() {
                 <div className="mb-6"></div>
               )}
 
-              {/* 결제 버튼 */}
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => handlePaymentSubmit('card')}
-                  disabled={submitting || paymentProcessingMethod !== null}
-                  className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {paymentProcessingMethod === 'card' ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      <span>처리 중...</span>
-                    </>
-                  ) : (
-                    '카드결제'
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handlePaymentSubmit('mobile')}
-                  disabled={submitting || paymentProcessingMethod !== null}
-                  className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {paymentProcessingMethod === 'mobile' ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      <span>처리 중...</span>
-                    </>
-                  ) : (
-                    '휴대폰 결제'
-                  )}
-                </button>
-              </div>
+              {/* 결제 버튼: 0원(무료)일 때는 [음성상담 무료 시작] 1개만, 그 외 [카드결제] [휴대폰 결제] — 팝업 이용금액 표시와 동일하게 content.price 기준 */}
+              {(() => {
+                const displayedPriceNum = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
+                const isZeroWon = !Number.isFinite(displayedPriceNum) || displayedPriceNum <= 0
+                if (isZeroWon) {
+                  return (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => handlePaymentSubmit('card')}
+                        disabled={submitting || paymentProcessingMethod !== null}
+                        className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {submitting || paymentProcessingMethod !== null ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                            <span>처리 중...</span>
+                          </>
+                        ) : (
+                          '음성상담 무료 시작'
+                        )}
+                      </button>
+                    </div>
+                  )
+                }
+                return (
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handlePaymentSubmit('card')}
+                      disabled={submitting || paymentProcessingMethod !== null}
+                      className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {paymentProcessingMethod === 'card' ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                          <span>처리 중...</span>
+                        </>
+                      ) : (
+                        '카드결제'
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handlePaymentSubmit('mobile')}
+                      disabled={submitting || paymentProcessingMethod !== null}
+                      className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {paymentProcessingMethod === 'mobile' ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                          <span>처리 중...</span>
+                        </>
+                      ) : (
+                        '휴대폰 결제'
+                      )}
+                    </button>
+                  </div>
+                )
+              })()}
               {/* 결제 없이 임시 점사 결과 생성 (관리자 언락 시에만 표시) */}
               {devUnlockEnabled && (
                 <div className="mt-3">
@@ -5943,13 +6125,16 @@ function FormContent() {
           {/* 본인 정보 및 이성 정보 입력 폼 */}
           <div className="pt-6 mt-6">
           {/* 금액 섹션 */}
-          {content?.price && (
+          {((content?.price != null && String(content.price).trim() !== '') || content?.price === 0) && (
             <div className="mb-6 pb-6 border-b border-gray-200">
               <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">금액</h2>
               <div className="text-2xl font-bold text-pink-500 mb-3 text-right">
                 {(() => {
-                  // 숫자만 추출하여 세자리마다 콤마 추가
-                  const priceStr = String(content.price).replace(/[^0-9]/g, '')
+                  const priceStr = String(content.price ?? '').replace(/[^0-9]/g, '')
+                  const num = parseInt(priceStr, 10)
+                  if (!Number.isFinite(num) || num <= 0) {
+                    return <>0원 <span className="text-emerald-600 font-semibold">(무료)</span></>
+                  }
                   const formattedPrice = priceStr.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
                   return formattedPrice ? `${formattedPrice}원` : content.price
                 })()}
@@ -6479,16 +6664,25 @@ function FormContent() {
               </div>
             </div>
 
-            {/* 버튼 영역 */}
+            {/* 버튼 영역: 금액이 0원(무료)일 때만 "무료시작", 그 외 "결제하기" (클릭 시 결제정보 팝업 항상 표시) */}
             <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={submitting || loading}
-                className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {submitting ? '처리 중...' : '결제하기'}
-              </button>
+              {(() => {
+                const priceStr = String(content?.price ?? '0').replace(/[^0-9]/g, '')
+                const priceNum = priceStr === '' ? 0 : parseInt(priceStr, 10)
+                const isZeroWon = !Number.isFinite(priceNum) || priceNum <= 0
+                return (
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={submitting || loading}
+                    className={`flex-1 font-semibold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+                      isZeroWon ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white' : 'bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white'
+                    }`}
+                  >
+                    {submitting ? '처리 중...' : (isZeroWon ? '무료시작' : '결제하기')}
+                  </button>
+                )
+              })()}
               <button
                 type="button"
                 onClick={() => router.back()}
@@ -8640,12 +8834,14 @@ function FormContent() {
                                           // undefined/null이면 네이버로 (실제 전역 설정은 /api/settings/tts로 덮어씀)
                                           let ttsProvider = (window.savedContentTtsProvider === 'typecast') ? 'typecast' : 'naver';
                                           let typecastVoiceId = window.savedContentTypecastVoiceId || 'tc_5ecbbc6099979700087711d8';
+                                          let typecastEnabled = true;
                                           
                                           // 관리자 기본값(app_settings)도 반영
                                           try {
                                             const ttsResp = await fetch('/api/settings/tts', { cache: 'no-store' });
                                             if (ttsResp.ok) {
                                               const ttsJson = await ttsResp.json();
+                                              typecastEnabled = ttsJson && ttsJson.typecast_enabled === true;
                                               if (ttsJson && ttsJson.tts_provider) {
                                                 ttsProvider = (ttsJson.tts_provider === 'naver') ? 'naver' : 'typecast';
                                               }
@@ -8655,7 +8851,7 @@ function FormContent() {
                                             }
                                           } catch (e) {}
                                           
-                                          // content.id가 있으면 Supabase에서 최신 화자 정보 조회
+                                          // content.id가 있으면 Supabase에서 최신 화자 정보 조회 (타입캐스트 온일 때만 컨텐츠 typecast 적용)
                                           if (window.savedContentId) {
                                             try {
                                               const response = await fetch('/api/content/' + window.savedContentId);
@@ -8666,12 +8862,13 @@ function FormContent() {
                                                   speaker = data.tts_speaker;
                                                   window.savedContentSpeaker = speaker; // 전역 변수 업데이트
                                                 }
-                                                // 컨텐츠는 타입캐스트를 "명시한 경우에만" 전역 설정을 override
-                                                if (data.tts_provider === 'typecast') {
+                                                // 컨텐츠는 전역 ON + 이 컨텐츠 타입캐스트 ON + 명시한 경우에만 override
+                                                const contentTypecastOn = data.typecast_enabled === true;
+                                                if (typecastEnabled && contentTypecastOn && data.tts_provider === 'typecast') {
                                                   ttsProvider = 'typecast';
                                                   window.savedContentTtsProvider = ttsProvider;
                                                 }
-                                                if (data.typecast_voice_id) {
+                                                if (typecastEnabled && contentTypecastOn && data.typecast_voice_id) {
                                                   const vc = String(data.typecast_voice_id || '').trim();
                                                   if (vc) {
                                                     typecastVoiceId = vc;

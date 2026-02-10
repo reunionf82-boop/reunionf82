@@ -165,6 +165,8 @@ export function useVoiceResult() {
   const [savingConversation, setSavingConversation] = useState(false)
   const conversationSavedRef = useRef(false) // 중복 저장 방지
   const leaveAfterSaveRef = useRef(false) // 저장 후 /form 이동용
+  /** 이번 세션에서 안부로 물어본 항목 ref (저장 시 injected_summary_item_refs로 전달해 재질문 방지) */
+  const injectedSummaryItemRefsRef = useRef<string[]>([])
 
   /* ── 나가기 전 저장 확인 모달 ───────────── */
   const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false)
@@ -359,6 +361,8 @@ export function useVoiceResult() {
         // 추가: credentials 정보 (서버에서 user_credentials 생성용)
         _beacon_phone: phone,
         _beacon_password: password,
+        // 이번 세션에서 안부로 물어본 항목 (서버에서 voice_summary_asked 기록용)
+        _beacon_injected_summary_item_refs: injectedSummaryItemRefsRef.current || [],
       })
       const blob = new Blob([payload], { type: 'application/json' })
       navigator.sendBeacon('/api/saved-results/save-voice-beacon', blob)
@@ -819,6 +823,26 @@ ${manseText || '(만세력 없음)'}
                     : (isResumedSession ? defaultResumed : defaultInitial)
                 } catch {
                   greetTrigger = isResumedSession ? defaultResumed : defaultInitial
+                }
+              }
+              // 같은 전화번호 과거 상담 요약 중 아직 안부로 안 물어본 항목 조회 → 인사 직후 자연스럽게 안부 물어보기
+              const phoneForContext = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') || '' : ''
+              const contentIdForContext = contentIdRef.current ? parseInt(contentIdRef.current, 10) : null
+              if (phoneForContext) {
+                try {
+                  const ctxRes = await fetch('/api/voice/context-for-greet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone: phoneForContext, content_id: Number.isFinite(contentIdForContext) ? contentIdForContext : null }),
+                    cache: 'no-store',
+                  })
+                  const ctxData = await ctxRes.json().catch(() => ({} as { promptAddition?: string; itemRefs?: string[] }))
+                  const promptAddition = typeof ctxData.promptAddition === 'string' ? ctxData.promptAddition.trim() : ''
+                  const itemRefs = Array.isArray(ctxData.itemRefs) ? ctxData.itemRefs : []
+                  if (promptAddition) greetTrigger = greetTrigger + '\n\n' + promptAddition
+                  if (itemRefs.length > 0) injectedSummaryItemRefsRef.current = itemRefs
+                } catch {
+                  /* 실패해도 인사는 그대로 진행 */
                 }
               }
               const sendGreet = () => {
@@ -1290,7 +1314,8 @@ ${manseText || '(만세력 없음)'}
       const userName = sessionStorage.getItem('payment_user_name') || ''
       const contentTitle = contentData?.content_name || '음성 상담'
 
-      // voice 전용 필드로 저장
+      // voice 전용 필드로 저장 (phone: 요약 연동용, injected_summary_item_refs: 안부로 물어본 항목 기록)
+      const phoneForSave = sessionStorage.getItem('payment_phone') || ''
       let savedId: string | null = null
       const voicePayload = {
         title: contentTitle,
@@ -1301,6 +1326,8 @@ ${manseText || '(만세력 없음)'}
         voice_duration_seconds: durationSeconds > 0 ? durationSeconds : null,
         content_id: contentIdRef.current ? parseInt(contentIdRef.current, 10) : null,
         userName,
+        phone: phoneForSave,
+        injected_summary_item_refs: injectedSummaryItemRefsRef.current || [],
       }
 
       let saveRes = await fetch('/api/saved-results/save', {
