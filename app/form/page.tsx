@@ -5158,7 +5158,7 @@ function FormContent() {
                         type="button"
                         onClick={() => handlePaymentSubmit('card')}
                         disabled={submitting || paymentProcessingMethod !== null}
-                        className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="w-full bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                       >
                         {submitting || paymentProcessingMethod !== null ? (
                           <>
@@ -6664,22 +6664,23 @@ function FormContent() {
               </div>
             </div>
 
-            {/* 버튼 영역: 금액이 0원(무료)일 때만 "무료시작", 그 외 "결제하기" (클릭 시 결제정보 팝업 항상 표시) */}
+            {/* 버튼 영역: 컨텐츠 로드 후 가격이 명시적으로 0원일 때만 "무료시작", 그 외(로딩 중·미로드·유료) 기본 "결제하기" */}
             <div className="flex flex-col sm:flex-row gap-3">
               {(() => {
-                const priceStr = String(content?.price ?? '0').replace(/[^0-9]/g, '')
-                const priceNum = priceStr === '' ? 0 : parseInt(priceStr, 10)
-                const isZeroWon = !Number.isFinite(priceNum) || priceNum <= 0
+                const priceVal = content?.price
+                const priceStr = priceVal != null && String(priceVal).trim() !== '' ? String(priceVal).replace(/[^0-9]/g, '') : null
+                const priceNum = priceStr !== null ? parseInt(priceStr, 10) : null
+                const isExplicitlyFree = content != null && priceNum !== null && Number.isFinite(priceNum) && priceNum <= 0
                 return (
                   <button
                     type="button"
                     onClick={handleSubmit}
                     disabled={submitting || loading}
                     className={`flex-1 font-semibold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
-                      isZeroWon ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white' : 'bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white'
+                      'bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white'
                     }`}
                   >
-                    {submitting ? '처리 중...' : (isZeroWon ? '무료시작' : '결제하기')}
+                    {submitting ? '처리 중...' : (isExplicitlyFree ? '무료시작' : '결제하기')}
                   </button>
                 )
               })()}

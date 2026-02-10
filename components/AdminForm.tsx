@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getContentById, type ContentData, getThumbnailUrl } from '@/lib/supabase-admin'
 import ThumbnailModal from '@/components/ThumbnailModal'
@@ -12,6 +12,25 @@ const addCacheBusting = (url: string | null | undefined): string => {
   // 이미 타임스탬프가 있으면 제거하고 새로 추가
   const cleanUrl = url.split('?')[0].split('&')[0]
   return `${cleanUrl}?t=${Date.now()}`
+}
+
+// Supabase thumbnails 버킷 기준 썸네일 URL 정규화
+// - http/https로 시작하면 그대로 사용
+// - '/storage/v1/object/public/thumbnails/...' 형식이면 NEXT_PUBLIC_SUPABASE_URL을 앞에 붙임
+// - 'thumbnails/...' 또는 'foo.jpg' 같은 파일/경로만 있는 경우도 public URL로 변환
+const SUPABASE_BASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const toSupabasePublicThumbnailUrl = (raw: string): string => {
+  const s = (raw || '').trim()
+  if (!s) return ''
+  if (s.startsWith('http://') || s.startsWith('https://')) return s
+  if (!SUPABASE_BASE_URL) return ''
+
+  if (s.startsWith('/storage/v1/object/public/thumbnails/')) {
+    return `${SUPABASE_BASE_URL}${s}`
+  }
+
+  const fileName = s.replace(/^thumbnails\//, '').replace(/^\/+/, '')
+  return `${SUPABASE_BASE_URL}/storage/v1/object/public/thumbnails/${fileName}`
 }
 
 interface AdminFormProps {
@@ -515,8 +534,12 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     }
   }
 
-  // 변경 감지
+  // 변경 감지 (contentId 있는데 initialData 아직 없으면 로딩 중이므로 변경 없음으로 처리)
   useEffect(() => {
+    if (contentId && !initialData) {
+      setHasChanges(false)
+      return
+    }
     if (initialData) {
       // 현재 상태를 initialData와 같은 형식으로 변환
       const allMenuItems = [
@@ -541,7 +564,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         restrictions: formData.description || '',
         content_type: formData.isNew ? 'saju' : 'gonghap',
         content_name: formData.contentName || '',
-        thumbnail_url: formData.thumbnailImageUrl || '', // 이미지 썸네일
+        thumbnail_url: formData.thumbnailImageUrl?.trim() || (formData.thumbnailVideoUrl?.trim() ? getThumbnailUrl(`${formData.thumbnailVideoUrl.trim()}.jpg`) : ''), // 이미지 없으면 동영상 첫 프레임
         thumbnail_video_url: formData.thumbnailVideoUrl || '', // 동영상 썸네일 (파일명, 확장자 제외)
         price: formData.price || '',
         summary: formData.summary || '',
@@ -572,19 +595,19 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_items: allMenuItems.map((item, index) => ({
           id: index,
           value: item.value || '',
-          thumbnail_image_url: (item.thumbnailImageUrl && item.thumbnailImageUrl.trim()) ? item.thumbnailImageUrl.trim() : '',
+          thumbnail_image_url: (item.thumbnailImageUrl && item.thumbnailImageUrl.trim()) ? item.thumbnailImageUrl.trim() : (item.thumbnailVideoUrl?.trim() ? getThumbnailUrl(`${item.thumbnailVideoUrl.trim()}.jpg`) : ''),
           thumbnail_video_url: (item.thumbnailVideoUrl && item.thumbnailVideoUrl.trim()) ? item.thumbnailVideoUrl.trim() : '',
           subtitles: (item.subtitles || []).map((sub: any) => ({
             id: sub.id,
             subtitle: sub.subtitle || '',
             interpretation_tool: sub.interpretation_tool || '',
-            thumbnail_image_url: (sub.thumbnailImageUrl && sub.thumbnailImageUrl.trim()) ? sub.thumbnailImageUrl.trim() : '',
+            thumbnail_image_url: (sub.thumbnailImageUrl && sub.thumbnailImageUrl.trim()) ? sub.thumbnailImageUrl.trim() : (sub.thumbnailVideoUrl?.trim() ? getThumbnailUrl(`${sub.thumbnailVideoUrl.trim()}.jpg`) : ''),
             thumbnail_video_url: (sub.thumbnailVideoUrl && sub.thumbnailVideoUrl.trim()) ? sub.thumbnailVideoUrl.trim() : '',
             detailMenus: (sub.detailMenus || []).map((dm: any) => ({
               id: dm.id,
               detailMenu: dm.detailMenu || '',
               interpretation_tool: dm.interpretation_tool || '',
-              thumbnail_image_url: (dm.thumbnailImageUrl && dm.thumbnailImageUrl.trim()) ? dm.thumbnailImageUrl.trim() : '',
+              thumbnail_image_url: (dm.thumbnailImageUrl && dm.thumbnailImageUrl.trim()) ? dm.thumbnailImageUrl.trim() : (dm.thumbnailVideoUrl?.trim() ? getThumbnailUrl(`${dm.thumbnailVideoUrl.trim()}.jpg`) : ''),
               thumbnail_video_url: (dm.thumbnailVideoUrl && dm.thumbnailVideoUrl.trim()) ? dm.thumbnailVideoUrl.trim() : ''
             }))
           }))
@@ -597,9 +620,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         tts_provider: formData.ttsProvider === 'typecast' ? 'typecast' : 'naver',
         typecast_voice_id: (formData.typecastVoiceId || '').trim(),
         preview_thumbnails: formData.previewThumbnailImageUrls || ['', '', ''],
-        book_cover_thumbnail: formData.bookCoverThumbnailImageUrl || '',
+        book_cover_thumbnail: formData.bookCoverThumbnailImageUrl?.trim() || (formData.bookCoverThumbnailVideoUrl?.trim() ? getThumbnailUrl(`${formData.bookCoverThumbnailVideoUrl.trim()}.jpg`) : ''),
         book_cover_thumbnail_video: formData.bookCoverThumbnailVideoUrl || '',
-        ending_book_cover_thumbnail: formData.endingBookCoverThumbnailImageUrl || '',
+        ending_book_cover_thumbnail: formData.endingBookCoverThumbnailImageUrl?.trim() || (formData.endingBookCoverThumbnailVideoUrl?.trim() ? getThumbnailUrl(`${formData.endingBookCoverThumbnailVideoUrl.trim()}.jpg`) : ''),
         ending_book_cover_thumbnail_video: formData.endingBookCoverThumbnailVideoUrl || '',
       }
       
@@ -625,7 +648,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         // content_type이 비어있다면 폼 기본값(gonghap)과 맞춰 false positive 방지
         content_type: initialData.content_type || 'gonghap',
         content_name: initialData.content_name || '',
-        thumbnail_url: initialData.thumbnail_url || '',
+        thumbnail_url: (initialData.thumbnail_url && initialData.thumbnail_url.trim()) ? initialData.thumbnail_url.trim() : (initialData.thumbnail_video_url?.trim() ? getThumbnailUrl(`${initialData.thumbnail_video_url.trim()}.jpg`) : ''),
         thumbnail_video_url: initialData.thumbnail_video_url || '',
         price: initialData.price || '',
         summary: initialData.summary || '',
@@ -634,16 +657,16 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_composition: initialData.menu_composition || '',
         menu_subtitle: (initialData.menu_subtitle || '').trim(),
         interpretation_tool: (initialData.interpretation_tool || '').trim(),
-        subtitle_char_count: initialData.subtitle_char_count || 500,
-        detail_menu_char_count: initialData.detail_menu_char_count || 500,
-        menu_font_size: initialData.menu_font_size || 16,
-        menu_font_bold: initialData.menu_font_bold || false,
-        subtitle_font_size: initialData.subtitle_font_size || 14,
-        subtitle_font_bold: initialData.subtitle_font_bold || false,
-        detail_menu_font_size: initialData.detail_menu_font_size || 12,
-        detail_menu_font_bold: initialData.detail_menu_font_bold || false,
-        body_font_size: initialData.body_font_size || 11,
-        body_font_bold: initialData.body_font_bold || false,
+        subtitle_char_count: parseInt(String(initialData.subtitle_char_count ?? ''), 10) || 500,
+        detail_menu_char_count: parseInt(String(initialData.detail_menu_char_count ?? ''), 10) || 500,
+        menu_font_size: parseInt(String(initialData.menu_font_size ?? ''), 10) || 16,
+        menu_font_bold: initialData.menu_font_bold === true,
+        subtitle_font_size: parseInt(String(initialData.subtitle_font_size ?? ''), 10) || 14,
+        subtitle_font_bold: initialData.subtitle_font_bold === true,
+        detail_menu_font_size: parseInt(String(initialData.detail_menu_font_size ?? ''), 10) || 12,
+        detail_menu_font_bold: initialData.detail_menu_font_bold === true,
+        body_font_size: parseInt(String(initialData.body_font_size ?? ''), 10) || 11,
+        body_font_bold: initialData.body_font_bold === true,
         font_face: initialData.font_face || '',
         // loadContent에서 섹션별 폰트가 비어있으면 font_face로 채워서 formData에 넣으므로, 비교도 동일 규칙으로 정규화
         menu_font_face: initialData.menu_font_face || initialData.font_face || '',
@@ -657,43 +680,69 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_items: initialData.menu_items || [],
         is_new: initialData.is_new || false,
         is_exposed: initialData.is_exposed || false,
+        typecast_enabled: (initialData as any).typecast_enabled === true,
+        summary_max_chars: (initialData as any).summary_max_chars != null && (initialData as any).summary_max_chars > 0 ? (initialData as any).summary_max_chars : (initialData as any).summary_max_chars === 0 ? 0 : 500,
         tts_speaker: initialData.tts_speaker || 'nara',
-        tts_provider: (initialData.tts_provider === 'typecast') ? 'typecast' : 'naver',
-        typecast_voice_id: String(initialData.typecast_voice_id || '').trim(),
+        tts_provider: initialData.tts_provider === 'typecast' ? 'typecast' : (ttsProviderParam === 'typecast' ? 'typecast' : 'naver'),
+        typecast_voice_id: (String(initialData.typecast_voice_id || '').trim()) || (typecastVoiceIdParam || 'tc_5ecbbc6099979700087711d8'),
         preview_thumbnails: normalizePreviewThumbnails(initialData.preview_thumbnails),
-        book_cover_thumbnail: initialData.book_cover_thumbnail || '',
+        book_cover_thumbnail: (() => {
+          const raw = (initialData.book_cover_thumbnail && initialData.book_cover_thumbnail.trim()) ? initialData.book_cover_thumbnail.trim() : ''
+          const url = raw ? (toSupabasePublicThumbnailUrl(raw) || raw) : (initialData.book_cover_thumbnail_video?.trim() ? getThumbnailUrl(`${initialData.book_cover_thumbnail_video.trim()}.jpg`) : '')
+          return url
+        })(),
         book_cover_thumbnail_video: initialData.book_cover_thumbnail_video || '',
-        ending_book_cover_thumbnail: initialData.ending_book_cover_thumbnail || '',
+        ending_book_cover_thumbnail: (() => {
+          const raw = (initialData.ending_book_cover_thumbnail && initialData.ending_book_cover_thumbnail.trim()) ? initialData.ending_book_cover_thumbnail.trim() : ''
+          const url = raw ? (toSupabasePublicThumbnailUrl(raw) || raw) : (initialData.ending_book_cover_thumbnail_video?.trim() ? getThumbnailUrl(`${initialData.ending_book_cover_thumbnail_video.trim()}.jpg`) : '')
+          return url
+        })(),
         ending_book_cover_thumbnail_video: initialData.ending_book_cover_thumbnail_video || '',
       }
       
-      // menu_items 배열 정규화 (id 제거하고 value, thumbnail, subtitles 비교)
-      const normalizeMenuItems = (items: any[]) => {
-        return items.map((item: any) => ({
+      // 비교용: menu_items를 동일 구조로 만들고 id는 모두 인덱스로 통일 (폼 id는 Date.now() 등이라 불일치 방지)
+      const toCompareShape = (items: any[], fromCurrent: boolean): any[] => {
+        const list = items || []
+        return list.map((item: any, index: number) => ({
+          id: index,
           value: item.value || '',
-          thumbnailImageUrl: item.thumbnailImageUrl || item.thumbnail || '', // 하위 호환성
-          thumbnailVideoUrl: item.thumbnailVideoUrl || '',
-          subtitles: item.subtitles || []
-        })).sort((a, b) => {
-          // value와 thumbnail을 조합해서 정렬 (일관된 비교를 위해)
-          const aKey = `${a.value}|${a.thumbnailImageUrl || a.thumbnailVideoUrl}`
-          const bKey = `${b.value}|${b.thumbnailImageUrl || b.thumbnailVideoUrl}`
-          return aKey.localeCompare(bKey)
-        })
+          thumbnail_image_url: fromCurrent
+            ? ((item.thumbnail_image_url ?? '').toString().trim())
+            : (item.thumbnail_image_url ?? item.thumbnailImageUrl ?? item.thumbnail ?? '').toString().trim() || (item.thumbnail_video_url || item.thumbnailVideoUrl ? getThumbnailUrl(`${(item.thumbnail_video_url || item.thumbnailVideoUrl).toString().trim()}.jpg`) : ''),
+          thumbnail_video_url: (item.thumbnail_video_url ?? item.thumbnailVideoUrl ?? '').toString().trim(),
+          subtitles: (item.subtitles || []).map((sub: any, si: number) => ({
+            id: si,
+            subtitle: sub.subtitle || '',
+            interpretation_tool: sub.interpretation_tool || '',
+            thumbnail_image_url: fromCurrent
+              ? ((sub.thumbnail_image_url ?? '').toString().trim())
+              : (sub.thumbnail_image_url ?? sub.thumbnailImageUrl ?? '').toString().trim() || (sub.thumbnail_video_url || sub.thumbnailVideoUrl ? getThumbnailUrl(`${(sub.thumbnail_video_url || sub.thumbnailVideoUrl).toString().trim()}.jpg`) : ''),
+            thumbnail_video_url: (sub.thumbnail_video_url ?? sub.thumbnailVideoUrl ?? '').toString().trim(),
+            detailMenus: (sub.detailMenus || sub.detail_menus || []).map((dm: any, di: number) => ({
+              id: di,
+              detailMenu: dm.detailMenu ?? dm.detail_menu ?? '',
+              interpretation_tool: (dm.interpretation_tool ?? '').toString().trim(),
+              thumbnail_image_url: fromCurrent
+                ? ((dm.thumbnail_image_url ?? '').toString().trim())
+                : (dm.thumbnail_image_url ?? dm.thumbnailImageUrl ?? '').toString().trim() || (dm.thumbnail_video_url || dm.thumbnailVideoUrl ? getThumbnailUrl(`${(dm.thumbnail_video_url || dm.thumbnailVideoUrl).toString().trim()}.jpg`) : ''),
+              thumbnail_video_url: (dm.thumbnail_video_url ?? dm.thumbnailVideoUrl ?? '').toString().trim()
+            }))
+          }))
+        }))
       }
-      
-      const currentMenuNormalized = normalizeMenuItems(currentData.menu_items)
-      const initialMenuNormalized = normalizeMenuItems(normalizedInitial.menu_items)
-      
+
+      const currentMenuForCompare = toCompareShape(currentData.menu_items, true)
+      const initialMenuForCompare = toCompareShape(initialData.menu_items || [], false)
+
       const current = JSON.stringify({
         ...currentData,
-        menu_items: currentMenuNormalized,
+        menu_items: currentMenuForCompare,
       })
       const initial = JSON.stringify({
         ...normalizedInitial,
-        menu_items: initialMenuNormalized,
+        menu_items: initialMenuForCompare,
       })
-      
+
       setHasChanges(current !== initial)
     } else {
       // 새로 생성하는 경우: 필드에 값이 있으면 변경사항 있음
@@ -724,7 +773,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
       
       setHasChanges(hasAnyValue)
     }
-  }, [formData, menuFields, firstMenuField, initialData])
+  }, [contentId, formData, menuFields, firstMenuField, initialData, typecastVoiceIdParam, ttsProviderParam])
 
   const loadContent = async (id: number) => {
     try {
@@ -806,18 +855,20 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           }
           return thumbnails.slice(0, 3)
         })(),
-        // 북커버 썸네일: 이미지 썸네일이 없고 동영상 썸네일만 있으면 동적 생성 (대메뉴/소메뉴와 동일한 Fallback 로직)
+        // 북커버 썸네일: 이미지 썸네일이 있으면 경로 정규화(Supabase public URL), 없고 동영상 썸네일만 있으면 동적 생성
         bookCoverThumbnailImageUrl: (() => {
-          let imageUrl = (data.book_cover_thumbnail && data.book_cover_thumbnail.trim()) ? data.book_cover_thumbnail.trim() : ''
+          const raw = (data.book_cover_thumbnail && data.book_cover_thumbnail.trim()) ? data.book_cover_thumbnail.trim() : ''
+          let imageUrl = toSupabasePublicThumbnailUrl(raw) || raw
           if (!imageUrl && data.book_cover_thumbnail_video) {
             imageUrl = getThumbnailUrl(`${data.book_cover_thumbnail_video}.jpg`)
           }
           return imageUrl
         })(),
         bookCoverThumbnailVideoUrl: (data.book_cover_thumbnail_video && data.book_cover_thumbnail_video.trim()) ? data.book_cover_thumbnail_video.trim() : '',
-        // 엔딩북커버 썸네일: 이미지 썸네일이 없고 동영상 썸네일만 있으면 동적 생성 (대메뉴/소메뉴와 동일한 Fallback 로직)
+        // 엔딩북커버 썸네일: 이미지 썸네일이 있으면 경로 정규화(Supabase public URL), 없고 동영상 썸네일만 있으면 동적 생성
         endingBookCoverThumbnailImageUrl: (() => {
-          let imageUrl = (data.ending_book_cover_thumbnail && data.ending_book_cover_thumbnail.trim()) ? data.ending_book_cover_thumbnail.trim() : ''
+          const raw = (data.ending_book_cover_thumbnail && data.ending_book_cover_thumbnail.trim()) ? data.ending_book_cover_thumbnail.trim() : ''
+          let imageUrl = toSupabasePublicThumbnailUrl(raw) || raw
           if (!imageUrl && data.ending_book_cover_thumbnail_video) {
             imageUrl = getThumbnailUrl(`${data.ending_book_cover_thumbnail_video}.jpg`)
           }
@@ -1108,20 +1159,22 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
           }
           return thumbnails.slice(0, 3)
         })(),
-        // 북커버 썸네일: 이미지 + 동영상 모두 복제
+        // 북커버 썸네일: 이미지 + 동영상 모두 복제 (이미지 값은 경로 정규화)
         bookCoverThumbnailImageUrl: (() => {
           const raw = typeof bookCover === 'string' && bookCover.trim() ? bookCover.trim() : ''
-          if (raw) return raw
+          const normalized = toSupabasePublicThumbnailUrl(raw) || raw
+          if (normalized) return normalized
           if (typeof bookCoverVideo === 'string' && bookCoverVideo.trim()) {
             return getThumbnailUrl(`${bookCoverVideo.trim()}.jpg`)
           }
           return ''
         })(),
         bookCoverThumbnailVideoUrl: typeof bookCoverVideo === 'string' && bookCoverVideo.trim() ? bookCoverVideo.trim() : '',
-        // 엔딩북커버 썸네일: 이미지 + 동영상 모두 복제
+        // 엔딩북커버 썸네일: 이미지 + 동영상 모두 복제 (이미지 값은 경로 정규화)
         endingBookCoverThumbnailImageUrl: (() => {
           const raw = typeof endingBookCover === 'string' && endingBookCover.trim() ? endingBookCover.trim() : ''
-          if (raw) return raw
+          const normalized = toSupabasePublicThumbnailUrl(raw) || raw
+          if (normalized) return normalized
           if (typeof endingBookCoverVideo === 'string' && endingBookCoverVideo.trim()) {
             return getThumbnailUrl(`${endingBookCoverVideo.trim()}.jpg`)
           }
@@ -1308,7 +1361,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         restrictions: formData.description,
         content_type: formData.isNew ? 'saju' : 'gonghap',
         content_name: formData.contentName,
-        thumbnail_url: formData.thumbnailImageUrl,
+        thumbnail_url: formData.thumbnailImageUrl?.trim() || (formData.thumbnailVideoUrl?.trim() ? getThumbnailUrl(`${formData.thumbnailVideoUrl.trim()}.jpg`) : ''),
         thumbnail_video_url: formData.thumbnailVideoUrl,
         price: formData.price,
         summary: formData.summary,
@@ -1339,19 +1392,19 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_items: allMenuItems.map((item, index) => ({
           id: index,
           value: item.value || '',
-          thumbnail_image_url: (item.thumbnailImageUrl && item.thumbnailImageUrl.trim()) ? item.thumbnailImageUrl.trim() : '',
+          thumbnail_image_url: (item.thumbnailImageUrl && item.thumbnailImageUrl.trim()) ? item.thumbnailImageUrl.trim() : (item.thumbnailVideoUrl?.trim() ? getThumbnailUrl(`${item.thumbnailVideoUrl.trim()}.jpg`) : ''),
           thumbnail_video_url: (item.thumbnailVideoUrl && item.thumbnailVideoUrl.trim()) ? item.thumbnailVideoUrl.trim() : '',
           subtitles: (item.subtitles || []).map((sub: any) => ({
             id: sub.id,
             subtitle: sub.subtitle || '',
             interpretation_tool: sub.interpretation_tool || '',
-            thumbnail_image_url: (sub.thumbnailImageUrl && sub.thumbnailImageUrl.trim()) ? sub.thumbnailImageUrl.trim() : '',
+            thumbnail_image_url: (sub.thumbnailImageUrl && sub.thumbnailImageUrl.trim()) ? sub.thumbnailImageUrl.trim() : (sub.thumbnailVideoUrl?.trim() ? getThumbnailUrl(`${sub.thumbnailVideoUrl.trim()}.jpg`) : ''),
             thumbnail_video_url: (sub.thumbnailVideoUrl && sub.thumbnailVideoUrl.trim()) ? sub.thumbnailVideoUrl.trim() : '',
             detailMenus: (sub.detailMenus || []).map((dm: any) => ({
               id: dm.id,
               detailMenu: dm.detailMenu || '',
               interpretation_tool: dm.interpretation_tool || '',
-              thumbnail_image_url: (dm.thumbnailImageUrl && dm.thumbnailImageUrl.trim()) ? dm.thumbnailImageUrl.trim() : '',
+              thumbnail_image_url: (dm.thumbnailImageUrl && dm.thumbnailImageUrl.trim()) ? dm.thumbnailImageUrl.trim() : (dm.thumbnailVideoUrl?.trim() ? getThumbnailUrl(`${dm.thumbnailVideoUrl.trim()}.jpg`) : ''),
               thumbnail_video_url: (dm.thumbnailVideoUrl && dm.thumbnailVideoUrl.trim()) ? dm.thumbnailVideoUrl.trim() : ''
             }))
           }))
@@ -1364,9 +1417,9 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         tts_provider: formData.ttsProvider === 'typecast' ? 'typecast' : 'naver',
         typecast_voice_id: (formData.typecastVoiceId || '').trim(),
         preview_thumbnails: formData.previewThumbnailImageUrls || ['', '', ''],
-        book_cover_thumbnail: formData.bookCoverThumbnailImageUrl || '',
+        book_cover_thumbnail: formData.bookCoverThumbnailImageUrl?.trim() || (formData.bookCoverThumbnailVideoUrl?.trim() ? getThumbnailUrl(`${formData.bookCoverThumbnailVideoUrl.trim()}.jpg`) : ''),
         book_cover_thumbnail_video: formData.bookCoverThumbnailVideoUrl || '',
-        ending_book_cover_thumbnail: formData.endingBookCoverThumbnailImageUrl || '',
+        ending_book_cover_thumbnail: formData.endingBookCoverThumbnailImageUrl?.trim() || (formData.endingBookCoverThumbnailVideoUrl?.trim() ? getThumbnailUrl(`${formData.endingBookCoverThumbnailVideoUrl.trim()}.jpg`) : ''),
         ending_book_cover_thumbnail_video: formData.endingBookCoverThumbnailVideoUrl || '',
       }
       
@@ -2662,6 +2715,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               >
                 {(() => {
                   const imageUrl = formData.bookCoverThumbnailImageUrl || (formData.bookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.bookCoverThumbnailVideoUrl}.jpg`) : '')
+                  const bookCoverFallbackUrl = formData.bookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.bookCoverThumbnailVideoUrl}.jpg`) : ''
                   return imageUrl ? (
                     <img 
                       src={addCacheBusting(imageUrl)} 
@@ -2669,13 +2723,19 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       className="absolute inset-0 w-full h-full object-contain"
                       onError={(e) => {
                         const img = e.target as HTMLImageElement
-                        // 이미지 로드 실패 시 재시도
-                        const currentSrc = img.src
-                        const baseUrl = currentSrc.split('?')[0]
+                        if (img.getAttribute('data-fallback-used') === '1') {
+                          img.style.display = 'none'
+                          return
+                        }
                         const retryCount = parseInt(img.getAttribute('data-retry') || '0')
                         if (retryCount < 2) {
                           img.setAttribute('data-retry', String(retryCount + 1))
-                          img.src = `${baseUrl}?t=${Date.now()}`
+                          img.src = addCacheBusting(imageUrl)
+                          return
+                        }
+                        if (bookCoverFallbackUrl) {
+                          img.setAttribute('data-fallback-used', '1')
+                          img.src = addCacheBusting(bookCoverFallbackUrl)
                         } else {
                           img.style.display = 'none'
                         }
@@ -3613,6 +3673,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               >
                 {(() => {
                   const imageUrl = formData.endingBookCoverThumbnailImageUrl || (formData.endingBookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.endingBookCoverThumbnailVideoUrl}.jpg`) : '')
+                  const endingFallbackUrl = formData.endingBookCoverThumbnailVideoUrl ? getThumbnailUrl(`${formData.endingBookCoverThumbnailVideoUrl}.jpg`) : ''
                   return imageUrl ? (
                     <img 
                       src={addCacheBusting(imageUrl)} 
@@ -3620,13 +3681,19 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                       className="absolute inset-0 w-full h-full object-contain"
                       onError={(e) => {
                         const img = e.target as HTMLImageElement
-                        // 이미지 로드 실패 시 재시도
-                        const currentSrc = img.src
-                        const baseUrl = currentSrc.split('?')[0]
+                        if (img.getAttribute('data-fallback-used') === '1') {
+                          img.style.display = 'none'
+                          return
+                        }
                         const retryCount = parseInt(img.getAttribute('data-retry') || '0')
                         if (retryCount < 2) {
                           img.setAttribute('data-retry', String(retryCount + 1))
-                          img.src = `${baseUrl}?t=${Date.now()}`
+                          img.src = addCacheBusting(imageUrl)
+                          return
+                        }
+                        if (endingFallbackUrl) {
+                          img.setAttribute('data-fallback-used', '1')
+                          img.src = addCacheBusting(endingFallbackUrl)
                         } else {
                           img.style.display = 'none'
                         }
@@ -4924,6 +4991,93 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
                     if (subtitle) {
                       const detailMenu = subtitle.detailMenus.find(dm => {
                         // 문자열 비교를 우선하여 소수점 ID 정확도 문제 방지
+                        return String(dm.id) === detailMenuIdStr || (typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))) === detailMenuIdNum
+                      })
+                      return detailMenu?.thumbnailVideoUrl
+                    }
+                  }
+                }
+                return undefined
+              })()
+            : undefined
+        }
+        pairedVideoBaseName={
+          currentThumbnailField === 'main-image'
+            ? formData.thumbnailVideoUrl
+            : currentThumbnailField === 'bookCover-image'
+            ? formData.bookCoverThumbnailVideoUrl
+            : currentThumbnailField === 'endingBookCover-image'
+            ? formData.endingBookCoverThumbnailVideoUrl
+            : currentThumbnailField === 'firstMenu-image'
+            ? firstMenuField.thumbnailVideoUrl
+            : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('menu-') && currentThumbnailField.endsWith('-image')
+            ? menuFields.find(f => {
+                const menuId = parseFloat(currentThumbnailField.replace('menu-', '').replace('-image', ''))
+                const fId = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+                return fId === menuId || String(f.id) === String(menuId)
+              })?.thumbnailVideoUrl
+            : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('subtitle-') && currentThumbnailField.endsWith('-image')
+            ? (() => {
+                const parts = currentThumbnailField.split('-')
+                if (parts[1] === 'first') {
+                  const subtitleIdStr = parts[2]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const subtitle = firstMenuField.subtitles.find(s => {
+                    return String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === subtitleIdNum
+                  })
+                  return subtitle?.thumbnailVideoUrl
+                } else if (parts[1] === 'menu') {
+                  const menuIdStr = parts[2]
+                  const menuIdNum = parseFloat(menuIdStr)
+                  const subtitleIdStr = parts[3]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const menuField = menuFields.find(f => {
+                    const fieldIdNum = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+                    return fieldIdNum === menuIdNum || String(f.id) === menuIdStr
+                  })
+                  if (menuField) {
+                    const subtitle = menuField.subtitles.find(s => {
+                      return String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === subtitleIdNum
+                    })
+                    return subtitle?.thumbnailVideoUrl
+                  }
+                }
+                return undefined
+              })()
+            : typeof currentThumbnailField === 'string' && currentThumbnailField.startsWith('detail-menu-') && currentThumbnailField.endsWith('-image')
+            ? (() => {
+                const parts = currentThumbnailField.split('-')
+                if (parts[2] === 'first') {
+                  const subtitleIdStr = parts[3]
+                  const detailMenuIdStr = parts[4]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const detailMenuIdNum = parseFloat(detailMenuIdStr)
+                  const subtitle = firstMenuField.subtitles.find(s => {
+                    return String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === subtitleIdNum
+                  })
+                  if (subtitle) {
+                    const detailMenu = subtitle.detailMenus.find(dm => {
+                      return String(dm.id) === detailMenuIdStr || (typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))) === detailMenuIdNum
+                    })
+                    return detailMenu?.thumbnailVideoUrl
+                  }
+                } else if (parts[2] === 'menu') {
+                  const menuIdStr = parts[3]
+                  const menuIdNum = parseFloat(menuIdStr)
+                  const subtitleIdStr = parts[4]
+                  const subtitleIdNum = parseFloat(subtitleIdStr)
+                  const detailMenuIdStr = parts[5]
+                  const detailMenuIdNum = parseFloat(detailMenuIdStr)
+                  const menuField = menuFields.find(f => {
+                    const fieldIdNum = typeof f.id === 'number' ? f.id : parseFloat(String(f.id))
+                    return fieldIdNum === menuIdNum || String(f.id) === menuIdStr
+                  })
+                  if (menuField) {
+                    const subtitle = menuField.subtitles.find(s => {
+                      return String(s.id) === subtitleIdStr || (typeof s.id === 'number' ? s.id : parseFloat(String(s.id))) === subtitleIdNum
+                    })
+                    if (subtitle) {
+                      const detailMenu = subtitle.detailMenus.find(dm => {
                         return String(dm.id) === detailMenuIdStr || (typeof dm.id === 'number' ? dm.id : parseFloat(String(dm.id))) === detailMenuIdNum
                       })
                       return detailMenu?.thumbnailVideoUrl

@@ -322,6 +322,7 @@ function ResultContent() {
   const [firstSubtitleReady, setFirstSubtitleReady] = useState(false) // 1-1 소제목 준비 여부
   const firstSubtitleReadyRef = useRef(false)
   const [streamingFinished, setStreamingFinished] = useState(false) // 스트리밍 완료 여부 (realtime)
+  const streamingFinishedRef = useRef(false)
   const [showCompletionPopup, setShowCompletionPopup] = useState(false) // 점사 완료 팝업
   const completionPopupShownRef = useRef(false)
   const [showSummaryPopup, setShowSummaryPopup] = useState(false) // 점사 요약 팝업
@@ -335,11 +336,46 @@ function ResultContent() {
   const subtitleStableCountRef = useRef<Map<string, number>>(new Map()) // 소제목별 안정화 카운트 (길이가 변하지 않은 연속 횟수)
   const detailMenuStableCountRef = useRef<Map<string, number>>(new Map()) // 상세메뉴별 안정화 카운트
   const parsingTimeoutRef = useRef<NodeJS.Timeout | null>(null) // 파싱 딜레이를 위한 타임아웃 ref
+  const streamingHtmlLastLengthRef = useRef(0)
+  const streamingHtmlStableSinceRef = useRef(0) // HTML 길이 마지막 변경 시각 (안정화 폴백용)
 
   // firstSubtitleReady ref 동기화 (타이머/인터벌에서 최신 값 사용)
   useEffect(() => {
     firstSubtitleReadyRef.current = firstSubtitleReady
   }, [firstSubtitleReady])
+
+  // streamingFinished ref 동기화 (가짜 진행률 인터벌에서 최신 값 사용)
+  useEffect(() => {
+    streamingFinishedRef.current = streamingFinished
+  }, [streamingFinished])
+
+  // HTML 길이 변경 시 안정 시각 갱신 (서버 done 지연 시 완료 폴백용)
+  useEffect(() => {
+    const len = streamingHtml?.length ?? 0
+    if (len !== streamingHtmlLastLengthRef.current) {
+      streamingHtmlLastLengthRef.current = len
+      streamingHtmlStableSinceRef.current = Date.now()
+    }
+  }, [streamingHtml])
+
+  // 서버 done이 늦을 때: HTML이 8초 이상 변하지 않고 길이 충분하면 완료로 간주
+  useEffect(() => {
+    if (!isRealtime && !requestKey) return
+    if (streamingFinished || !isStreamingActive) return
+    const minLength = 500
+    if ((streamingHtml?.length ?? 0) < minLength) return
+
+    const STABLE_MS = 8000
+    const CHECK_MS = 2000
+    const tid = setInterval(() => {
+      if (streamingFinishedRef.current) return
+      const now = Date.now()
+      if (now - streamingHtmlStableSinceRef.current >= STABLE_MS) {
+        setStreamingFinished(true)
+      }
+    }, CHECK_MS)
+    return () => clearInterval(tid)
+  }, [isRealtime, requestKey, streamingFinished, isStreamingActive, streamingHtml])
 
   // 목차로 이동 버튼 너비 측정
   useEffect(() => {
@@ -735,10 +771,10 @@ function ResultContent() {
         setFirstSubtitleReady(false)
         setStreamingFinished(false)
 
-        // 가짜 진행률: 0.5초에 1%씩 97%까지 증가 (첫 소제목 준비 전까지)
+        // 가짜 진행률: 0.5초에 1%씩 97%까지 증가 (첫 소제목/스트리밍 완료 신호 전까지)
         fakeProgressInterval = setInterval(() => {
-          if (firstSubtitleReadyRef.current) {
-            // 첫 소제목이 준비되면 100%까지 채우고 팝업 제거
+          if (firstSubtitleReadyRef.current || streamingFinishedRef.current) {
+            // 첫 소제목이 준비되거나, 스트리밍이 완료되면 100%까지 채우고 팝업 제거
             setStreamingProgress(100) // 애니메이션으로 100%까지 증가
             setTimeout(() => {
               setShowRealtimePopup(false)

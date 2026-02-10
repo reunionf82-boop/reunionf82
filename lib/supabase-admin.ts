@@ -499,7 +499,10 @@ export async function deleteThumbnail(filePath: string) {
 }
 
 // 썸네일 업로드 (API 라우트를 통해 서버 사이드에서 업로드)
-export async function uploadThumbnailFile(file: File): Promise<{ url: string; videoBaseName?: string; fileType: 'image' | 'video' }> {
+export async function uploadThumbnailFile(
+  file: File,
+  options?: { targetPath?: string }
+): Promise<{ url: string; videoBaseName?: string; fileType: 'image' | 'video' }> {
   // 파일 타입 확인 (MIME 타입과 확장자 모두 확인)
   const fileExt = file.name.split('.').pop()?.toLowerCase() || ''
   const isImageByType = file.type.startsWith('image/')
@@ -519,6 +522,9 @@ export async function uploadThumbnailFile(file: File): Promise<{ url: string; vi
   // API 라우트를 통해 업로드 (서버 사이드에서 서비스 롤 키 사용)
   const formData = new FormData()
   formData.append('file', file)
+  if (options?.targetPath?.trim()) {
+    formData.append('targetPath', options.targetPath.trim())
+  }
 
   const response = await fetch('/api/admin/upload', {
     method: 'POST',

@@ -62,6 +62,16 @@ export async function POST(req: NextRequest) {
             .replace(/[^a-zA-Z0-9/_-]/g, '') // safe chars
             .replace(/\/{2,}/g, '/') // collapse //
         : ''
+    // 동영상 첫 프레임 썸네일 저장 시 사용 (예: baseName.jpg)
+    const targetPathRaw = formData.get('targetPath') as string | null
+    const targetPath =
+      typeof targetPathRaw === 'string' && targetPathRaw.trim()
+        ? targetPathRaw
+            .trim()
+            .replace(/^\/*/, '')
+            .replace(/\.\./g, '')
+            .replace(/\\/g, '')
+        : ''
 
     if (!file) {
       return NextResponse.json(
@@ -121,10 +131,21 @@ export async function POST(req: NextRequest) {
     const finalFileExt = fileExt || (isVideo ? 'mp4' : isAudio ? 'mp3' : (mimeExt || 'jpg'))
     const baseFileName = `${Date.now()}-${Math.random().toString(36).substring(7)}`
     
+    // targetPath가 있으면 해당 경로로 저장 (동영상 첫 프레임 썸네일 등). 단일 파일명만 허용 (슬래시 없음)
+    const safeTargetPath =
+      targetPath && !targetPath.includes('..') && /^[a-zA-Z0-9_.-]+\.(jpg|jpeg|png|webp)$/i.test(targetPath)
+        ? targetPath
+        : ''
+    
     // 동영상인 경우 확장자를 포함한 파일명 사용 (WebM과 MP4를 구분하기 위해)
     // 이미지인 경우 확장자 포함
     const fileName = `${baseFileName}.${finalFileExt}`
-    const filePath = folder ? `${folder}/${fileName}` : fileName
+    const filePath = safeTargetPath
+      ? safeTargetPath
+      : folder
+        ? `${folder}/${fileName}`
+        : fileName
+    const useUpsert = !!safeTargetPath
     
     // 동영상인 경우, 파일명에서 확장자를 제거한 기본 이름도 반환 (WebM/MP4 공통 이름)
     const videoBaseName = isVideo ? baseFileName : null
@@ -140,7 +161,7 @@ export async function POST(req: NextRequest) {
       .from('thumbnails')
       .upload(filePath, body, {
         cacheControl: '3600',
-        upsert: false,
+        upsert: useUpsert,
         contentType: mimeType || (isVideo ? `video/${finalFileExt}` : isAudio ? `audio/${finalFileExt}` : `image/${finalFileExt}`)
       })
 

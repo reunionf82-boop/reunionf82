@@ -10,9 +10,11 @@ interface ThumbnailModalProps {
   currentThumbnail?: string
   thumbnailType?: 'image' | 'video' // 이미지 또는 동영상 타입
   currentVideoBaseName?: string // 동영상 파일명 (확장자 제외)
+  /** 이미지 타입일 때, 같은 필드의 동영상 파일명(확장자 제외). 있으면 "동영상으로 썸네일 생성" 버튼 표시 */
+  pairedVideoBaseName?: string
 }
 
-export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumbnail, thumbnailType = 'image', currentVideoBaseName: propVideoBaseName }: ThumbnailModalProps) {
+export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumbnail, thumbnailType = 'image', currentVideoBaseName: propVideoBaseName, pairedVideoBaseName }: ThumbnailModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null) // 선택한 파일의 미리보기만 저장
   const [fileType, setFileType] = useState<'image' | 'video' | null>(null) // 파일 타입 저장
@@ -493,6 +495,94 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
     onClose()
   }
 
+  /** 동영상 첫 프레임을 추출해 .jpg로 업로드한 뒤 이미지 썸네일로 적용 */
+  const handleGenerateFromVideo = async () => {
+    const base = (pairedVideoBaseName || '').trim()
+    if (!base || thumbnailType !== 'image') return
+    const videoUrl = getThumbnailUrl(`${base}.webm`)
+    if (!videoUrl) return
+
+    setUploading(true)
+    try {
+      const blob = await new Promise<Blob | null>((resolve, reject) => {
+        const video = document.createElement('video')
+        video.muted = true
+        video.playsInline = true
+        video.crossOrigin = 'anonymous'
+        video.preload = 'metadata'
+
+        const onError = () => {
+          cleanup()
+          reject(new Error('동영상을 불러올 수 없습니다.'))
+        }
+        const onLoadedData = () => {
+          try {
+            video.currentTime = 0
+          } catch {
+            resolve(null)
+            return
+          }
+        }
+        const onSeeked = () => {
+          try {
+            const canvas = document.createElement('canvas')
+            canvas.width = video.videoWidth
+            canvas.height = video.videoHeight
+            if (canvas.width === 0 || canvas.height === 0) {
+              cleanup()
+              reject(new Error('동영상 프레임을 읽을 수 없습니다.'))
+              return
+            }
+            const ctx = canvas.getContext('2d')
+            if (!ctx) {
+              cleanup()
+              reject(new Error('캔버스를 사용할 수 없습니다.'))
+              return
+            }
+            ctx.drawImage(video, 0, 0)
+            canvas.toBlob(
+              (b) => {
+                cleanup()
+                resolve(b)
+              },
+              'image/jpeg',
+              0.9
+            )
+          } catch (e) {
+            cleanup()
+            reject(e)
+          }
+        }
+        const cleanup = () => {
+          video.removeEventListener('error', onError)
+          video.removeEventListener('loadeddata', onLoadedData)
+          video.removeEventListener('seeked', onSeeked)
+          video.src = ''
+          video.load()
+        }
+
+        video.addEventListener('error', onError)
+        video.addEventListener('loadeddata', onLoadedData)
+        video.addEventListener('seeked', onSeeked)
+        video.src = videoUrl
+        video.load()
+      })
+
+      if (!blob) {
+        throw new Error('첫 프레임 추출에 실패했습니다.')
+      }
+
+      const file = new File([blob], `${base}.jpg`, { type: 'image/jpeg' })
+      const result = await uploadThumbnailFile(file, { targetPath: `${base}.jpg` })
+      onSelect(result.url)
+      onClose()
+    } catch (err: any) {
+      alert(`동영상으로 썸네일 생성에 실패했습니다.\n${err?.message || '알 수 없는 오류'}`)
+    } finally {
+      setUploading(false)
+    }
+  }
+
   if (!isOpen) return null
 
   return (
@@ -584,7 +674,7 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
         )}
 
         {/* 하단 버튼 영역 */}
-        <div className="bg-black p-4 flex justify-center gap-4">
+        <div className="bg-black p-4 flex justify-center gap-4 flex-wrap">
           <button
             onClick={handleRegister}
             disabled={!selectedFile || uploading}
@@ -592,6 +682,16 @@ export default function ThumbnailModal({ isOpen, onClose, onSelect, currentThumb
           >
             등록
           </button>
+          {thumbnailType === 'image' && pairedVideoBaseName?.trim() && (
+            <button
+              type="button"
+              onClick={handleGenerateFromVideo}
+              disabled={uploading}
+              className="bg-violet-600 hover:bg-violet-500 text-white font-semibold px-6 py-3 rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              동영상으로 썸네일 생성
+            </button>
+          )}
           <button
             onClick={handleDelete}
             disabled={!currentThumbnail || uploading}

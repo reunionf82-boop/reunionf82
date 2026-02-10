@@ -51,7 +51,8 @@ export async function POST(request: NextRequest) {
     // pending 저장 시에는 결제 정보가 다 있지만, update 시에는 oid만 있을 수도 있음.
     // 여기서는 pending 저장용으로 다 받는다고 가정.
     const payNum = Number(pay)
-    const missingPay = pay === undefined || pay === null || !Number.isFinite(payNum) || payNum <= 0
+    // 0원 허용 (무료/음성 0원 시 고객용 점사 결과 생성 등)
+    const missingPay = pay === undefined || pay === null || !Number.isFinite(payNum) || payNum < 0
     if (!oid || !contentId || !paymentCode || !name || missingPay || !paymentType) {
       return NextResponse.json(
         { success: false, error: '필수 파라미터가 누락되었거나 결제 금액이 올바르지 않습니다.' },

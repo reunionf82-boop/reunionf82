@@ -486,7 +486,8 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
           try {
             let chunkIndex = 0
             let lastCompletionCheckChunk = 0 // 마지막 완료 체크 청크 인덱스
-            const COMPLETION_CHECK_INTERVAL = 50 // 50번째 청크마다 완료 여부 체크
+            const COMPLETION_CHECK_INTERVAL = 10 // 10번째 청크마다 완료 여부 체크 (조기 done 전송 빈도 향상)
+            const MIN_LENGTH_FOR_EVERY_CHUNK_CHECK = 3000 // 이 길이 이상이면 매 청크마다 완료 체크
             let allSubtitlesCompletedEarly = false // 모든 소제목이 조기에 완료되었는지 플래그
             
             for await (const chunk of streamResult.stream) {
@@ -523,9 +524,8 @@ ${subtitlesForMenu.map((sub: any, subIdx: number) => {
                 // 전체 스트림이 실패하지 않도록 함
               }
               
-              // 모든 소제목 완료 여부 주기적 체크 (50번째 청크마다 또는 fullText가 충분히 길어졌을 때)
-              // chunkText 추가 후에 체크하여 최신 상태 확인
-              if (chunkIndex - lastCompletionCheckChunk >= COMPLETION_CHECK_INTERVAL && fullText.trim().length > 100) {
+              // 모든 소제목 완료 여부 체크: 10청크마다, 또는 HTML이 3000자 이상이면 매 청크마다 (끝난 직후 즉시 done 전송)
+              if (fullText.trim().length > 100 && (chunkIndex - lastCompletionCheckChunk >= COMPLETION_CHECK_INTERVAL || fullText.length >= MIN_LENGTH_FOR_EVERY_CHUNK_CHECK)) {
                 // HTML 코드 블록 제거 (있는 경우) - 파싱 전에 정리
                 let htmlForParsing = fullText.trim()
                 const htmlBlockMatch = htmlForParsing.match(/```html\s*([\s\S]*?)\s*```/)
