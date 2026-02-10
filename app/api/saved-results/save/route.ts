@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getKSTNow } from '@/lib/payment-utils'
 import { normalizeVoiceMessagesToKorean } from '@/lib/voice-transcript-korean'
-import { summarizeVoiceConversation, normalizePhoneForVoice } from '@/lib/voice-summary'
+import { summarizeVoiceConversation, normalizePhoneForVoice, getAlreadyAskedSummaryTexts } from '@/lib/voice-summary'
 
 // Next.js 캐싱 방지 설정 (프로덕션 환경에서 항상 최신 데이터 가져오기)
 export const dynamic = 'force-dynamic'
@@ -90,11 +90,20 @@ export async function POST(request: NextRequest) {
 
     // 음성형: 대화 요약(핵심 포인트·주요 일정) 생성 후 voice_conversation_summaries에 저장 (같은 전화번호 = 같은 사람, 재접속 시 안부 문맥용)
     const voiceMsgsForSummary = isVoice ? insertData.voice_messages : null
+    let summaryStored = false
     if (isVoice && Array.isArray(voiceMsgsForSummary) && voiceMsgsForSummary.length > 0) {
-      const phoneNorm = normalizePhoneForVoice(phone ?? '')
+      const phoneRaw = String(body.phone ?? body.phoneForSave ?? phone ?? '').trim()
+      const phoneNorm = normalizePhoneForVoice(phoneRaw)
       if (phoneNorm) {
         try {
-          const summary = await summarizeVoiceConversation(voiceMsgsForSummary)
+          const excludeAlreadyAsked = await getAlreadyAskedSummaryTexts(
+            supabase,
+            phoneNorm,
+            content_id != null ? Number(content_id) : null
+          )
+          const summary = await summarizeVoiceConversation(voiceMsgsForSummary, {
+            excludeAlreadyAsked: excludeAlreadyAsked.length > 0 ? excludeAlreadyAsked : undefined,
+          })
           if (summary.corePoints.length > 0 || summary.keyDates.length > 0) {
             await supabase.from('voice_conversation_summaries').insert({
               phone_normalized: phoneNorm,
@@ -103,27 +112,30 @@ export async function POST(request: NextRequest) {
               summary_json: summary,
               created_at: savedAtKST,
             })
+            summaryStored = true
           }
         } catch {
           /* 요약 실패해도 저장 결과는 이미 성공 */
         }
       }
-      // 이번 세션에서 안부로 물어본 항목 기록 (다음엔 다시 물어보지 않음)
-      if (Array.isArray(injected_summary_item_refs) && injected_summary_item_refs.length > 0) {
-        for (const ref of injected_summary_item_refs) {
-          const s = String(ref).trim()
-          if (!s) continue
-          const numPart = s.split('_')[0]
-          const summaryId = parseInt(numPart, 10)
-          if (!Number.isFinite(summaryId) || summaryId < 1) continue
-          try {
-            await supabase.from('voice_summary_asked').upsert(
-              { summary_id: summaryId, item_ref: s, asked_at: savedAtKST },
-              { onConflict: 'summary_id,item_ref' }
-            )
-          } catch {
-            /* 무시 */
-          }
+    }
+    // 음성형: 이번 세션에서 안부로 물어본 항목 기록 (다음 접속 시 다시 물어보지 않음) — 대화 유무와 무관하게 항상 실행
+    if (isVoice) {
+      const refsToMark = Array.isArray(injected_summary_item_refs) ? injected_summary_item_refs : []
+      for (const ref of refsToMark) {
+        const s = String(ref).trim()
+        if (!s) continue
+        const numPart = s.split('_')[0]
+        const summaryId = parseInt(numPart, 10)
+        if (!Number.isFinite(summaryId) || summaryId < 1) continue
+        try {
+          const { error } = await supabase.from('voice_summary_asked').upsert(
+            { summary_id: summaryId, item_ref: s, asked_at: savedAtKST },
+            { onConflict: 'summary_id,item_ref' }
+          )
+          if (error) throw error
+        } catch {
+          /* 무시 */
         }
       }
     }
@@ -171,6 +183,7 @@ export async function POST(request: NextRequest) {
           voiceAudioUrl: data.voice_audio_url || null,
           voiceDurationSeconds: data.voice_duration_seconds || null,
           contentId: data.content_id || null,
+          ...(isVoice ? { summaryStored } : {}),
         }
       },
       {

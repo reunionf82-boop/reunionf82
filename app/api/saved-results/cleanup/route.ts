@@ -24,7 +24,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 60일 이상 된 저장된 결과 삭제
+    // 60일 이상 된 saved_results만 삭제. voice_conversation_summaries / voice_summary_asked 는 삭제하지 않음
+    // (안부 문맥은 이용내역 만료와 무관하게 유지해, 나중에 접속 시 안 물어본 항목에 대해 안부 가능)
     const sixtyDaysAgo = new Date()
     sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60)
     

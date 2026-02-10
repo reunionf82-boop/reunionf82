@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getKSTNow } from '@/lib/payment-utils'
 import { normalizeVoiceMessagesToKorean } from '@/lib/voice-transcript-korean'
-import { summarizeVoiceConversation, normalizePhoneForVoice } from '@/lib/voice-summary'
+import { summarizeVoiceConversation, normalizePhoneForVoice, getAlreadyAskedSummaryTexts } from '@/lib/voice-summary'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -101,12 +101,19 @@ export async function POST(request: NextRequest) {
       await linkCredentials(data.id, _beacon_phone, _beacon_password)
     }
 
-    // 음성형: 대화 요약 생성 후 voice_conversation_summaries에 저장
+    // 음성형: 대화 요약 생성 후 voice_conversation_summaries에 저장 (이미 물어본 항목은 LLM이 다시 넣지 않도록 제외)
     if (data && isVoice && Array.isArray(finalVoiceMessages) && finalVoiceMessages.length > 0) {
       const phoneNorm = normalizePhoneForVoice(_beacon_phone ?? '')
       if (phoneNorm) {
         try {
-          const summary = await summarizeVoiceConversation(finalVoiceMessages)
+          const excludeAlreadyAsked = await getAlreadyAskedSummaryTexts(
+            supabase,
+            phoneNorm,
+            content_id != null ? Number(content_id) : null
+          )
+          const summary = await summarizeVoiceConversation(finalVoiceMessages, {
+            excludeAlreadyAsked: excludeAlreadyAsked.length > 0 ? excludeAlreadyAsked : undefined,
+          })
           if (summary.corePoints.length > 0 || summary.keyDates.length > 0) {
             await supabase.from('voice_conversation_summaries').insert({
               phone_normalized: phoneNorm,

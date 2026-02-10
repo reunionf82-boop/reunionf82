@@ -27,7 +27,8 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    // ID를 숫자로 변환 (문자열 ID도 처리)
+    // saved_results만 삭제. voice_conversation_summaries / voice_summary_asked 는 삭제하지 않음
+    // (안부 문맥은 이용내역 삭제와 무관하게 유지해, 나중에 접속 시 안 물어본 항목에 대해 안부 가능)
     const idNum = parseInt(id)
     if (isNaN(idNum)) {
       // 숫자가 아니면 문자열 ID로 시도

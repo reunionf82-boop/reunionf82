@@ -1337,7 +1337,7 @@ ${manseText || '(만세력 없음)'}
       })
 
       if (!saveRes.ok) {
-        // voice 컬럼이 아직 없을 수 있음 → 기본 필드 + result_type으로 재시도
+        // voice 컬럼이 아직 없을 수 있음 → 기본 필드 + result_type으로 재시도 (phone, voice_messages 포함해 요약 저장 가능하도록)
         const errDetail = await saveRes.text().catch(() => '')
         console.warn('[VoiceResult] voice save failed (status:', saveRes.status, errDetail, '), retrying with basic fields...')
         const fallbackPayload = {
@@ -1345,6 +1345,12 @@ ${manseText || '(만세력 없음)'}
           html: `<p>음성 상담 기록</p><p>상담시간: ${durationSeconds > 0 ? `${Math.floor(durationSeconds / 60)}분 ${durationSeconds % 60}초` : '알 수 없음'}</p>${msgs.length > 0 ? `<h3>대화 내용</h3>${msgs.map((m) => `<p><strong>${m.role === 'assistant' ? '상담사' : userName || '나'}:</strong> ${m.text}</p>`).join('')}` : ''}`,
           result_type: 'voice',
           userName,
+          phone: phoneForSave,
+          voice_messages: msgs.map((m) => ({ role: m.role, text: m.text })),
+          voice_audio_url: voiceAudioUrl,
+          voice_duration_seconds: durationSeconds > 0 ? durationSeconds : null,
+          content_id: contentIdRef.current ? parseInt(contentIdRef.current, 10) : null,
+          injected_summary_item_refs: injectedSummaryItemRefsRef.current || [],
         }
         saveRes = await fetch('/api/saved-results/save', {
           method: 'POST',
@@ -1361,6 +1367,9 @@ ${manseText || '(만세력 없음)'}
       const saveData = await saveRes.json()
       savedId = saveData?.data?.id || null
       console.log('[VoiceResult] conversation saved, savedId:', savedId)
+      if (saveData?.data?.summaryStored === false && voicePayload.voice_messages?.length) {
+        console.warn('[VoiceResult] 요약이 DB에 저장되지 않았습니다. 전화번호가 전달되었는지, 또는 대화에 일정/포인트가 포함되었는지 확인하세요.')
+      }
 
       // 4) user_credentials에 savedId 연결 (나의 이용내역에서 조회 가능하도록)
       if (savedId) {

@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type VoiceMessage = { role: string; text: string }
 
@@ -42,13 +43,92 @@ export function normalizePhoneForVoice(phone: string): string {
   return phone.replace(/\D/g, '')
 }
 
+/** 요약 시 제외할 주제(이미 이전 상담에서 안부로 물어본 항목). LLM이 corePoints/keyDates에 넣지 않음 */
+export type SummarizeOptions = {
+  /** 이미 안부로 물어본 주제/일정 문장 목록. 이와 동일·유사한 내용은 추출하지 말 것 */
+  excludeAlreadyAsked?: string[]
+}
+
+/**
+ * 같은 전화번호·같은 content 기준으로 이미 안부로 물어본 항목의 실제 문장 목록을 반환.
+ * 요약 LLM 호출 전에 excludeAlreadyAsked로 넘겨 중복 추출을 막을 때 사용.
+ */
+export async function getAlreadyAskedSummaryTexts(
+  supabase: SupabaseClient,
+  phoneNorm: string,
+  contentId?: number | null
+): Promise<string[]> {
+  const result: string[] = []
+  if (!phoneNorm) return result
+  let query = supabase
+    .from('voice_conversation_summaries')
+    .select('id, summary_json')
+    .eq('phone_normalized', phoneNorm)
+    .order('created_at', { ascending: false })
+    .limit(20)
+  if (contentId != null && Number.isFinite(contentId)) {
+    query = query.or(`content_id.eq.${contentId},content_id.is.null`)
+  }
+  const { data: pastSummaries } = await query
+  if (!Array.isArray(pastSummaries) || pastSummaries.length === 0) return result
+  const summaryIds = pastSummaries.map((s: { id: number }) => s.id)
+  const summaryById = new Map(
+    pastSummaries.map((s: { id: number; summary_json: unknown }) => [s.id, s.summary_json])
+  )
+  const { data: askedRows } = await supabase
+    .from('voice_summary_asked')
+    .select('summary_id, item_ref')
+    .in('summary_id', summaryIds)
+  const added = new Set<string>()
+  for (const row of askedRows || []) {
+    const ref = String((row as { item_ref: string }).item_ref).trim()
+    const sid = Number((row as { summary_id: number }).summary_id)
+    const json = summaryById.get(sid) as
+      | { corePoints?: string[]; keyDates?: Array<{ description?: string; date?: string }> }
+      | undefined
+    if (!json || added.has(ref)) continue
+    const parts = ref.split('_')
+    if (parts.length < 3) continue
+    const type = parts[1]
+    const idx = parseInt(parts[2], 10)
+    if (!Number.isFinite(idx) || idx < 0) continue
+    if (type === 'point') {
+      const arr = Array.isArray(json.corePoints) ? json.corePoints : []
+      const text = arr[idx] ? String(arr[idx]).trim() : ''
+      if (text) {
+        result.push(text)
+        added.add(ref)
+      }
+    } else if (type === 'date') {
+      const arr = Array.isArray(json.keyDates) ? json.keyDates : []
+      const item = arr[idx]
+      const desc =
+        item && typeof item === 'object' && item !== null && 'description' in item
+          ? String((item as { description?: string }).description ?? '').trim()
+          : ''
+      const dateStr =
+        item && typeof item === 'object' && item !== null && 'date' in item
+          ? String((item as { date?: string }).date ?? '').trim()
+          : ''
+      const text = dateStr ? `${desc} (${dateStr})` : desc
+      if (text) {
+        result.push(text)
+        added.add(ref)
+      }
+    }
+  }
+  return result
+}
+
 /**
  * 음성 상담 대화 내용에서 핵심 포인트와 주요 일정을 LLM으로 추출.
  * 재접속 시 AI가 "그때 면접 보러 간다고 했던건 어떻게 됐나요?" 식으로 안부 물어보기 위한 데이터.
  * 실패 시 빈 배열 반환.
+ * @param options.excludeAlreadyAsked - 이미 이전 상담에서 안부로 물어본 항목; LLM이 이 주제들은 corePoints/keyDates에 포함하지 않음
  */
 export async function summarizeVoiceConversation(
-  messages: VoiceMessage[]
+  messages: VoiceMessage[],
+  options?: SummarizeOptions
 ): Promise<VoiceSummaryResult> {
   const empty: VoiceSummaryResult = { corePoints: [], keyDates: [] }
   if (!Array.isArray(messages) || messages.length === 0) return empty
@@ -68,6 +148,14 @@ export async function summarizeVoiceConversation(
 
   const todayKST = getKSTDateString()
   const nowKSTReadable = getKSTReadableNow()
+  const excludeList = options?.excludeAlreadyAsked?.filter((s) => typeof s === 'string' && String(s).trim().length > 0) ?? []
+  const excludeRule =
+    excludeList.length > 0
+      ? `
+4. [중요] 이미 물어본 주제 제외: 아래 항목들은 이전 상담에서 이미 안부로 물어본 내용입니다. 이번 대화에서 해당 주제에 대한 "결과/답변"만 있고 새로운 일정·계획이 없으면 corePoints와 keyDates에 넣지 마세요. 동일·유사한 주제를 다시 추출하지 마세요.
+제외할 주제 목록:
+${excludeList.map((t) => `- ${t}`).join('\n')}`
+      : ''
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey)
@@ -87,6 +175,7 @@ export async function summarizeVoiceConversation(
    - 날짜를 전혀 알 수 없으면 date는 빈 문자열 "".
 3. 출력은 반드시 다음 JSON 형식만 한 줄로. 다른 설명 없이.
 {"corePoints":["문장1","문장2"],"keyDates":[{"description":"설명","date":"2025-02-10"}]}
+${excludeRule}
 
 대화:
 ${dialogue}`

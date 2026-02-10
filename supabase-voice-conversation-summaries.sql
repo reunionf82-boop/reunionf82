@@ -1,7 +1,13 @@
 -- 음성 상담: 같은 전화번호 = 같은 사람. 대화 저장 시 LLM 요약(핵심 포인트·주요 일정) 저장 및
--- 재접속 시 안부로 물어볼 항목 조회·이미 물어본 항목 제외용 테이블
+-- 재접속 시 안부로 물어볼 항목 조회·이미 물어본 항목 제외용 테이블.
+--
+-- [중요] 이용내역(다시보기/다시듣기)과 독립 보존:
+-- - 60일 경과로 saved_results가 삭제되거나, 사용자가 삭제 버튼으로 저장 결과를 지워도
+--   voice_conversation_summaries / voice_summary_asked 는 삭제하지 않음.
+-- - saved_results에 대한 FK(REFERENCES)를 두지 않아, DB CASCADE로 지워지지 않도록 함.
+-- - 나중에 같은 전화번호로 접속하면 "아직 안 물어본" 항목에 대한 안부를 계속 물을 수 있음.
 
--- 1) 회차별 요약 (저장 시 LLM이 생성)
+-- 1) 회차별 요약 (저장 시 LLM이 생성). saved_result_id는 출처 표시용이며 FK 없음(삭제 시 요약 유지).
 CREATE TABLE IF NOT EXISTS voice_conversation_summaries (
   id BIGSERIAL PRIMARY KEY,
   phone_normalized TEXT NOT NULL,
