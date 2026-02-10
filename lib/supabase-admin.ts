@@ -111,13 +111,17 @@ export interface ContentData {
   updated_at?: string
 }
 
-// 컨텐츠 목록 가져오기
+// 컨텐츠 목록 가져오기 (관리자에서 정한 배치순서 sort_order 기준, 동일 시 id 내림차순)
 export async function getContents() {
-  const { data, error } = await supabase
+  let result = await supabase
     .from('contents')
     .select('*')
+    .order('sort_order', { ascending: true })
     .order('id', { ascending: false })
-  
+  if (result.error && (result.error.message?.includes('sort_order') || result.error.message?.includes('column'))) {
+    result = await supabase.from('contents').select('*').order('id', { ascending: false })
+  }
+  const { data, error } = result
   if (error) {
     throw error
   }

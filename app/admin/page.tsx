@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
 import { getContents, deleteContent } from '@/lib/supabase-admin'
 import AdminReviewEventModal from '@/components/AdminReviewEventModal'
@@ -325,9 +325,8 @@ export default function AdminPage() {
       
       const result = await response.json()
       if (result.success && result.data) {
-        // id 내림차순으로 정렬 (최신순)
-        const sortedData = (result.data || []).sort((a: any, b: any) => (b.id || 0) - (a.id || 0))
-        setContents(sortedData)
+        // 서버에서 sort_order 기준으로 이미 정렬된 순서 유지
+        setContents(result.data || [])
       } else {
         setContents([])
       }
@@ -527,6 +526,96 @@ export default function AdminPage() {
     e.stopPropagation() // 클릭 이벤트 전파 방지 (부모 div의 handleContentClick 실행 방지)
     const basePath = isVoiceContent(content) ? '/admin/form/voice' : '/admin/form'
     router.push(`${basePath}?duplicate=${content.id}`)
+  }
+
+  // 드래그로 컨텐츠 순서 변경 (같은 섹션 내에서만). 삽입 위치를 슬롯으로 표시
+  const [dragContentId, setDragContentId] = useState<number | null>(null)
+  const [dragSectionVoice, setDragSectionVoice] = useState<boolean | null>(null)
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
+  const justDraggedRef = useRef(false)
+  const reorderSavingRef = useRef(false)
+
+  const saveReorder = async (orderedIds: number[]) => {
+    if (orderedIds.length === 0 || reorderSavingRef.current) return
+    reorderSavingRef.current = true
+    try {
+      const res = await fetch('/api/admin/content/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: orderedIds })
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error || '순서 저장에 실패했습니다.')
+      }
+      const idToContent = new Map(contents.map((c: any) => [c.id, c]))
+      const newContents = orderedIds.map((id) => idToContent.get(id)).filter(Boolean)
+      setContents(newContents)
+    } catch (e: any) {
+      alert(e?.message || '순서 저장에 실패했습니다.')
+    } finally {
+      reorderSavingRef.current = false
+    }
+  }
+
+  const handleDragStart = (e: React.DragEvent, content: any) => {
+    setDragContentId(content.id)
+    setDragSectionVoice(isVoiceContent(content))
+    setDropIndex(null)
+    justDraggedRef.current = false
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(content.id))
+  }
+  const handleDragOverSlot = (e: React.DragEvent, slotIndex: number, sectionIsVoice: boolean) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragSectionVoice !== sectionIsVoice) return
+    setDropIndex(slotIndex)
+  }
+  const handleDropAtSlot = (e: React.DragEvent, slotIndex: number, sectionIsVoice: boolean) => {
+    e.preventDefault()
+    const draggedId = dragContentId ?? (e.dataTransfer.getData('text/plain') ? Number(e.dataTransfer.getData('text/plain')) : null)
+    setDragContentId(null)
+    setDragSectionVoice(null)
+    setDropIndex(null)
+    if (draggedId == null || !Number.isFinite(draggedId)) return
+    justDraggedRef.current = true
+    const sectionContents = contents.filter((c: any) => isVoiceContent(c) === sectionIsVoice)
+    const otherSectionContents = contents.filter((c: any) => isVoiceContent(c) !== sectionIsVoice)
+    const dragIndex = sectionContents.findIndex((c: any) => c.id === draggedId)
+    if (dragIndex === -1) return
+    let insertIndex = slotIndex
+    if (insertIndex > dragIndex) insertIndex -= 1
+    const newSection = [...sectionContents]
+    const [removed] = newSection.splice(dragIndex, 1)
+    newSection.splice(insertIndex, 0, removed)
+    const orderedIds = sectionIsVoice
+      ? [...otherSectionContents.map((c: any) => c.id), ...newSection.map((c: any) => c.id)]
+      : [...newSection.map((c: any) => c.id), ...otherSectionContents.map((c: any) => c.id)]
+    saveReorder(orderedIds)
+  }
+  const handleDragEnd = () => {
+    setDragContentId(null)
+    setDragSectionVoice(null)
+    setDropIndex(null)
+  }
+  const handleContentClickWithDrag = (content: any) => {
+    if (justDraggedRef.current) {
+      justDraggedRef.current = false
+      return
+    }
+    handleContentClick(content)
+  }
+
+  // 카드 위에서 드래그 시 삽입 위치 계산 (카드 상반/하반)
+  const handleCardDragOver = (e: React.DragEvent, content: any, cardIndex: number, sectionIsVoice: boolean) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragSectionVoice !== sectionIsVoice || dragContentId === content.id) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mid = rect.top + rect.height / 2
+    const insertBefore = e.clientY < mid ? cardIndex : cardIndex + 1
+    setDropIndex(insertBefore)
   }
 
   // 리뷰 이벤트 관리 모달 열기
@@ -1433,53 +1522,68 @@ export default function AdminPage() {
                     <span className="text-gray-400 text-sm">{contents.filter((c) => !isVoiceContent(c)).length}개</span>
                     <div className="flex-1 border-t border-pink-500/30" />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-0">
                     {contents.filter((c) => !isVoiceContent(c)).map((content, index) => (
-                      <div
-                        key={content.id}
-                        onClick={() => handleContentClick(content)}
-                        className="bg-gray-800 rounded-lg p-4 cursor-pointer hover:bg-gray-700 transition-colors border border-gray-700 border-l-4 border-l-pink-500"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 min-w-0">
-                            {(content?.is_exposed === true || content?.is_exposed === 'true' || content?.is_exposed === 1) ? (
-                              <span className="shrink-0 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded">
-                                배포됨
-                              </span>
-                            ) : (
-                              <span className="shrink-0 bg-gray-600 text-white text-xs font-bold px-2 py-1 rounded">
-                                미배포
-                              </span>
-                            )}
-                            <span className="text-white truncate">{content.content_name || '이름 없음'}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={(e) => handleOpenReviewModal(e, content.id)}
-                              className="bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
-                              title="리뷰 관리"
-                            >
-                              리뷰 관리
-                            </button>
-                            <button
-                              onClick={(e) => handleOpenReviewEventModal(e, content)}
-                              className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
-                              title="리뷰 이벤트"
-                            >
-                              리뷰 이벤트
-                            </button>
-                            <button
-                              onClick={(e) => handleDuplicate(e, content)}
-                              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
-                              title="복제"
-                            >
-                              복제
-                            </button>
-                            <span className="text-gray-400 text-sm">#{index + 1}</span>
+                      <Fragment key={`fortune-${content.id}`}>
+                        {/* 삽입 슬롯: 드래그 중 이 위치에 놓으면 여기로 삽입됨 */}
+                        <div
+                          onDragOver={(e) => handleDragOverSlot(e, index, false)}
+                          onDrop={(e) => handleDropAtSlot(e, index, false)}
+                          className={`transition-all duration-200 ease-out rounded-md flex items-center justify-center ${
+                            dragContentId != null && dragSectionVoice === false && dropIndex === index
+                              ? 'min-h-[56px] my-1 border-2 border-dashed border-pink-400 bg-pink-500/10'
+                              : 'min-h-[6px] my-0.5 border-2 border-transparent'
+                          }`}
+                        >
+                          {dragContentId != null && dragSectionVoice === false && dropIndex === index && (
+                            <span className="text-pink-400 text-xs font-medium">여기에 놓기</span>
+                          )}
+                        </div>
+                        <div
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, content)}
+                          onDragOver={(e) => handleCardDragOver(e, content, index, false)}
+                          onDrop={(e) => { e.preventDefault(); if (dragSectionVoice === false) handleDropAtSlot(e, dropIndex ?? index + 1, false); }}
+                          onDragEnd={handleDragEnd}
+                          onClick={() => handleContentClickWithDrag(content)}
+                          className={`bg-gray-800 rounded-lg p-4 cursor-grab active:cursor-grabbing hover:bg-gray-700 transition-colors border border-gray-700 border-l-4 border-l-pink-500 select-none ${dragContentId === content.id ? 'opacity-50 scale-[0.98]' : ''}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-gray-500 shrink-0 cursor-grab active:cursor-grabbing" title="드래그하여 순서 변경">⋮⋮</span>
+                              {(content?.is_exposed === true || content?.is_exposed === 'true' || content?.is_exposed === 1) ? (
+                                <span className="shrink-0 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded">배포됨</span>
+                              ) : (
+                                <span className="shrink-0 bg-gray-600 text-white text-xs font-bold px-2 py-1 rounded">미배포</span>
+                              )}
+                              <span className="text-white truncate">{content.content_name || '이름 없음'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button onClick={(e) => handleOpenReviewModal(e, content.id)} className="bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200" title="리뷰 관리">리뷰 관리</button>
+                              <button onClick={(e) => handleOpenReviewEventModal(e, content)} className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200" title="리뷰 이벤트">리뷰 이벤트</button>
+                              <button onClick={(e) => handleDuplicate(e, content)} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200" title="복제">복제</button>
+                              <span className="text-gray-400 text-sm">#{index + 1}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      </Fragment>
                     ))}
+                    {/* 맨 아래 삽입 슬롯 */}
+                    {contents.filter((c) => !isVoiceContent(c)).length > 0 && (
+                      <div
+                        onDragOver={(e) => handleDragOverSlot(e, contents.filter((c) => !isVoiceContent(c)).length, false)}
+                        onDrop={(e) => handleDropAtSlot(e, contents.filter((c) => !isVoiceContent(c)).length, false)}
+                        className={`transition-all duration-200 ease-out rounded-md flex items-center justify-center ${
+                          dragContentId != null && dragSectionVoice === false && dropIndex === contents.filter((c) => !isVoiceContent(c)).length
+                            ? 'min-h-[56px] my-1 border-2 border-dashed border-pink-400 bg-pink-500/10'
+                            : 'min-h-[6px] my-0.5 border-2 border-transparent'
+                        }`}
+                      >
+                        {dragContentId != null && dragSectionVoice === false && dropIndex === contents.filter((c) => !isVoiceContent(c)).length && (
+                          <span className="text-pink-400 text-xs font-medium">여기에 놓기</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1492,53 +1596,66 @@ export default function AdminPage() {
                     <span className="text-gray-400 text-sm">{contents.filter((c) => isVoiceContent(c)).length}개</span>
                     <div className="flex-1 border-t border-violet-500/30" />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-0">
                     {contents.filter((c) => isVoiceContent(c)).map((content, index) => (
-                      <div
-                        key={content.id}
-                        onClick={() => handleContentClick(content)}
-                        className="bg-gray-800 rounded-lg p-4 cursor-pointer hover:bg-gray-700 transition-colors border border-gray-700 border-l-4 border-l-violet-500"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 min-w-0">
-                            {(content?.is_exposed === true || content?.is_exposed === 'true' || content?.is_exposed === 1) ? (
-                              <span className="shrink-0 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded">
-                                배포됨
-                              </span>
-                            ) : (
-                              <span className="shrink-0 bg-gray-600 text-white text-xs font-bold px-2 py-1 rounded">
-                                미배포
-                              </span>
-                            )}
-                            <span className="text-white truncate">{content.content_name || '이름 없음'}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={(e) => handleOpenReviewModal(e, content.id)}
-                              className="bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
-                              title="리뷰 관리"
-                            >
-                              리뷰 관리
-                            </button>
-                            <button
-                              onClick={(e) => handleOpenReviewEventModal(e, content)}
-                              className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
-                              title="리뷰 이벤트"
-                            >
-                              리뷰 이벤트
-                            </button>
-                            <button
-                              onClick={(e) => handleDuplicate(e, content)}
-                              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200"
-                              title="복제"
-                            >
-                              복제
-                            </button>
-                            <span className="text-gray-400 text-sm">#{index + 1}</span>
+                      <Fragment key={`voice-${content.id}`}>
+                        <div
+                          onDragOver={(e) => handleDragOverSlot(e, index, true)}
+                          onDrop={(e) => handleDropAtSlot(e, index, true)}
+                          className={`transition-all duration-200 ease-out rounded-md flex items-center justify-center ${
+                            dragContentId != null && dragSectionVoice === true && dropIndex === index
+                              ? 'min-h-[56px] my-1 border-2 border-dashed border-violet-400 bg-violet-500/10'
+                              : 'min-h-[6px] my-0.5 border-2 border-transparent'
+                          }`}
+                        >
+                          {dragContentId != null && dragSectionVoice === true && dropIndex === index && (
+                            <span className="text-violet-400 text-xs font-medium">여기에 놓기</span>
+                          )}
+                        </div>
+                        <div
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, content)}
+                          onDragOver={(e) => handleCardDragOver(e, content, index, true)}
+                          onDrop={(e) => { e.preventDefault(); if (dragSectionVoice === true) handleDropAtSlot(e, dropIndex ?? index + 1, true); }}
+                          onDragEnd={handleDragEnd}
+                          onClick={() => handleContentClickWithDrag(content)}
+                          className={`bg-gray-800 rounded-lg p-4 cursor-grab active:cursor-grabbing hover:bg-gray-700 transition-colors border border-gray-700 border-l-4 border-l-violet-500 select-none ${dragContentId === content.id ? 'opacity-50 scale-[0.98]' : ''}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-gray-500 shrink-0 cursor-grab active:cursor-grabbing" title="드래그하여 순서 변경">⋮⋮</span>
+                              {(content?.is_exposed === true || content?.is_exposed === 'true' || content?.is_exposed === 1) ? (
+                                <span className="shrink-0 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded">배포됨</span>
+                              ) : (
+                                <span className="shrink-0 bg-gray-600 text-white text-xs font-bold px-2 py-1 rounded">미배포</span>
+                              )}
+                              <span className="text-white truncate">{content.content_name || '이름 없음'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button onClick={(e) => handleOpenReviewModal(e, content.id)} className="bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200" title="리뷰 관리">리뷰 관리</button>
+                              <button onClick={(e) => handleOpenReviewEventModal(e, content)} className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200" title="리뷰 이벤트">리뷰 이벤트</button>
+                              <button onClick={(e) => handleDuplicate(e, content)} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors duration-200" title="복제">복제</button>
+                              <span className="text-gray-400 text-sm">#{index + 1}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      </Fragment>
                     ))}
+                    {contents.filter((c) => isVoiceContent(c)).length > 0 && (
+                      <div
+                        onDragOver={(e) => handleDragOverSlot(e, contents.filter((c) => isVoiceContent(c)).length, true)}
+                        onDrop={(e) => handleDropAtSlot(e, contents.filter((c) => isVoiceContent(c)).length, true)}
+                        className={`transition-all duration-200 ease-out rounded-md flex items-center justify-center ${
+                          dragContentId != null && dragSectionVoice === true && dropIndex === contents.filter((c) => isVoiceContent(c)).length
+                            ? 'min-h-[56px] my-1 border-2 border-dashed border-violet-400 bg-violet-500/10'
+                            : 'min-h-[6px] my-0.5 border-2 border-transparent'
+                        }`}
+                      >
+                        {dragContentId != null && dragSectionVoice === true && dropIndex === contents.filter((c) => isVoiceContent(c)).length && (
+                          <span className="text-violet-400 text-xs font-medium">여기에 놓기</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

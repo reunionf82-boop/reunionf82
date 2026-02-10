@@ -34,15 +34,23 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseClient()
     
-    const { data, error } = await supabase
-      .from('contents')
-      .select('*')
+    let query = supabase.from('contents').select('*')
+    const { data: dataWithOrder, error: orderError } = await query
+      .order('sort_order', { ascending: true })
       .order('id', { ascending: false })
     
+    let data = dataWithOrder
+    let error = orderError
+    if (error && (error.message?.includes('sort_order') || error.message?.includes('column'))) {
+      // sort_order 컬럼이 없으면 id 기준으로만 정렬 (supabase-add-contents-sort-order.sql 미적용 시)
+      const fallback = await supabase.from('contents').select('*').order('id', { ascending: false })
+      data = fallback.data
+      error = fallback.error
+    }
     if (error) {
       return NextResponse.json(
         { error: error.message || '컨텐츠 목록을 가져오는데 실패했습니다.' },
-        { 
+        {
           status: 500,
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
