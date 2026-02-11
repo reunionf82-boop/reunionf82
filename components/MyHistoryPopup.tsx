@@ -2617,7 +2617,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                             >
                               다시보기
                             </button>
-                            {result.summary_max_chars !== 0 && (
+                            {false && result.summary_max_chars !== 0 && (
                               <button
                                 onClick={() => handleSummaryClick(result)}
                                 disabled={summaryLoading}

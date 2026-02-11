@@ -6939,7 +6939,7 @@ ${fontFace ? fontFace : ''}
                 </span>
               </div>
             </div>
-          ) : savedId && resultData?.content?.summary_max_chars !== 0 ? (
+          ) : false && savedId && resultData?.content?.summary_max_chars !== 0 ? (
             <button
               type="button"
               disabled={summaryLoading}
@@ -6952,7 +6952,7 @@ ${fontFace ? fontFace : ''}
                 setShowSummaryPopup(true)
                 setSummaryLoading(true)
                 try {
-                  const getRes = await fetch(`/api/saved-results/summary?id=${encodeURIComponent(savedId)}`)
+                  const getRes = await fetch(`/api/saved-results/summary?id=${encodeURIComponent(savedId ?? '')}`)
                   const getData = await getRes.json().catch(() => ({}))
                   if (getData.success && getData.summary) {
                     setSummaryText(getData.summary)
@@ -7122,7 +7122,7 @@ ${fontFace ? fontFace : ''}
               {/* 안내 문구: 제목은 효과 없음, 리스트만 ⚠️ + 스케일 펄스 + 글자 블링크 */}
               <div className="mb-4 rounded-lg px-4 py-3">
                 <p className="text-pink-600 font-semibold mb-2 text-center">
-                  실시간 점사가 모두 완료될때까지 다음 행동을 하지 마세요!
+                  실시간 점사(10분 내외 소요)가 모두 완료될때까지 다음 행동을 하지 마세요!
                 </p>
                 <ul className="result-realtime-notice-list grid grid-cols-2 gap-x-3 gap-y-0.5 text-sm font-semibold text-pink-600 list-none [&_li]:leading-tight w-fit mx-auto text-left [&_li]:flex [&_li]:items-center [&_li]:gap-1.5">
                   <li><span aria-hidden="true">⚠️</span> 화면 캡쳐</li>
