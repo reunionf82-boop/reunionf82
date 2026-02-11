@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-export const maxDuration = 1740 // Cloudways 30분 타임아웃 전 29분
+export const maxDuration = 800 // Vercel Pro 최대(초). 800초 초과 시 함수 타임아웃됨
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
