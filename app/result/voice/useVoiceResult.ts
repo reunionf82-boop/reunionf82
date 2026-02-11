@@ -170,6 +170,10 @@ export function useVoiceResult() {
 
   /* ── 나가기 전 저장 확인 모달 ───────────── */
   const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false)
+  const [isNavigatingAway, setIsNavigatingAway] = useState(false)
+
+  /* ── 종료 버튼 클릭 시 확인 팝업 (남은 시간 + 계속/정말 종료) ── */
+  const [showExitConfirmPopup, setShowExitConfirmPopup] = useState(false)
 
   // 양방향 오디오 녹음 (MediaRecorder: 마이크 + AI 출력 믹스)
   const mixedMediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -408,6 +412,7 @@ export function useVoiceResult() {
   useEffect(() => {
     if (!savingConversation && leaveAfterSaveRef.current) {
       leaveAfterSaveRef.current = false
+      setIsNavigatingAway(true)
       router.push('/form')
     }
   }, [savingConversation, router])
@@ -1420,6 +1425,7 @@ ${manseText || '(만세력 없음)'}
   /* ── 나가기 전 저장 확인: 이전/홈 시 모달 표시 ── */
   const requestLeave = useCallback(() => {
     if (conversationSavedRef.current) {
+      setIsNavigatingAway(true)
       router.push('/form')
       return
     }
@@ -1427,17 +1433,20 @@ ${manseText || '(만세력 없음)'}
       setShowLeaveConfirmModal(true)
       return
     }
+    setIsNavigatingAway(true)
     router.push('/form')
   }, [router])
 
   const handleLeaveWithSave = useCallback(() => {
     setShowLeaveConfirmModal(false)
+    setIsNavigatingAway(true)
     leaveAfterSaveRef.current = true
     disconnect()
   }, [disconnect])
 
   const handleLeaveWithoutSave = useCallback(() => {
     setShowLeaveConfirmModal(false)
+    setIsNavigatingAway(true)
     disconnectInternal(true) // 폼으로 나가기 전 오디오·연결 즉시 정리 (저장 없음)
     router.push('/form')
   }, [router])
@@ -1445,6 +1454,22 @@ ${manseText || '(만세력 없음)'}
   const handleLeaveCancel = useCallback(() => {
     setShowLeaveConfirmModal(false)
   }, [])
+
+  /* ── 종료 버튼 확인 팝업: 계속하기 / 정말 종료 → 폼 이동 ── */
+  const onExitClick = useCallback(() => {
+    setShowExitConfirmPopup(true)
+  }, [])
+
+  const handleExitConfirmContinue = useCallback(() => {
+    setShowExitConfirmPopup(false)
+  }, [])
+
+  const handleExitConfirmExit = useCallback(async () => {
+    setShowExitConfirmPopup(false)
+    setIsNavigatingAway(true)
+    await disconnect()
+    router.push('/form')
+  }, [disconnect, router])
 
   /* ── 시간 포맷 ──────────────────────────── */
   const formatTime = useCallback((sec: number) => {
@@ -1486,9 +1511,15 @@ ${manseText || '(만세력 없음)'}
     saveConversation,
     // 나가기 전 저장 확인 모달
     showLeaveConfirmModal,
+    isNavigatingAway,
     requestLeave,
     handleLeaveWithSave,
     handleLeaveWithoutSave,
     handleLeaveCancel,
+    // 종료 버튼 확인 팝업
+    showExitConfirmPopup,
+    onExitClick,
+    handleExitConfirmContinue,
+    handleExitConfirmExit,
   }
 }

@@ -111,6 +111,30 @@ function FormContent() {
         hasTitle = true
       }
 
+      // 2-0. URL id 파라미터 (포털 배너 등 직접 링크: /form?id=2)
+      const urlId = getParam('id')
+      if (!hasTitle && urlId) {
+        const id = parseInt(urlId, 10)
+        if (!Number.isNaN(id)) {
+          try {
+            const contentById = await getContentById(id)
+            if (contentById?.content_name) {
+              setTitle(contentById.content_name)
+              hasTitle = true
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem('form_title', contentById.content_name)
+                sessionStorage.setItem('form_content_id', String((contentById as any).id))
+                sessionStorage.setItem('skip_resume_once', '1')
+                const ct = (contentById as any).content_type
+                if (ct) sessionStorage.setItem('form_content_type', ct)
+              }
+            }
+          } catch (e) {
+            // id에 해당하는 컨텐츠 없으면 아래 기본 선택으로 폴백
+          }
+        }
+      }
+
       // 2-1. 포털 직접 링크(/form) 대응: title이 없으면 기본 컨텐츠 자동 선택
       if (!hasTitle) {
         try {

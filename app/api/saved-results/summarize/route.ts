@@ -22,11 +22,21 @@ function truncateAtSentenceEnd(text: string, maxChars: number): string {
   if (!text || text.length <= maxChars) return text
   const slice = text.slice(0, maxChars)
   const minAcceptable = Math.floor(maxChars * 0.4)
-  const sentenceEnds = ['.', '。', '!', '?']
   let lastEnd = -1
-  for (const end of sentenceEnds) {
+  for (const end of ['.', '。', '!', '?']) {
     const i = slice.lastIndexOf(end)
-    if (i > lastEnd) lastEnd = i + end.length
+    if (i >= 0) {
+      const pos = i + end.length
+      if (pos > lastEnd) lastEnd = pos
+    }
+  }
+  // 한글 문장 끝(다., 요., 네요. 등)에서 자르기
+  for (const suffix of ['다.', '요.', '네요.', '습니다.', '죠.']) {
+    const i = slice.lastIndexOf(suffix)
+    if (i >= 0) {
+      const pos = i + suffix.length
+      if (pos > lastEnd) lastEnd = pos
+    }
   }
   if (lastEnd >= minAcceptable) return text.slice(0, lastEnd).trim()
   const lastSpace = slice.lastIndexOf(' ')
@@ -93,13 +103,14 @@ export async function POST(request: NextRequest) {
     const SUMMARY_MODEL = 'gemini-2.0-flash'
 
     const genAI = new GoogleGenerativeAI(apiKey)
+    // 2000자 한글 요약을 끝까지 받기 위해 토큰 여유 (한글 1자≈1~2토큰)
     const model = genAI.getGenerativeModel({
       model: SUMMARY_MODEL,
       generationConfig: {
         temperature: 0.3,
         topP: 0.95,
         topK: 40,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 4096,
       },
       safetySettings: [
         { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -133,8 +144,10 @@ ${plainText.slice(0, 25000)}
       return NextResponse.json({ error: '요약 생성에 실패했습니다.' }, { status: 500 })
     }
     let summary = String(candidate.content.parts[0].text).trim()
-    if (summary.length > maxChars) {
-      summary = truncateAtSentenceEnd(summary, maxChars)
+    // 어드민 설정(maxChars)보다 약간 많아도 문장이 완결되면 잘리지 않게: 허용 오차 내는 그대로 저장
+    const overflowAllowance = 400
+    if (summary.length > maxChars + overflowAllowance) {
+      summary = truncateAtSentenceEnd(summary, maxChars + overflowAllowance)
     }
 
     // DB에 요약 저장

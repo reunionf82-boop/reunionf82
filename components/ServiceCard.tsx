@@ -72,8 +72,9 @@ export default function ServiceCard({ service, showExposedBadge }: ServiceCardPr
         sessionStorage.removeItem('form_thumbnail_video_url')
       }
       
-      // 깔끔한 URL로 이동
-      router.push('/form')
+      // URL에 id 포함 → 포털 배너 등에서 같은 링크로 직접 진입 가능
+      const formUrl = typeof service.id === 'number' ? `/form?id=${service.id}` : '/form'
+      router.push(formUrl)
     } catch (error) {
       
       // sessionStorage에 데이터 저장
@@ -97,8 +98,8 @@ export default function ServiceCard({ service, showExposedBadge }: ServiceCardPr
         sessionStorage.removeItem('form_thumbnail_video_url')
       }
       
-      // 깔끔한 URL로 이동
-      router.push('/form')
+      const formUrl = typeof service.id === 'number' ? `/form?id=${service.id}` : '/form'
+      router.push(formUrl)
     }
   }
 

@@ -658,6 +658,8 @@ export interface ManseRyeokCaptionInfo {
   hour?: string | null
   calendarType: 'solar' | 'lunar' | 'lunar-leap'
   convertedDate?: { year: number; month: number; day: number } | null
+  /** 만세력 헤더에 성별 표시용 (남/여) */
+  gender?: 'male' | 'female' | null
 }
 
 // kor-lunar 라이브러리를 사용한 정확한 음력/양력 변환
@@ -723,10 +725,11 @@ export function generateManseRyeokTable(
   const hourJiOhang = data.hour.ohang.split('/')[1]
   
   // 캡션 생성
-  // 형식: [이름 : 양력/음력 2008년 7월 11일 (양력/음력 2008년 5월 10일) 시]
+  // 형식: [이름 남/여 : 양력/음력 2008년 7월 11일 (양력/음력 2008년 5월 10일) 시]
   let caption = ''
   if (captionInfo) {
-    const { name, year, month, day, hour, calendarType, convertedDate } = captionInfo
+    const { name, year, month, day, hour, calendarType, convertedDate, gender } = captionInfo
+    const genderStr = gender === 'male' ? ' (남자)' : gender === 'female' ? ' (여자)' : ''
     
     // 캘린더 타입에 따른 날짜 표시
     const calendarTypeStr = calendarType === 'solar' ? '양력' : '음력'
@@ -747,8 +750,8 @@ export function generateManseRyeokTable(
     // 시간 처리
     let timeStr = ''
     if (!hour || hour === '') {
-      // 태어난 시 모름(디폴트)일 때 시간을 표시하지 말고 '모름'으로 표시
-      timeStr = ' 모름'
+      // 태어난 시 모름일 때 시간 표시하지 않음 (모름 문구 미표시)
+      timeStr = ''
     } else {
       // 지지 문자를 시간으로 변환
       const hourMap: { [key: string]: string } = {
@@ -779,8 +782,8 @@ export function generateManseRyeokTable(
       }
     }
     
-    // 형식: [이름 : 양력/음력 2008년 7월 11일 (양력/음력 2008년 5월 10일) 시]
-    caption = `[${name} : ${dateStr}${convertedDateStr}${timeStr}]`
+    // 형식: [이름 (남자/여자) : 양력/음력 ... 시]
+    caption = `[${name}${genderStr} : ${dateStr}${convertedDateStr}${timeStr}]`
   } else if (userName) {
     // 기존 호환성을 위해 userName만 있는 경우
     caption = userName

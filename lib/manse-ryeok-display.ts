@@ -37,7 +37,7 @@ export function parsePrettyResultTitle(rawTitle: string): {
   } else if (numTimeMatch) {
     timeDisplay = `${numTimeMatch[1]}시`
   } else if (/모름/.test(rest)) {
-    timeDisplay = '모름'
+    timeDisplay = '' // 태어난 시 모름일 때 시간 뱃지에 아무것도 표시하지 않음
   }
 
   if (!name || !solarMatch || !lunarMatch) return null
@@ -82,13 +82,17 @@ export function buildManseHeaderLineHtml(parsed: {
       : parsed.timeRange
         ? `(${parsed.timeRange})`
         : ''
+  const timeBadgeHtml =
+    timeText.trim() !== ''
+      ? `<span class="manse-header-badge"><strong>${timeLabel}</strong> ${timeText}</span>`
+      : ''
   return (
     '<div class="manse-header-line">' +
     `<div class="manse-header-name">${parsed.name}</div>` +
     '<div class="manse-header-badges">' +
     `<span class="manse-header-badge"><strong>양력</strong> ${parsed.solar}</span>` +
     `<span class="manse-header-badge"><strong>음력</strong> ${parsed.lunar}</span>` +
-    `<span class="manse-header-badge"><strong>${timeLabel}</strong> ${timeText}</span>` +
+    timeBadgeHtml +
     '</div></div>'
   )
 }

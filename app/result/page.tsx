@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense, useEffect, useState, useRef, useMemo, memo, useCallback } from 'react'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { getContentById, getSelectedSpeaker, getFortuneViewMode } from '@/lib/supabase-admin'
+import { extractManseCaptionFromTable } from '@/lib/manse-ryeok-display'
 import SupabaseVideo from '@/components/SupabaseVideo'
 import SlideMenuBar from '@/components/SlideMenuBar'
 import MyHistoryPopup from '@/components/MyHistoryPopup'
@@ -476,17 +477,19 @@ function ResultContent() {
 
     // 예: 丑시(01:30 ~ 03:29) / 子시(09:30~11:29)
     const timeMatch = rest.match(/([子丑寅卯辰巳午未申酉戌亥])\s*시\s*\(([^)]+)\)/)
+    const numTimeMatch = rest.match(/(\d{1,2})\s*시/)
     const branch = timeMatch?.[1] || ''
     const timeRange = timeMatch?.[2]?.replace(/\s+/g, ' ').trim() || ''
 
-    // ✅ 사람 정보 헤더로 확실히 보이는 경우에만 카드 렌더링 (컨텐츠 제목 오인 방지)
-    if (!name || !solarMatch || !lunarMatch) return null
+    // 리절트에서는 변환값 누락으로 양력/음력 중 하나만 있을 수 있으므로 한쪽만 있어도 허용
+    // (둘 다 없으면 본인정보 헤더로 볼 수 없으므로 제외)
+    if (!name || (!solarMatch && !lunarMatch)) return null
 
     return {
       name,
-      solar: solarMatch?.[1] || '',
-      lunar: lunarMatch?.[1] || '',
-      branch,
+      solar: solarMatch?.[1] || '-',
+      lunar: lunarMatch?.[1] || '-',
+      branch: branch || (numTimeMatch?.[1] ? `${numTimeMatch[1]}` : ''),
       timeRange,
       raw: rawTitle,
     }
@@ -947,34 +950,33 @@ function ResultContent() {
               if (firstMenuSectionMatch) {
                 const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
 
-                // ✅ 만세력 바로 위 1줄(사주명식 정보 라인)만 예쁘게 감싸기
-                // - 점사 본문 전체를 파싱/변경하지 않기 위해, "맨 앞"의 해당 라인만 추출하여 만세력 앞에 배치한다.
+                // ✅ 본인정보 헤더: 테이블 캡션에서 추출 (스트림 본문에 [양력...음력...] 없을 수 있음)
                 let headerLineHtml = ''
                 try {
-                  const headerLineMatch = cleanedChunkHtml.match(/\[[^\]]*양력[^\]]*음력[^\]]*\]/)
-                  if (headerLineMatch) {
-                    const parsed = parsePrettyResultTitle(headerLineMatch[0])
-                    if (parsed) {
-                      const timeLabel = parsed.branch ? `${parsed.branch}시` : '시간'
-                      const timeText = parsed.timeRange ? `(${parsed.timeRange})` : ''
-                      headerLineHtml =
-                        `<div class="manse-header-line">` +
-                        `<div class="manse-header-name">${parsed.name}</div>` +
-                        `<div class="manse-header-badges">` +
-                        `<span class="manse-header-badge"><strong>양력</strong> ${parsed.solar}</span>` +
-                        `<span class="manse-header-badge"><strong>음력</strong> ${parsed.lunar}</span>` +
-                        `<span class="manse-header-badge"><strong>${timeLabel}</strong> ${timeText}</span>` +
-                        `</div>` +
-                        `</div>`
-                    }
-                    // 해당 라인은 본문에서 제거 (중복 방지)
-                    cleanedChunkHtml = cleanedChunkHtml.replace(headerLineMatch[0], '')
+                  const captionText = extractManseCaptionFromTable(manseRyeokTable)
+                  const toParse = captionText ? (captionText.trim().startsWith('[') ? captionText.trim() : `[${captionText.trim()}]`) : ''
+                  const parsed = toParse ? parsePrettyResultTitle(toParse) : null
+                  if (parsed) {
+                    const timeLabel = parsed.branch ? `${parsed.branch}시` : '시간'
+                    const timeText = parsed.timeRange ? `(${parsed.timeRange})` : ''
+                    headerLineHtml =
+                      `<div class="manse-header-line">` +
+                      `<div class="manse-header-name">${parsed.name}</div>` +
+                      `<div class="manse-header-badges">` +
+                      `<span class="manse-header-badge"><strong>양력</strong> ${parsed.solar}</span>` +
+                      `<span class="manse-header-badge"><strong>음력</strong> ${parsed.lunar}</span>` +
+                      `<span class="manse-header-badge"><strong>${timeLabel}</strong> ${timeText}</span>` +
+                      `</div>` +
+                      `</div>`
                   }
+                  // 본문에 같은 패턴이 있으면 제거 (중복 방지)
+                  const headerLineMatch = cleanedChunkHtml.match(/\[[^\]]*양력[^\]]*음력[^\]]*\]/)
+                  if (headerLineMatch) cleanedChunkHtml = cleanedChunkHtml.replace(headerLineMatch[0], '')
                 } catch {
                   // 실패 시 무시
                 }
 
-                const manseBlock = `${headerLineHtml}${manseRyeokTable}`
+                const manseBlock = `<div class="result-manse-wrap">${manseRyeokTable}</div>`
 
                 if (thumbnailMatch) {
                   cleanedChunkHtml = cleanedChunkHtml.replace(
@@ -1022,8 +1024,24 @@ function ResultContent() {
               .replace(/(>)\s*(\n\s*){2,}(\s*<table[^>]*>)/g, '$1$3')
               .replace(/\*\*/g, '')
 
-            // 만세력 테이블 삽입
+            // 만세력 테이블 삽입 (캡션 제거 후 보이스형 헤더 + 테이블로 래핑)
             if (manseRyeokTable && !finalHtml.includes('manse-ryeok-table')) {
+              const captionText = extractManseCaptionFromTable(manseRyeokTable)
+              const captionParsed = captionText ? parsePrettyResultTitle(captionText.startsWith('[') ? captionText : `[${captionText}]`) : null
+              let doneHeaderHtml = ''
+              if (captionParsed) {
+                const timeLabel = captionParsed.branch ? `${captionParsed.branch}시` : '시간'
+                const timeText = captionParsed.timeRange ? `(${captionParsed.timeRange})` : ''
+                doneHeaderHtml =
+                  `<div class="manse-header-line">` +
+                  `<div class="manse-header-name">${captionParsed.name}</div>` +
+                  `<div class="manse-header-badges">` +
+                  `<span class="manse-header-badge"><strong>양력</strong> ${captionParsed.solar}</span>` +
+                  `<span class="manse-header-badge"><strong>음력</strong> ${captionParsed.lunar}</span>` +
+                  `<span class="manse-header-badge"><strong>${timeLabel}</strong> ${timeText}</span>` +
+                  `</div></div>`
+              }
+              const manseBlockDone = `<div class="result-manse-wrap">${manseRyeokTable}</div>`
               const firstMenuSectionMatch = finalHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
               if (firstMenuSectionMatch) {
                 const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
@@ -1031,19 +1049,19 @@ function ResultContent() {
                 if (thumbnailMatch) {
                   finalHtml = finalHtml.replace(
                     /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
-                    `$1\n${manseRyeokTable}`
+                    `$1\n${manseBlockDone}`
                   )
                 } else {
                   const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
                   if (menuTitleMatch) {
                     finalHtml = finalHtml.replace(
                       /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
-                      `$1\n${manseRyeokTable}`
+                      `$1\n${manseBlockDone}`
                     )
                   } else {
                     finalHtml = finalHtml.replace(
                       /(<div class="menu-section">)\s*/,
-                      `$1\n${manseRyeokTable}`
+                      `$1\n${manseBlockDone}`
                     )
                   }
                 }
@@ -1245,22 +1263,31 @@ function ResultContent() {
                   return match.replace(/<table/g, '<div class="nested-table-prevention"')
                 })
                 
-                // 만세력 테이블 삽입 (첫 번째 대메뉴만)
+                // 만세력 테이블 삽입 (첫 번째 대메뉴만, 보이스형 헤더+캡션 제거)
                 if (menuIdx === 0 && manseRyeokTable && !cleanedMenuHtml.includes('manse-ryeok-table')) {
+                  const capText = extractManseCaptionFromTable(manseRyeokTable)
+                  const capParsed = capText ? parsePrettyResultTitle(capText.startsWith('[') ? capText : `[${capText}]`) : null
+                  let parHeader = ''
+                  if (capParsed) {
+                    const tLabel = capParsed.branch ? `${capParsed.branch}시` : '시간'
+                    const tText = capParsed.timeRange ? `(${capParsed.timeRange})` : ''
+                    parHeader = `<div class="manse-header-line"><div class="manse-header-name">${capParsed.name}</div><div class="manse-header-badges"><span class="manse-header-badge"><strong>양력</strong> ${capParsed.solar}</span><span class="manse-header-badge"><strong>음력</strong> ${capParsed.lunar}</span><span class="manse-header-badge"><strong>${tLabel}</strong> ${tText}</span></div></div>`
+                  }
+                  const manseBlockPar = `<div class="result-manse-wrap">${manseRyeokTable}</div>`
                   const firstMenuSectionMatch = cleanedMenuHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
                   if (firstMenuSectionMatch) {
                     const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
                     if (thumbnailMatch) {
                       cleanedMenuHtml = cleanedMenuHtml.replace(
                         /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
-                        `$1\n${manseRyeokTable}`
+                        `$1\n${manseBlockPar}`
                       )
                     } else {
                       const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
                       if (menuTitleMatch) {
                         cleanedMenuHtml = cleanedMenuHtml.replace(
                           /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
-                          `$1\n${manseRyeokTable}`
+                          `$1\n${manseBlockPar}`
                         )
                       }
                     }
@@ -1393,22 +1420,31 @@ function ResultContent() {
                 return match.replace(/<table/g, '<div class="nested-table-prevention"')
               })
               
-              // 만세력 테이블 삽입 (첫 번째 대메뉴만)
+              // 만세력 테이블 삽입 (첫 번째 대메뉴만, 보이스형 헤더+캡션 제거)
               if (menuIdx === 0 && manseRyeokTable && !nextFinalHtml.includes('manse-ryeok-table')) {
+                const capText2 = extractManseCaptionFromTable(manseRyeokTable)
+                const capParsed2 = capText2 ? parsePrettyResultTitle(capText2.startsWith('[') ? capText2 : `[${capText2}]`) : null
+                let parHeader2 = ''
+                if (capParsed2) {
+                  const tLabel2 = capParsed2.branch ? `${capParsed2.branch}시` : '시간'
+                  const tText2 = capParsed2.timeRange ? `(${capParsed2.timeRange})` : ''
+                  parHeader2 = `<div class="manse-header-line"><div class="manse-header-name">${capParsed2.name}</div><div class="manse-header-badges"><span class="manse-header-badge"><strong>양력</strong> ${capParsed2.solar}</span><span class="manse-header-badge"><strong>음력</strong> ${capParsed2.lunar}</span><span class="manse-header-badge"><strong>${tLabel2}</strong> ${tText2}</span></div></div>`
+                }
+                const manseBlockPar2 = `<div class="result-manse-wrap">${manseRyeokTable}</div>`
                 const firstMenuSectionMatch = nextFinalHtml.match(/<div class="menu-section">([\s\S]*?)(<div class="subtitle-section">|<\/div>\s*<\/div>)/)
                 if (firstMenuSectionMatch) {
                   const thumbnailMatch = firstMenuSectionMatch[0].match(/<img[^>]*class="menu-thumbnail"[^>]*\/>/)
                   if (thumbnailMatch) {
                     nextFinalHtml = nextFinalHtml.replace(
                       /(<img[^>]*class="menu-thumbnail"[^>]*\/>)\s*/,
-                      `$1\n${manseRyeokTable}`
+                      `$1\n${manseBlockPar2}`
                     )
                   } else {
                     const menuTitleMatch = firstMenuSectionMatch[0].match(/<h2 class="menu-title">[^<]*<\/h2>/)
                     if (menuTitleMatch) {
                       nextFinalHtml = nextFinalHtml.replace(
                         /(<h2 class="menu-title">[^<]*<\/h2>)\s*/,
-                        `$1\n${manseRyeokTable}`
+                        `$1\n${manseBlockPar2}`
                       )
                     }
                   }
@@ -3374,6 +3410,103 @@ ${fontFace ? fontFace : ''}
       font-weight: 800 !important;
     }
 
+    /* 만세력 테이블 캡션(대괄호 텍스트) 상단 텍스트 표시 */
+    .result-manse-wrap caption,
+    .result-manse-wrap .manse-ryeok-container caption,
+    .result-manse-wrap .manse-ryeok-table caption,
+    .jeminai-results .manse-ryeok-container caption,
+    .jeminai-results .manse-ryeok-table caption {
+      display: table-caption !important;
+      caption-side: top !important;
+      text-align: center !important;
+      font-size: 16px !important;
+      font-weight: 700 !important;
+      color: #111827 !important;
+      padding: 10px 0 !important;
+      margin-bottom: 10px !important;
+    }
+    /* 리절트 만세력 위 본인정보 UI = 보이스 만세력과 동일 (회색 박스 + 헤더/테이블 스타일) */
+    .result-manse-wrap {
+      background: #f9fafb !important;
+      border: 1px solid #e5e7eb !important;
+      border-radius: 1rem !important;
+      overflow: hidden !important;
+      padding: 1rem !important;
+      margin: 0 0 1.5rem 0 !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    .result-manse-wrap .manse-header-line {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 6px !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      padding: 10px 12px !important;
+      margin: 0 0 10px 0 !important;
+      border-radius: 14px !important;
+      border: 1px solid rgba(245, 158, 11, 0.25) !important;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 251, 235, 0.9) 100%) !important;
+      max-width: 100% !important;
+    }
+    .result-manse-wrap .manse-header-name {
+      font-size: 1.35rem !important;
+      font-weight: 800 !important;
+      color: #111827 !important;
+      line-height: 1.2 !important;
+    }
+    .result-manse-wrap .manse-header-badges {
+      display: flex !important;
+      flex-wrap: wrap !important;
+      gap: 6px !important;
+      justify-content: center !important;
+      align-items: center !important;
+      max-width: 100% !important;
+    }
+    .result-manse-wrap .manse-header-badge {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      padding: 6px 10px !important;
+      border-radius: 9999px !important;
+      border: 1px solid rgba(209, 213, 219, 0.8) !important;
+      background: rgba(255, 255, 255, 0.75) !important;
+      color: #374151 !important;
+      font-size: 0.85rem !important;
+      line-height: 1 !important;
+      white-space: nowrap !important;
+    }
+    .result-manse-wrap .manse-header-badge strong {
+      color: #111827 !important;
+      font-weight: 800 !important;
+    }
+    .result-manse-wrap .manse-ryeok-container {
+      padding: 8px !important;
+      background: linear-gradient(135deg, rgba(212, 168, 83, 0.05) 0%, rgba(139, 90, 43, 0.03) 100%) !important;
+      border-radius: 20px !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      overflow-x: auto !important;
+      box-sizing: border-box !important;
+      margin: 0 !important;
+      box-shadow: none !important;
+      border: none !important;
+    }
+    .result-manse-wrap .manse-ryeok-table,
+    .result-manse-wrap .manse-ryeok-container .manse-ryeok-table,
+    .result-manse-wrap .manse-ryeok-container table {
+      background: linear-gradient(135deg, #fefbf3 0%, #faf6eb 50%, #f5efe0 100%) !important;
+      border-radius: 16px !important;
+      box-shadow: 0 4px 20px rgba(139, 90, 43, 0.12), 0 2px 8px rgba(139, 90, 43, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+    }
+    @media (max-width: 639px) {
+      .result-manse-wrap { padding: 8px 10px !important; }
+      .result-manse-wrap .manse-header-line { padding: 8px 10px !important; }
+      .result-manse-wrap .manse-header-name { font-size: 1.1rem !important; }
+      .result-manse-wrap .manse-header-badge { padding: 4px 8px !important; font-size: 0.75rem !important; }
+    }
+
     /* ✅ 팝업에서는 최대 폭 + 음양오행 등 텍스트가 셀 밖으로 튀지 않도록 폰트/패딩을 조금 낮춤 */
     .manse-ryeok-popup-container {
       width: 100% !important;
@@ -4831,8 +4964,10 @@ ${fontFace ? fontFace : ''}
         }
 
         // ✅ 저장된 결과(보기)에서는 만세력 "바로 위 1줄"만 별도 예쁘게 렌더링하도록 추출
+        // 본문에서 찾거나, 만세력 테이블의 캡션에서 추출
         let manseHeaderHtml = ''
         try {
+          // 1. 본문에서 [양력...음력...] 패턴 찾기
           if (htmlContent) {
             const headerLineMatch = htmlContent.match(/\[[^\]]*양력[^\]]*음력[^\]]*\]/)
             if (headerLineMatch) {
@@ -4852,6 +4987,27 @@ ${fontFace ? fontFace : ''}
               }
               // 본문에서는 해당 1줄 제거 (중복 방지)
               htmlContent = htmlContent.replace(headerLineMatch[0], '')
+            }
+          }
+          // 2. 본문에서 못 찾았으면 만세력 테이블의 캡션에서 추출
+          if (!manseHeaderHtml && manseRyeokTable) {
+            const captionText = extractManseCaptionFromTable(manseRyeokTable)
+            if (captionText) {
+              const toParse = captionText.trim().startsWith('[') ? captionText.trim() : `[${captionText.trim()}]`
+              const parsed = parsePrettyResultTitle(toParse)
+              if (parsed) {
+                const timeLabel = parsed.branch ? `${parsed.branch}시` : '시간'
+                const timeText = parsed.timeRange ? `(${parsed.timeRange})` : ''
+                manseHeaderHtml =
+                  `<div class="manse-header-line">` +
+                  `<div class="manse-header-name">${parsed.name}</div>` +
+                  `<div class="manse-header-badges">` +
+                  `<span class="manse-header-badge"><strong>양력</strong> ${parsed.solar}</span>` +
+                  `<span class="manse-header-badge"><strong>음력</strong> ${parsed.lunar}</span>` +
+                  `<span class="manse-header-badge"><strong>${timeLabel}</strong> ${timeText}</span>` +
+                  `</div>` +
+                  `</div>`
+              }
             }
           }
         } catch {
@@ -4894,8 +5050,47 @@ ${fontFace ? fontFace : ''}
                 }
               }
               
-              // 첫 번째 대메뉴에 만세력 테이블 추가 (아직 없는 경우에만)
-              if (menuIndex === 0 && manseRyeokTable && !section.querySelector('.manse-ryeok-table, .manse-ryeok-container, .manse-ryeok-wrapper')) {
+              // 첫 번째 대메뉴 만세력: 기존 표가 있으면 헤더만 보강, 없으면 새로 삽입
+              if (menuIndex === 0 && manseRyeokTable) {
+                const existingManseEl = section.querySelector('.manse-ryeok-wrapper, .manse-ryeok-container, .manse-ryeok-table') as HTMLElement | null
+                if (existingManseEl) {
+                  const hasHeaderLine = !!section.querySelector('.manse-header-line')
+                  if (!hasHeaderLine && manseHeaderHtml) {
+                    const headerDiv = doc.createElement('div')
+                    headerDiv.innerHTML = manseHeaderHtml
+                    const first = headerDiv.firstElementChild as HTMLElement | null
+                    if (first) {
+                      const wrapper = existingManseEl.classList.contains('manse-ryeok-wrapper')
+                        ? existingManseEl
+                        : (existingManseEl.closest('.manse-ryeok-wrapper') as HTMLElement | null)
+
+                      if (wrapper) {
+                        wrapper.classList.add('result-manse-wrap')
+                        wrapper.insertBefore(first, wrapper.firstChild)
+                      } else {
+                        const manseDiv = doc.createElement('div')
+                        manseDiv.className = 'manse-ryeok-wrapper result-manse-wrap'
+                        manseDiv.style.cssText = 'margin-bottom: 96px;'
+                        manseDiv.appendChild(first)
+
+                        if (existingManseEl.classList.contains('manse-ryeok-container')) {
+                          manseDiv.appendChild(existingManseEl)
+                        } else if (existingManseEl.classList.contains('manse-ryeok-table')) {
+                          const containerDiv = doc.createElement('div')
+                          containerDiv.className = 'manse-ryeok-container'
+                          containerDiv.appendChild(existingManseEl)
+                          manseDiv.appendChild(containerDiv)
+                        } else {
+                          manseDiv.appendChild(existingManseEl)
+                        }
+
+                        const subtitleSection = section.querySelector('.subtitle-section')
+                        section.insertBefore(manseDiv, subtitleSection || null)
+                      }
+                    }
+                  }
+                  return
+                }
                 const menuTitle = section.querySelector('.menu-title')
                 if (menuTitle) {
                   // manseRyeokTable이 이미 완전한 HTML 구조인지 확인
@@ -4904,7 +5099,7 @@ ${fontFace ? fontFace : ''}
                   const existingContainer = tempDoc.querySelector('.manse-ryeok-container')
                   
                   const manseDiv = doc.createElement('div')
-                  manseDiv.className = 'manse-ryeok-wrapper'
+                  manseDiv.className = 'manse-ryeok-wrapper result-manse-wrap'
                   manseDiv.style.cssText = 'margin-bottom: 96px;'
                   const containerDiv = doc.createElement('div')
                   containerDiv.className = 'manse-ryeok-container'
@@ -4916,6 +5111,7 @@ ${fontFace ? fontFace : ''}
                     // 컨테이너가 없으면 새로 생성
                     containerDiv.innerHTML = manseRyeokTable
                   }
+                  // 캡션 유지: 만세력 테이블 상단 텍스트로 표시
                   
                   // 만세력 헤더(1줄) 추가
                   if (manseHeaderHtml) {
@@ -5237,6 +5433,83 @@ ${fontFace ? fontFace : ''}
           if (htmlContent) {
             htmlContent = htmlContent.replace(/\*\*/g, '')
           }
+        }
+
+        // 저장 HTML 구조가 달라도(메뉴 섹션/메뉴아이템 유무와 무관) 만세력 헤더를 보강
+        // - 기존 로직은 menuItems + menu-section 경로에서만 헤더를 넣어, 구조가 다르면 헤더가 빠질 수 있음
+        // - 캡션은 CSS에서 숨기고 있으므로, 헤더가 없으면 "표만 보이는" 상태가 된다
+        try {
+          if (htmlContent && !htmlContent.includes('manse-header-line')) {
+            const parser = new DOMParser()
+            const doc = parser.parseFromString(htmlContent, 'text/html')
+            const existingManseEl = doc.querySelector('.manse-ryeok-wrapper, .manse-ryeok-container, .manse-ryeok-table') as HTMLElement | null
+
+            if (existingManseEl) {
+              let fallbackHeaderHtml = manseHeaderHtml
+              if (!fallbackHeaderHtml) {
+                const sourceHtml =
+                  existingManseEl.classList.contains('manse-ryeok-table')
+                    ? existingManseEl.outerHTML
+                    : ((existingManseEl.querySelector('.manse-ryeok-table') as HTMLElement | null)?.outerHTML || existingManseEl.outerHTML)
+                const cap = extractManseCaptionFromTable(sourceHtml)
+                if (cap) {
+                  const parsed = parsePrettyResultTitle(cap.startsWith('[') ? cap : `[${cap}]`)
+                  if (parsed) {
+                    const timeLabel = parsed.branch ? `${parsed.branch}시` : '시간'
+                    const timeText = parsed.timeRange ? `(${parsed.timeRange})` : ''
+                    fallbackHeaderHtml =
+                      `<div class="manse-header-line">` +
+                      `<div class="manse-header-name">${parsed.name}</div>` +
+                      `<div class="manse-header-badges">` +
+                      `<span class="manse-header-badge"><strong>양력</strong> ${parsed.solar}</span>` +
+                      `<span class="manse-header-badge"><strong>음력</strong> ${parsed.lunar}</span>` +
+                      `<span class="manse-header-badge"><strong>${timeLabel}</strong> ${timeText}</span>` +
+                      `</div>` +
+                      `</div>`
+                  }
+                }
+              }
+
+              if (fallbackHeaderHtml) {
+                const headerDiv = doc.createElement('div')
+                headerDiv.innerHTML = fallbackHeaderHtml
+                const first = headerDiv.firstElementChild as HTMLElement | null
+                if (first) {
+                  const wrapper = existingManseEl.classList.contains('manse-ryeok-wrapper')
+                    ? existingManseEl
+                    : (existingManseEl.closest('.manse-ryeok-wrapper') as HTMLElement | null)
+
+                  if (wrapper) {
+                    wrapper.classList.add('result-manse-wrap')
+                    wrapper.insertBefore(first, wrapper.firstChild)
+                  } else if (existingManseEl.classList.contains('manse-ryeok-container')) {
+                    const newWrap = doc.createElement('div')
+                    newWrap.className = 'manse-ryeok-wrapper result-manse-wrap'
+                    existingManseEl.parentNode?.insertBefore(newWrap, existingManseEl)
+                    newWrap.appendChild(first)
+                    newWrap.appendChild(existingManseEl)
+                  } else if (existingManseEl.classList.contains('manse-ryeok-table')) {
+                    const container = doc.createElement('div')
+                    container.className = 'manse-ryeok-container'
+                    existingManseEl.parentNode?.insertBefore(container, existingManseEl)
+                    container.appendChild(existingManseEl)
+                    const newWrap = doc.createElement('div')
+                    newWrap.className = 'manse-ryeok-wrapper result-manse-wrap'
+                    container.parentNode?.insertBefore(newWrap, container)
+                    newWrap.appendChild(first)
+                    newWrap.appendChild(container)
+                  }
+                }
+              }
+
+              // 캡션 유지: 만세력 테이블 상단 텍스트로 표시
+            }
+
+            const bodyMatch = doc.documentElement.outerHTML.match(/<body[^>]*>([\s\S]*)<\/body>/i)
+            htmlContent = bodyMatch ? bodyMatch[1] : doc.body.innerHTML
+          }
+        } catch {
+          // ignore
         }
         
         // 목차 HTML 생성
@@ -6750,14 +7023,14 @@ ${fontFace ? fontFace : ''}
                 </svg>
               </button>
             </div>
-            <div className="p-6 overflow-y-auto overflow-x-hidden flex-1 min-h-0 overscroll-contain" tabIndex={0}>
+            <div className="p-6 pb-8 overflow-y-auto overflow-x-hidden flex-1 min-h-0 overscroll-contain" tabIndex={0}>
               {summaryLoading ? (
                 <div className="flex flex-col items-center gap-3">
                   <p className="text-gray-500 text-center">요약을 생성하고 있습니다...</p>
                   <div className="animate-spin rounded-full h-8 w-8 border-2 border-pink-200 border-t-pink-500" />
                 </div>
               ) : summaryText ? (
-                <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{summaryText}</p>
+                <p className="text-gray-800 whitespace-pre-wrap leading-relaxed pb-4">{summaryText}</p>
               ) : (
                 <p className="text-gray-500 text-center">요약 내용이 없습니다.</p>
               )}

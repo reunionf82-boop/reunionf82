@@ -118,6 +118,7 @@ export function buildManseBundle(b: BirthInput) {
     hour: b.birthHour || null,
     calendarType: b.calendarType,
     convertedDate,
+    gender: b.gender || null,
   }
 
   const table = generateManseRyeokTable(manse, b.name, captionInfo)

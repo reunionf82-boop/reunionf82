@@ -428,7 +428,7 @@ export default function VoiceResultContent() {
               {/* 종료 */}
               <button
                 type="button"
-                onClick={h.disconnect}
+                onClick={h.onExitClick}
                 disabled={h.savingConversation}
                 className="group relative overflow-hidden rounded-2xl transition-all duration-300 active:scale-[0.97] disabled:opacity-50"
               >
@@ -450,7 +450,7 @@ export default function VoiceResultContent() {
                 </div>
               </button>
             </div>
-          ) : h.savingConversation ? (
+          ) : (h.savingConversation || h.isNavigatingAway) ? (
             <div className="w-full flex flex-col items-center gap-3 py-6">
               <svg className="animate-spin w-8 h-8 text-violet-500" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -584,38 +584,118 @@ export default function VoiceResultContent() {
         </div>
       ) : null}
 
-      {/* 나가기 전 저장 확인 모달 (이전/홈/브라우저 뒤로가기) */}
+      {/* 종료 버튼 확인 팝업 (폼 결제정보 팝업과 동일 스타일) */}
+      {h.showExitConfirmPopup ? (
+        <div
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+        >
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
+          <div
+            className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 - 폼 결제 팝업과 동일 */}
+            <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
+              <h2 className="text-xl font-bold text-white cursor-default">상담 종료</h2>
+              <button
+                type="button"
+                onClick={h.handleExitConfirmContinue}
+                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6">
+              <p className="text-gray-700 text-base mb-2">
+                상담시간이 남아 있어요. 정말로 그만 하시겠어요?
+              </p>
+              <p className="text-gray-500 text-sm mb-5">
+                남은 시간: <span className="font-semibold text-pink-600">{h.formatTime(h.remainingSeconds)}</span>
+              </p>
+              <div className="flex flex-row flex-nowrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={h.handleExitConfirmContinue}
+                  className="flex-1 min-w-0 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
+                >
+                  계속하기
+                </button>
+                <button
+                  type="button"
+                  onClick={h.handleExitConfirmExit}
+                  disabled={h.savingConversation}
+                  className="flex-1 min-w-0 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-4 px-4 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {h.savingConversation ? '저장 중...' : '종료하기'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* 나가기 전 저장 확인 모달 (폼 결제정보 팝업과 동일 레이아웃·톤) */}
       {h.showLeaveConfirmModal ? (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">상담 내용을 저장할까요?</h3>
-            <p className="text-gray-500 text-sm mb-5">
-              소리와 텍스트를 저장하면 나중에 다시 들어서 들을 수 있습니다.
-            </p>
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={h.handleLeaveWithSave}
-                disabled={h.savingConversation}
-                className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-all disabled:opacity-50"
-              >
-                {h.savingConversation ? '저장 중...' : '저장하고 나가기'}
-              </button>
-              <button
-                type="button"
-                onClick={h.handleLeaveWithoutSave}
-                disabled={h.savingConversation}
-                className="w-full py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium transition-all disabled:opacity-50"
-              >
-                저장 안 하고 나가기
-              </button>
+        <div
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+        >
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
+          <div
+            className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 - 폼 결제 팝업과 동일 */}
+            <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
+              <h2 className="text-xl font-bold text-white cursor-default">상담 내용 저장</h2>
               <button
                 type="button"
                 onClick={h.handleLeaveCancel}
-                className="w-full py-3 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-600 font-medium transition-all"
+                disabled={h.savingConversation}
+                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors disabled:opacity-70"
               >
-                취소
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
+            </div>
+
+            <div className="p-6">
+              <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
+                <p className="text-gray-700 text-sm leading-relaxed">
+                  소리와 텍스트를 저장하면 나중에 다시 들어서 들을 수 있습니다. 저장하고 나가시겠어요?
+                </p>
+              </div>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={h.handleLeaveWithSave}
+                  disabled={h.savingConversation}
+                  className="w-full bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {h.savingConversation ? '저장 중...' : '저장하고 나가기'}
+                </button>
+                <button
+                  type="button"
+                  onClick={h.handleLeaveWithoutSave}
+                  disabled={h.savingConversation}
+                  className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-4 px-4 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  저장 안 하고 나가기
+                </button>
+                <button
+                  type="button"
+                  onClick={h.handleLeaveCancel}
+                  disabled={h.savingConversation}
+                  className="w-full border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-4 px-4 rounded-xl transition-all duration-200 disabled:opacity-50"
+                >
+                  취소
+                </button>
+              </div>
             </div>
           </div>
         </div>
