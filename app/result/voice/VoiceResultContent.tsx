@@ -638,6 +638,47 @@ export default function VoiceResultContent() {
         </div>
       ) : null}
 
+      {/* 점사 진행 중 나가기 방지 팝업 (결제정보 레이아웃) */}
+      {h.showInProgressBlockModal ? (
+        <div
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+        >
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
+          <div
+            className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
+              <h2 className="text-xl font-bold text-white cursor-default">점사 진행 중</h2>
+              <button
+                type="button"
+                onClick={h.handleInProgressBlockClose}
+                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
+                <p className="text-gray-700 text-sm leading-relaxed">
+                  점사가 완료될 때까지 나가시면 안 됩니다. 나가시면 점사가 중지됩니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={h.handleInProgressBlockClose}
+                className="w-full bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* 나가기 전 저장 확인 모달 (폼 결제정보 팝업과 동일 레이아웃·톤) */}
       {h.showLeaveConfirmModal ? (
         <div

@@ -175,6 +175,9 @@ export function useVoiceResult() {
   /* ── 종료 버튼 클릭 시 확인 팝업 (남은 시간 + 계속/정말 종료) ── */
   const [showExitConfirmPopup, setShowExitConfirmPopup] = useState(false)
 
+  /* ── 점사 진행 중 이전/홈 클릭 시 나가기 방지 팝업 ── */
+  const [showInProgressBlockModal, setShowInProgressBlockModal] = useState(false)
+
   // 양방향 오디오 녹음 (MediaRecorder: 마이크 + AI 출력 믹스)
   const mixedMediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mixedChunksRef = useRef<Blob[]>([])
@@ -236,8 +239,10 @@ export function useVoiceResult() {
         voiceMinutesRef.current = voiceMin
         const secs = voiceMin * 60
         setTotalSeconds(secs)
-        setRemainingSeconds(secs)
-        console.log('[VoiceResult] voiceMinutes:', voiceMin, '(source:', storedVoiceMin ? 'sessionStorage' : 'voice_time_options[0]', ')')
+        // 이전에 시간이 0이 된 적 있으면 재진입 시에도 0 유지 (이전/홈 후 다시 5분으로 복구 방지)
+        const expired = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('voice_time_expired') === '1'
+        setRemainingSeconds(expired ? 0 : secs)
+        console.log('[VoiceResult] voiceMinutes:', voiceMin, '(source:', storedVoiceMin ? 'sessionStorage' : 'voice_time_options[0]', ')', expired ? ', expired: remaining=0' : '')
 
         setContentData(c)
 
@@ -503,6 +508,9 @@ ${manseText || '(만세력 없음)'}
             clearInterval(timerIntervalRef.current)
             timerIntervalRef.current = null
           }
+          try {
+            sessionStorage.setItem('voice_time_expired', '1')
+          } catch { /* ignore */ }
           // 연장 팝업이 아직 표시되지 않았으면 표시
           if (!extendPopupShownRef.current) {
             extendPopupShownRef.current = true
@@ -1424,6 +1432,11 @@ ${manseText || '(만세력 없음)'}
 
   /* ── 나가기 전 저장 확인: 이전/홈 시 모달 표시 ── */
   const requestLeave = useCallback(() => {
+    // 연결 중(점사 진행 중)이면 나가면 점사가 중지되므로 팝업만 표시
+    if (connected) {
+      setShowInProgressBlockModal(true)
+      return
+    }
     if (conversationSavedRef.current) {
       setIsNavigatingAway(true)
       router.push('/form')
@@ -1435,7 +1448,7 @@ ${manseText || '(만세력 없음)'}
     }
     setIsNavigatingAway(true)
     router.push('/form')
-  }, [router])
+  }, [router, connected])
 
   const handleLeaveWithSave = useCallback(() => {
     setShowLeaveConfirmModal(false)
@@ -1521,5 +1534,8 @@ ${manseText || '(만세력 없음)'}
     onExitClick,
     handleExitConfirmContinue,
     handleExitConfirmExit,
+    // 점사 진행 중 나가기 방지 팝업
+    showInProgressBlockModal,
+    handleInProgressBlockClose: () => setShowInProgressBlockModal(false),
   }
 }

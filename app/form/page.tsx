@@ -3007,6 +3007,7 @@ function FormContent() {
         if (selectedVoiceOption) {
           sessionStorage.setItem('payment_voice_minutes', String(selectedVoiceOption.minutes))
           sessionStorage.setItem('payment_voice_time_option', JSON.stringify(selectedVoiceOption))
+          sessionStorage.removeItem('voice_time_expired')
         }
       }
       try {
@@ -3156,6 +3157,7 @@ function FormContent() {
           if (selectedVoiceOption) {
             sessionStorage.setItem('payment_voice_minutes', String(selectedVoiceOption.minutes))
             sessionStorage.setItem('payment_voice_time_option', JSON.stringify(selectedVoiceOption))
+            sessionStorage.removeItem('voice_time_expired')
           }
         }
         await startFortuneTellingWithContent(
@@ -3295,6 +3297,7 @@ function FormContent() {
           if (selectedVoiceOption) {
             sessionStorage.setItem('payment_voice_minutes', String(selectedVoiceOption.minutes))
             sessionStorage.setItem('payment_voice_time_option', JSON.stringify(selectedVoiceOption))
+            sessionStorage.removeItem('voice_time_expired')
           }
           // 점사 시작에 필요한 사용자 정보 저장
           sessionStorage.setItem('payment_user_gender', gender)

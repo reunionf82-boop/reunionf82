@@ -13,6 +13,25 @@ function formatProfileLine(p: any, label: string) {
   return `${label}: ${name} / ${gender}`
 }
 
+/** 현재 한국 시각(Asia/Seoul)을 읽기 쉬운 문자열로 반환. 유저가 시간/날짜 물어볼 때 대답용 */
+function getCurrentKoreaTimeString(): string {
+  const now = new Date()
+  const dateStr = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  }).format(now)
+  const timeStr = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: false,
+  }).format(now)
+  return `${dateStr} ${timeStr}`
+}
+
 function getGeminiApiKey(): string {
   // Reuse existing env if present; do NOT modify existing service behavior.
   return (
@@ -132,7 +151,12 @@ ${persona || '(미설정)'}
 - 출력: 6~12문장, 말투는 자연스럽게. 마지막에 질문 1개로 마무리.
 `
 
-    const contextBlock = `### 만세력(본인)
+    const koreaTime = getCurrentKoreaTimeString()
+    const contextBlock = `### 현재 시각(한국, 상담 중 기준)
+${koreaTime}
+(유저가 "지금 몇 시예요?", "오늘 날짜가 뭐예요?" 등 시간/날짜를 물어보면 이 시각을 기준으로 친절히 답하세요.)
+
+### 만세력(본인)
 ${profileSelfLine}
 ${manseSelfText || '(없음)'}
 

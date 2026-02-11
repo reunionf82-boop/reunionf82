@@ -326,6 +326,8 @@ function ResultContent() {
   const streamingFinishedRef = useRef(false)
   const [showCompletionPopup, setShowCompletionPopup] = useState(false) // 점사 완료 팝업
   const completionPopupShownRef = useRef(false)
+  const [showStreamingBlockPopup, setShowStreamingBlockPopup] = useState(false) // 점사 진행 중 나가기 방지 팝업 (이전/홈 등)
+  const streamingBlockPushStateRef = useRef(false) // 뒤로가기 시 팝업을 위해 pushState 한 번만
   const [showSummaryPopup, setShowSummaryPopup] = useState(false) // 점사 요약 팝업
   const [summaryText, setSummaryText] = useState<string>('')
   const [summaryLoading, setSummaryLoading] = useState(false)
@@ -349,6 +351,29 @@ function ResultContent() {
   useEffect(() => {
     streamingFinishedRef.current = streamingFinished
   }, [streamingFinished])
+
+  // 점사 진행 중 브라우저/모바일 뒤로가기 시 나가기 방지: pushState로 한 단계 쌓고, popstate 시 팝업
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.history) return
+    const streaming = !streamingFinished && isStreamingActive
+    if (streaming && !streamingBlockPushStateRef.current) {
+      streamingBlockPushStateRef.current = true
+      window.history.pushState({ streamingBlock: true }, '', window.location.href)
+    }
+    if (!streaming) streamingBlockPushStateRef.current = false
+  }, [streamingFinished, isStreamingActive])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onPopState = () => {
+      if (!streamingFinished && isStreamingActive) {
+        window.history.pushState({ streamingBlock: true }, '', window.location.href)
+        setShowStreamingBlockPopup(true)
+      }
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [streamingFinished, isStreamingActive])
 
   // HTML 길이 변경 시 안정 시각 갱신 (서버 done 지연 시 완료 폴백용)
   useEffect(() => {
@@ -6832,7 +6857,7 @@ ${fontFace ? fontFace : ''}
     if (!streamingFinished) {
       e.preventDefault()
       e.stopPropagation()
-      alert('점사중이니 완료될때까지 기다려주세요')
+      setShowStreamingBlockPopup(true)
       return false
     }
   }
@@ -6862,6 +6887,47 @@ ${fontFace ? fontFace : ''}
         onClose={() => setShowCompletionPopup(false)}
       />
 
+      {/* 점사 진행 중 나가기 방지 팝업 (결제정보 레이아웃) — 이전/홈/뒤로가기 시 */}
+      {showStreamingBlockPopup ? (
+        <div
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+        >
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
+          <div
+            className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
+              <h2 className="text-xl font-bold text-white cursor-default">점사 진행 중</h2>
+              <button
+                type="button"
+                onClick={() => setShowStreamingBlockPopup(false)}
+                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
+                <p className="text-gray-700 text-sm leading-relaxed">
+                  점사가 완료될 때까지 나가시면 안 됩니다. 나가시면 점사가 중지됩니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStreamingBlockPopup(false)}
+                className="w-full bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* 헤더 */}
       <header className="w-full bg-white border-b-2 border-pink-500">
         <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 h-14 flex items-center justify-between">
@@ -6878,7 +6944,7 @@ ${fontFace ? fontFace : ''}
               onClick={(e) => {
                 if (!streamingFinished) {
                   e.preventDefault()
-                  alert('점사중이니 완료될때까지 기다려주세요')
+                  setShowStreamingBlockPopup(true)
                   return
                 }
                 setShowMyHistoryPopup(true)
@@ -6892,7 +6958,7 @@ ${fontFace ? fontFace : ''}
               onClick={(e) => {
                 if (!streamingFinished) {
                   e.preventDefault()
-                  alert('점사중이니 완료될때까지 기다려주세요')
+                  setShowStreamingBlockPopup(true)
                   return
                 }
                 setShowSlideMenu(true)
