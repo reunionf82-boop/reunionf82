@@ -774,7 +774,7 @@ function ResultContent() {
         setFirstSubtitleReady(false)
         setStreamingFinished(false)
 
-        // 가짜 진행률: 0.5초에 1%씩 97%까지 증가 (첫 소제목/스트리밍 완료 신호 전까지)
+        // 가짜 진행률: 1초에 1%씩 97%까지 증가 (첫 소제목/스트리밍 완료 신호 전까지)
         fakeProgressInterval = setInterval(() => {
           if (firstSubtitleReadyRef.current || streamingFinishedRef.current) {
             // 첫 소제목이 준비되거나, 스트리밍이 완료되면 100%까지 채우고 팝업 제거
@@ -797,7 +797,7 @@ function ResultContent() {
             const next = prev + 1
             return next > 97 ? 97 : next
           })
-        }, 500)
+        }, 1000)
 
         // 직렬점사와 병렬점사 완전 분리
         if (isParallelMode) {
