@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { buildManseBundle, type BirthInput, type CalendarType } from '@/lib/voice-mvp/manse'
-import { getKstTimeInstructionBlock, getKoreaContextVars } from '@/lib/voice-mvp/ppoing-rules'
+import {
+  getKstTimeInstructionBlock,
+  getKoreaContextVars,
+  getAndIncrementVisitCountToday,
+  getVisitGuidanceText,
+  sanitizeForTts,
+} from '@/lib/voice-mvp/ppoing-rules'
 import { buildResultStyleManseBlock } from '@/lib/manse-ryeok-display'
 import { AudioRecorder } from '@/lib/voice-mvp/genai-live/audio-recorder'
 import { AudioStreamer } from '@/lib/voice-mvp/genai-live/audio-streamer'
@@ -121,6 +127,7 @@ export function useVoiceResult() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [contentData, setContentData] = useState<any>(null)
+  const [visitCountToday, setVisitCountToday] = useState(1)
   const [manseBlockHtml, setManseBlockHtml] = useState('')
   const [manseText, setManseText] = useState('')
   const [showManse, setShowManse] = useState(true)
@@ -160,6 +167,7 @@ export function useVoiceResult() {
   const messagesRef = useRef<Msg[]>([])
   const pendingWsRef = useRef<WebSocket | null>(null)
   const closingForSwapRef = useRef(false)
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /* ── 음성 대화 저장용 refs ──────────────── */
   const audioChunksRef = useRef<string[]>([]) // AI 오디오 base64 청크 누적 (fallback용)
@@ -190,6 +198,8 @@ export function useVoiceResult() {
   const conversationSoundsRef = useRef<(HTMLAudioElement | null)[]>([])
   const bubbleProbRef = useRef(0)
   const startSoundPlayedRef = useRef(false)
+  const mutedRef = useRef(muted)
+  mutedRef.current = muted
 
   messagesRef.current = messages
 
@@ -246,6 +256,10 @@ export function useVoiceResult() {
         console.log('[VoiceResult] voiceMinutes:', voiceMin, '(source:', storedVoiceMin ? 'sessionStorage' : 'voice_time_options[0]', ')', expired ? ', expired: remaining=0' : '')
 
         setContentData(c)
+
+        // 방문 빈도 (당일 localStorage 기준)
+        const count = getAndIncrementVisitCountToday()
+        setVisitCountToday(count)
 
         // 효과음 세팅
         const convSounds = c?.voice_conversation_sounds
@@ -435,6 +449,7 @@ export function useVoiceResult() {
       recorderRef.current?.stop()
       streamerRef.current?.stop()
       if (audioTimeoutRef.current) clearTimeout(audioTimeoutRef.current)
+      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null }
       // 시작소리 오디오 정리
       if (startSoundRef.current) {
         startSoundRef.current.pause()
@@ -455,6 +470,7 @@ export function useVoiceResult() {
     const persona = String(contentData.voice_persona_prompt || '').trim()
     const style = String(contentData.voice_style || 'calm').trim()
     const userName = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_name') || '' : ''
+    const isPpoing = String(contentData?.payment_code || '') === '8006'
 
     const counselorName = String(contentData.voice_counselor_name || '').trim()
     const pitch = contentData.voice_pitch != null && contentData.voice_pitch !== ''
@@ -492,14 +508,28 @@ ${honorificLine}
 - 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}
 
 `
-    const contextText = `${commonContextBlock}### 내담자 정보
+    // 방문 빈도: 8006(뿌잉) 첫방문=인사+20초 운세, 재방문=인사만
+    let visitBlock = ''
+    if (isPpoing) {
+      const visitGuidance = getVisitGuidanceText(visitCountToday)
+      visitBlock = `
+### 방문 빈도(오늘 ${visitCountToday}번째 방문)
+${visitCountToday <= 1
+  ? `- 내담자 "${userName || '손님'}"님이 당일 첫 방문으로 접속했습니다. 먼저 따뜻하게 인사한 후 신점으로 약 20초가량 오늘의 운세(재물운, 애정운)를 얘기해 주시오.`
+  : `- 내담자 "${userName || '손님'}"님이 재접속했습니다. 인사만 간단히 하시오.`}
+- 입구 테마: ${visitGuidance.openingTheme} — ${visitGuidance.openingHint}
+- 출구 테마: ${visitGuidance.closingTheme} — ${visitGuidance.closingHint}
+
+`
+    }
+    const contextText = `${commonContextBlock}${visitBlock}### 내담자 정보
 이름: ${userName}
 
 ### 만세력
 ${manseText || '(만세력 없음)'}
 `
     return { systemText, contextText }
-  }, [contentData, manseText])
+  }, [contentData, manseText, visitCountToday])
 
   const voiceName = useMemo(() => {
     return String(contentData?.voice_name || 'Aoede').trim()
@@ -538,6 +568,40 @@ ${manseText || '(만세력 없음)'}
       })
     }, 1000)
   }, [])
+
+  /* ── 침묵 깨기 ─────────────────────────── */
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+  }, [])
+
+  const sendSilenceBreak = useCallback(async () => {
+    clearSilenceTimer()
+    const cid = contentIdRef.current
+    if (!cid) return
+    try {
+      const res = await fetch('/api/voice/silence-break', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentId: cid, silenceSeconds: 5 }),
+      })
+      const data = await res.json().catch(() => ({} as any))
+      if (!data?.success || !data?.text) return
+      const text = String(data.text).trim()
+      setMessages((prev) => [...prev, { role: 'assistant', text }])
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+        const u = new SpeechSynthesisUtterance(sanitizeForTts(text) || text)
+        u.lang = 'ko-KR'
+        u.rate = 1.05
+        window.speechSynthesis.speak(u)
+      }
+    } catch {
+      // ignore
+    }
+  }, [clearSilenceTimer])
 
   /* ── Failover ──────────────────────────── */
   const connectPendingFailoverRef = useRef<() => void>(() => {})
@@ -636,6 +700,7 @@ ${manseText || '(만세력 없음)'}
 
   function disconnectInternal(skipSave = false) {
     manualDisconnectRef.current = true
+    clearSilenceTimer()
     recorderRef.current?.stop()
     streamerRef.current?.stop()
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -910,7 +975,17 @@ ${manseText || '(만세력 없음)'}
             streamerRef.current?.addPCM16(new Uint8Array(buf))
             // AI 오디오 청크 누적 (다시듣기용)
             audioChunksRef.current.push(msg.data)
-            audioTimeoutRef.current = setTimeout(() => { isAiSpeakingRef.current = false; audioTimeoutRef.current = null }, 500)
+            audioTimeoutRef.current = setTimeout(() => {
+              isAiSpeakingRef.current = false
+              audioTimeoutRef.current = null
+              clearSilenceTimer()
+              if (!mutedRef.current) {
+                silenceTimerRef.current = setTimeout(() => {
+                  silenceTimerRef.current = null
+                  sendSilenceBreak()
+                }, 5000)
+              }
+            }, 500)
             return
           }
           if (msg.type === 'text' && msg.text) {
@@ -944,6 +1019,7 @@ ${manseText || '(만세력 없음)'}
           if (msg.type === 'interrupted') {
             streamerRef.current?.stop()
             isAiSpeakingRef.current = false
+            clearSilenceTimer()
             if (audioTimeoutRef.current) { clearTimeout(audioTimeoutRef.current); audioTimeoutRef.current = null }
             return
           }
@@ -957,6 +1033,7 @@ ${manseText || '(만세력 없음)'}
       }
       ws.onerror = () => { setError('Live 연결 오류') }
       ws.onclose = (event) => {
+        clearSilenceTimer()
         if (failoverCheckIntervalRef.current) { clearInterval(failoverCheckIntervalRef.current); failoverCheckIntervalRef.current = null }
         sessionStartTimeRef.current = null
         if (pingIntervalRef.current) { clearInterval(pingIntervalRef.current); pingIntervalRef.current = null }
@@ -986,6 +1063,7 @@ ${manseText || '(만세력 없음)'}
       if (!recorderRef.current) recorderRef.current = new AudioRecorder(16000)
       const recorder = recorderRef.current
       const onData = (base64: string) => {
+        clearSilenceTimer()
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
         wsRef.current.send(JSON.stringify({ type: 'audio', data: base64, mimeType: 'audio/pcm;rate=16000' }))
       }
@@ -995,7 +1073,7 @@ ${manseText || '(만세력 없음)'}
     } catch (e: any) {
       setError(e?.message || '연결 실패')
     }
-  }, [systemAndContext, model, voiceName, muted, startFailoverCheckInterval, startTimer])
+  }, [systemAndContext, model, voiceName, muted, startFailoverCheckInterval, startTimer, clearSilenceTimer, sendSilenceBreak])
 
   /* ── disconnect ─────────────────────────── */
   const disconnect = useCallback(async () => {

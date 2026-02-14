@@ -1,10 +1,12 @@
 # 뿌잉보살 마스터 시트 - 프롬프트 vs 개발 구분
 
+> **적용 경로:** `/result/voice` (프론트), `/admin/form/voice` (어드민 콘텐츠 설정). voice-mvp는 미사용.
+
 ## 1. 프롬프트로만 해결 가능 (AI 지시/설정)
 
 | 구분 | 내용 | 적용 방법 |
 |------|------|----------|
-| 페르소나 | 5살 여자아이 말투, 신점 전문, 공수 시 서늘한 톤 | `persona_shinjeom` 프롬프트 |
+| 페르소나 | 5살 여자아이 말투, 신점 전문, 공수 시 서늘한 톤 | `/admin/form/voice`의 `voice_persona_prompt` (contents 테이블) |
 | 언어/호칭 | 영어 금지, 언니/오빠 호칭, 본인 지칭 | 프롬프트 지시 |
 | 효과음 금지 | "딸랑", "휘익" 등 의성어 금지, 상황 묘사로 대체 | 프롬프트 지시 |
 | 도구 사용 금지 | 사주/타로/생년월일시 거부 | 프롬프트 지시 |
@@ -14,7 +16,7 @@
 | 심리 케어 | 울음/자해/불안 등 긴급 위로 | 프롬프트 지시 |
 | 보안/운영 | 역할 고정, 탈옥 방지, 민감 주제 대응 | 프롬프트 지시 |
 | 괄호 지문 묵음 | 최종 출력에 ( ) [[ ]] 포함 금지 | 프롬프트 + **TTS 전 sanitize(개발)** |
-| 정적 깨기 **멘트** | "언니! 자요? 왜 말이 없떠..." 등 | 프롬프트 예시 (트리거는 개발 필요) |
+| 정적 깨기 **멘트** | "언니! 자요? 왜 말이 없떠..." 등 | `getSilenceBreakPrompt` + useVoiceResult 침묵 타이머 연동 |
 
 ---
 
@@ -27,10 +29,10 @@
 | 구현 항목 | 설명 |
 |----------|------|
 | 침묵 감지 타이머 | 클라이언트에서 "마지막 사용자 발화/입력 이후 N초" 또는 "AI 발화 종료 후 사용자 미응답 N초" 감지 |
-| 트리거 API 확장 | `POST /turn` 시 `trigger: 'silence'`, `silence_seconds: 3 | 5` 등 전달 시, 해당 정적 깨기 프롬프트로 응답 생성 |
-| 클라이언트 연동 | 2~3초 침묵 → 재촉형, 5초 이상 → 관찰형/환기형 등 구간별로 API 호출 |
+| 트리거 API | `POST /api/voice/silence-break` — contentId, silenceSeconds 전달 시 해당 정적 깨기 프롬프트로 응답 생성 |
+| 클라이언트 연동 | AI 발화 종료 후 5초 사용자 침묵 시 API 호출 → TTS로 재생 (2~3초/5초+ 구간별 `getSilenceBreakPrompt`) |
 
-**구현 위치:** `VoiceMvpSessionClient`, `VoiceMvpSessionLiveClient`, `app/api/voice-mvp/sessions/[id]/turn/route.ts`
+**구현 위치:** `app/result/voice/useVoiceResult.ts`, `app/api/voice/silence-break/route.ts`
 
 ---
 
@@ -41,10 +43,10 @@
 | 구현 항목 | 설명 |
 |----------|------|
 | 방문 횟수 저장 | 오늘 날짜 기준 동일 사용자(세션)의 방문 횟수 저장 |
-| 세션 생성 시 전달 | 클라이언트 `localStorage`에 `voice_mvp:visits:YYYY-MM-DD` 카운트, 세션 생성 시 `visit_count_today` 전달 |
-| turn context 주입 | `visit_count_today`를 시스템/컨텍스트에 포함하여 AI가 "첫 방문" vs "오늘 2~3회" 등 구분 가능하게 함 |
+| result/voice 전달 | 클라이언트 `localStorage`에 `voice:visits:YYYY-MM-DD` 카운트, Live 시스템 컨텍스트에 `visit_count_today` 주입 |
+| context 주입 | `visit_count_today`를 시스템/컨텍스트에 포함하여 AI가 "첫 방문" vs "오늘 2~3회" 등 구분 가능하게 함 |
 
-**구현 위치:** `VoiceMvpNewClient`, `app/api/voice-mvp/sessions/route.ts`, `turn/route.ts`
+**구현 위치:** `app/result/voice/useVoiceResult.ts`, `lib/voice-mvp/ppoing-rules.ts` (`getVisitGuidanceText`)
 
 ---
 
@@ -58,7 +60,7 @@
 | 변수 블록 생성 | `weekday`, `timeSlot`, `isFullMoon`, `isHoliday` 등 구조화된 변수를 context에 주입 |
 | AI 활용 | 프롬프트에서 "현재 weekday=월요일, timeSlot=새벽" 등 참조하도록 안내 |
 
-**구현 위치:** `app/api/voice-mvp/sessions/[id]/turn/route.ts`, `lib/voice-mvp/ppoing-rules.ts`
+**구현 위치:** `app/result/voice/useVoiceResult.ts` (systemAndContext), `lib/voice-mvp/ppoing-rules.ts`
 
 ---
 
@@ -69,9 +71,9 @@
 | 구현 항목 | 설명 |
 |----------|------|
 | 후처리 함수 | `sanitizeForTts(text)` → `( )`, `[[ ]]` 내부 내용 제거 또는 전체 괄호 제거 |
-| TTS 호출 전 적용 | `speak()` 직전에 `sanitizeForTts(assistantText)` 적용 |
+| TTS 호출 전 적용 | 침묵 깨기 응답 등 `speechSynthesis` 호출 직전에 `sanitizeForTts(text)` 적용 |
 
-**구현 위치:** `lib/voice-mvp/ppoing-rules.ts`, `VoiceMvpSessionClient.speak()` 호출부
+**구현 위치:** `lib/voice-mvp/ppoing-rules.ts`, `app/result/voice/useVoiceResult.ts` (sendSilenceBreak)
 
 ---
 
@@ -84,10 +86,8 @@
 
 ## 3. 구현 체크리스트
 
-- [ ] `lib/voice-mvp/ppoing-rules.ts` - `sanitizeForTts`, `getKoreaContextVars`, `getVisitGuidanceText` 등
-- [ ] `turn/route.ts` - `trigger_silence` 처리, `visit_count_today`, 시간/요일 context 주입
-- [ ] `sessions/route.ts` - `visit_count_today` 수신 및 저장 (또는 events payload)
-- [ ] `VoiceMvpNewClient` - `visit_count_today` localStorage 추적 및 API 전달
-- [ ] `VoiceMvpSessionClient` - 침묵 타이머, `speak` 전 `sanitizeForTts`
-- [ ] `VoiceMvpSessionLiveClient` - 침묵 타이머 (AI 발화 종료 후 사용자 미응답 시)
-- [ ] 뿌잉보살 마스터 프롬프트 - `persona_shinjeom`에 넣을 전체 규칙 텍스트
+- [x] `lib/voice-mvp/ppoing-rules.ts` - `sanitizeForTts`, `getKoreaContextVars`, `getKstTimeInstructionBlock`, `getVisitGuidanceText`, `getSilenceBreakPrompt`
+- [x] `app/result/voice/useVoiceResult.ts` - KST/호칭/요일 context, 침묵 타이머, `sendSilenceBreak`(sanitizeForTts)
+- [x] `app/api/voice/silence-break/route.ts` - 침묵 깨기 API
+- [x] 방문 빈도 - `useVoiceResult`에 localStorage `voice:visits:YYYY-MM-DD` 추적 + context 주입 (8006 한정)
+- [ ] `/admin/form/voice` - 뿌잉보살 마스터 프롬프트를 `voice_persona_prompt`에 설정

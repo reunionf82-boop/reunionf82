@@ -112,6 +112,29 @@ export function getKoreaContextVars(): KoreaContextVars {
   }
 }
 
+/** result/voice: 오늘 방문 횟수 반환 및 1 증가. localStorage `voice:visits:YYYY-MM-DD` 사용 */
+export function getAndIncrementVisitCountToday(): number {
+  if (typeof window === 'undefined') return 1
+  try {
+    const now = new Date()
+    const kstOffset = 9 * 60
+    const localOffset = now.getTimezoneOffset()
+    const kstDate = new Date(now.getTime() + (kstOffset + localOffset) * 60 * 1000)
+    const y = kstDate.getFullYear()
+    const m = String(kstDate.getMonth() + 1).padStart(2, '0')
+    const d = String(kstDate.getDate()).padStart(2, '0')
+    const today = `${y}-${m}-${d}`
+    const key = `voice:visits:${today}`
+    const raw = window.localStorage.getItem(key)
+    const count = raw ? Math.max(0, parseInt(raw, 10) || 0) : 0
+    const next = count + 1
+    window.localStorage.setItem(key, String(next))
+    return next
+  } catch {
+    return 1
+  }
+}
+
 /** 방문 횟수에 따른 입구/출구 가이드 텍스트 (AI 프롬프트용) */
 export function getVisitGuidanceText(visitCountToday: number): {
   openingTheme: string
