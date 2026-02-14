@@ -155,6 +155,19 @@ export function getVisitGuidanceText(visitCountToday: number): {
   }
 }
 
+/** 시간/날짜 질문 시 사용할 KST 안내 블록. UTC 언급 절대 금지 강조. */
+export function getKstTimeInstructionBlock(): string {
+  const v = getKoreaContextVars()
+  const kstLine = `${v.dateStr} ${v.weekdayKo}요일 ${v.timeStr}`
+  return `### 시간/날짜 응답 규칙(필수)
+현재 시각(한국 표준시 KST): ${kstLine}
+
+- 절대 금지: UTC, GMT, 협정 세계시, 서버 시간 등 언급 금지. 위 시각만 사용.
+- "지금 몇 시?" → "지금 한국 시각 ${v.timeStr}이야."
+- "오늘 며칠?" → "오늘 ${v.dateStr} ${v.weekdayKo}요일이야."
+- 위 값을 그대로 말할 것. 다른 시간대 사용 시 심각한 오류.`
+}
+
 /** 정적 깨기 유형별 프롬프트 (침묵 N초 시) */
 export function getSilenceBreakPrompt(silenceSeconds: number): string {
   if (silenceSeconds >= 5) {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { buildManseBundle, type BirthInput, type CalendarType } from '@/lib/voice-mvp/manse'
+import { getKstTimeInstructionBlock, getKoreaContextVars } from '@/lib/voice-mvp/ppoing-rules'
 import { buildResultStyleManseBlock } from '@/lib/manse-ryeok-display'
 import { AudioRecorder } from '@/lib/voice-mvp/genai-live/audio-recorder'
 import { AudioStreamer } from '@/lib/voice-mvp/genai-live/audio-streamer'
@@ -466,6 +467,7 @@ export function useVoiceResult() {
     const speechLine = speechParams.length > 0 ? `\n[음성 연출] ${speechParams.join(', ')}로 전달해 주세요.\n` : ''
 
     const systemText = `당신은 한국어로 대답하는 실시간 음성 상담사입니다.
+- 시간/날짜 질문 시 context의 한국 시각(KST)만 사용. UTC·GMT 언급 절대 금지.
 ${persona ? `\n[페르소나]\n${persona}\n` : ''}
 - ${styleInstruction(style)}
 - 목표: 공감 + 구체적 조언 + 마지막에 질문 1개
@@ -477,7 +479,20 @@ ${speechLine}
 - 첫 인사는 2~3문장으로 짧게, 내담자가 편안함을 느끼도록 합니다.
 - 예시: "어서 오세요, [이름]님. 제가 기다리고 있었어요. 무엇이 궁금하신가요?"
 `
-    const contextText = `### 내담자 정보
+    const kst = getKoreaContextVars()
+    const gender = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_gender') || 'female' : 'female'
+    const isMale = gender === 'male'
+    const honorificLine = isMale
+      ? '내담자 성별: 남성. 반드시 오빠 또는 삼촌으로 호칭할 것. 언니/이모 사용 금지.'
+      : '내담자 성별: 여성. 반드시 언니 또는 이모로 호칭할 것. 오빠/삼촌 사용 금지.'
+    const commonContextBlock = `${getKstTimeInstructionBlock()}
+
+### 호칭 규칙(필수)
+${honorificLine}
+- 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}
+
+`
+    const contextText = `${commonContextBlock}### 내담자 정보
 이름: ${userName}
 
 ### 만세력

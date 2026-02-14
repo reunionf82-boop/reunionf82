@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getKoreaContextVars, sanitizeForTts } from '@/lib/voice-mvp/ppoing-rules'
+import { getKoreaContextVars, getKstTimeInstructionBlock, sanitizeForTts } from '@/lib/voice-mvp/ppoing-rules'
 import { buildResultStyleManseBlock } from '@/lib/manse-ryeok-display'
 import { AudioRecorder } from '@/lib/voice-mvp/genai-live/audio-recorder'
 import { AudioStreamer } from '@/lib/voice-mvp/genai-live/audio-streamer'
@@ -439,6 +439,7 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
     const mansePartnerText = String(session?.manse_partner?.manse_text || '').slice(0, 3000)
     const situation = String(session?.situation || '').slice(0, 1500)
     const systemText = `당신은 한국어로 대답하는 실시간 음성 상담사입니다.
+- 시간/날짜 질문 시 context의 한국 시각(KST)만 사용. UTC·GMT 언급 절대 금지.
 ${persona ? `\n[페르소나]\n${persona}\n` : ''}
 - ${styleInstruction(preset.style)}
 - 상담 종류: ${mode}
@@ -446,8 +447,8 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
 - 길이: 6~12문장
 `
     const kst = getKoreaContextVars()
-    const kstLine = `${kst.dateStr} ${kst.weekdayKo}요일 ${kst.timeStr}`
-    const contextText = `### 호칭 규칙(필수)\n${honorificLine}\n\n### 현재 시각(한국 표준시 KST, UTC+9) — 아래 값을 그대로 사용\n${kstLine}\n- UTC 아님. "지금 몇 시?" "오늘 며칠?" 등 시간/날짜 질문 시 반드시 위 시각만 사용. 예: "지금 한국 시각 ${kst.timeStr}이야." 또는 "오늘 ${kst.dateStr} ${kst.weekdayKo}요일이야."\n- 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}\n\n### 기본 정보\n${selfLine}\n생년월일: ${selfBirth}\n\n### 만세력(본인)\n${manseSelfText || '(만세력 텍스트 없음)'}\n\n### 만세력(상대)\n${
+    const kstBlock = getKstTimeInstructionBlock()
+    const contextText = `### 호칭 규칙(필수)\n${honorificLine}\n\n${kstBlock}\n- 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}\n\n### 기본 정보\n${selfLine}\n생년월일: ${selfBirth}\n\n### 만세력(본인)\n${manseSelfText || '(만세력 텍스트 없음)'}\n\n### 만세력(상대)\n${
       mode === 'gunghap' ? `${partnerLine}\n생년월일: ${partnerBirth}\n${mansePartnerText || '(만세력 텍스트 없음)'}` : '(해당 없음)'
     }\n\n### 상황\n${mode === 'reunion' ? situation || '(없음)' : '(해당 없음)'}\n`
     return {

@@ -6,6 +6,7 @@ import {
   getKoreaContextVars,
   getVisitGuidanceText,
   getSilenceBreakPrompt,
+  getKstTimeInstructionBlock,
 } from '@/lib/voice-mvp/ppoing-rules'
 
 export const dynamic = 'force-dynamic'
@@ -155,6 +156,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     const systemPrompt = `당신은 한국어로 대답하는 "실시간 음성 상담사"입니다.
 - 아래 [페르소나]를 최우선으로 따르세요.
+- 시간/날짜 질문 시 반드시 context의 한국 시각(KST)만 사용. UTC·GMT 언급 절대 금지.
 
 [페르소나]
 ${persona || '(미설정)'}
@@ -185,12 +187,11 @@ ${koreaVars.isHoliday ? '- 명절이라 조상님들이 다들 바쁘셔.' : ''}
 `
       : ''
 
+    const kstBlock = getKstTimeInstructionBlock()
     const contextBlock = `### 호칭 규칙(필수)
 ${honorificLine}
 
-### 현재 시각(한국 표준시 KST, UTC+9) — 아래 값을 그대로 사용
-${koreaTime}
-- UTC 아님. "지금 몇 시?" "오늘 며칠?" 등 시간/날짜 질문 시 반드시 위 시각만 사용. 예: "지금 한국 시각 ${koreaVars.timeStr}이야." 또는 "오늘 ${koreaVars.dateStr} ${koreaVars.weekdayKo}요일이야."
+${kstBlock}
 ${dynamicVarsBlock}
 ### 만세력(본인)
 ${profileSelfLine}
