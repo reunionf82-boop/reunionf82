@@ -32,24 +32,41 @@ export type KoreaContextVars = {
   isHoliday: boolean
 }
 
-/** 한국 시각 기준 요일/시간대/특수일 변수 반환 */
+const KST = 'Asia/Seoul'
+
+/** 한국 표준시(KST) 기준 요일/시간대/특수일 변수 반환. 서버가 UTC여도 정확히 KST로 계산. */
 export function getKoreaContextVars(): KoreaContextVars {
   const now = new Date()
   const dateStr = new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
+    timeZone: KST,
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   }).format(now)
   const timeStr = new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
+    timeZone: KST,
     hour: 'numeric',
     minute: '2-digit',
     hour12: false,
   }).format(now)
-  const koreaDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
-  const dayOfWeek = koreaDate.getDay()
-  const hour = koreaDate.getHours()
+  const parts = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: KST,
+    hour: 'numeric',
+    hour12: false,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'numeric',
+  }).formatToParts(now)
+  const getPart = (type: string) => parts.find((p) => p.type === type)?.value ?? '0'
+  const hour = parseInt(getPart('hour'), 10) || 0
+  const dayOfMonth = parseInt(getPart('day'), 10) || 1
+  const month = parseInt(getPart('month'), 10) || 1
+  const weekdayShort = getPart('weekday')
+  const WEEKDAY_MAP: Record<string, number> = {
+    일: 0, 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6,
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  }
+  const dayOfWeek = WEEKDAY_MAP[weekdayShort] ?? new Date(now.getTime() + 9 * 60 * 60 * 1000).getUTCDay()
 
   let timeSlot: KoreaContextVars['timeSlot'] = 'afternoon'
   let timeSlotHint = '해가 높으니 양기가 짙어요.'
@@ -74,12 +91,7 @@ export function getKoreaContextVars(): KoreaContextVars {
   const isFriday = dayOfWeek === 5
   const weekdayKo = ['일', '월', '화', '수', '목', '금', '토'][dayOfWeek] ?? ''
 
-  // 보름달: 음력 15일 근사 (단순화: 매월 15일 전후)
-  const dayOfMonth = koreaDate.getDate()
   const isFullMoon = dayOfMonth >= 14 && dayOfMonth <= 16
-
-  // 명절: 추석/설 연휴 등 (간단히 월/일만 체크)
-  const month = koreaDate.getMonth() + 1
   const isHoliday =
     (month === 1 && dayOfMonth >= 1 && dayOfMonth <= 3) ||
     (month === 9 && dayOfMonth >= 14 && dayOfMonth <= 16) ||

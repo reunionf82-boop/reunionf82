@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { sanitizeForTts } from '@/lib/voice-mvp/ppoing-rules'
+import { getKoreaContextVars, sanitizeForTts } from '@/lib/voice-mvp/ppoing-rules'
 import { buildResultStyleManseBlock } from '@/lib/manse-ryeok-display'
 import { AudioRecorder } from '@/lib/voice-mvp/genai-live/audio-recorder'
 import { AudioStreamer } from '@/lib/voice-mvp/genai-live/audio-streamer'
@@ -440,7 +440,9 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
 - 목표: 공감 + 구체적 조언 + 마지막에 질문 1개
 - 길이: 6~12문장
 `
-    const contextText = `### 기본 정보\n${selfLine}\n생년월일: ${selfBirth}\n\n### 만세력(본인)\n${manseSelfText || '(만세력 텍스트 없음)'}\n\n### 만세력(상대)\n${
+    const kst = getKoreaContextVars()
+    const kstLine = `${kst.dateStr} ${kst.weekdayKo}요일 ${kst.timeStr}`
+    const contextText = `### 현재 시각(한국 표준시 KST)\n${kstLine}\n(유저가 시간/날짜 물어보면 이 시각 기준으로 답하세요. 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint})\n\n### 기본 정보\n${selfLine}\n생년월일: ${selfBirth}\n\n### 만세력(본인)\n${manseSelfText || '(만세력 텍스트 없음)'}\n\n### 만세력(상대)\n${
       mode === 'gunghap' ? `${partnerLine}\n생년월일: ${partnerBirth}\n${mansePartnerText || '(만세력 텍스트 없음)'}` : '(해당 없음)'
     }\n\n### 상황\n${mode === 'reunion' ? situation || '(없음)' : '(해당 없음)'}\n`
     return {
