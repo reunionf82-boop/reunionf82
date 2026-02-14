@@ -429,6 +429,11 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
     const selfLine = profileLine(session?.profile_self, '본인')
     const partnerLine = profileLine(session?.profile_partner, '상대')
     const selfBirth = birthSummary(session?.profile_self)
+    const selfGenderRaw = String(session?.profile_self?.gender || '').trim()
+    const isMale = selfGenderRaw === 'male' || selfLine.includes('남성')
+    const honorificLine = isMale
+      ? '내담자 성별: 남성. 반드시 오빠 또는 삼촌으로 호칭할 것. 언니/이모 사용 금지.'
+      : '내담자 성별: 여성. 반드시 언니 또는 이모로 호칭할 것. 오빠/삼촌 사용 금지.'
     const partnerBirth = birthSummary(session?.profile_partner)
     const manseSelfText = String(session?.manse_self?.manse_text || '').slice(0, 4000)
     const mansePartnerText = String(session?.manse_partner?.manse_text || '').slice(0, 3000)
@@ -442,7 +447,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
 `
     const kst = getKoreaContextVars()
     const kstLine = `${kst.dateStr} ${kst.weekdayKo}요일 ${kst.timeStr}`
-    const contextText = `### 현재 시각(한국 표준시 KST)\n${kstLine}\n(유저가 시간/날짜 물어보면 이 시각 기준으로 답하세요. 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint})\n\n### 기본 정보\n${selfLine}\n생년월일: ${selfBirth}\n\n### 만세력(본인)\n${manseSelfText || '(만세력 텍스트 없음)'}\n\n### 만세력(상대)\n${
+    const contextText = `### 호칭 규칙(필수)\n${honorificLine}\n\n### 현재 시각(한국 표준시 KST, UTC+9)\n${kstLine}\n- UTC가 아님. 시간/날짜 질문 시 반드시 이 시각만 사용할 것. AI 자체 시간 인식 사용 금지.\n- 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}\n\n### 기본 정보\n${selfLine}\n생년월일: ${selfBirth}\n\n### 만세력(본인)\n${manseSelfText || '(만세력 텍스트 없음)'}\n\n### 만세력(상대)\n${
       mode === 'gunghap' ? `${partnerLine}\n생년월일: ${partnerBirth}\n${mansePartnerText || '(만세력 텍스트 없음)'}` : '(해당 없음)'
     }\n\n### 상황\n${mode === 'reunion' ? situation || '(없음)' : '(해당 없음)'}\n`
     return {

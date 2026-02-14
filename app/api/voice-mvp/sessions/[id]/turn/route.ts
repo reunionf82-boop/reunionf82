@@ -147,6 +147,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const situation = String(session.situation || '').slice(0, 1500)
     const profileSelfLine = formatProfileLine(session?.profile_self, '본인')
     const profilePartnerLine = formatProfileLine(session?.profile_partner, '상대')
+    const selfGenderRaw = String(session?.profile_self?.gender || '').trim()
+    const isMale = selfGenderRaw === 'male' || profileSelfLine.includes('남성')
+    const honorificLine = isMale
+      ? '내담자 성별: 남성. 반드시 오빠 또는 삼촌으로 호칭할 것. 언니/이모 사용 금지.'
+      : '내담자 성별: 여성. 반드시 언니 또는 이모로 호칭할 것. 오빠/삼촌 사용 금지.'
 
     const systemPrompt = `당신은 한국어로 대답하는 "실시간 음성 상담사"입니다.
 - 아래 [페르소나]를 최우선으로 따르세요.
@@ -180,9 +185,12 @@ ${koreaVars.isHoliday ? '- 명절이라 조상님들이 다들 바쁘셔.' : ''}
 `
       : ''
 
-    const contextBlock = `### 현재 시각(한국, 상담 중 기준)
+    const contextBlock = `### 호칭 규칙(필수)
+${honorificLine}
+
+### 현재 시각(한국 표준시 KST, UTC+9)
 ${koreaTime}
-(유저가 "지금 몇 시예요?", "오늘 날짜가 뭐예요?" 등 시간/날짜를 물어보면 이 시각을 기준으로 친절히 답하세요.)
+- UTC가 아님. 시간/날짜 질문 시 반드시 이 시각만 사용할 것. AI 자체 시간 인식 사용 금지.
 ${dynamicVarsBlock}
 ### 만세력(본인)
 ${profileSelfLine}
