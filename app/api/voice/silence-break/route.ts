@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({} as any))
     const contentId = body?.contentId != null ? Number(body.contentId) : null
     const silenceSeconds = Number.isFinite(Number(body?.silenceSeconds))
-      ? Math.max(2, Math.min(10, Math.floor(Number(body.silenceSeconds))))
+      ? Math.max(1, Math.min(10, Math.floor(Number(body.silenceSeconds))))
       : 3
 
     if (!contentId || isNaN(contentId)) {

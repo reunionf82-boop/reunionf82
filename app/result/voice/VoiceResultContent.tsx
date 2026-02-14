@@ -367,6 +367,20 @@ export default function VoiceResultContent() {
           />
         </div>
 
+        {/* 마이크 민감도 */}
+        <div className="flex items-center gap-2 flex-nowrap min-w-0">
+          <span className="text-gray-500 text-sm shrink-0">마이크 민감도</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={h.micSensitivity ?? 50}
+            onChange={(e) => h.setMicSensitivity?.(Number(e.target.value))}
+            className="flex-1 min-w-0 h-2 rounded-full appearance-none bg-gray-200 accent-violet-500"
+          />
+          <span className="text-gray-400 text-xs shrink-0 tabular-nums">{h.micSensitivity ?? 50}%</span>
+        </div>
+
         {/* 만세력 (접기/펼치기) — 모바일에서도 표시되도록 섹션 항상 렌더, 스크롤 영역 min-w-0 */}
         <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden voice-result-manse min-w-0">
           <style dangerouslySetInnerHTML={{ __html: MANSE_STYLES }} />
@@ -514,7 +528,7 @@ export default function VoiceResultContent() {
               {' '}원하는 시간을 선택해 주세요.
             </p>
 
-            {/* 시간 상품 목록 */}
+            {/* 시간 상품 목록 (선택 전에도 0원 옵션이 있으면 버튼 라벨 "무료추가") */}
             {Array.isArray(h.contentData?.voice_time_options) && h.contentData.voice_time_options.length > 0 ? (
               <div className="space-y-2 mb-5">
                 {h.contentData.voice_time_options.map((opt: { minutes: number; price: number; label: string }, idx: number) => {
@@ -567,9 +581,13 @@ export default function VoiceResultContent() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
-                    결제 진행 중...
+                    {((h.selectedExtendOption?.price ?? 0) <= 0) ? '추가 중...' : '결제 진행 중...'}
                   </span>
-                ) : '결제하기'}
+                ) : (() => {
+                  const opts = h.contentData?.voice_time_options as { price: number }[] | undefined
+                  const price = h.selectedExtendOption?.price ?? opts?.[0]?.price ?? 0
+                  return price <= 0 ? '무료추가' : '결제하기'
+                })()}
               </button>
               <button
                 type="button"

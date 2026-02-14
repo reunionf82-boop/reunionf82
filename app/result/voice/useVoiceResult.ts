@@ -22,6 +22,9 @@ const LIVE_MODEL_FALLBACK = 'gemini-2.5-flash-native-audio-preview-12-2025'
 
 const AUTO_RECONNECT_MAX = 3
 const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
+/** 정적 깨기: 이 볼륨 이상이면 사용자가 말하는 것으로 간주. micSensitivity(0-100)로 조정. */
+const SPEECH_THRESHOLD_MIN = 0.01
+const SPEECH_THRESHOLD_MAX = 0.05
 
 const PRIMARY_REGION =
   (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_VERTEX_LIVE_PRIMARY_REGION) || 'us-central1'
@@ -137,6 +140,7 @@ export function useVoiceResult() {
   const [muted, setMuted] = useState(false)
   const [inVolume, setInVolume] = useState(0)
   const [outVolume, setOutVolume] = useState(0)
+  const [micSensitivity, setMicSensitivity] = useState(50) // 0=낮음, 100=높음
   const [messages, setMessages] = useState<Msg[]>([])
 
   /* ── 타이머 ────────────────────────────── */
@@ -200,6 +204,8 @@ export function useVoiceResult() {
   const startSoundPlayedRef = useRef(false)
   const mutedRef = useRef(muted)
   mutedRef.current = muted
+  const micSensitivityRef = useRef(micSensitivity)
+  micSensitivityRef.current = micSensitivity
 
   messagesRef.current = messages
 
@@ -577,7 +583,9 @@ ${manseText || '(만세력 없음)'}
     }
   }, [])
 
-  const sendSilenceBreak = useCallback(async () => {
+  const sendSilenceBreakRef = useRef<(sec: number, onTtsEnd?: () => void) => Promise<void>>(async () => {})
+
+  const sendSilenceBreak = useCallback(async (silenceSeconds: number, onTtsEnd?: () => void) => {
     clearSilenceTimer()
     const cid = contentIdRef.current
     if (!cid) return
@@ -585,23 +593,36 @@ ${manseText || '(만세력 없음)'}
       const res = await fetch('/api/voice/silence-break', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contentId: cid, silenceSeconds: 5 }),
+        body: JSON.stringify({ contentId: cid, silenceSeconds }),
       })
       const data = await res.json().catch(() => ({} as any))
       if (!data?.success || !data?.text) return
       const text = String(data.text).trim()
       setMessages((prev) => [...prev, { role: 'assistant', text }])
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+
+      // Live API로 전달해 AI 캐릭터 목소리로 재생 (speechSynthesis 로봇 음성 대체)
+      const ws = wsRef.current
+      if (ws?.readyState === WebSocket.OPEN) {
+        const instruction = `[침묵 깨기] 사용자가 ${silenceSeconds}초간 말이 없습니다. 당신이 먼저 말을 걸어야 합니다. 반드시 아래 문장만 음성으로 말하세요. 다른 설명이나 추가 말 금지: "${text}"`
+        ws.send(JSON.stringify({ type: 'text', text: instruction }))
+        // Live API는 비동기 응답이므로, AI가 1~2문장 말하는 데 걸리는 시간(약 4초) 후 다음 침묵 타이머 시작
+        setTimeout(() => onTtsEnd?.(), 4000)
+      } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel()
         const u = new SpeechSynthesisUtterance(sanitizeForTts(text) || text)
         u.lang = 'ko-KR'
         u.rate = 1.05
+        u.onend = () => { onTtsEnd?.() }
         window.speechSynthesis.speak(u)
+      } else {
+        onTtsEnd?.()
       }
     } catch {
-      // ignore
+      onTtsEnd?.()
     }
   }, [clearSilenceTimer])
+
+  sendSilenceBreakRef.current = sendSilenceBreak
 
   /* ── Failover ──────────────────────────── */
   const connectPendingFailoverRef = useRef<() => void>(() => {})
@@ -975,17 +996,37 @@ ${manseText || '(만세력 없음)'}
             streamerRef.current?.addPCM16(new Uint8Array(buf))
             // AI 오디오 청크 누적 (다시듣기용)
             audioChunksRef.current.push(msg.data)
+            // AI 발화 종료 감지: 500ms → 1500ms (청크 간 간격 500ms 초과 시 인사 중 오인 방지)
             audioTimeoutRef.current = setTimeout(() => {
               isAiSpeakingRef.current = false
               audioTimeoutRef.current = null
               clearSilenceTimer()
+              // 첫 인사(약 20초) 동안 침묵 깨기 비활성화
+              const sessionStart = sessionStartTimeRef.current
+              if (sessionStart != null && Date.now() - sessionStart < 25000) return
               if (!mutedRef.current) {
+                const doSend = sendSilenceBreakRef.current
+                // 3초 재촉형 → TTS 후 5초 관찰형 → TTS 후 5초 환기형 (최대 3회)
                 silenceTimerRef.current = setTimeout(() => {
                   silenceTimerRef.current = null
-                  sendSilenceBreak()
-                }, 5000)
+                  doSend(3, () => {
+                    if (!mutedRef.current && !silenceTimerRef.current) {
+                      silenceTimerRef.current = setTimeout(() => {
+                        silenceTimerRef.current = null
+                        doSend(5, () => {
+                          if (!mutedRef.current && !silenceTimerRef.current) {
+                            silenceTimerRef.current = setTimeout(() => {
+                              silenceTimerRef.current = null
+                              doSend(1, undefined)
+                            }, 5000)
+                          }
+                        })
+                      }, 5000)
+                    }
+                  })
+                }, 3000)
               }
-            }, 500)
+            }, 1500)
             return
           }
           if (msg.type === 'text' && msg.text) {
@@ -1063,11 +1104,16 @@ ${manseText || '(만세력 없음)'}
       if (!recorderRef.current) recorderRef.current = new AudioRecorder(16000)
       const recorder = recorderRef.current
       const onData = (base64: string) => {
-        clearSilenceTimer()
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
         wsRef.current.send(JSON.stringify({ type: 'audio', data: base64, mimeType: 'audio/pcm;rate=16000' }))
       }
-      recorder.off('data', onData as any).off('volume', setInVolume as any).on('data', onData as any).on('volume', setInVolume as any)
+      const onVolume = (vol: number) => {
+        setInVolume(vol)
+        const sens = micSensitivityRef.current
+        const threshold = SPEECH_THRESHOLD_MAX - (sens / 100) * (SPEECH_THRESHOLD_MAX - SPEECH_THRESHOLD_MIN)
+        if (vol > threshold) clearSilenceTimer()
+      }
+      recorder.off('data', onData as any).off('volume', onVolume as any).on('data', onData as any).on('volume', onVolume as any)
 
       setMessages([])
     } catch (e: any) {
@@ -1113,6 +1159,18 @@ ${manseText || '(만세력 없음)'}
     if (extendPaymentProcessing) return
     setExtendPaymentProcessing(true)
     try {
+      // 0원 무료 추가: 모빌리언스는 1원 이상만 결제 가능하므로 즉시 연장
+      if (option.price <= 0) {
+        setRemainingSeconds((prev) => prev + option.minutes * 60)
+        setTotalSeconds((prev) => prev + option.minutes * 60)
+        if (!timerIntervalRef.current && connected) startTimer()
+        extendPopupShownRef.current = false
+        setShowExtendPopup(false)
+        setSelectedExtendOption(null)
+        setExtendPaymentProcessing(false)
+        return
+      }
+
       const { generateOrderId } = await import('@/lib/payment-utils')
       const oid = generateOrderId()
       const cid = contentIdRef.current
@@ -1595,6 +1653,8 @@ ${manseText || '(만세력 없음)'}
     muted,
     inVolume,
     outVolume,
+    micSensitivity,
+    setMicSensitivity,
     messages,
     totalSeconds,
     remainingSeconds,
