@@ -172,7 +172,7 @@ export function useVoiceResult() {
   const pendingWsRef = useRef<WebSocket | null>(null)
   const closingForSwapRef = useRef(false)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  /** AI 발화 종료 시각. 스피커 에코가 마이크에 잡혀 타이머가 무효화되는 것을 방지하기 위해, 종료 직후 2초간은 볼륨으로 clear 안 함 */
+  /** AI 발화 종료 시각. 스피커 에코·볼륨 decay로 타이머가 무효화되는 것을 방지. 종료 직후 3초간은 볼륨으로 clear 안 함 (3초 침묵 타이머 전체 커버) */
   const lastAiSpeechEndAtRef = useRef(0)
 
   /* ── 음성 대화 저장용 refs ──────────────── */
@@ -1004,9 +1004,9 @@ ${manseText || '(만세력 없음)'}
               audioTimeoutRef.current = null
               lastAiSpeechEndAtRef.current = Date.now()
               clearSilenceTimer()
-              // 첫 인사(약 20초) 동안 침묵 깨기 비활성화
+              // 첫 인사(약 20초) 동안 침묵 깨기 비활성화 — 25초는 인사 직후에도 타이머가 안 걸림. 20초로 완화
               const sessionStart = sessionStartTimeRef.current
-              if (sessionStart != null && Date.now() - sessionStart < 25000) return
+              if (sessionStart != null && Date.now() - sessionStart < 20000) return
               if (!mutedRef.current) {
                 const doSend = sendSilenceBreakRef.current
                 // 3초 재촉형 → TTS 후 5초 관찰형 → TTS 후 5초 환기형 (최대 3회)
@@ -1114,8 +1114,8 @@ ${manseText || '(만세력 없음)'}
         setInVolume(vol)
         const sens = micSensitivityRef.current
         const threshold = SPEECH_THRESHOLD_MAX - (sens / 100) * (SPEECH_THRESHOLD_MAX - SPEECH_THRESHOLD_MIN)
-        // AI 발화 직후 2초간은 스피커 에코로 인한 오탐 방지 (이 구간에서 vol > threshold여도 clear 안 함)
-        if (Date.now() - lastAiSpeechEndAtRef.current < 2000) return
+        // AI 발화 직후 3초간은 스피커 에코·볼륨 decay로 오탐 방지 (3초 침묵 타이머 전체 구간 보호)
+        if (Date.now() - lastAiSpeechEndAtRef.current < 3000) return
         if (vol > threshold) clearSilenceTimer()
       }
       recorder.off('data', onData as any).off('volume', onVolume as any).on('data', onData as any).on('volume', onVolume as any)
