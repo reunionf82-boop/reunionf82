@@ -188,9 +188,9 @@ ${koreaVars.isHoliday ? '- 명절이라 조상님들이 다들 바쁘셔.' : ''}
     const contextBlock = `### 호칭 규칙(필수)
 ${honorificLine}
 
-### 현재 시각(한국 표준시 KST, UTC+9)
+### 현재 시각(한국 표준시 KST, UTC+9) — 아래 값을 그대로 사용
 ${koreaTime}
-- UTC가 아님. 시간/날짜 질문 시 반드시 이 시각만 사용할 것. AI 자체 시간 인식 사용 금지.
+- UTC 아님. "지금 몇 시?" "오늘 며칠?" 등 시간/날짜 질문 시 반드시 위 시각만 사용. 예: "지금 한국 시각 ${koreaVars.timeStr}이야." 또는 "오늘 ${koreaVars.dateStr} ${koreaVars.weekdayKo}요일이야."
 ${dynamicVarsBlock}
 ### 만세력(본인)
 ${profileSelfLine}

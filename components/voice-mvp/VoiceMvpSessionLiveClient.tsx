@@ -447,7 +447,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
 `
     const kst = getKoreaContextVars()
     const kstLine = `${kst.dateStr} ${kst.weekdayKo}요일 ${kst.timeStr}`
-    const contextText = `### 호칭 규칙(필수)\n${honorificLine}\n\n### 현재 시각(한국 표준시 KST, UTC+9)\n${kstLine}\n- UTC가 아님. 시간/날짜 질문 시 반드시 이 시각만 사용할 것. AI 자체 시간 인식 사용 금지.\n- 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}\n\n### 기본 정보\n${selfLine}\n생년월일: ${selfBirth}\n\n### 만세력(본인)\n${manseSelfText || '(만세력 텍스트 없음)'}\n\n### 만세력(상대)\n${
+    const contextText = `### 호칭 규칙(필수)\n${honorificLine}\n\n### 현재 시각(한국 표준시 KST, UTC+9) — 아래 값을 그대로 사용\n${kstLine}\n- UTC 아님. "지금 몇 시?" "오늘 며칠?" 등 시간/날짜 질문 시 반드시 위 시각만 사용. 예: "지금 한국 시각 ${kst.timeStr}이야." 또는 "오늘 ${kst.dateStr} ${kst.weekdayKo}요일이야."\n- 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}\n\n### 기본 정보\n${selfLine}\n생년월일: ${selfBirth}\n\n### 만세력(본인)\n${manseSelfText || '(만세력 텍스트 없음)'}\n\n### 만세력(상대)\n${
       mode === 'gunghap' ? `${partnerLine}\n생년월일: ${partnerBirth}\n${mansePartnerText || '(만세력 텍스트 없음)'}` : '(해당 없음)'
     }\n\n### 상황\n${mode === 'reunion' ? situation || '(없음)' : '(해당 없음)'}\n`
     return {
@@ -550,7 +550,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
       pendingWsRef.current?.close()
       pendingWsRef.current = null
       wsRef.current?.close()
-      recorderRef.current?.stop()
+      recorderRef.current?.stop(false) // 언마운트 시 완전 해제
       streamerRef.current?.stop()
       if (audioTimeoutRef.current) {
         clearTimeout(audioTimeoutRef.current)
@@ -927,7 +927,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
         setWsCloseReason(event?.reason || '')
         setConnected(false)
         isAiSpeakingRef.current = false
-        recorderRef.current?.stop()
+        recorderRef.current?.stop(isIOSDevice())
         streamerRef.current?.stop()
         if (manualDisconnectRef.current) {
           manualDisconnectRef.current = false
@@ -994,7 +994,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
   const disconnect = async () => {
     manualDisconnectRef.current = true
     iosContextWorkaroundDoneRef.current = false
-    recorderRef.current?.stop()
+    recorderRef.current?.stop(isIOSDevice())
     streamerRef.current?.stop()
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'disconnect' }))
@@ -1029,7 +1029,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
     const next = !muted
     setMuted(next)
     if (next) {
-      recorderRef.current?.stop()
+      recorderRef.current?.stop(isIOSDevice())
     } else {
       // restart if connected
       if (connected) {
