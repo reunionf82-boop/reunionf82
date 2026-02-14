@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from '@google/generative-ai'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
 import { assertAdminSession, isVoiceMvpEnabled } from '@/lib/voice-mvp/auth'
+import {
+  getKoreaContextVars,
+  getVisitGuidanceText,
+  getSilenceBreakPrompt,
+} from '@/lib/voice-mvp/ppoing-rules'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,21 +20,8 @@ function formatProfileLine(p: any, label: string) {
 
 /** 현재 한국 시각(Asia/Seoul)을 읽기 쉬운 문자열로 반환. 유저가 시간/날짜 물어볼 때 대답용 */
 function getCurrentKoreaTimeString(): string {
-  const now = new Date()
-  const dateStr = new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'long',
-  }).format(now)
-  const timeStr = new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: false,
-  }).format(now)
-  return `${dateStr} ${timeStr}`
+  const v = getKoreaContextVars()
+  return `${v.dateStr} ${v.weekdayKo}요일 ${v.timeStr}`
 }
 
 function getGeminiApiKey(): string {
@@ -59,7 +51,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     const sessionId = params.id
     const body = await req.json().catch(() => ({} as any))
-    const userText = String(body?.text || '').trim()
+    const triggerSilence = body?.trigger === 'silence'
+    const silenceSeconds = Number.isFinite(Number(body?.silence_seconds))
+      ? Math.max(2, Math.min(10, Math.floor(Number(body.silence_seconds))))
+      : 3
+    let userText = String(body?.text || '').trim()
+    if (triggerSilence) {
+      userText = '__SILENCE_BREAK__'
+    }
     const userSeconds = Number.isFinite(Number(body?.seconds)) ? Number(body.seconds) : undefined
     if (!userText) return NextResponse.json({ error: 'text is required' }, { status: 400 })
 
@@ -73,6 +72,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (sessionError) throw sessionError
     const session = Array.isArray(sessionRows) ? sessionRows[0] : null
     if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    const { data: eventsRows } = await supabase
+      .from('voice_mvp_events')
+      .select('type, payload')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true })
+      .limit(50)
+    const createdEvent = (eventsRows || []).find((e: any) => e.type === 'created')
+    const visitCountToday = Number(
+      (createdEvent as any)?.payload?.visit_count_today ?? 1
+    ) || 1
 
     // Load config (latest)
     const { data: cfgRows } = await supabase
@@ -152,10 +162,28 @@ ${persona || '(미설정)'}
 `
 
     const koreaTime = getCurrentKoreaTimeString()
+    const koreaVars = getKoreaContextVars()
+    const visitGuidance = getVisitGuidanceText(visitCountToday)
+    const isShinjeom = mode === 'shinjeom'
+
+    const dynamicVarsBlock = isShinjeom
+      ? `
+### 상황 변수(오프닝/답변에 자연스럽게 반영)
+- 현재: ${koreaTime}
+- 요일: ${koreaVars.weekdayKo}요일${koreaVars.isMonday ? ' (월요일이라 조상님 발걸음이 무거워)' : ''}${koreaVars.isFriday ? ' (불금이라 연애 귀신들이 들떴네!)' : ''}
+- 시간대: ${koreaVars.timeSlotHint}
+${koreaVars.isFullMoon ? '- 오늘 달이 밝아서 점사가 더 잘 보여!' : ''}
+${koreaVars.isHoliday ? '- 명절이라 조상님들이 다들 바쁘셔.' : ''}
+### 방문 빈도(오늘 ${visitCountToday}번째 방문)
+- 입구 테마: ${visitGuidance.openingTheme} - ${visitGuidance.openingHint}
+- 출구 테마: ${visitGuidance.closingTheme} - ${visitGuidance.closingHint}
+`
+      : ''
+
     const contextBlock = `### 현재 시각(한국, 상담 중 기준)
 ${koreaTime}
 (유저가 "지금 몇 시예요?", "오늘 날짜가 뭐예요?" 등 시간/날짜를 물어보면 이 시각을 기준으로 친절히 답하세요.)
-
+${dynamicVarsBlock}
 ### 만세력(본인)
 ${profileSelfLine}
 ${manseSelfText || '(없음)'}
@@ -188,12 +216,14 @@ ${transcript || '(첫 대화)'}
       ],
     })
 
-    // Store user message
-    await supabase.from('voice_mvp_messages').insert({
-      session_id: sessionId,
-      role: 'user',
-      text: userText,
-    })
+    // Store user message (silence break의 경우 시스템 이벤트로 기록하지 않음 - 대화 흐름에 불필요)
+    if (!triggerSilence) {
+      await supabase.from('voice_mvp_messages').insert({
+        session_id: sessionId,
+        role: 'user',
+        text: userText,
+      })
+    }
 
     await supabase.from('voice_mvp_events').insert({
       session_id: sessionId,
@@ -203,7 +233,12 @@ ${transcript || '(첫 대화)'}
 
     let assistantText = ''
     let usedModel = decision.model
-    const res = await model.generateContent([systemPrompt, contextBlock, `사용자 발화: ${userText}`])
+    const userInputBlock =
+      triggerSilence
+        ? getSilenceBreakPrompt(silenceSeconds) +
+          '\n\n위 지침대로 지금 사용자에게 말을 걸어주세요. 1~2문장만 출력하세요.'
+        : `사용자 발화: ${userText}`
+    const res = await model.generateContent([systemPrompt, contextBlock, userInputBlock])
     assistantText = String(res?.response?.text?.() || '').trim()
 
     const latency = Date.now() - start

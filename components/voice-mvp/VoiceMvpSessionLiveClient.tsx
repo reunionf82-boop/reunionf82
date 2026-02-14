@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { sanitizeForTts } from '@/lib/voice-mvp/ppoing-rules'
 import { buildResultStyleManseBlock } from '@/lib/manse-ryeok-display'
 import { AudioRecorder } from '@/lib/voice-mvp/genai-live/audio-recorder'
 import { AudioStreamer } from '@/lib/voice-mvp/genai-live/audio-streamer'
@@ -15,6 +16,15 @@ const CALENDAR_LABEL: Record<string, string> = {
   solar: '양력',
   lunar: '음력',
   'lunar-leap': '음력(윤)',
+}
+
+/** iPhone 12 이후 / iOS 16·17 등 Safari: 음성 재생·지글거림 방지용 */
+function isIOSDevice(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && typeof navigator.maxTouchPoints === 'number' && navigator.maxTouchPoints > 1)
+  )
 }
 
 function styleInstruction(style: string) {
@@ -335,8 +345,54 @@ export default function VoiceMvpSessionLiveClient({ sessionId }: { sessionId: st
   const messagesRef = useRef<Msg[]>([])
   const pendingWsRef = useRef<WebSocket | null>(null)
   const closingForSwapRef = useRef(false)
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** iOS 17 등: 첫 오디오 수신 시 suspend→resume 워크어라운드 1회만 수행 */
+  const iosContextWorkaroundDoneRef = useRef(false)
 
   messagesRef.current = messages
+
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+  }, [])
+
+  const sendSilenceBreakRef = useRef<() => Promise<void>>(() => Promise.resolve())
+  const clearSilenceTimerRef = useRef<() => void>(() => {})
+
+  const sendSilenceBreak = useCallback(async () => {
+    clearSilenceTimer()
+    try {
+      const res = await fetch(`/api/voice-mvp/sessions/${sessionId}/turn`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          text: '__SILENCE_BREAK__',
+          trigger: 'silence',
+          silence_seconds: 5,
+        }),
+      })
+      const data = await res.json().catch(() => ({} as any))
+      if (!res.ok || !data?.success) return
+      const text = String(data.text || '').trim()
+      if (!text) return
+      setMessages((prev) => [...prev, { role: 'assistant', text }])
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+        const u = new SpeechSynthesisUtterance(sanitizeForTts(text) || text)
+        u.lang = 'ko-KR'
+        u.rate = 1.05
+        window.speechSynthesis.speak(u)
+      }
+    } catch {
+      // ignore
+    }
+  }, [sessionId, clearSilenceTimer])
+
+  sendSilenceBreakRef.current = sendSilenceBreak
+  clearSilenceTimerRef.current = clearSilenceTimer
 
   const snapshot = session?.routing_config_snapshot
   /** 리절트 페이지와 동일한 만세력 블록(헤더+컨테이너+오행 스타일 테이블) */
@@ -479,6 +535,10 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
       if (pingIntervalRef.current) {
         clearInterval(pingIntervalRef.current)
         pingIntervalRef.current = null
+      }
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current)
+        silenceTimerRef.current = null
       }
       pendingWsRef.current?.close()
       pendingWsRef.current = null
@@ -628,10 +688,20 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
         return
       }
 
-      // audio output
+      if (isIOSDevice() && typeof window !== 'undefined') {
+        const unlock = new Audio()
+        unlock.src =
+          'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+        void unlock.play().catch(() => {})
+      }
+
+      // audio output (iOS: mergeChunkSamples로 지글거림 완화, 24kHz context로 리샘플링 노이즈 완화)
       if (!streamerRef.current) {
-        const outCtx = await audioContext({ id: 'voice-mvp-out' })
-        const streamer = new AudioStreamer(outCtx)
+        const outCtx = await audioContext({ id: 'voice-mvp-out', sampleRate: 24000 })
+        const streamer = new AudioStreamer(
+          outCtx,
+          isIOSDevice() ? { mergeChunkSamples: 48000 } : undefined
+        )
         await streamer.addWorklet<any>('vumeter-out', VolMeterWorket, (ev: any) => {
           setOutVolume(ev.data.volume)
         })
@@ -744,29 +814,54 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
           }
           if (msg.type === 'audio' && msg.data) {
             const buf = base64ToArrayBuffer(msg.data)
-            if (audioTimeoutRef.current) {
-              clearTimeout(audioTimeoutRef.current)
-              audioTimeoutRef.current = null
-            }
-            if (!isAiSpeakingRef.current) {
-              isAiSpeakingRef.current = true
-              const tSounds = [t1SoundRef.current, t2SoundRef.current, t3SoundRef.current, t4SoundRef.current].filter(Boolean)
-              if (tSounds.length > 0) {
-                const randomTSound = tSounds[Math.floor(Math.random() * tSounds.length)]
-                if (randomTSound) {
-                  randomTSound.currentTime = 0
-                  randomTSound.play().catch(() => {})
+            const streamer = streamerRef.current
+            const doPlay = async () => {
+              if (!streamer) return
+              if (isIOSDevice() && !iosContextWorkaroundDoneRef.current) {
+                iosContextWorkaroundDoneRef.current = true
+                const ctx = streamer.context
+                try {
+                  if (ctx.state === 'running') {
+                    await ctx.suspend()
+                    await ctx.resume()
+                  } else {
+                    await ctx.resume()
+                  }
+                } catch {
+                  /* ignore */
                 }
               }
-              if (Math.random() < 0.05 && jongSoundRef.current) {
-                jongSoundRef.current.currentTime = 0
-                jongSoundRef.current.play().catch(() => {})
+              await streamer.resume()
+              if (audioTimeoutRef.current) {
+                clearTimeout(audioTimeoutRef.current)
+                audioTimeoutRef.current = null
               }
+              if (!isAiSpeakingRef.current) {
+                isAiSpeakingRef.current = true
+                const tSounds = [t1SoundRef.current, t2SoundRef.current, t3SoundRef.current, t4SoundRef.current].filter(Boolean)
+                if (tSounds.length > 0) {
+                  const randomTSound = tSounds[Math.floor(Math.random() * tSounds.length)]
+                  if (randomTSound) {
+                    randomTSound.currentTime = 0
+                    randomTSound.play().catch(() => {})
+                  }
+                }
+                if (Math.random() < 0.05 && jongSoundRef.current) {
+                  jongSoundRef.current.currentTime = 0
+                  jongSoundRef.current.play().catch(() => {})
+                }
+              }
+              streamer.addPCM16(new Uint8Array(buf))
             }
-            streamerRef.current?.addPCM16(new Uint8Array(buf))
+            void doPlay()
             audioTimeoutRef.current = setTimeout(() => {
               isAiSpeakingRef.current = false
               audioTimeoutRef.current = null
+              clearSilenceTimerRef.current()
+              silenceTimerRef.current = setTimeout(() => {
+                silenceTimerRef.current = null
+                sendSilenceBreakRef.current()
+              }, 5000)
             }, 500)
             return
           }
@@ -780,6 +875,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
           if (msg.type === 'interrupted') {
             streamerRef.current?.stop()
             isAiSpeakingRef.current = false
+            clearSilenceTimerRef.current()
             if (audioTimeoutRef.current) {
               clearTimeout(audioTimeoutRef.current)
               audioTimeoutRef.current = null
@@ -874,6 +970,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
       const recorder = recorderRef.current
 
       const onData = (base64: string) => {
+        clearSilenceTimerRef.current()
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
         wsRef.current.send(JSON.stringify({ type: 'audio', data: base64, mimeType: 'audio/pcm;rate=16000' }))
       }
@@ -889,6 +986,7 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
 
   const disconnect = async () => {
     manualDisconnectRef.current = true
+    iosContextWorkaroundDoneRef.current = false
     recorderRef.current?.stop()
     streamerRef.current?.stop()
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -896,8 +994,29 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
       wsRef.current.close()
     }
     setConnected(false)
-    isAiSpeakingRef.current = false // 연결 해제 시 초기화
+    isAiSpeakingRef.current = false
   }
+
+  // iOS Safari: 백그라운드 복귀/포커스 복귀 후 AudioContext가 suspended 되면 무음이 날 수 있어 복구
+  useEffect(() => {
+    if (!isIOSDevice()) return
+    const resumeIfConnected = () => {
+      if (streamerRef.current) void streamerRef.current.resume()
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') resumeIfConnected()
+    }
+    window.addEventListener('pageshow', resumeIfConnected)
+    window.addEventListener('focus', resumeIfConnected)
+    window.addEventListener('touchstart', resumeIfConnected, { passive: true })
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.removeEventListener('pageshow', resumeIfConnected)
+      window.removeEventListener('focus', resumeIfConnected)
+      window.removeEventListener('touchstart', resumeIfConnected)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [])
 
   const toggleMute = () => {
     const next = !muted

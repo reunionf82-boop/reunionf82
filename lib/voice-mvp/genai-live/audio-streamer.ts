@@ -1,18 +1,24 @@
 /**
  * Vendored from Google live-api-web-console (Apache-2.0).
+ * iOS 16/17+ 대응: mergeChunkSamples로 지글거림 완화, worklet은 destination에 연결하지 않음.
  */
 
 import { createWorketFromSrc, registeredWorklets } from './audioworklet-registry'
 
+/** iOS 등에서 AudioBufferSourceNode 다수 재생 시 크랙 완화용: 이 샘플 수만큼 묶어서 한 번에 재생 */
+const DEFAULT_MERGE_CHUNK_SAMPLES = 0
+const IOS_MERGE_CHUNK_SAMPLES = 24000 // 24k @ 24kHz = 1초, 재생 횟수 감소로 크랙 완화
+
 export class AudioStreamer {
-  private sampleRate: number = 24000
-  private bufferSize: number = 7680
+  private sampleRate = 24000
+  private bufferSize = 7680
+  private initialBufferTime = 0.1
+  private mergeChunkSamples: number
   private audioQueue: Float32Array[] = []
-  private isPlaying: boolean = false
-  private isStreamComplete: boolean = false
+  private isPlaying = false
+  private isStreamComplete = false
   private checkInterval: number | null = null
-  private scheduledTime: number = 0
-  private initialBufferTime: number = 0.1
+  private scheduledTime = 0
 
   public gainNode: GainNode
   public source: AudioBufferSourceNode
@@ -21,7 +27,13 @@ export class AudioStreamer {
 
   public onComplete = () => {}
 
-  constructor(public context: AudioContext) {
+  constructor(
+    public context: AudioContext,
+    options?: { bufferSize?: number; initialBufferTime?: number; mergeChunkSamples?: number }
+  ) {
+    if (options?.bufferSize != null) this.bufferSize = options.bufferSize
+    if (options?.initialBufferTime != null) this.initialBufferTime = options.initialBufferTime
+    this.mergeChunkSamples = options?.mergeChunkSamples ?? DEFAULT_MERGE_CHUNK_SAMPLES
     this.gainNode = this.context.createGain()
     this.source = this.context.createBufferSource()
     this.gainNode.connect(this.context.destination)
@@ -96,7 +108,28 @@ export class AudioStreamer {
     const SCHEDULE_AHEAD_TIME = 0.2
 
     while (this.audioQueue.length > 0 && this.scheduledTime < this.context.currentTime + SCHEDULE_AHEAD_TIME) {
-      const audioData = this.audioQueue.shift()!
+      let audioData: Float32Array
+      if (this.mergeChunkSamples > 0) {
+        const toMerge: Float32Array[] = []
+        let total = 0
+        while (this.audioQueue.length > 0 && (total === 0 || total < this.mergeChunkSamples)) {
+          const chunk = this.audioQueue.shift()!
+          toMerge.push(chunk)
+          total += chunk.length
+        }
+        if (toMerge.length === 1) {
+          audioData = toMerge[0]
+        } else {
+          audioData = new Float32Array(total)
+          let offset = 0
+          for (const c of toMerge) {
+            audioData.set(c, offset)
+            offset += c.length
+          }
+        }
+      } else {
+        audioData = this.audioQueue.shift()!
+      }
       const audioBuffer = this.createAudioBuffer(audioData)
       const source = this.context.createBufferSource()
 
@@ -114,6 +147,8 @@ export class AudioStreamer {
       source.buffer = audioBuffer
       source.connect(this.gainNode)
 
+      // 볼륨 미터 등: 소스만 worklet에 연결. worklet은 destination에 연결하지 않음
+      // (iOS 17 등에서 worklet→destination 이중 출력 시 실제 재생이 안 나오는 현상 방지)
       const worklets = registeredWorklets.get(this.context)
       if (worklets) {
         Object.entries(worklets).forEach(([_, graph]) => {
@@ -123,7 +158,6 @@ export class AudioStreamer {
             node.port.onmessage = function (ev: MessageEvent) {
               handlers.forEach((handler) => handler.call(node.port as any, ev))
             }
-            node.connect(this.context.destination)
           }
         })
       }
@@ -164,15 +198,17 @@ export class AudioStreamer {
       this.checkInterval = null
     }
 
-    // 즉시 음소거 (나가기 후 다른 화면에서 소리 남는 현상 방지)
     this.gainNode.gain.setValueAtTime(0, this.context.currentTime)
     setTimeout(() => {
       this.gainNode.disconnect()
       this.gainNode = this.context.createGain()
       this.gainNode.connect(this.context.destination)
-      // 추가 destination 재연결 (녹음용 등)
       for (const dest of this.extraDestinations) {
-        try { this.gainNode.connect(dest) } catch { /* ignore */ }
+        try {
+          this.gainNode.connect(dest)
+        } catch {
+          /* ignore */
+        }
       }
     }, 200)
   }

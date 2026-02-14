@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { sanitizeForTts } from '@/lib/voice-mvp/ppoing-rules'
 
 declare global {
   interface Window {
@@ -27,6 +28,13 @@ export default function VoiceMvpSessionClient({ sessionId }: { sessionId: string
   const recognitionRef = useRef<any>(null)
   const listenStartRef = useRef<number>(0)
   const transcriptRef = useRef<HTMLDivElement>(null)
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastAssistantEndRef = useRef<number>(0)
+  const listeningRef = useRef(false)
+  const thinkingRef = useRef(false)
+  const startSilenceTimerRef = useRef<((s: number) => void) | null>(null)
+  listeningRef.current = listening
+  thinkingRef.current = thinking
 
   const hasSpeechRecognition = useMemo(() => {
     return typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)
@@ -82,20 +90,28 @@ export default function VoiceMvpSessionClient({ sessionId }: { sessionId: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authenticated])
 
-  const speak = (text: string) => {
-    try {
-      if (typeof window === 'undefined') return
-      if (!('speechSynthesis' in window)) return
-      window.speechSynthesis.cancel()
-      const u = new SpeechSynthesisUtterance(text)
-      u.lang = 'ko-KR'
-      u.rate = 1.05
-      u.pitch = 1.0
-      window.speechSynthesis.speak(u)
-    } catch {
-      // ignore
-    }
-  }
+  const speak = useCallback(
+    (text: string, onEnd?: () => void) => {
+      try {
+        if (typeof window === 'undefined') return
+        if (!('speechSynthesis' in window)) return
+        window.speechSynthesis.cancel()
+        const cleaned = sanitizeForTts(text)
+        const u = new SpeechSynthesisUtterance(cleaned || text)
+        u.lang = 'ko-KR'
+        u.rate = 1.05
+        u.pitch = 1.0
+        u.onend = () => {
+          lastAssistantEndRef.current = Date.now()
+          onEnd?.()
+        }
+        window.speechSynthesis.speak(u)
+      } catch {
+        // ignore
+      }
+    },
+    []
+  )
 
   const stopSpeaking = () => {
     try {
@@ -107,6 +123,7 @@ export default function VoiceMvpSessionClient({ sessionId }: { sessionId: string
   }
 
   const startListening = () => {
+    clearSilenceTimer()
     setError('')
     if (!hasSpeechRecognition) {
       setError('이 브라우저는 SpeechRecognition을 지원하지 않습니다. (Chrome 권장)')
@@ -168,7 +185,59 @@ export default function VoiceMvpSessionClient({ sessionId }: { sessionId: string
     setListening(false)
   }
 
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+  }, [])
+
+  const sendSilenceBreak = useCallback(
+    async (seconds: number) => {
+      clearSilenceTimer()
+      setThinking(true)
+      try {
+        const res = await fetch(`/api/voice-mvp/sessions/${sessionId}/turn`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({
+            text: '__SILENCE_BREAK__',
+            trigger: 'silence',
+            silence_seconds: seconds,
+          }),
+        })
+        const data = await res.json().catch(() => ({} as any))
+        if (!res.ok || !data?.success) return
+        setMessages((prev) => [...prev, { role: 'assistant', text: data.text, model_used: data.model_used }])
+        speak(String(data.text || ''), () => startSilenceTimerRef.current?.(5))
+      } finally {
+        setThinking(false)
+      }
+    },
+    [sessionId, speak, clearSilenceTimer]
+  )
+
+  const startSilenceTimer = useCallback(
+    (seconds: number) => {
+      clearSilenceTimer()
+      silenceTimerRef.current = setTimeout(() => {
+        silenceTimerRef.current = null
+        if (!listeningRef.current && !thinkingRef.current) {
+          sendSilenceBreak(seconds >= 5 ? 5 : 3)
+        }
+      }, seconds * 1000)
+    },
+    [sendSilenceBreak, clearSilenceTimer]
+  )
+  startSilenceTimerRef.current = startSilenceTimer
+
+  useEffect(() => {
+    return () => clearSilenceTimer()
+  }, [clearSilenceTimer])
+
   const sendTurn = async (text: string, seconds?: number) => {
+    clearSilenceTimer()
     setThinking(true)
     setMessages((prev) => [...prev, { role: 'user', text }])
     try {
@@ -184,7 +253,7 @@ export default function VoiceMvpSessionClient({ sessionId }: { sessionId: string
         return
       }
       setMessages((prev) => [...prev, { role: 'assistant', text: data.text, model_used: data.model_used }])
-      speak(String(data.text || ''))
+      speak(String(data.text || ''), () => startSilenceTimer(5))
       // refresh events occasionally (for debug)
       const r = await fetch(`/api/voice-mvp/sessions/${sessionId}`, { cache: 'no-store' })
       const d = await r.json().catch(() => ({} as any))

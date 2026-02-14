@@ -118,12 +118,29 @@ export default function VoiceMvpNewClient() {
     }
   }, [mode, self, partner, situation])
 
+  const getAndIncrementVisitCountToday = () => {
+    if (typeof window === 'undefined') return 1
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const key = `voice_mvp:visits:${today}`
+      const raw = window.localStorage.getItem(key)
+      const count = raw ? Math.max(1, parseInt(raw, 10) || 0) : 0
+      const next = count + 1
+      window.localStorage.setItem(key, String(next))
+      return next
+    } catch {
+      return 1
+    }
+  }
+
   const createSession = async () => {
     if (!canSubmit || saving) return
     setSaving(true)
     try {
+      const visitCountToday = getAndIncrementVisitCountToday()
       const payload: any = {
         mode,
+        visit_count_today: visitCountToday,
         self: {
           name: self.name.trim(),
           gender: self.gender,

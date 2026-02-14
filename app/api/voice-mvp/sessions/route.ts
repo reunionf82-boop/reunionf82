@@ -72,6 +72,9 @@ export async function POST(req: NextRequest) {
     }
 
     const situation = typeof body?.situation === 'string' ? body.situation : ''
+    const visitCountToday = Number.isFinite(Number(body?.visit_count_today))
+      ? Math.max(1, Math.min(999, Math.floor(Number(body.visit_count_today))))
+      : 1
 
     const supabase = getAdminSupabaseClient()
     const { data: cfgRows } = await supabase
@@ -152,7 +155,7 @@ export async function POST(req: NextRequest) {
     await supabase.from('voice_mvp_events').insert({
       session_id: sessionId,
       type: 'created',
-      payload: { mode, hasPartner: !!profilePartner },
+      payload: { mode, hasPartner: !!profilePartner, visit_count_today: visitCountToday },
     })
 
     return NextResponse.json({ success: true, session_id: sessionId })
