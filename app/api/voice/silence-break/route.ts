@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getContentById } from '@/lib/supabase-admin'
-import { getSilenceBreakPrompt } from '@/lib/voice-mvp/ppoing-rules'
+import { getSilenceBreakPrompt, sanitizeForTts } from '@/lib/voice-mvp/ppoing-rules'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
     })
 
     const result = await model.generateContent([systemPrompt, '사용자 발화: __SILENCE_BREAK__'])
-    const text = String(result?.response?.text?.() || '').trim()
+    const rawText = String(result?.response?.text?.() || '').trim()
+    const text = sanitizeForTts(rawText) || rawText
 
     if (!text) {
       return NextResponse.json({ success: false, error: 'No response generated' }, { status: 500 })

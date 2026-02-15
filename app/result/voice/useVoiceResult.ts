@@ -8,7 +8,14 @@ import {
   getKoreaContextVars,
   getAndIncrementVisitCountToday,
   getVisitGuidanceText,
+  getSeasonContextBlock,
   sanitizeForTts,
+  detectEtiquetteViolation,
+  detectCrisisKeywords,
+  getMannerWarningMessage,
+  getEtiquetteReprimandInstruction,
+  CRISIS_EXPERT_INSTRUCTION,
+  type EtiquetteViolationType,
 } from '@/lib/voice-mvp/ppoing-rules'
 import { buildResultStyleManseBlock } from '@/lib/manse-ryeok-display'
 import { AudioRecorder } from '@/lib/voice-mvp/genai-live/audio-recorder'
@@ -174,6 +181,12 @@ export function useVoiceResult() {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** AI 발화 종료 시각. 스피커 에코·볼륨 decay로 타이머가 무효화되는 것을 방지. 종료 직후 3초간은 볼륨으로 clear 안 함 (3초 침묵 타이머 전체 커버) */
   const lastAiSpeechEndAtRef = useRef(0)
+  /** 뿌잉 예의 확립: 당일(세션) 예의 위반 횟수. 2회 시 상담 종료 */
+  const etiquetteViolationCountRef = useRef(0)
+  /** 현재 user 턴에서 이미 감지한 위반 유형 (같은 턴 내 중복 카운트 방지) */
+  const currentUserTurnViolationsRef = useRef<Set<EtiquetteViolationType>>(new Set())
+  /** 현재 user 턴 누적 텍스트 (스트리밍 전사 조각 합쳐서 예의/위기 감지) */
+  const currentUserTurnTextRef = useRef('')
 
   /* ── 음성 대화 저장용 refs ──────────────── */
   const audioChunksRef = useRef<string[]>([]) // AI 오디오 base64 청크 누적 (fallback용)
@@ -192,6 +205,8 @@ export function useVoiceResult() {
 
   /* ── 점사 진행 중 이전/홈 클릭 시 나가기 방지 팝업 ── */
   const [showInProgressBlockModal, setShowInProgressBlockModal] = useState(false)
+  /* ── 뿌잉 예의 위반 2회 시 상담 종료 경고 문구 (표시 후 재방문 불가 안내) ── */
+  const [mannerWarningMessage, setMannerWarningMessage] = useState<string | null>(null)
 
   // 양방향 오디오 녹음 (MediaRecorder: 마이크 + AI 출력 믹스)
   const mixedMediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -516,10 +531,11 @@ ${honorificLine}
 - 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}
 
 `
-    // 방문 빈도: 8006(뿌잉) 첫방문=인사+20초 운세, 재방문=인사만
+    // 방문 빈도·사계절·환기: 8006(뿌잉) 전용
     let visitBlock = ''
     if (isPpoing) {
       const visitGuidance = getVisitGuidanceText(visitCountToday)
+      const seasonBlock = getSeasonContextBlock()
       visitBlock = `
 ### 방문 빈도(오늘 ${visitCountToday}번째 방문)
 ${visitCountToday <= 1
@@ -528,6 +544,10 @@ ${visitCountToday <= 1
 - 입구 테마: ${visitGuidance.openingTheme} — ${visitGuidance.openingHint}
 - 출구 테마: ${visitGuidance.closingTheme} — ${visitGuidance.closingHint}
 
+${seasonBlock}
+
+### 환기(Mood Refresh)
+- 상담이 5턴 이상 지속되거나 대화가 정체되면 [환기 시트] 중 하나를 무작위로 선택해 실행하세요. (아이 돌발행동, 영적 신호 감지, 신령님 개입, 육체적 피로, 환경 변화 인지 등) 내담자 감정에 맞춰 자연스럽게 끼워 넣으세요.
 `
     }
     const contextText = `${commonContextBlock}${visitBlock}### 내담자 정보
@@ -607,8 +627,9 @@ ${manseText || '(만세력 없음)'}
       if (ws?.readyState === WebSocket.OPEN) {
         const instruction = `[침묵 깨기] 사용자가 ${silenceSeconds}초간 말이 없습니다. 당신이 먼저 말을 걸어야 합니다. 반드시 아래 문장만 음성으로 말하세요. 다른 설명이나 추가 말 금지: "${text}"`
         ws.send(JSON.stringify({ type: 'text', text: instruction }))
-        // Live API는 비동기 응답이므로, AI가 1~2문장 말하는 데 걸리는 시간(약 4초) 후 다음 침묵 타이머 시작
-        setTimeout(() => onTtsEnd?.(), 4000)
+        // 문장 길이에 맞춰 재생이 끝날 때까지 대기. 4초 고정이면 긴 문장 끝이 잘려서 다음 침묵 깨기가 이전 발화를 interrupt 함 (스펙트럼만 떨리고 말이 안 나오는 현상).
+        const estimatedMs = Math.min(14000, Math.max(6000, text.length * 100))
+        setTimeout(() => onTtsEnd?.(), estimatedMs)
       } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel()
         const u = new SpeechSynthesisUtterance(sanitizeForTts(text) || text)
@@ -894,6 +915,10 @@ ${manseText || '(만세력 없음)'}
             wasConnectedRef.current = true
             autoReconnectCountRef.current = 0
             sessionStartTimeRef.current = Date.now()
+            etiquetteViolationCountRef.current = 0
+            currentUserTurnViolationsRef.current = new Set()
+            currentUserTurnTextRef.current = ''
+            setMannerWarningMessage(null)
             setConnected(true)
             isAiSpeakingRef.current = false
             if (pingIntervalRef.current) { clearInterval(pingIntervalRef.current); pingIntervalRef.current = null }
@@ -981,6 +1006,7 @@ ${manseText || '(만세력 없음)'}
             return
           }
           if (msg.type === 'audio' && msg.data) {
+            clearSilenceTimer()
             const buf = base64ToArrayBuffer(msg.data)
             if (audioTimeoutRef.current) { clearTimeout(audioTimeoutRef.current); audioTimeoutRef.current = null }
             if (!isAiSpeakingRef.current) {
@@ -1046,15 +1072,41 @@ ${manseText || '(만세력 없음)'}
             const role = msg.role === 'user' ? 'user' : 'assistant'
             const txt = String(msg.text).trim()
             if (txt) {
+              const isPpoingSession = String(contentData?.payment_code || '') === '8006'
+              if (role === 'assistant') {
+                currentUserTurnViolationsRef.current = new Set()
+                currentUserTurnTextRef.current = ''
+              } else if (isPpoingSession) {
+                currentUserTurnTextRef.current = (currentUserTurnTextRef.current + ' ' + txt).trim()
+                const fullUserText = currentUserTurnTextRef.current
+                if (fullUserText) {
+                  if (detectCrisisKeywords(fullUserText)) {
+                    try {
+                      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'text', text: CRISIS_EXPERT_INSTRUCTION }))
+                    } catch { /* ignore */ }
+                  }
+                  const violationType = detectEtiquetteViolation(fullUserText)
+                  if (violationType && !currentUserTurnViolationsRef.current.has(violationType)) {
+                    currentUserTurnViolationsRef.current.add(violationType)
+                    etiquetteViolationCountRef.current += 1
+                    if (etiquetteViolationCountRef.current >= 2) {
+                      setMannerWarningMessage(getMannerWarningMessage())
+                      disconnectInternal()
+                    } else {
+                      try {
+                        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'text', text: getEtiquetteReprimandInstruction(violationType) }))
+                      } catch { /* ignore */ }
+                    }
+                  }
+                }
+              }
               setMessages((prev) => {
                 const last = prev.length > 0 ? prev[prev.length - 1] : null
                 if (last && last.role === role) {
-                  // 같은 role → 기존 메시지에 이어 붙임
                   const updated = [...prev]
                   updated[updated.length - 1] = { ...last, text: last.text + ' ' + txt }
                   return updated
                 }
-                // 다른 role → 새 메시지
                 return [...prev, { role, text: txt }]
               })
             }
@@ -1695,5 +1747,11 @@ ${manseText || '(만세력 없음)'}
     // 점사 진행 중 나가기 방지 팝업
     showInProgressBlockModal,
     handleInProgressBlockClose: () => setShowInProgressBlockModal(false),
+    // 뿌잉 예의 위반 2회 시 상담 종료 경고
+    mannerWarningMessage,
+    dismissMannerWarning: () => {
+      setMannerWarningMessage(null)
+      router.push('/form')
+    },
   }
 }

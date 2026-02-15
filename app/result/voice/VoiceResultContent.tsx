@@ -697,6 +697,36 @@ export default function VoiceResultContent() {
         </div>
       ) : null}
 
+      {/* 뿌잉 예의 위반 2회 시 상담 종료 경고 모달 */}
+      {h.mannerWarningMessage ? (
+        <div
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+        >
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
+          <div
+            className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative bg-gradient-to-r from-amber-600 to-amber-700 px-6 py-4">
+              <h2 className="text-xl font-bold text-white cursor-default">상담 종료 안내</h2>
+            </div>
+            <div className="p-6">
+              <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 mb-6">
+                <p className="text-gray-800 text-sm leading-relaxed">{h.mannerWarningMessage}</p>
+              </div>
+              <button
+                type="button"
+                onClick={h.dismissMannerWarning}
+                className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* 나가기 전 저장 확인 모달 (폼 결제정보 팝업과 동일 레이아웃·톤) */}
       {h.showLeaveConfirmModal ? (
         <div
