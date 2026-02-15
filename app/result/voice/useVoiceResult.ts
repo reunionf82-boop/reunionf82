@@ -622,14 +622,20 @@ ${manseText || '(만세력 없음)'}
   const sendSilenceBreak = useCallback(async (silenceSeconds: number, onTtsEnd?: () => void) => {
     clearSilenceTimer()
     const cid = contentIdRef.current
-    if (!cid) return
+    console.log('[침묵깨기] sendSilenceBreak 호출', { silenceSeconds, cid })
+    if (!cid) {
+      console.log('[침묵깨기] 스킵: contentId 없음')
+      return
+    }
     try {
+      console.log('[침묵깨기] API 요청 시작')
       const res = await fetch('/api/voice/silence-break', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contentId: cid, silenceSeconds }),
       })
       const data = await res.json().catch(() => ({} as any))
+      console.log('[침묵깨기] API 응답', res.status, { success: data?.success, hasText: !!data?.text })
       if (!data?.success || !data?.text) return
       const text = String(data.text).trim()
       setMessages((prev) => [...prev, { role: 'assistant', text }])
@@ -1045,12 +1051,19 @@ ${manseText || '(만세력 없음)'}
               clearSilenceTimer()
               // 첫 인사 직후에도 침묵 깨기 동작 — 세션 5초 미만만 제외(연결 준비+첫 오디오 구간)
               const sessionStart = sessionStartTimeRef.current
-              if (sessionStart != null && Date.now() - sessionStart < 5000) return
+              if (sessionStart != null && Date.now() - sessionStart < 5000) {
+                console.log('[침묵깨기] 스킵: 세션 5초 미만', { elapsed: Date.now() - sessionStart })
+                return
+              }
               // 5회 이상 방문 시 "오늘은 이제 그만!" 배웅 멘트 구간 — 침묵깨기 미발동
-              if (skipSilenceBreakRef.current) return
+              if (skipSilenceBreakRef.current) {
+                console.log('[침묵깨기] 스킵: 5회 이상 방문')
+                return
+              }
               if (!mutedRef.current) {
                 const doSend = sendSilenceBreakRef.current
                 // 3초 재촉형 → TTS 후 5초 관찰형 → TTS 후 5초 환기형 (최대 3회)
+                console.log('[침묵깨기] 타이머 설정(3초)')
                 silenceTimerRef.current = setTimeout(() => {
                   silenceTimerRef.current = null
                   doSend(3, () => {
