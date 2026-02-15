@@ -381,7 +381,8 @@ export default function VoiceResultContent() {
           <span className="text-gray-400 text-xs shrink-0 tabular-nums">{h.micSensitivity ?? 50}%</span>
         </div>
 
-        {/* 만세력 (접기/펼치기) — 모바일에서도 표시되도록 섹션 항상 렌더, 스크롤 영역 min-w-0 */}
+        {/* 만세력 (접기/펼치기) — 8006(뿌잉)이 아닐 때만 표시 */}
+        {String(h.contentData?.payment_code || '') !== '8006' && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden voice-result-manse min-w-0">
           <style dangerouslySetInnerHTML={{ __html: MANSE_STYLES }} />
           <button
@@ -407,6 +408,7 @@ export default function VoiceResultContent() {
             </div>
           ) : null}
         </div>
+        )}
 
         {/* 하단 컨트롤 */}
         <div className="mt-auto pb-4 space-y-3">

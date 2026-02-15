@@ -6172,6 +6172,7 @@ function FormContent() {
             </div>
           )}
           
+          <div className={String(content?.payment_code || '') === '8006' ? 'hidden' : undefined}>
           <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">본인 정보</h2>
           
           <div className="space-y-6">
@@ -6401,9 +6402,11 @@ function FormContent() {
             </div>
 
             {/* 연령 제한 안내 */}
-            <div className="text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-pink-500 font-bold text-sm mb-4 text-left">
+            <div className="text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-pink-500 font-bold text-sm mb-6 pb-6 text-left">
               ※ 19세 이하는 이용하실 수 없습니다.
             </div>
+          </div>
+          </div>
 
             {/* 이성 정보 입력 폼 (궁합형인 경우) */}
             {isGonghapType && (
@@ -6641,8 +6644,8 @@ function FormContent() {
               </>
             )}
 
-            {/* 약관 동의 */}
-            <div className="space-y-3 pt-4 border-t border-gray-200">
+            {/* 약관 동의 — 8006일 때 상단 선 제거(선 2개 방지), 버튼 위 여백 확보 */}
+            <div className={`space-y-3 pt-6 ${String(content?.payment_code || '') === '8006' ? '' : 'border-t border-gray-200'}`}>
               <div className="flex items-start gap-2">
                 <input
                   type="checkbox"
@@ -6692,7 +6695,7 @@ function FormContent() {
             </div>
 
             {/* 버튼 영역: 컨텐츠 로드 후 가격이 명시적으로 0원일 때만 "무료시작", 그 외(로딩 중·미로드·유료) 기본 "결제하기" */}
-            <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex flex-col sm:flex-row gap-3 mt-6">
               {(() => {
                 const priceVal = content?.price
                 const priceStr = priceVal != null && String(priceVal).trim() !== '' ? String(priceVal).replace(/[^0-9]/g, '') : null
@@ -6719,7 +6722,6 @@ function FormContent() {
                 이전으로
               </button>
             </div>
-          </div>
           </div>
         </div>
 

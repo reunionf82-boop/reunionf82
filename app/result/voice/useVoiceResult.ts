@@ -223,6 +223,10 @@ export function useVoiceResult() {
   mutedRef.current = muted
   const micSensitivityRef = useRef(micSensitivity)
   micSensitivityRef.current = micSensitivity
+  /** 5회 이상 방문 시 "오늘은 이제 그만!" 배웅 멘트가 나오므로 침묵깨기 미발동 */
+  const skipSilenceBreakRef = useRef(false)
+  skipSilenceBreakRef.current =
+    String(contentData?.payment_code || '') === '8006' && visitCountToday >= 5
 
   messagesRef.current = messages
 
@@ -519,19 +523,26 @@ ${speechLine}
 - 예시: "어서 오세요, [이름]님. 제가 기다리고 있었어요. 무엇이 궁금하신가요?"
 `
     const kst = getKoreaContextVars()
+    // 8006(뿌잉): 유저정보(이름, 성별, 만세력) 음성모델에 전달하지 않음
+    const skipUserInfo = isPpoing
     const gender = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_gender') || 'female' : 'female'
     const isMale = gender === 'male'
     const honorificLine = isMale
       ? '내담자 성별: 남성. 반드시 오빠 또는 삼촌으로 호칭할 것. 언니/이모 사용 금지.'
       : '내담자 성별: 여성. 반드시 언니 또는 이모로 호칭할 것. 오빠/삼촌 사용 금지.'
-    const commonContextBlock = `${getKstTimeInstructionBlock()}
+    const commonContextBlock = skipUserInfo
+      ? `${getKstTimeInstructionBlock()}
+- 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}
+
+`
+      : `${getKstTimeInstructionBlock()}
 
 ### 호칭 규칙(필수)
 ${honorificLine}
 - 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}
 
 `
-    // 방문 빈도·사계절·환기: 8006(뿌잉) 전용
+    // 방문 빈도·사계절·환기: 8006(뿌잉) 전용 (유저 이름 없이)
     let visitBlock = ''
     if (isPpoing) {
       const visitGuidance = getVisitGuidanceText(visitCountToday)
@@ -539,8 +550,8 @@ ${honorificLine}
       visitBlock = `
 ### 방문 빈도(오늘 ${visitCountToday}번째 방문)
 ${visitCountToday <= 1
-  ? `- 내담자 "${userName || '손님'}"님이 당일 첫 방문으로 접속했습니다. 먼저 따뜻하게 인사한 후 신점으로 약 20초가량 오늘의 운세(재물운, 애정운)를 얘기해 주시오.`
-  : `- 내담자 "${userName || '손님'}"님이 재접속했습니다. 인사만 간단히 하시오.`}
+  ? '- 내담자가 당일 첫 방문으로 접속했습니다. 먼저 따뜻하게 인사한 후 신점으로 약 20초가량 오늘의 운세(재물운, 애정운)를 얘기해 주시오.'
+  : '- 내담자가 재접속했습니다. 인사만 간단히 하시오.'}
 - 입구 테마: ${visitGuidance.openingTheme} — ${visitGuidance.openingHint}
 - 출구 테마: ${visitGuidance.closingTheme} — ${visitGuidance.closingHint}
 
@@ -550,12 +561,13 @@ ${seasonBlock}
 - 상담이 5턴 이상 지속되거나 대화가 정체되면 [환기 시트] 중 하나를 무작위로 선택해 실행하세요. (아이 돌발행동, 영적 신호 감지, 신령님 개입, 육체적 피로, 환경 변화 인지 등) 내담자 감정에 맞춰 자연스럽게 끼워 넣으세요.
 `
     }
-    const contextText = `${commonContextBlock}${visitBlock}### 내담자 정보
+    const userInfoBlock = skipUserInfo ? '' : `### 내담자 정보
 이름: ${userName}
 
 ### 만세력
 ${manseText || '(만세력 없음)'}
 `
+    const contextText = `${commonContextBlock}${visitBlock}${userInfoBlock}`
     return { systemText, contextText }
   }, [contentData, manseText, visitCountToday])
 
@@ -935,8 +947,9 @@ ${manseText || '(만세력 없음)'}
             // 타이머 시작
             startTimer()
 
-            // AI 첫 인사 트리거: 콘텐츠(어드민) 설정 우선, 없으면 API/기본값. {{userName}} 치환
-            const userName2 = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_name') || '' : ''
+            // AI 첫 인사 트리거: 콘텐츠(어드민) 설정 우선, 없으면 API/기본값. {{userName}} 치환. 8006은 유저정보 미전달
+            const isPpoingGreet = String(contentData?.payment_code || '') === '8006'
+            const userName2 = isPpoingGreet ? '' : (typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_name') || '' : '')
             const defaultInitial =
               userName2
                 ? `[시스템] 내담자 "${userName2}"님이 접속했습니다. 먼저 따뜻하게 인사한 후 만세력을 기반으로 약 20초가량 사주 재물운 운세 재회운을 얘기해 주세요.`
@@ -1030,9 +1043,11 @@ ${manseText || '(만세력 없음)'}
               audioTimeoutRef.current = null
               lastAiSpeechEndAtRef.current = Date.now()
               clearSilenceTimer()
-              // 첫 인사(약 20초) 동안 침묵 깨기 비활성화 — 25초는 인사 직후에도 타이머가 안 걸림. 20초로 완화
+              // 첫 인사 직후에도 침묵 깨기 동작 — 세션 5초 미만만 제외(연결 준비+첫 오디오 구간)
               const sessionStart = sessionStartTimeRef.current
-              if (sessionStart != null && Date.now() - sessionStart < 20000) return
+              if (sessionStart != null && Date.now() - sessionStart < 5000) return
+              // 5회 이상 방문 시 "오늘은 이제 그만!" 배웅 멘트 구간 — 침묵깨기 미발동
+              if (skipSilenceBreakRef.current) return
               if (!mutedRef.current) {
                 const doSend = sendSilenceBreakRef.current
                 // 3초 재촉형 → TTS 후 5초 관찰형 → TTS 후 5초 환기형 (최대 3회)
