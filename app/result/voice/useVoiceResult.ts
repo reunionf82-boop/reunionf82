@@ -208,6 +208,8 @@ export function useVoiceResult() {
   const [showInProgressBlockModal, setShowInProgressBlockModal] = useState(false)
   /** 상담 저장 완료 후 "상담이 끝났습니다" 팝업 — 확인 시 폼으로 이동 */
   const [showConsultationEndModal, setShowConsultationEndModal] = useState(false)
+  const showConsultationEndModalRef = useRef(false)
+  showConsultationEndModalRef.current = showConsultationEndModal
   /* ── 뿌잉 예의 위반 2회 시 상담 종료 경고 문구 (표시 후 재방문 불가 안내) ── */
   const [mannerWarningMessage, setMannerWarningMessage] = useState<string | null>(null)
 
@@ -645,6 +647,11 @@ ${manseText || '(만세력 없음)'}
   const sendSilenceBreakRef = useRef<(sec: number, onTtsEnd?: () => void) => Promise<void>>(async () => {})
 
   const sendSilenceBreak = useCallback(async (silenceSeconds: number, onTtsEnd?: () => void) => {
+    if (showConsultationEndModalRef.current) {
+      console.log('[침묵깨기] 스킵: 상담 종료 팝업 표시 중')
+      onTtsEnd?.()
+      return
+    }
     clearSilenceTimer()
     const cid = contentIdRef.current
     console.log('[침묵깨기] sendSilenceBreak 호출', { silenceSeconds, cid })
@@ -1087,6 +1094,11 @@ ${manseText || '(만세력 없음)'}
                 console.log('[침묵깨기] 스킵: 5회 이상 방문')
                 return
               }
+              // 상담 종료 팝업이 떠 있으면 침묵깨기 미발동
+              if (showConsultationEndModalRef.current) {
+                console.log('[침묵깨기] 스킵: 상담 종료 팝업 표시 중')
+                return
+              }
               if (!mutedRef.current) {
                 const doSend = sendSilenceBreakRef.current
                 const s1 = silenceBreakSecs.first * 1000
@@ -1096,14 +1108,19 @@ ${manseText || '(만세력 없음)'}
                 console.log('[침묵깨기] 타이머 설정', { first: silenceBreakSecs.first, second: silenceBreakSecs.second, third: silenceBreakSecs.third }, '초')
                 silenceTimerRef.current = setTimeout(() => {
                   silenceTimerRef.current = null
+                  if (showConsultationEndModalRef.current) return
                   doSend(silenceBreakSecs.first, () => {
+                    if (showConsultationEndModalRef.current) return
                     if (!mutedRef.current && !silenceTimerRef.current) {
                       silenceTimerRef.current = setTimeout(() => {
                         silenceTimerRef.current = null
+                        if (showConsultationEndModalRef.current) return
                         doSend(silenceBreakSecs.second, () => {
+                          if (showConsultationEndModalRef.current) return
                           if (!mutedRef.current && !silenceTimerRef.current) {
                             silenceTimerRef.current = setTimeout(() => {
                               silenceTimerRef.current = null
+                              if (showConsultationEndModalRef.current) return
                               doSend(1, undefined)
                             }, s3)
                           }
@@ -1704,13 +1721,8 @@ ${manseText || '(만세력 없음)'}
     router.push('/form')
   }, [router])
 
-  /* ── 나가기 전 저장 확인: 이전/홈 시 모달 표시 ── */
+  /* ── 나가기 전 저장 확인: 이전/홈 시 모달 표시 (브라우저/모바일 뒤로가기와 동일) ── */
   const requestLeave = useCallback(() => {
-    // 연결 중(점사 진행 중)이면 나가면 점사가 중지되므로 팝업만 표시
-    if (connected) {
-      setShowInProgressBlockModal(true)
-      return
-    }
     if (conversationSavedRef.current) {
       setIsNavigatingAway(true)
       try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
@@ -1724,7 +1736,7 @@ ${manseText || '(만세력 없음)'}
     setIsNavigatingAway(true)
     try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
     router.push('/form')
-  }, [router, connected])
+  }, [router])
 
   const handleLeaveWithSave = useCallback(() => {
     setShowLeaveConfirmModal(false)

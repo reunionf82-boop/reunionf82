@@ -475,7 +475,7 @@ export default function VoiceResultContent() {
               </svg>
               <span className="text-gray-600 font-semibold text-base">상담 내용 저장 중...</span>
             </div>
-          ) : (
+          ) : !h.showConsultationEndModal ? (
             <button
               type="button"
               onClick={h.connect}
@@ -499,9 +499,9 @@ export default function VoiceResultContent() {
                 </span>
               </div>
             </button>
-          )}
+          ) : null}
 
-          {!h.connected && h.remainingSeconds <= 0 ? (
+          {!h.connected && h.remainingSeconds <= 0 && !h.showConsultationEndModal ? (
             <button
               type="button"
               onClick={h.requestLeave}
