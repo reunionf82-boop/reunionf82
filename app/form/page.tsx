@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { getContents, getContentById, getSelectedModel, getSelectedSpeaker, getFortuneViewMode, getUseSequentialFortune } from '@/lib/supabase-admin'
+import { isPpoingAttributes } from '@/lib/voice-mvp/ppoing-rules'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { calculateManseRyeok, generateManseRyeokTable, generateManseRyeokText, getDayGanji, type ManseRyeokCaptionInfo, convertSolarToLunarAccurate, convertLunarToSolarAccurate } from '@/lib/manse-ryeok'
 import TermsPopup from '@/components/TermsPopup'
@@ -173,6 +174,21 @@ function FormContent() {
     }
     loadData()
   }, [searchParams])
+
+  /* ── 음성 상담 후 폼 진입: 뒤로가기 시 프론트홈(/)으로 이동 ── */
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const flag = sessionStorage.getItem('voice_came_to_form')
+    if (flag !== '1') return
+    sessionStorage.removeItem('voice_came_to_form')
+    history.pushState({ voiceCameToForm: true }, '', window.location.href)
+    const onPopState = () => {
+      window.removeEventListener('popstate', onPopState)
+      router.replace('/')
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [router])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -6172,7 +6188,7 @@ function FormContent() {
             </div>
           )}
           
-          <div className={String(content?.payment_code || '') === '8006' ? 'hidden' : undefined}>
+          <div className={isPpoingAttributes(content) ? 'hidden' : undefined}>
           <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">본인 정보</h2>
           
           <div className="space-y-6">
@@ -6644,8 +6660,8 @@ function FormContent() {
               </>
             )}
 
-            {/* 약관 동의 — 8006일 때 상단 선 제거(선 2개 방지), 버튼 위 여백 확보 */}
-            <div className={`space-y-3 pt-6 ${String(content?.payment_code || '') === '8006' ? '' : 'border-t border-gray-200'}`}>
+            {/* 약관 동의 — 8006/무료속성일 때 상단 선 제거(선 2개 방지), 버튼 위 여백 확보 */}
+            <div className={`space-y-3 pt-6 ${isPpoingAttributes(content) ? '' : 'border-t border-gray-200'}`}>
               <div className="flex items-start gap-2">
                 <input
                   type="checkbox"

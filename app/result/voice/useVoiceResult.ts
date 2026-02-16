@@ -15,6 +15,7 @@ import {
   getMannerWarningMessage,
   getEtiquetteReprimandInstruction,
   CRISIS_EXPERT_INSTRUCTION,
+  isPpoingAttributes,
   type EtiquetteViolationType,
 } from '@/lib/voice-mvp/ppoing-rules'
 import { buildResultStyleManseBlock } from '@/lib/manse-ryeok-display'
@@ -205,6 +206,8 @@ export function useVoiceResult() {
 
   /* ── 점사 진행 중 이전/홈 클릭 시 나가기 방지 팝업 ── */
   const [showInProgressBlockModal, setShowInProgressBlockModal] = useState(false)
+  /** 상담 저장 완료 후 "상담이 끝났습니다" 팝업 — 확인 시 폼으로 이동 */
+  const [showConsultationEndModal, setShowConsultationEndModal] = useState(false)
   /* ── 뿌잉 예의 위반 2회 시 상담 종료 경고 문구 (표시 후 재방문 불가 안내) ── */
   const [mannerWarningMessage, setMannerWarningMessage] = useState<string | null>(null)
 
@@ -225,8 +228,7 @@ export function useVoiceResult() {
   micSensitivityRef.current = micSensitivity
   /** 5회 이상 방문 시 "오늘은 이제 그만!" 배웅 멘트가 나오므로 침묵깨기 미발동 */
   const skipSilenceBreakRef = useRef(false)
-  skipSilenceBreakRef.current =
-    String(contentData?.payment_code || '') === '8006' && visitCountToday >= 5
+  skipSilenceBreakRef.current = isPpoingAttributes(contentData) && visitCountToday >= 5
 
   messagesRef.current = messages
 
@@ -447,19 +449,25 @@ export function useVoiceResult() {
     const key = 'voice-leave-confirm'
     history.pushState({ [key]: true }, '', window.location.href)
     const onPopState = () => {
-      if (!sessionStartedRef.current || conversationSavedRef.current) return
+      if (!sessionStartedRef.current) return
+      if (conversationSavedRef.current) {
+        try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
+        router.replace('/form')
+        return
+      }
       history.pushState({ [key]: true }, '', window.location.href)
       setShowLeaveConfirmModal(true)
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [])
+  }, [router])
 
   /* ── 저장 완료 후 나가기 처리 ───────────── */
   useEffect(() => {
     if (!savingConversation && leaveAfterSaveRef.current) {
       leaveAfterSaveRef.current = false
       setIsNavigatingAway(true)
+      try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
       router.push('/form')
     }
   }, [savingConversation, router])
@@ -487,6 +495,18 @@ export function useVoiceResult() {
     }
   }, [])
 
+  /* ── 침묵깨기 타이머 초 (어드민 voice_silence_break_config "재촉,관찰,환기" 순, 예: "3,5,5") ── */
+  const silenceBreakSecs = useMemo(() => {
+    const raw = String(contentData?.voice_silence_break_config || '').trim()
+    if (!raw) return { first: 3, second: 5, third: 5 }
+    const parts = raw.split(',').map((s) => Math.max(1, Math.min(15, parseInt(s.trim(), 10) || 3)))
+    return {
+      first: parts[0] ?? 3,
+      second: parts[1] ?? 5,
+      third: parts[2] ?? 5,
+    }
+  }, [contentData?.voice_silence_break_config])
+
   /* ── 모델/시스템 프롬프트 ──────────────── */
   const model = useMemo(() => {
     return normalizeLiveModel(contentData?.voice_model || '')
@@ -497,7 +517,7 @@ export function useVoiceResult() {
     const persona = String(contentData.voice_persona_prompt || '').trim()
     const style = String(contentData.voice_style || 'calm').trim()
     const userName = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_name') || '' : ''
-    const isPpoing = String(contentData?.payment_code || '') === '8006'
+    const isPpoing = isPpoingAttributes(contentData)
 
     const counselorName = String(contentData.voice_counselor_name || '').trim()
     const pitch = contentData.voice_pitch != null && contentData.voice_pitch !== ''
@@ -587,7 +607,7 @@ ${manseText || '(만세력 없음)'}
           extendPopupShownRef.current = true
           setShowExtendPopup(true)
         }
-        // 시간 종료 — 즉시 disconnect 하지 않고 연장 기회 제공
+        // 시간 종료
         if (next <= 0) {
           if (timerIntervalRef.current) {
             clearInterval(timerIntervalRef.current)
@@ -596,12 +616,17 @@ ${manseText || '(만세력 없음)'}
           try {
             sessionStorage.setItem('voice_time_expired', '1')
           } catch { /* ignore */ }
-          // 연장 팝업이 아직 표시되지 않았으면 표시
-          if (!extendPopupShownRef.current) {
-            extendPopupShownRef.current = true
+          // 연장 팝업이 이미 떠 있는 상태면 닫고 disconnect → 저장 후 상담종료 팝업 표시
+          if (extendPopupShownRef.current) {
+            setTimeout(() => {
+              setShowExtendPopup(false)
+              disconnectInternalRef.current?.()
+            }, 0)
+            return 0
           }
+          // 연장 팝업이 아직 표시되지 않았으면 표시 (disconnect는 팝업 닫기 시 dismissExtendPopup에서 처리)
+          extendPopupShownRef.current = true
           setShowExtendPopup(true)
-          // disconnect는 팝업 닫기 시 수행 (dismissExtendPopup에서 처리)
           return 0
         }
         return next
@@ -759,6 +784,7 @@ ${manseText || '(만세력 없음)'}
 
   /* ── 내부 disconnect ───────────────────── */
   const saveConversationRef = useRef<() => Promise<void>>()
+  const disconnectInternalRef = useRef<((skipSave?: boolean) => void) | null>(null)
 
   function disconnectInternal(skipSave = false) {
     manualDisconnectRef.current = true
@@ -796,6 +822,7 @@ ${manseText || '(만세력 없음)'}
       setTimeout(() => { saveConversationRef.current?.() }, 100)
     }
   }
+  disconnectInternalRef.current = disconnectInternal
 
   /* ── connect ───────────────────────────── */
   const connect = useCallback(async () => {
@@ -953,8 +980,8 @@ ${manseText || '(만세력 없음)'}
             // 타이머 시작
             startTimer()
 
-            // AI 첫 인사 트리거: 콘텐츠(어드민) 설정 우선, 없으면 API/기본값. {{userName}} 치환. 8006은 유저정보 미전달
-            const isPpoingGreet = String(contentData?.payment_code || '') === '8006'
+            // AI 첫 인사 트리거: 콘텐츠(어드민) 설정 우선, 없으면 API/기본값. {{userName}} 치환. 8006/무료속성은 유저정보 미전달
+            const isPpoingGreet = isPpoingAttributes(contentData)
             const userName2 = isPpoingGreet ? '' : (typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_name') || '' : '')
             const defaultInitial =
               userName2
@@ -1062,26 +1089,29 @@ ${manseText || '(만세력 없음)'}
               }
               if (!mutedRef.current) {
                 const doSend = sendSilenceBreakRef.current
-                // 3초 재촉형 → TTS 후 5초 관찰형 → TTS 후 5초 환기형 (최대 3회)
-                console.log('[침묵깨기] 타이머 설정(3초)')
+                const s1 = silenceBreakSecs.first * 1000
+                const s2 = silenceBreakSecs.second * 1000
+                const s3 = silenceBreakSecs.third * 1000
+                // 재촉형 → 관찰형 → 환기형 (최대 3회). 어드민 voice_silence_break_config 사용 (예: "3,5,5")
+                console.log('[침묵깨기] 타이머 설정', { first: silenceBreakSecs.first, second: silenceBreakSecs.second, third: silenceBreakSecs.third }, '초')
                 silenceTimerRef.current = setTimeout(() => {
                   silenceTimerRef.current = null
-                  doSend(3, () => {
+                  doSend(silenceBreakSecs.first, () => {
                     if (!mutedRef.current && !silenceTimerRef.current) {
                       silenceTimerRef.current = setTimeout(() => {
                         silenceTimerRef.current = null
-                        doSend(5, () => {
+                        doSend(silenceBreakSecs.second, () => {
                           if (!mutedRef.current && !silenceTimerRef.current) {
                             silenceTimerRef.current = setTimeout(() => {
                               silenceTimerRef.current = null
                               doSend(1, undefined)
-                            }, 5000)
+                            }, s3)
                           }
                         })
-                      }, 5000)
+                      }, s2)
                     }
                   })
-                }, 3000)
+                }, s1)
               }
             }, 1500)
             return
@@ -1100,7 +1130,7 @@ ${manseText || '(만세력 없음)'}
             const role = msg.role === 'user' ? 'user' : 'assistant'
             const txt = String(msg.text).trim()
             if (txt) {
-              const isPpoingSession = String(contentData?.payment_code || '') === '8006'
+              const isPpoingSession = isPpoingAttributes(contentData)
               if (role === 'assistant') {
                 currentUserTurnViolationsRef.current = new Set()
                 currentUserTurnTextRef.current = ''
@@ -1204,7 +1234,7 @@ ${manseText || '(만세력 없음)'}
     } catch (e: any) {
       setError(e?.message || '연결 실패')
     }
-  }, [systemAndContext, model, voiceName, muted, startFailoverCheckInterval, startTimer, clearSilenceTimer, sendSilenceBreak])
+  }, [systemAndContext, model, voiceName, muted, silenceBreakSecs, startFailoverCheckInterval, startTimer, clearSilenceTimer, sendSilenceBreak])
 
   /* ── disconnect ─────────────────────────── */
   const disconnect = useCallback(async () => {
@@ -1651,6 +1681,7 @@ ${manseText || '(만세력 없음)'}
           console.warn('[VoiceResult] phone or password missing in sessionStorage, cannot link credentials')
         }
       }
+      if (!leaveAfterSaveRef.current) setShowConsultationEndModal(true)
     } catch (e: any) {
       console.error('[VoiceResult] saveConversation error:', e?.message)
     } finally {
@@ -1666,6 +1697,13 @@ ${manseText || '(만세력 없음)'}
     router.push('/form')
   }, [router])
 
+  /* ── 상담 끝남 팝업 확인 → 폼으로 이동 (폼에서 뒤로가기 시 /home으로) ── */
+  const handleConsultationEndConfirm = useCallback(() => {
+    setShowConsultationEndModal(false)
+    try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
+    router.push('/form')
+  }, [router])
+
   /* ── 나가기 전 저장 확인: 이전/홈 시 모달 표시 ── */
   const requestLeave = useCallback(() => {
     // 연결 중(점사 진행 중)이면 나가면 점사가 중지되므로 팝업만 표시
@@ -1675,6 +1713,7 @@ ${manseText || '(만세력 없음)'}
     }
     if (conversationSavedRef.current) {
       setIsNavigatingAway(true)
+      try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
       router.push('/form')
       return
     }
@@ -1683,6 +1722,7 @@ ${manseText || '(만세력 없음)'}
       return
     }
     setIsNavigatingAway(true)
+    try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
     router.push('/form')
   }, [router, connected])
 
@@ -1697,6 +1737,7 @@ ${manseText || '(만세력 없음)'}
     setShowLeaveConfirmModal(false)
     setIsNavigatingAway(true)
     disconnectInternal(true) // 폼으로 나가기 전 오디오·연결 즉시 정리 (저장 없음)
+    try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
     router.push('/form')
   }, [router])
 
@@ -1717,6 +1758,7 @@ ${manseText || '(만세력 없음)'}
     setShowExitConfirmPopup(false)
     setIsNavigatingAway(true)
     await disconnect()
+    try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
     router.push('/form')
   }, [disconnect, router])
 
@@ -1775,10 +1817,14 @@ ${manseText || '(만세력 없음)'}
     // 점사 진행 중 나가기 방지 팝업
     showInProgressBlockModal,
     handleInProgressBlockClose: () => setShowInProgressBlockModal(false),
+    // 상담 끝남 팝업 (확인 시 폼으로)
+    showConsultationEndModal,
+    handleConsultationEndConfirm,
     // 뿌잉 예의 위반 2회 시 상담 종료 경고
     mannerWarningMessage,
     dismissMannerWarning: () => {
       setMannerWarningMessage(null)
+      try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
       router.push('/form')
     },
   }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useEffect, useCallback } from 'react'
+import { isPpoingAttributes } from '@/lib/voice-mvp/ppoing-rules'
 import { useVoiceResult } from './useVoiceResult'
 
 /* 만세력 스타일 (voice-mvp에서 가져옴). 모바일: 가로 스크롤 없이 폰트/패딩 축소로 맞춤 */
@@ -381,8 +382,8 @@ export default function VoiceResultContent() {
           <span className="text-gray-400 text-xs shrink-0 tabular-nums">{h.micSensitivity ?? 50}%</span>
         </div>
 
-        {/* 만세력 (접기/펼치기) — 8006(뿌잉)이 아닐 때만 표시 */}
-        {String(h.contentData?.payment_code || '') !== '8006' && (
+        {/* 만세력 (접기/펼치기) — 8006/무료속성이 아닐 때만 표시 */}
+        {!isPpoingAttributes(h.contentData) && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden voice-result-manse min-w-0">
           <style dangerouslySetInnerHTML={{ __html: MANSE_STYLES }} />
           <button
@@ -785,6 +786,51 @@ export default function VoiceResultContent() {
                   className="w-full border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-4 px-4 rounded-xl transition-all duration-200 disabled:opacity-50"
                 >
                   취소
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* 상담 끝남 팝업 (폼 결제정보 팝업과 동일 레이아웃) — 확인 시 폼으로 이동 */}
+      {h.showConsultationEndModal ? (
+        <div
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+        >
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
+          <div
+            className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 - 폼 결제 팝업과 동일 */}
+            <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
+              <h2 className="text-xl font-bold text-white cursor-default">상담 종료</h2>
+              <button
+                type="button"
+                onClick={h.handleConsultationEndConfirm}
+                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6">
+              <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
+                <p className="text-gray-700 text-sm leading-relaxed">
+                  상담이 끝났습니다. 저장된 내용은 나중에 다시 들어서 들을 수 있습니다.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={h.handleConsultationEndConfirm}
+                  className="w-full bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
+                >
+                  확인
                 </button>
               </div>
             </div>

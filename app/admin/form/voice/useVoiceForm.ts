@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { buildProtectedHtml, extractImageUrlsFromHtml } from './voice-form-html'
 
@@ -25,6 +25,8 @@ export interface VoiceFormData {
   payment_code: string
   is_new: boolean
   show_exposed: boolean
+  /** 무료속성(8006 동일): 본인정보 숨김, 만세력 비표시, 음성모델 유저정보 미전달 등 */
+  apply_ppoing_attributes: boolean
   summary: string
   introduction: string
   recommendation: string
@@ -51,6 +53,8 @@ export interface VoiceFormData {
   voice_speaking_rate: number | ''
   /** 음량 증폭(dB) -96~16 */
   voice_volume_gain: number | ''
+  /** 침묵깨기 타이머(초) "재촉,관찰,환기" 순. 예: "3,5,5" */
+  voice_silence_break_config: string
 }
 
 /** 이미지 → WebP 변환 (화질 열화 없이 lossless) */
@@ -90,6 +94,7 @@ const INITIAL_FORM: VoiceFormData = {
   payment_code: '',
   is_new: false,
   show_exposed: false,
+  apply_ppoing_attributes: false,
   summary: '',
   introduction: '',
   recommendation: '',
@@ -110,6 +115,7 @@ const INITIAL_FORM: VoiceFormData = {
   voice_pitch: '',
   voice_speaking_rate: '',
   voice_volume_gain: '',
+  voice_silence_break_config: '3,5,5',
 }
 
 export function useVoiceForm() {
@@ -138,6 +144,8 @@ export function useVoiceForm() {
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [showSaveSuccess, setShowSaveSuccess] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deletingContent, setDeletingContent] = useState(false)
 
   const toFormSnapshot = (f: VoiceFormData) => JSON.stringify({ ...f, voice_time_options: f.voice_time_options })
   const baselineSnapshot = lastSavedSnapshot ?? initialFormSnapshotRef.current
@@ -210,6 +218,7 @@ export function useVoiceForm() {
           payment_code: duplicateId ? (nextPaymentCode ?? '') : (c.payment_code ?? ''),
           is_new: !!c.is_new,
           show_exposed: !!c.is_exposed,
+          apply_ppoing_attributes: !!c.apply_ppoing_attributes,
           summary: c.summary ?? '',
           introduction: c.introduction ?? '',
           recommendation: c.recommendation ?? '',
@@ -241,6 +250,9 @@ export function useVoiceForm() {
           voice_pitch: c.voice_pitch != null && c.voice_pitch !== '' ? Number(c.voice_pitch) : '',
           voice_speaking_rate: c.voice_speaking_rate != null && c.voice_speaking_rate !== '' ? Number(c.voice_speaking_rate) : '',
           voice_volume_gain: c.voice_volume_gain != null && c.voice_volume_gain !== '' ? Number(c.voice_volume_gain) : '',
+          voice_silence_break_config: typeof c.voice_silence_break_config === 'string' && c.voice_silence_break_config.trim()
+            ? c.voice_silence_break_config.trim()
+            : '3,5,5',
         }
         setForm(loadedForm)
         initialFormSnapshotRef.current = JSON.stringify({ ...loadedForm, voice_time_options: loadedForm.voice_time_options })
@@ -444,6 +456,24 @@ export function useVoiceForm() {
     finally { setSaving(false) }
   }
 
+  const handleDelete = useCallback(async () => {
+    if (!id || duplicateId) return
+    setDeletingContent(true)
+    try {
+      const res = await fetch(`/api/admin/content/delete?id=${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || '삭제에 실패했습니다.')
+      }
+      router.push('/admin')
+    } catch (e: unknown) {
+      alert((e as Error)?.message || '삭제에 실패했습니다.')
+    } finally {
+      setDeletingContent(false)
+      setShowDeleteConfirm(false)
+    }
+  }, [id, duplicateId, router])
+
   return {
     // state
     id, duplicateId, authenticated, saving, loading, form, setForm,
@@ -454,6 +484,8 @@ export function useVoiceForm() {
     isDirty,
     showCancelConfirm, setShowCancelConfirm,
     showSaveSuccess, setShowSaveSuccess,
+    showDeleteConfirm, setShowDeleteConfirm,
+    deletingContent,
     goBack,
     // handlers
     handleFileUpload, requestFileDelete, deleteConfirm, deleting, confirmFileDelete, cancelFileDelete,
@@ -464,5 +496,6 @@ export function useVoiceForm() {
     addTimeOption, removeTimeOption, updateTimeOption,
     addConversationSound, removeConversationSound, updateConversationSound, handleConversationSoundFileUpload,
     handleSave,
+    handleDelete,
   }
 }

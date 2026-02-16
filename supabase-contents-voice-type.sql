@@ -58,3 +58,11 @@ COMMENT ON COLUMN contents.voice_time_options IS '음성형: 시간 상품 옵�
 -- 상담사명 (예: 별님아씨)
 ALTER TABLE contents ADD COLUMN IF NOT EXISTS voice_counselor_name TEXT;
 COMMENT ON COLUMN contents.voice_counselor_name IS '음성형: 상담사 표시명 (예: 별님아씨)';
+
+-- 침묵깨기 타이머(초) "재촉,관찰,환기" 순. 예: "3,5,5"
+ALTER TABLE contents ADD COLUMN IF NOT EXISTS voice_silence_break_config TEXT;
+COMMENT ON COLUMN contents.voice_silence_break_config IS '음성형: 침묵깨기 타이머(초) 재촉형,관찰형,환기형 순. 예: 3,5,5';
+
+-- 무료속성(8006 동일): 본인정보 숨김, 만세력 비표시, 음성모델 유저정보 미전달 등
+ALTER TABLE contents ADD COLUMN IF NOT EXISTS apply_ppoing_attributes BOOLEAN DEFAULT false;
+COMMENT ON COLUMN contents.apply_ppoing_attributes IS '음성형: 8006과 동일 속성 적용 (본인정보 숨김, 만세력 비표시, 유저정보 미전달 등)';

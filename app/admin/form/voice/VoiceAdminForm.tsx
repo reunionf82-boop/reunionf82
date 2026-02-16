@@ -46,6 +46,12 @@ export default function VoiceAdminForm() {
             <h1 className="text-2xl font-bold">음성형 컨텐츠 {h.id ? '수정' : '추가'}</h1>
           </div>
           <div className="flex gap-3">
+            {h.id && !h.duplicateId && (
+              <button type="button" onClick={() => h.setShowDeleteConfirm(true)}
+                className="bg-red-600 hover:bg-red-500 text-white font-semibold px-6 py-2 rounded-lg">
+                삭제
+              </button>
+            )}
             <button type="button" onClick={() => { if (h.isDirty) h.setShowCancelConfirm(true); else h.goBack(); }}
               className="bg-gray-700 hover:bg-gray-600 text-white font-semibold px-6 py-2 rounded-lg">
               취소
@@ -67,6 +73,25 @@ export default function VoiceAdminForm() {
                   className="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-500 text-white font-medium">아니오</button>
                 <button type="button" onClick={() => { h.setShowCancelConfirm(false); h.goBack(); }}
                   className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium">예</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 삭제 확인 팝업 */}
+        {h.showDeleteConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => !h.deletingContent && h.setShowDeleteConfirm(false)}>
+            <div className="bg-gray-800 rounded-xl shadow-xl border border-gray-600 p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+              <p className="text-gray-200 mb-6">
+                &quot;{h.form.content_name || '이 컨텐츠'}&quot;를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button type="button" onClick={() => h.setShowDeleteConfirm(false)} disabled={h.deletingContent}
+                  className="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-500 disabled:opacity-50 text-white font-medium">취소</button>
+                <button type="button" onClick={h.handleDelete} disabled={h.deletingContent}
+                  className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-medium">
+                  {h.deletingContent ? '삭제 중...' : '삭제'}
+                </button>
               </div>
             </div>
           </div>
@@ -136,6 +161,10 @@ export default function VoiceAdminForm() {
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={h.form.is_new} onChange={(e) => h.setForm((f) => ({ ...f, is_new: e.target.checked }))} className="rounded" />
                     <span className="text-sm">NEW</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer" title="8006과 동일: 본인정보 숨김, 만세력 비표시, 음성모델 유저정보 미전달">
+                    <input type="checkbox" checked={h.form.apply_ppoing_attributes} onChange={(e) => h.setForm((f) => ({ ...f, apply_ppoing_attributes: e.target.checked }))} className="rounded" />
+                    <span className="text-sm">무료속성</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={h.form.show_exposed} onChange={(e) => h.setForm((f) => ({ ...f, show_exposed: e.target.checked }))} className="rounded" />
@@ -300,6 +329,16 @@ export default function VoiceAdminForm() {
                   <label className="block text-sm text-gray-300 mb-1">페르소나 프롬프트</label>
                   <textarea value={h.form.voice_persona_prompt} onChange={(e) => h.setForm((f) => ({ ...f, voice_persona_prompt: e.target.value }))}
                     className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white min-h-[120px]" placeholder="애기동자 페르소나/말투/제한 사항 등" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-300 mb-1">침묵깨기 타이머 (초)</label>
+                  <p className="text-gray-400 text-xs mb-1">재촉형, 관찰형, 환기형 순. 예: 3,5,5</p>
+                  <input
+                    value={h.form.voice_silence_break_config}
+                    onChange={(e) => h.setForm((f) => ({ ...f, voice_silence_break_config: e.target.value.trim() || '3,5,5' }))}
+                    className="w-40 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                    placeholder="3,5,5"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-300 mb-1">음성 상담 최초 인사 (접속 시 AI에 주입)</label>

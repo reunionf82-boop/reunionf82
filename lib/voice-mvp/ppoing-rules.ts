@@ -3,6 +3,12 @@
  * @see docs/ppoing-master-analysis.md
  */
 
+/** 8006 또는 무료속성 적용 여부 (본인정보 숨김, 만세력 비표시, 음성모델 유저정보 미전달 등) */
+export function isPpoingAttributes(c: { payment_code?: string; apply_ppoing_attributes?: boolean } | null | undefined): boolean {
+  if (!c) return false
+  return String(c.payment_code || '') === '8006' || !!c.apply_ppoing_attributes
+}
+
 /** TTS 출력 전 괄호/대괄호 제거. 괄호 안 지문은 읽지 않음. */
 export function sanitizeForTts(text: string): string {
   if (!text || typeof text !== 'string') return ''
