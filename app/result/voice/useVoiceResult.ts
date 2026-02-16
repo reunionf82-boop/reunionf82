@@ -660,7 +660,7 @@ ${manseText || '(만세력 없음)'}
         body: JSON.stringify({ contentId: cid, silenceSeconds }),
       })
       const data = await res.json().catch(() => ({} as any))
-      console.log('[침묵깨기] API 응답', res.status, { success: data?.success, hasText: !!data?.text })
+      console.log('[침묵깨기] API 응답', res.status, { success: data?.success, hasText: !!data?.text, error: data?.error })
       if (!data?.success || !data?.text) return
       const text = String(data.text).trim()
       setMessages((prev) => [...prev, { role: 'assistant', text }])

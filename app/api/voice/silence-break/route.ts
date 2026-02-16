@@ -53,6 +53,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, text })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Silence break failed' }, { status: 500 })
+    const errMsg = e?.message || 'Silence break failed'
+    console.error('[침묵깨기 API] 500 에러:', errMsg, e)
+    return NextResponse.json({ error: errMsg }, { status: 500 })
   }
 }
