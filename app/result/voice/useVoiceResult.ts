@@ -56,6 +56,14 @@ function normalizeLiveModel(base: string) {
   return LIVE_MODEL_FALLBACK
 }
 
+function isIOSDevice() {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  const isIPhoneOrIPad = /iPhone|iPad|iPod/i.test(ua)
+  const isIPadOSDesktopUA = /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1
+  return isIPhoneOrIPad || isIPadOSDesktopUA
+}
+
 /* ── PCM16 base64 → WAV Blob 변환 ────────── */
 function pcm16Base64ToWavBlob(chunks: string[], sampleRate = 24000): Blob {
   // base64 → raw PCM bytes
@@ -164,6 +172,12 @@ export function useVoiceResult() {
   const recorderRef = useRef<AudioRecorder | null>(null)
   const streamerRef = useRef<AudioStreamer | null>(null)
   const isAiSpeakingRef = useRef(false)
+  /** iOS: 클릭 제스처 시점에 미리 요청한 마이크 스트림(권한 팝업 안정화) */
+  const iosMicStreamPromiseRef = useRef<Promise<MediaStream> | null>(null)
+  /** iOS: 클릭 제스처 시점에 만든 녹음용 AudioContext (Safari 제약 대응) */
+  const iosRecorderContextRef = useRef<AudioContext | null>(null)
+  /** iOS 17+: 첫 오디오 수신 시 1회 suspend→resume 워크어라운드 */
+  const iosContextWorkaroundDoneRef = useRef(false)
   const audioTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const manualDisconnectRef = useRef(false)
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -487,6 +501,12 @@ export function useVoiceResult() {
       streamerRef.current?.stop()
       if (audioTimeoutRef.current) clearTimeout(audioTimeoutRef.current)
       if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null }
+      iosMicStreamPromiseRef.current = null
+      iosContextWorkaroundDoneRef.current = false
+      if (iosRecorderContextRef.current) {
+        iosRecorderContextRef.current.close().catch(() => {})
+        iosRecorderContextRef.current = null
+      }
       // 시작소리 오디오 정리
       if (startSoundRef.current) {
         startSoundRef.current.pause()
@@ -644,11 +664,42 @@ ${manseText || '(만세력 없음)'}
     }
   }, [])
 
+  const ensurePlaybackResumed = useCallback(async () => {
+    const streamer = streamerRef.current
+    if (!streamer) return
+    try { await streamer.resume() } catch { /* ignore */ }
+  }, [])
+
+  // iOS Safari: 포커스/복귀 후 AudioContext가 suspended면 AI 음성이 무음이 될 수 있어 복구
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isIOSDevice()) return
+    const resumeIfConnected = () => {
+      if (!connected) return
+      void ensurePlaybackResumed()
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') resumeIfConnected()
+    }
+    window.addEventListener('pageshow', resumeIfConnected)
+    window.addEventListener('focus', resumeIfConnected)
+    window.addEventListener('touchstart', resumeIfConnected, { passive: true })
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.removeEventListener('pageshow', resumeIfConnected)
+      window.removeEventListener('focus', resumeIfConnected)
+      window.removeEventListener('touchstart', resumeIfConnected)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [connected, ensurePlaybackResumed])
+
   const sendSilenceBreakRef = useRef<(sec: number, onTtsEnd?: () => void) => Promise<void>>(async () => {})
 
   const sendSilenceBreak = useCallback(async (silenceSeconds: number, onTtsEnd?: () => void) => {
     if (showConsultationEndModalRef.current) {
-      console.log('[침묵깨기] 스킵: 상담 종료 팝업 표시 중')
+      onTtsEnd?.()
+      return
+    }
+    if (isAiSpeakingRef.current) {
       onTtsEnd?.()
       return
     }
@@ -828,6 +879,12 @@ ${manseText || '(만세력 없음)'}
     if (!skipSave && !conversationSavedRef.current) {
       setTimeout(() => { saveConversationRef.current?.() }, 100)
     }
+    iosMicStreamPromiseRef.current = null
+    iosContextWorkaroundDoneRef.current = false
+    if (iosRecorderContextRef.current) {
+      iosRecorderContextRef.current.close().catch(() => {})
+      iosRecorderContextRef.current = null
+    }
   }
   disconnectInternalRef.current = disconnectInternal
 
@@ -837,6 +894,22 @@ ${manseText || '(만세력 없음)'}
     startSoundPlayedRef.current = false // 이번 연결에서 ready 시 종소리 1회 재생
     try {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return
+      const isiOS = isIOSDevice()
+
+      // iOS: 사용자 클릭 제스처 시점에 마이크 권한/녹음 컨텍스트를 먼저 준비해야
+      // 최신 기기에서 권한 팝업 지연/수음 불가 이슈를 줄일 수 있음.
+      if (isiOS) {
+        if (!iosRecorderContextRef.current) {
+          try {
+            iosRecorderContextRef.current = new AudioContext({ sampleRate: 16000 })
+          } catch {
+            // ignore
+          }
+        }
+        if (!iosMicStreamPromiseRef.current && navigator.mediaDevices?.getUserMedia) {
+          iosMicStreamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: true })
+        }
+      }
 
       // 브라우저 오디오 잠금 해제 (사용자 클릭 컨텍스트에서 호출되어야 함)
       // 방울소리를 volume=0으로 짧게 play → pause 하여 브라우저가 재생 허용하도록 등록
@@ -859,6 +932,45 @@ ${manseText || '(만세력 없음)'}
         await streamer.addWorklet<any>('vumeter-out', VolMeterWorket, (ev: any) => {
           setOutVolume(ev.data.volume)
         })
+        // AI 재생이 끝난 후에만 침묵깨기 타이머 시작 (AI가 말하는 중에는 미발동)
+        streamer.onComplete = () => {
+          isAiSpeakingRef.current = false
+          lastAiSpeechEndAtRef.current = Date.now()
+          clearSilenceTimer()
+          const sessionStart = sessionStartTimeRef.current
+          if (sessionStart != null && Date.now() - sessionStart < 5000) return
+          if (skipSilenceBreakRef.current) return
+          if (showConsultationEndModalRef.current) return
+          if (mutedRef.current) return
+          const doSend = sendSilenceBreakRef.current
+          const s1 = silenceBreakSecs.first * 1000
+          const s2 = silenceBreakSecs.second * 1000
+          const s3 = silenceBreakSecs.third * 1000
+          console.log('[침묵깨기] 타이머 설정 (AI 발화 종료 후)', { first: silenceBreakSecs.first, second: silenceBreakSecs.second, third: silenceBreakSecs.third }, '초')
+          silenceTimerRef.current = setTimeout(() => {
+            silenceTimerRef.current = null
+            if (showConsultationEndModalRef.current) return
+            doSend(silenceBreakSecs.first, () => {
+              if (showConsultationEndModalRef.current) return
+              if (!mutedRef.current && !silenceTimerRef.current) {
+                silenceTimerRef.current = setTimeout(() => {
+                  silenceTimerRef.current = null
+                  if (showConsultationEndModalRef.current) return
+                  doSend(silenceBreakSecs.second, () => {
+                    if (showConsultationEndModalRef.current) return
+                    if (!mutedRef.current && !silenceTimerRef.current) {
+                      silenceTimerRef.current = setTimeout(() => {
+                        silenceTimerRef.current = null
+                        if (showConsultationEndModalRef.current) return
+                        doSend(1, undefined)
+                      }, s3)
+                    }
+                  })
+                }, s2)
+              }
+            })
+          }, s1)
+        }
         streamerRef.current = streamer
 
         // 양방향 오디오 녹음 설정: AI 출력 + 마이크 → MediaRecorder
@@ -868,7 +980,9 @@ ${manseText || '(만세력 없음)'}
           // AI 출력(gainNode)을 녹음 destination에도 연결 (stop() 시 재연결도 자동)
           streamer.connectExtraDestination(dest)
           // 마이크 스트림을 AI 출력 AudioContext에 소스로 연결
-          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+          const micStream = iosMicStreamPromiseRef.current
+            ? await iosMicStreamPromiseRef.current
+            : await navigator.mediaDevices.getUserMedia({ audio: true })
           const micSource = outCtx.createMediaStreamSource(micStream)
           micSource.connect(dest) // 마이크 → 녹음 destination
           micSourceNodeRef.current = micSource
@@ -1051,9 +1165,23 @@ ${manseText || '(만세력 없음)'}
               sendGreet()
               setTimeout(sendGreet, 100)
               setTimeout(() => {
-                if (recorderRef.current && wsRef.current?.readyState === WebSocket.OPEN && !muted) {
-                  recorderRef.current.start().catch(() => {})
+                const startRecorder = async () => {
+                  if (!recorderRef.current || wsRef.current?.readyState !== WebSocket.OPEN || muted) return
+                  try {
+                    if (isIOSDevice()) {
+                      const primedStream = iosMicStreamPromiseRef.current
+                        ? await iosMicStreamPromiseRef.current
+                        : undefined
+                      await recorderRef.current.start(primedStream, iosRecorderContextRef.current ?? undefined)
+                      iosRecorderContextRef.current = null
+                    } else {
+                      await recorderRef.current.start()
+                    }
+                  } catch (e: any) {
+                    setError(e?.message || '마이크를 사용할 수 없습니다.')
+                  }
                 }
+                void startRecorder()
               }, 1500)
             })()
             return
@@ -1061,7 +1189,6 @@ ${manseText || '(만세력 없음)'}
           if (msg.type === 'audio' && msg.data) {
             clearSilenceTimer()
             const buf = base64ToArrayBuffer(msg.data)
-            if (audioTimeoutRef.current) { clearTimeout(audioTimeoutRef.current); audioTimeoutRef.current = null }
             if (!isAiSpeakingRef.current) {
               isAiSpeakingRef.current = true
               // 대화중 소리 (확률적, 목록 중 랜덤 1개)
@@ -1074,63 +1201,30 @@ ${manseText || '(만세력 없음)'}
                 chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
               }
             }
-            streamerRef.current?.addPCM16(new Uint8Array(buf))
+            const streamAndPlay = async () => {
+              const streamer = streamerRef.current
+              if (!streamer) return
+              if (isIOSDevice() && !iosContextWorkaroundDoneRef.current) {
+                iosContextWorkaroundDoneRef.current = true
+                const ctx = streamer.context
+                try {
+                  if (ctx.state === 'running') {
+                    await ctx.suspend()
+                    await ctx.resume()
+                  } else {
+                    await ctx.resume()
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+              try { await streamer.resume() } catch { /* ignore */ }
+              streamer.addPCM16(new Uint8Array(buf))
+            }
+            void streamAndPlay()
             // AI 오디오 청크 누적 (다시듣기용)
             audioChunksRef.current.push(msg.data)
-            // AI 발화 종료 감지: 500ms → 1500ms (청크 간 간격 500ms 초과 시 인사 중 오인 방지)
-            audioTimeoutRef.current = setTimeout(() => {
-              isAiSpeakingRef.current = false
-              audioTimeoutRef.current = null
-              lastAiSpeechEndAtRef.current = Date.now()
-              clearSilenceTimer()
-              // 첫 인사 직후에도 침묵 깨기 동작 — 세션 5초 미만만 제외(연결 준비+첫 오디오 구간)
-              const sessionStart = sessionStartTimeRef.current
-              if (sessionStart != null && Date.now() - sessionStart < 5000) {
-                console.log('[침묵깨기] 스킵: 세션 5초 미만', { elapsed: Date.now() - sessionStart })
-                return
-              }
-              // 5회 이상 방문 시 "오늘은 이제 그만!" 배웅 멘트 구간 — 침묵깨기 미발동
-              if (skipSilenceBreakRef.current) {
-                console.log('[침묵깨기] 스킵: 5회 이상 방문')
-                return
-              }
-              // 상담 종료 팝업이 떠 있으면 침묵깨기 미발동
-              if (showConsultationEndModalRef.current) {
-                console.log('[침묵깨기] 스킵: 상담 종료 팝업 표시 중')
-                return
-              }
-              if (!mutedRef.current) {
-                const doSend = sendSilenceBreakRef.current
-                const s1 = silenceBreakSecs.first * 1000
-                const s2 = silenceBreakSecs.second * 1000
-                const s3 = silenceBreakSecs.third * 1000
-                // 재촉형 → 관찰형 → 환기형 (최대 3회). 어드민 voice_silence_break_config 사용 (예: "3,5,5")
-                console.log('[침묵깨기] 타이머 설정', { first: silenceBreakSecs.first, second: silenceBreakSecs.second, third: silenceBreakSecs.third }, '초')
-                silenceTimerRef.current = setTimeout(() => {
-                  silenceTimerRef.current = null
-                  if (showConsultationEndModalRef.current) return
-                  doSend(silenceBreakSecs.first, () => {
-                    if (showConsultationEndModalRef.current) return
-                    if (!mutedRef.current && !silenceTimerRef.current) {
-                      silenceTimerRef.current = setTimeout(() => {
-                        silenceTimerRef.current = null
-                        if (showConsultationEndModalRef.current) return
-                        doSend(silenceBreakSecs.second, () => {
-                          if (showConsultationEndModalRef.current) return
-                          if (!mutedRef.current && !silenceTimerRef.current) {
-                            silenceTimerRef.current = setTimeout(() => {
-                              silenceTimerRef.current = null
-                              if (showConsultationEndModalRef.current) return
-                              doSend(1, undefined)
-                            }, s3)
-                          }
-                        })
-                      }, s2)
-                    }
-                  })
-                }, s1)
-              }
-            }, 1500)
+            // 침묵깨기 타이머는 streamer.onComplete에서 시작 (재생이 끝난 후)
             return
           }
           if (msg.type === 'text' && msg.text) {
