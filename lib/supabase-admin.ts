@@ -93,6 +93,8 @@ export interface ContentData {
   ending_book_cover_thumbnail_video?: string // 엔딩북커버 동영상 썸네일 (WebM 파일명, 확장자 제외)
   // 음성형 전용 필드
   voice_model?: string
+  /** GPT Realtime 전용 음성 (alloy, echo, fable, onyx, nova, shimmer, cedar, marin 등) */
+  voice_gpt_name?: string
   voice_advisor_video_url?: string
   voice_gender?: string
   voice_style?: string

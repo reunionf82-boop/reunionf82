@@ -891,11 +891,12 @@ ${persona ? `\n[페르소나]\n${persona}\n` : ''}
             return
           }
           if (msg.type === 'error') {
+            const errMsg = String(msg.message || 'Live 연결 오류')
+            if (/already has an active response|active response in progress/i.test(errMsg)) return
             if (pingIntervalRef.current) {
               clearInterval(pingIntervalRef.current)
               pingIntervalRef.current = null
             }
-            const errMsg = String(msg.message || 'Live 연결 오류')
             const hint = msg.hint ? ` ${msg.hint}` : ''
             setWsLastServerError(errMsg)
             setError(errMsg + hint)

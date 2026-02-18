@@ -26,6 +26,27 @@ const PORT = Number(process.env.VERTEX_LIVE_PROXY_PORT || 4001)
 const PROJECT = String(process.env.GOOGLE_CLOUD_PROJECT || '').trim()
 const LOCATION = String(process.env.GOOGLE_CLOUD_LOCATION || 'asia-northeast3').trim()
 
+const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '').trim()
+
+function isGptModel(m) {
+  return /^gpt/i.test(String(m || '').trim())
+}
+function mapToOpenAiModel(m) {
+  const s = String(m || '').trim().toLowerCase()
+  if (s === 'gpt-realtime' || s === 'gpt-4o-realtime') return 'gpt-4o-realtime-preview-2024-12-17'
+  if (s.startsWith('gpt-4o-realtime-preview')) return m
+  return 'gpt-4o-realtime-preview-2024-12-17'
+}
+const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'ash', 'ballad', 'coral', 'sage', 'verse', 'cedar', 'marin']
+
+function mapVoiceToOpenAi(v) {
+  const s = String(v || '').trim().toLowerCase()
+  if (OPENAI_VOICES.includes(s)) return s
+  if (['fenrir', 'puck'].includes(s)) return 'cedar'
+  if (['aoede', 'charon', 'kore'].includes(s)) return 'marin'
+  return 'cedar'
+}
+
 if (!PROJECT) {
   console.error('GOOGLE_CLOUD_PROJECT 환경 변수가 필요합니다.')
   process.exit(1)
@@ -55,6 +76,8 @@ const normalizeConfig = (cfg) => {
 
 wss.on('connection', (ws) => {
   let liveSession = null
+  let openAiWs = null
+  let upstreamMode = 'gemini'
   let connected = false
 
   const send = (payload) => {
@@ -151,6 +174,84 @@ wss.on('connection', (ws) => {
         const model = String(parsed.model || '').replace(/^models\//, '')
         const region = String(parsed.region || '').trim() || LOCATION
         console.log('[vertex-live-proxy] init model=%s region=%s', model, region)
+
+        if (isGptModel(model)) {
+          upstreamMode = 'gpt'
+          if (!OPENAI_API_KEY) {
+            send({ type: 'error', message: 'OPENAI_API_KEY가 설정되지 않았습니다.' })
+            return
+          }
+          const rawConfig = parsed.config || {}
+          const sysParts = rawConfig?.systemInstruction?.parts
+          const instructions = sysParts?.[0]?.text ? String(sysParts[0].text) : ''
+          const geminiVoice = String(rawConfig?.speechConfig?.voiceConfig?.prebuiltVoiceConfig?.voiceName || '')
+          const openAiVoice = mapVoiceToOpenAi(geminiVoice)
+          const openAiModel = mapToOpenAiModel(model)
+          const wsUrl = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(openAiModel)}`
+          console.log('[vertex-live-proxy] GPT branch connecting to OpenAI')
+          try {
+            openAiWs = new WebSocket(wsUrl, {
+              headers: {
+                Authorization: `Bearer ${OPENAI_API_KEY}`,
+                'OpenAI-Beta': 'realtime=v1',
+              },
+            })
+          } catch (e) {
+            send({ type: 'error', message: e?.message || 'OpenAI 연결 실패' })
+            return
+          }
+          openAiWs.on('open', () => {
+            connected = true
+            send({ type: 'ready' })
+            try {
+              openAiWs.send(JSON.stringify({
+                type: 'session.update',
+                session: {
+                  instructions,
+                  voice: openAiVoice,
+                  modalities: ['text', 'audio'],
+                  input_audio_format: 'pcm16',
+                  output_audio_format: 'pcm16',
+                  input_audio_transcription: { model: 'gpt-4o-mini-transcribe' },
+                  turn_detection: { type: 'server_vad', create_response: true, interrupt_response: true },
+                },
+              }))
+            } catch (e) {
+              send({ type: 'error', message: e?.message || 'OpenAI 세션 설정 실패' })
+            }
+          })
+          openAiWs.on('message', (raw) => {
+            try {
+              const evt = JSON.parse(String(raw || '{}'))
+              const t = String(evt?.type || '')
+              if (t === 'response.audio.delta' && evt?.delta) send({ type: 'audio', data: evt.delta })
+              else if (t === 'response.output_text.delta' && evt?.delta?.trim()) send({ type: 'text', text: evt.delta })
+              else if (t === 'response.audio_transcript.done' && evt?.transcript?.trim()) send({ type: 'transcript', role: 'assistant', text: evt.transcript.trim() })
+              else if (t === 'conversation.item.input_audio_transcription.completed' && evt?.transcript?.trim()) send({ type: 'transcript', role: 'user', text: evt.transcript.trim() })
+              else if (t === 'input_audio_buffer.speech_started') send({ type: 'interrupted' })
+              else if (t === 'error') send({ type: 'error', message: evt?.error?.message || evt?.message || 'OpenAI 오류' })
+            } catch {
+              // ignore
+            }
+          })
+          openAiWs.on('error', (e) => {
+            send({ type: 'error', message: e?.message || 'OpenAI 오류' })
+          })
+          openAiWs.on('unexpected-response', (_req, res) => {
+            const body = []
+            res.on?.('data', (c) => body.push(c))
+            res.on?.('end', () => {
+              const txt = body.length ? Buffer.concat(body).toString('utf8').slice(0, 300) : ''
+              send({ type: 'error', message: `OpenAI 핸드셰이크 실패 (${res?.statusCode || ''}) ${txt}` })
+            })
+          })
+          openAiWs.on('close', () => {
+            connected = false
+            send({ type: 'error', message: 'OpenAI Realtime 연결 종료' })
+          })
+          return
+        }
+
         try {
           const aiClient = new GoogleGenAI({
             vertexai: true,
@@ -170,11 +271,23 @@ wss.on('connection', (ws) => {
         }
         return
       }
+      if (parsed.type === 'audio' && connected && upstreamMode === 'gpt' && openAiWs?.readyState === WebSocket.OPEN) {
+        openAiWs.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: parsed.data }))
+        return
+      }
       if (parsed.type === 'audio' && connected && liveSession) {
         const mimeType = parsed.mimeType || 'audio/pcm;rate=16000'
         liveSession.sendRealtimeInput({
           audio: { data: parsed.data, mimeType },
         })
+        return
+      }
+      if (parsed.type === 'text' && connected && upstreamMode === 'gpt' && openAiWs?.readyState === WebSocket.OPEN) {
+        openAiWs.send(JSON.stringify({
+          type: 'conversation.item.create',
+          item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: parsed.text }] },
+        }))
+        openAiWs.send(JSON.stringify({ type: 'response.create', response: { modalities: ['text', 'audio'] } }))
         return
       }
       // 텍스트 메시지 → Gemini Live sendClientContent (AI가 먼저 말하도록 트리거)
@@ -197,7 +310,13 @@ wss.on('connection', (ws) => {
     } catch {
       // ignore
     }
+    try {
+      if (openAiWs && openAiWs.readyState === WebSocket.OPEN) openAiWs.close()
+    } catch {
+      // ignore
+    }
   })
 })
 
 console.log(`[vertex-live-proxy] ws server listening on :${PORT}`)
+console.log('[vertex-live-proxy] GPT 모델 사용 시 이 서버를 쓰세요. .env.local에 NEXT_PUBLIC_VERTEX_LIVE_PROXY_URL=http://localhost:' + PORT + ' 추가 후 npm run vertex-proxy 실행')

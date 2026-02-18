@@ -51,9 +51,15 @@ function normalizeLiveModel(base: string) {
   const trimmed = String(base || '').trim()
   if (!trimmed) return LIVE_MODEL_FALLBACK
   const model = trimmed.replace(/^models\//, '')
+  // GPT 계열은 그대로 전달 (외부 프록시/서버 설정에서 처리)
+  if (/^gpt/i.test(model)) return model
   if (model.includes('-exp')) return LIVE_MODEL_FALLBACK
   if (model.includes('native-audio')) return model
   return LIVE_MODEL_FALLBACK
+}
+
+function isGptRealtimeModel(model: string) {
+  return /^gpt/i.test(String(model || '').trim())
 }
 
 function isIOSDevice() {
@@ -183,12 +189,14 @@ export function useVoiceResult() {
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const wasConnectedRef = useRef(false)
   const autoReconnectCountRef = useRef(0)
+  const initRetryCountRef = useRef(0)
   const autoReconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionStartTimeRef = useRef<number | null>(null)
   const failoverCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const plannedFailoverRef = useRef(false)
   const currentRegionRef = useRef(PRIMARY_REGION)
   const failoverRegionRef = useRef<string | null>(null)
+  const lastSocketErrorRef = useRef<string>('')
   const conversationContextForReconnectRef = useRef<string | null>(null)
   const messagesRef = useRef<Msg[]>([])
   const pendingWsRef = useRef<WebSocket | null>(null)
@@ -614,8 +622,11 @@ ${manseText || '(만세력 없음)'}
   }, [contentData, manseText, visitCountToday])
 
   const voiceName = useMemo(() => {
+    if (isGptRealtimeModel(model)) {
+      return String(contentData?.voice_gpt_name || 'alloy').trim().toLowerCase()
+    }
     return String(contentData?.voice_name || 'Aoede').trim()
-  }, [contentData])
+  }, [contentData, model])
 
   /* ── 타이머 ────────────────────────────── */
   const startTimer = useCallback(() => {
@@ -837,6 +848,7 @@ ${manseText || '(만세력 없음)'}
       if (envProxy.startsWith('http://') || envProxy.startsWith('https://')) return envProxy.replace(/^http/, 'ws')
       return `${window.location.origin}${envProxy.startsWith('/') ? '' : '/'}${envProxy}`.replace(/^http/, 'ws')
     }
+    // envProxy 미설정 시: GPT는 live-proxy, Gemini는 live-proxy (Next.js는 upgrade 시 socket.end()로 1006 → vertex-proxy 사용 권장)
     return `${window.location.origin.replace(/^http/, 'ws')}/api/voice-mvp/live-proxy`
   }
 
@@ -893,7 +905,11 @@ ${manseText || '(만세력 없음)'}
     setError('')
     startSoundPlayedRef.current = false // 이번 연결에서 ready 시 종소리 1회 재생
     try {
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return
+      // 중복 connect 방지: CONNECTING 상태에서도 재호출되면 소켓이 교체되어 init 누락 가능
+      if (
+        wsRef.current &&
+        (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)
+      ) return
       const isiOS = isIOSDevice()
 
       // iOS: 사용자 클릭 제스처 시점에 마이크 권한/녹음 컨텍스트를 먼저 준비해야
@@ -1052,12 +1068,14 @@ ${manseText || '(만세력 없음)'}
         proactivity: { proactiveAudio: true },
       }
 
+      const wsUrl = resolveWsUrl()
       const envProxy = String(process.env.NEXT_PUBLIC_VERTEX_LIVE_PROXY_URL || '').trim()
-      if (!envProxy) {
+      const usesInternalProxy = wsUrl.includes('/api/voice-mvp/live-proxy')
+      // Next API live-proxy는 upgrade 핸들러 등록을 위해 HTTP 초기화 호출이 선행되어야 함.
+      if (!envProxy || usesInternalProxy) {
         const initUrl = `${window.location.origin}/api/voice-mvp/live-proxy`
         try { await fetch(initUrl, { method: 'GET', cache: 'no-store' }) } catch (e: any) { throw new Error(e?.message || 'Live 프록시 초기화 실패') }
       }
-      const wsUrl = resolveWsUrl()
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
@@ -1067,10 +1085,10 @@ ${manseText || '(만세력 없음)'}
           const region = failoverRegionRef.current || currentRegionRef.current
           if (failoverRegionRef.current) failoverRegionRef.current = null
           currentRegionRef.current = region
-          setTimeout(() => {
-            try { ws.send(JSON.stringify({ type: 'init', model, config, region })) }
-            catch (e: any) { setError(e?.message || 'init 전송 실패') }
-          }, 60)
+          // init 지연 전송은 일부 환경에서 누락 레이스가 발생할 수 있어 onopen 즉시 전송
+          if (wsRef.current !== ws) return
+          if (ws.readyState !== WebSocket.OPEN) return
+          ws.send(JSON.stringify({ type: 'init', model, config, region }))
         } catch (e: any) { setError(e?.message || 'init 전송 실패') }
       }
 
@@ -1078,8 +1096,10 @@ ${manseText || '(만세력 없음)'}
         try {
           const msg = JSON.parse(String(event.data || '{}'))
           if (msg.type === 'ready') {
+            lastSocketErrorRef.current = ''
             wasConnectedRef.current = true
             autoReconnectCountRef.current = 0
+            initRetryCountRef.current = 0
             sessionStartTimeRef.current = Date.now()
             etiquetteViolationCountRef.current = 0
             currentUserTurnViolationsRef.current = new Set()
@@ -1290,6 +1310,9 @@ ${manseText || '(만세력 없음)'}
           }
           if (msg.type === 'error') {
             const errMsg = String(msg.message || 'Live 연결 오류')
+            lastSocketErrorRef.current = errMsg
+            // "already has an active response" → AI 말하는 중 재요청, 무시 (대화는 계속됨)
+            if (/already has an active response|active response in progress/i.test(errMsg)) return
             setError(errMsg)
             if (msg.code === 'SESSION_END') wsRef.current?.close()
             return
@@ -1298,6 +1321,7 @@ ${manseText || '(만세력 없음)'}
       }
       ws.onerror = () => { setError('Live 연결 오류') }
       ws.onclose = (event) => {
+        const code = typeof (event as any)?.code === 'number' ? (event as any).code : null
         clearSilenceTimer()
         if (failoverCheckIntervalRef.current) { clearInterval(failoverCheckIntervalRef.current); failoverCheckIntervalRef.current = null }
         sessionStartTimeRef.current = null
@@ -1309,7 +1333,12 @@ ${manseText || '(만세력 없음)'}
         if (manualDisconnectRef.current) { manualDisconnectRef.current = false; wasConnectedRef.current = false; return }
         if (plannedFailoverRef.current) return
         if (closingForSwapRef.current) { closingForSwapRef.current = false; return }
-        setError('연결이 종료되었습니다.')
+        const reason = String((event as any)?.reason || '').trim()
+        const closeMsg =
+          lastSocketErrorRef.current ||
+          (reason ? `연결 종료: ${reason}${code != null ? ` (code ${code})` : ''}` : `연결이 종료되었습니다.${code != null ? ` (code ${code})` : ''}`)
+        setError(closeMsg)
+        lastSocketErrorRef.current = ''
 
         if (wasConnectedRef.current && autoReconnectCountRef.current < AUTO_RECONNECT_MAX) {
           const attempt = autoReconnectCountRef.current
@@ -1321,6 +1350,14 @@ ${manseText || '(만세력 없음)'}
             wsRef.current = null
             connect()
           }, delay)
+        } else if (!wasConnectedRef.current && initRetryCountRef.current < 1) {
+          initRetryCountRef.current += 1
+          setError('연결이 끊겼습니다. 2초 후 재연결 중...')
+          autoReconnectTimeoutRef.current = setTimeout(() => {
+            autoReconnectTimeoutRef.current = null
+            wsRef.current = null
+            connect()
+          }, 2000)
         }
       }
 

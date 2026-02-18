@@ -30,7 +30,7 @@ type ClientTextMessage = {
 type ClientMessage = ClientInitMessage | ClientAudioMessage | ClientTextMessage | { type: 'disconnect' } | { type: 'ping' }
 
 type AnyServerMessage = {
-  type: 'audio' | 'text' | 'interrupted' | 'error' | 'ready' | 'transcript'
+  type: 'audio' | 'text' | 'interrupted' | 'error' | 'ready' | 'transcript' | 'connecting'
   data?: string
   text?: string
   message?: string
@@ -54,6 +54,29 @@ const getVertexClient = () => {
     project,
     location,
   })
+}
+
+const getOpenAiApiKey = () => {
+  return String(process.env.OPENAI_API_KEY || '').trim()
+}
+
+const isGptRealtimeModel = (model: string) => /^gpt/i.test(String(model || '').trim())
+
+const mapToOpenAiRealtimeModel = (model: string): string => {
+  const m = String(model || '').trim().toLowerCase()
+  if (m === 'gpt-realtime' || m === 'gpt-4o-realtime') return 'gpt-4o-realtime-preview-2024-12-17'
+  if (m.startsWith('gpt-4o-realtime-preview')) return m
+  return 'gpt-4o-realtime-preview-2024-12-17'
+}
+
+const OPENAI_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer', 'ash', 'ballad', 'coral', 'sage', 'verse', 'cedar', 'marin']
+
+const mapVoiceNameToOpenAi = (voiceName: string | undefined) => {
+  const v = String(voiceName || '').trim().toLowerCase()
+  if (OPENAI_VOICES.includes(v)) return v
+  if (v === 'fenrir' || v === 'puck') return 'cedar'
+  if (v === 'aoede' || v === 'charon' || v === 'kore') return 'marin'
+  return 'cedar'
 }
 
 const normalizeConfig = (cfg: LiveConnectConfig): LiveConnectConfig => {
@@ -114,6 +137,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       wss.on('connection', async (ws: WsWithSession) => {
         console.log('[live-proxy] ws connection opened')
         let liveSession: any = null
+        let openAiSessionWs: WebSocket | null = null
+        let upstreamMode: 'gemini' | 'gpt' = 'gemini'
         let connected = false
         let connectTimeout: NodeJS.Timeout | null = null
         let initTimeout: NodeJS.Timeout | null = null
@@ -245,46 +270,228 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
                 clearTimeout(initTimeout)
                 initTimeout = null
               }
-              const client = getVertexClient()
               const model = String(parsed.model || '').replace(/^models\//, '')
               const config = normalizeConfig(parsed.config || {})
-              try {
-                const sysParts = (config as any)?.systemInstruction?.parts
-                const sysLen = sysParts?.[0]?.text ? String(sysParts[0].text).length : 0
-                console.log('[live-proxy] live.connect start', {
-                  model,
-                  responseModalities: config?.responseModalities,
-                  hasSystemInstruction: !!(config as any)?.systemInstruction,
-                  systemInstructionLen: sysLen,
-                })
-                liveSession = await client.live.connect({ model, config, callbacks })
-                console.log('[live-proxy] live.connect resolved')
-                if (!connected) {
-                  connectTimeout = setTimeout(() => {
-                    console.error('[live-proxy] live connect timeout')
-                    send({ type: 'error', message: 'Live 연결 타임아웃' })
-                    try {
-                      ws.close()
-                    } catch {
-                      // ignore
-                    }
-                  }, 8000)
+              if (isGptRealtimeModel(model)) {
+                console.log('[live-proxy] gpt branch entered', { model })
+                upstreamMode = 'gpt'
+                const apiKey = getOpenAiApiKey()
+                if (!apiKey) {
+                  console.error('[live-proxy] OPENAI_API_KEY empty - returning')
+                  send({ type: 'error', message: 'OPENAI_API_KEY가 설정되지 않았습니다.' })
+                  return
                 }
-              } catch (e: any) {
-                console.error('[live-proxy] live.connect error', e)
-                send({ type: 'error', message: e?.message || 'Live 연결 실패' })
+                const sysParts = (config as any)?.systemInstruction?.parts
+                const instructions = sysParts?.[0]?.text ? String(sysParts[0].text) : ''
+                const geminiVoiceName = String(
+                  (config as any)?.speechConfig?.voiceConfig?.prebuiltVoiceConfig?.voiceName || ''
+                )
+                const openAiVoice = mapVoiceNameToOpenAi(geminiVoiceName)
+                const openAiModel = mapToOpenAiRealtimeModel(model)
+                send({ type: 'connecting' })
+                const wsUrl = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(openAiModel)}`
+                console.log('[live-proxy] openai connecting', { model: openAiModel, hasKey: !!apiKey })
+                try {
+                  openAiSessionWs = new WebSocket(wsUrl, {
+                    headers: {
+                      Authorization: `Bearer ${apiKey}`,
+                      'OpenAI-Beta': 'realtime=v1',
+                    },
+                  })
+                } catch (e: any) {
+                  console.error('[live-proxy] openai ws init error', e)
+                  send({ type: 'error', message: e?.message || 'OpenAI Realtime 연결 실패' })
+                  return
+                }
+
+                connectTimeout = setTimeout(() => {
+                  console.error('[live-proxy] openai realtime connect timeout')
+                  send({ type: 'error', message: 'OpenAI Realtime 연결 타임아웃' })
+                  try { ws.close() } catch { /* ignore */ }
+                }, 10000)
+
+                openAiSessionWs.on('open', () => {
+                  console.log('[live-proxy] openai upstream connected')
+                  connected = true
+                  if (connectTimeout) {
+                    clearTimeout(connectTimeout)
+                    connectTimeout = null
+                  }
+                  send({ type: 'ready' })
+                  try {
+                    openAiSessionWs?.send(
+                      JSON.stringify({
+                        type: 'session.update',
+                        session: {
+                          instructions,
+                          voice: openAiVoice,
+                          modalities: ['text', 'audio'],
+                          input_audio_format: 'pcm16',
+                          output_audio_format: 'pcm16',
+                          input_audio_transcription: { model: 'gpt-4o-mini-transcribe' },
+                          turn_detection: {
+                            type: 'server_vad',
+                            create_response: true,
+                            interrupt_response: true,
+                          },
+                        },
+                      })
+                    )
+                  } catch (e: any) {
+                    send({ type: 'error', message: e?.message || 'OpenAI 세션 설정 실패' })
+                  }
+                })
+
+                openAiSessionWs.on('message', (rawUpstream: any) => {
+                  try {
+                    const evt = JSON.parse(String(rawUpstream || '{}')) as any
+                    const type = String(evt?.type || '')
+                    if (type === 'response.audio.delta' && typeof evt?.delta === 'string') {
+                      send({ type: 'audio', data: evt.delta })
+                      return
+                    }
+                    if (type === 'response.output_text.delta' && typeof evt?.delta === 'string' && evt.delta.trim()) {
+                      send({ type: 'text', text: evt.delta })
+                      return
+                    }
+                    if (type === 'response.audio_transcript.done' && typeof evt?.transcript === 'string' && evt.transcript.trim()) {
+                      const rawText = evt.transcript.trim()
+                      ;(async () => {
+                        let textToSend = rawText
+                        if (hasNonKoreanScript(rawText)) {
+                          try {
+                            const normalized = await normalizeVoiceMessagesToKorean([{ role: 'assistant', text: rawText }])
+                            textToSend = normalized[0]?.text ?? rawText
+                          } catch {
+                            // ignore
+                          }
+                        }
+                        send({ type: 'transcript', role: 'assistant', text: textToSend })
+                      })()
+                      return
+                    }
+                    if (type === 'conversation.item.input_audio_transcription.completed' && typeof evt?.transcript === 'string' && evt.transcript.trim()) {
+                      const rawText = evt.transcript.trim()
+                      ;(async () => {
+                        let textToSend = rawText
+                        if (hasNonKoreanScript(rawText)) {
+                          try {
+                            const normalized = await normalizeVoiceMessagesToKorean([{ role: 'user', text: rawText }])
+                            textToSend = normalized[0]?.text ?? rawText
+                          } catch {
+                            // ignore
+                          }
+                        }
+                        send({ type: 'transcript', role: 'user', text: textToSend })
+                      })()
+                      return
+                    }
+                    if (type === 'input_audio_buffer.speech_started') {
+                      send({ type: 'interrupted' })
+                      return
+                    }
+                    if (type === 'error') {
+                      const errMsg = String(evt?.error?.message || evt?.message || 'OpenAI Realtime 오류')
+                      send({ type: 'error', message: errMsg })
+                    }
+                  } catch (e: any) {
+                    console.error('[live-proxy] openai message parse error', e)
+                  }
+                })
+
+                openAiSessionWs.on('error', (e: any) => {
+                  console.error('[live-proxy] openai realtime error', e?.message || e, 'stack:', (e as Error)?.stack?.slice?.(0, 200))
+                  send({ type: 'error', message: e?.message || 'OpenAI Realtime 오류' })
+                })
+
+                openAiSessionWs.on('unexpected-response', (_request: any, response: any) => {
+                  const statusCode = response?.statusCode
+                  const statusMessage = response?.statusMessage || ''
+                  console.error('[live-proxy] openai unexpected-response (immediate)', statusCode, statusMessage)
+                  try {
+                    const chunks: Buffer[] = []
+                    response?.on?.('data', (c: Buffer) => chunks.push(c))
+                    response?.on?.('end', () => {
+                      const body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : ''
+                      const tail = body ? ` - ${body.slice(0, 300)}` : ''
+                      const msg = `OpenAI Realtime 핸드셰이크 실패 (${statusCode || 'unknown'} ${statusMessage})${tail}`
+                      console.error('[live-proxy] openai unexpected-response', msg)
+                      send({ type: 'error', message: msg })
+                    })
+                  } catch (e: any) {
+                    send({ type: 'error', message: e?.message || 'OpenAI Realtime 핸드셰이크 실패' })
+                  }
+                })
+
+                openAiSessionWs.on('close', (code: number, reason: Buffer) => {
+                  connected = false
+                  const reasonText = reason ? reason.toString() : ''
+                  console.log('[live-proxy] openai upstream closed', { code, reason: reasonText })
+                  const msg = reasonText
+                    ? `OpenAI Realtime 연결 종료: ${reasonText} (code ${code})`
+                    : `OpenAI Realtime 연결 종료 (code ${code})`
+                  send({ type: 'error', message: msg })
+                })
+              } else {
+                upstreamMode = 'gemini'
+                const client = getVertexClient()
+                try {
+                  const sysParts = (config as any)?.systemInstruction?.parts
+                  const sysLen = sysParts?.[0]?.text ? String(sysParts[0].text).length : 0
+                  console.log('[live-proxy] live.connect start', {
+                    model,
+                    responseModalities: config?.responseModalities,
+                    hasSystemInstruction: !!(config as any)?.systemInstruction,
+                    systemInstructionLen: sysLen,
+                  })
+                  liveSession = await client.live.connect({ model, config, callbacks })
+                  console.log('[live-proxy] live.connect resolved')
+                  if (!connected) {
+                    connectTimeout = setTimeout(() => {
+                      console.error('[live-proxy] live connect timeout')
+                      send({ type: 'error', message: 'Live 연결 타임아웃' })
+                      try {
+                        ws.close()
+                      } catch {
+                        // ignore
+                      }
+                    }, 8000)
+                  }
+                } catch (e: any) {
+                  console.error('[live-proxy] live.connect error', e)
+                  send({ type: 'error', message: e?.message || 'Live 연결 실패' })
+                }
               }
               return
             }
-            if (parsed.type === 'audio' && connected && liveSession) {
+            if (parsed.type === 'audio' && connected && upstreamMode === 'gpt' && openAiSessionWs?.readyState === WebSocket.OPEN) {
+              openAiSessionWs.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: parsed.data }))
+              return
+            }
+            if (parsed.type === 'audio' && connected && upstreamMode === 'gemini' && liveSession) {
               const mimeType = parsed.mimeType || 'audio/pcm;rate=16000'
               liveSession.sendRealtimeInput({
                 audio: { data: parsed.data, mimeType },
               })
               return
             }
+            if (parsed.type === 'text' && connected && upstreamMode === 'gpt' && openAiSessionWs?.readyState === WebSocket.OPEN) {
+              openAiSessionWs.send(JSON.stringify({
+                type: 'conversation.item.create',
+                item: {
+                  type: 'message',
+                  role: 'user',
+                  content: [{ type: 'input_text', text: parsed.text }],
+                },
+              }))
+              openAiSessionWs.send(JSON.stringify({
+                type: 'response.create',
+                response: { modalities: ['text', 'audio'] },
+              }))
+              return
+            }
             // 텍스트 메시지 → Gemini Live sendClientContent (AI가 먼저 말하도록 트리거)
-            if (parsed.type === 'text' && connected && liveSession) {
+            if (parsed.type === 'text' && connected && upstreamMode === 'gemini' && liveSession) {
               console.log('[live-proxy] sendClientContent text:', String(parsed.text || '').slice(0, 80))
               liveSession.sendClientContent({ turns: [{ role: 'user', parts: [{ text: parsed.text }] }], turnComplete: true })
               return
@@ -316,6 +523,13 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
           }
           try {
             liveSession?.close?.()
+          } catch {
+            // ignore
+          }
+          try {
+            if (openAiSessionWs && openAiSessionWs.readyState === WebSocket.OPEN) {
+              openAiSessionWs.close()
+            }
           } catch {
             // ignore
           }

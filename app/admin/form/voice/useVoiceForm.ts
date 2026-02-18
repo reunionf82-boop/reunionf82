@@ -32,6 +32,8 @@ export interface VoiceFormData {
   recommendation: string
   menu_composition: string
   voice_model: string
+  /** GPT Realtime 전용 음성 (alloy, echo, fable, onyx, nova, shimmer, cedar, marin 등) */
+  voice_gpt_name: string
   voice_advisor_video_url: string
   voice_gender: 'female' | 'male'
   voice_style: string
@@ -99,7 +101,8 @@ const INITIAL_FORM: VoiceFormData = {
   introduction: '',
   recommendation: '',
   menu_composition: '',
-  voice_model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+  voice_model: 'gpt-4o-realtime-preview',
+  voice_gpt_name: 'alloy',
   voice_advisor_video_url: '',
   voice_gender: 'female',
   voice_style: 'warm',
@@ -223,7 +226,8 @@ export function useVoiceForm() {
           introduction: c.introduction ?? '',
           recommendation: c.recommendation ?? '',
           menu_composition: c.menu_composition ?? '',
-          voice_model: c.voice_model ?? 'gemini-2.5-flash-native-audio-preview-12-2025',
+          voice_model: c.voice_model ?? 'gpt-4o-realtime-preview',
+          voice_gpt_name: c.voice_gpt_name ?? 'alloy',
           voice_advisor_video_url: c.voice_advisor_video_url ?? '',
           voice_gender: c.voice_gender === 'male' ? 'male' : 'female',
           voice_style: c.voice_style ?? c.voice_tendency ?? 'warm',

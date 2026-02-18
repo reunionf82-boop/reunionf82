@@ -24,6 +24,46 @@ const VOICE_NAMES = [
   { value: 'Puck', label: 'Puck (남성향)' },
 ]
 
+const VOICE_CHAT_MODELS = [
+  { id: 'gemini-2.5-flash-native-audio-preview-12-2025', label: 'Gemini (Native Audio 최신)' },
+  { id: 'gpt-4o-realtime-preview', label: 'GPT Realtime (최신)' },
+]
+
+/** OpenAI Realtime API 음성 (GPT 전용) */
+const VOICE_GPT_NAMES = [
+  { value: 'alloy', label: 'Alloy (합금, 중성적·균형)' },
+  { value: 'echo', label: 'Echo (에코, 선명·명료)' },
+  { value: 'fable', label: 'Fable (동화, 이야기 같은 부드러움)' },
+  { value: 'onyx', label: 'Onyx (흑옥, 깊고 낮은)' },
+  { value: 'nova', label: 'Nova (초신성, 밝고 선명)' },
+  { value: 'shimmer', label: 'Shimmer (반짝임, 밝고 가벼운)' },
+  { value: 'ash', label: 'Ash (재, 차분하고 담백)' },
+  { value: 'ballad', label: 'Ballad (발라드, 감성적·서정적)' },
+  { value: 'coral', label: 'Coral (산호, 따뜻하고 부드러운)' },
+  { value: 'sage', label: 'Sage (현자, 지혜롭고 차분한)' },
+  { value: 'verse', label: 'Verse (운율, 리듬감 있는)' },
+  { value: 'cedar', label: 'Cedar (삼나무, 차분하고 깊은, 추천)' },
+  { value: 'marin', label: 'Marin (바다, 부드럽고 선명한, 추천)' },
+]
+
+function isGptVoiceModel(stored: string): boolean {
+  const s = String(stored || '').trim()
+  return /^gpt(-4o)?-realtime/i.test(s)
+}
+
+/** DB 저장값이 라디오 id와 동일/동등한지 판별 (gpt-realtime, gpt-4o-realtime-preview-2024-12-17 등 변형 포함) */
+function voiceModelMatchesRadio(stored: string, radioId: string): boolean {
+  const s = String(stored || '').trim()
+  if (s === radioId) return true
+  if (radioId === 'gpt-4o-realtime-preview') {
+    return /^gpt(-4o)?-realtime(-preview)?(-\d{4}-\d{2}-\d{2})?$/i.test(s) || s.startsWith('gpt-4o-realtime')
+  }
+  if (radioId === 'gemini-2.5-flash-native-audio-preview-12-2025') {
+    return s.startsWith('gemini-2') || s.includes('gemini-2.5-flash')
+  }
+  return false
+}
+
 export default function VoiceAdminForm() {
   const h = useVoiceForm()
 
@@ -112,11 +152,47 @@ export default function VoiceAdminForm() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
                 <h2 className="font-bold mb-4">음성대화 모델</h2>
-                <div>
-                  <label className="block text-sm text-gray-300 mb-1">Gemini Live 모델명</label>
-                  <input value={h.form.voice_model} onChange={(e) => h.setForm((f) => ({ ...f, voice_model: e.target.value }))}
-                    className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm" placeholder="gemini-2.5-flash-native-audio-preview-12-2025" />
-                  <p className="mt-1 text-xs text-gray-500">native-audio 지원 모델만 사용 가능합니다.</p>
+                <div className="space-y-3">
+                  <label className="block text-sm text-gray-300 mb-1">모델 선택</label>
+                  <div className="space-y-2">
+                    {VOICE_CHAT_MODELS.map((m) => (
+                      <label key={m.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-200">
+                        <input
+                          type="radio"
+                          name="voice_model"
+                          checked={voiceModelMatchesRadio(h.form.voice_model, m.id)}
+                          onChange={() => h.setForm((f) => ({ ...f, voice_model: m.id }))}
+                        />
+                        <span>{m.label}</span>
+                        <span className="text-xs text-gray-500">({m.id})</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">직접 입력 (커스텀 모델)</label>
+                    <input
+                      value={h.form.voice_model}
+                      onChange={(e) => h.setForm((f) => ({ ...f, voice_model: e.target.value }))}
+                      className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm"
+                      placeholder="예: gemini-2.5-flash-native-audio-preview-12-2025 또는 gpt-4o-realtime-preview"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">Gemini/GPT 중 하나를 선택하거나 커스텀 모델명을 직접 입력할 수 있습니다.</p>
+                  {isGptVoiceModel(h.form.voice_model) && (
+                    <div className="mt-4 pt-4 border-t border-gray-600">
+                      <label className="block text-sm text-gray-300 mb-1">GPT 전용 음성</label>
+                      <select
+                        value={h.form.voice_gpt_name}
+                        onChange={(e) => h.setForm((f) => ({ ...f, voice_gpt_name: e.target.value }))}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                      >
+                        {VOICE_GPT_NAMES.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">OpenAI Realtime API 음성. Cedar/Marin이 품질 추천.</p>
+                    </div>
+                  )}
                 </div>
               </section>
               <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
