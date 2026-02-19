@@ -25,9 +25,9 @@ const VOICE_NAMES = [
 ]
 
 const VOICE_PROVIDERS = [
-  { id: 'gemini', label: 'Google Gemini' },
-  { id: 'openai', label: 'OpenAI GPT' },
-  { id: 'xai', label: 'xAI Grok' },
+  { id: 'gemini', label: 'Google Gemini (분당 약 20원)' },
+  { id: 'openai', label: 'OpenAI GPT (분당 약 270원)' },
+  { id: 'xai', label: 'xAI Grok (분당 약 70원)' },
 ]
 
 /** OpenAI Realtime API 음성 (GPT 전용) */

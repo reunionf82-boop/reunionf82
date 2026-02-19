@@ -6288,11 +6288,11 @@ function FormContent() {
 
           {/* 본인 정보 및 이성 정보 입력 폼 */}
           <div className="pt-6 mt-6">
-          {/* 음성상담: 금액 위 전화번호·비밀번호 (나의 이용내역 / 다시듣기·대화보기용). 무료속성 미체크 + 0원이면 결제팝업에서 입력받으므로 미표시 */}
+          {/* 음성상담: 금액 위 전화번호·비밀번호는 무료(0원)+무료속성 체크일 때만. 유료결제·무료속성미체크+0원은 결제팝업에서 입력 */}
           {content?.content_type === 'voice' && (() => {
             const formPriceNum = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
             const isZeroWon = Number.isFinite(formPriceNum) && formPriceNum <= 0
-            if (!isPpoingAttributes(content) && isZeroWon) return false
+            if (!isPpoingAttributes(content) || !isZeroWon) return false
             return true
           })() && (
             <div className="mb-6 pb-6 border-b border-gray-200">
