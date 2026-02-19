@@ -26,7 +26,7 @@ import VolMeterWorket from '@/lib/voice-mvp/genai-live/worklets/vol-meter'
 import { Modality } from '@google/genai/web'
 
 /* ── 상수 ────────────────────────────────── */
-const LIVE_MODEL_FALLBACK = 'gemini-2.0-flash-exp'
+const LIVE_MODEL_FALLBACK = 'gemini-live-2.5-flash-native-audio'
 
 const AUTO_RECONNECT_MAX = 3
 const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
@@ -662,10 +662,20 @@ ${manseText || '(만세력 없음)'}
     timerIntervalRef.current = setInterval(() => {
       setRemainingSeconds((prev) => {
         const next = prev - 1
-        // 30초 전 추가결제 팝업
+        // 30초 전 추가결제 팝업 (무료 연장을 이미 24h 내 사용했으면 연장 팝업 자체를 띄우지 않음)
         if (next === 30 && !extendPopupShownRef.current) {
           extendPopupShownRef.current = true
-          setShowExtendPopup(true)
+          const cid = contentIdRef.current
+          const FREE_EXTEND_COOLDOWN_MS = 24 * 60 * 60 * 1000
+          let alreadyUsedFreeExtend = false
+          if (typeof window !== 'undefined' && cid) {
+            const lastAt = localStorage.getItem(`voice_free_extend_${cid}`)
+            if (lastAt) {
+              const elapsed = Date.now() - parseInt(lastAt, 10)
+              if (elapsed < FREE_EXTEND_COOLDOWN_MS) alreadyUsedFreeExtend = true
+            }
+          }
+          if (!alreadyUsedFreeExtend) setShowExtendPopup(true)
         }
         // 시간 종료
         if (next <= 0) {
@@ -684,9 +694,19 @@ ${manseText || '(만세력 없음)'}
             }, 0)
             return 0
           }
-          // 연장 팝업이 아직 표시되지 않았으면 표시 (disconnect는 팝업 닫기 시 dismissExtendPopup에서 처리)
+          // 연장 팝업이 아직 표시되지 않았으면 표시 (무료 연장 이미 사용했으면 띄우지 않음)
           extendPopupShownRef.current = true
-          setShowExtendPopup(true)
+          const cid0 = contentIdRef.current
+          const FREE_EXTEND_COOLDOWN_MS_0 = 24 * 60 * 60 * 1000
+          let alreadyUsedFreeExtend0 = false
+          if (typeof window !== 'undefined' && cid0) {
+            const lastAt0 = localStorage.getItem(`voice_free_extend_${cid0}`)
+            if (lastAt0) {
+              const elapsed0 = Date.now() - parseInt(lastAt0, 10)
+              if (elapsed0 < FREE_EXTEND_COOLDOWN_MS_0) alreadyUsedFreeExtend0 = true
+            }
+          }
+          if (!alreadyUsedFreeExtend0) setShowExtendPopup(true)
           return 0
         }
         return next
@@ -1519,13 +1539,41 @@ ${manseText || '(만세력 없음)'}
   const [selectedExtendOption, setSelectedExtendOption] = useState<{ minutes: number; price: number; label: string } | null>(null)
   const [extendPaymentProcessing, setExtendPaymentProcessing] = useState(false)
   const paymentWindowRef = useRef<Window | null>(null)
+  /** 무료 연장 24시간 1회 제한: 차단 시 팝업용 */
+  const [showFreeExtendBlockedPopup, setShowFreeExtendBlockedPopup] = useState(false)
+  const [freeExtendBlockedRemainingMs, setFreeExtendBlockedRemainingMs] = useState(0)
+
+  useEffect(() => {
+    if (!showFreeExtendBlockedPopup || freeExtendBlockedRemainingMs <= 0) return
+    const t = setInterval(() => {
+      setFreeExtendBlockedRemainingMs((prev) => Math.max(0, prev - 1000))
+    }, 1000)
+    return () => clearInterval(t)
+  }, [showFreeExtendBlockedPopup, freeExtendBlockedRemainingMs])
 
   const handleExtendPayment = useCallback(async (option: { minutes: number; price: number; label: string }) => {
     if (extendPaymentProcessing) return
     setExtendPaymentProcessing(true)
     try {
-      // 0원 무료 추가: 모빌리언스는 1원 이상만 결제 가능하므로 즉시 연장
+      // 0원 무료 추가: 24시간 내 1회만 가능 (이미 사용했으면 연장 팝업 자체를 안 띄우므로 여기 오는 경우는 드묾; 차단 시 별도 팝업 없이 그냥 return)
       if (option.price <= 0) {
+        const cid = contentIdRef.current
+        const FREE_EXTEND_COOLDOWN_MS = 24 * 60 * 60 * 1000
+        if (typeof window !== 'undefined' && cid) {
+          const lastAt = localStorage.getItem(`voice_free_extend_${cid}`)
+          if (lastAt) {
+            const elapsed = Date.now() - parseInt(lastAt, 10)
+            if (elapsed < FREE_EXTEND_COOLDOWN_MS) {
+              setExtendPaymentProcessing(false)
+              return
+            }
+          }
+        }
+        try {
+          if (typeof window !== 'undefined' && contentIdRef.current) {
+            localStorage.setItem(`voice_free_extend_${contentIdRef.current}`, String(Date.now()))
+          }
+        } catch { /* ignore */ }
         setRemainingSeconds((prev) => prev + option.minutes * 60)
         setTotalSeconds((prev) => prev + option.minutes * 60)
         if (!timerIntervalRef.current && connected) startTimer()
@@ -1846,6 +1894,9 @@ ${manseText || '(만세력 없음)'}
       // voice 전용 필드로 저장 (phone: 요약 연동용, injected_summary_item_refs: 안부로 물어본 항목 기록)
       const phoneForSave = sessionStorage.getItem('payment_phone') || ''
       let savedId: string | null = null
+      const voicePayAmount = typeof window !== 'undefined'
+        ? parseInt(sessionStorage.getItem('voice_pay_amount') ?? '0', 10)
+        : 0
       const voicePayload = {
         title: contentTitle,
         html: '', // NOT NULL 제약 대응: 빈 문자열
@@ -1857,6 +1908,7 @@ ${manseText || '(만세력 없음)'}
         userName,
         phone: phoneForSave,
         injected_summary_item_refs: injectedSummaryItemRefsRef.current || [],
+        voice_pay_amount: Number.isFinite(voicePayAmount) ? voicePayAmount : 0,
       }
 
       let saveRes = await fetch('/api/saved-results/save', {
@@ -1880,6 +1932,7 @@ ${manseText || '(만세력 없음)'}
           voice_duration_seconds: durationSeconds > 0 ? durationSeconds : null,
           content_id: contentIdRef.current ? parseInt(contentIdRef.current, 10) : null,
           injected_summary_item_refs: injectedSummaryItemRefsRef.current || [],
+          voice_pay_amount: Number.isFinite(voicePayAmount) ? voicePayAmount : 0,
         }
         saveRes = await fetch('/api/saved-results/save', {
           method: 'POST',
@@ -2044,6 +2097,10 @@ ${manseText || '(만세력 없음)'}
     setSelectedExtendOption,
     extendPaymentProcessing,
     handleExtendPayment,
+    // 무료 연장 24h 1회 제한 차단 팝업
+    showFreeExtendBlockedPopup,
+    setShowFreeExtendBlockedPopup,
+    freeExtendBlockedRemainingMs,
     // 대화 저장
     savingConversation,
     saveConversation,

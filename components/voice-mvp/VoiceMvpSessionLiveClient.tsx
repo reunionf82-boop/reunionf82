@@ -154,7 +154,7 @@ const MANSE_RESULT_STYLES = `
 .voice-mvp-manse-wrapper .manse-ganzi-char { font-size: 1.2em !important; font-weight: 700 !important; }
 `
 
-const LIVE_MODEL_FALLBACK = 'gemini-2.5-flash-native-audio-preview-12-2025'
+const LIVE_MODEL_FALLBACK = 'gemini-live-2.5-flash-native-audio'
 
 const AUTO_RECONNECT_MAX = 3
 const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]

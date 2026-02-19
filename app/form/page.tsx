@@ -628,6 +628,9 @@ function FormContent() {
   // 알림 팝업 상태
   const [showAlert, setShowAlert] = useState(false)
   const [alertMessage, setAlertMessage] = useState('')
+  // 무료 음성상담 24시간 1회 제한: 차단 시 팝업
+  const [showFreeVoiceOnceModal, setShowFreeVoiceOnceModal] = useState(false)
+  const [freeVoiceOnceRemainingMs, setFreeVoiceOnceRemainingMs] = useState(0)
   
   // 로딩 팝업 상태 (PDF 생성 등)
   const [showLoadingPopup, setShowLoadingPopup] = useState(false)
@@ -649,6 +652,18 @@ function FormContent() {
       }
     }
   }, [])
+
+  // 무료 음성 24h 차단 팝업: 남은 시간 1초마다 갱신
+  useEffect(() => {
+    if (!showFreeVoiceOnceModal || freeVoiceOnceRemainingMs <= 0) return
+    const t = setInterval(() => {
+      setFreeVoiceOnceRemainingMs((prev) => {
+        const next = prev - 1000
+        return next <= 0 ? 0 : next
+      })
+    }, 1000)
+    return () => clearInterval(t)
+  }, [showFreeVoiceOnceModal, freeVoiceOnceRemainingMs])
   
   // 개인정보 수집 및 이용 팝업 상태
   const [showPrivacyPopup, setShowPrivacyPopup] = useState(false)
@@ -2984,12 +2999,34 @@ function FormContent() {
       return
     }
 
-    // 0원(무료) 음성: 팝업 없이 바로 무료 시작
+    // 0원(무료) 음성: 24시간 내 1회만 무료 시작 가능
     const isVoiceContent = content?.content_type === 'voice' || !!(content?.voice_model ?? content?.voice_persona_prompt ?? (Array.isArray(content?.voice_time_options) && content.voice_time_options.length > 0)) || (typeof content?.content_name === 'string' && content.content_name.includes('음성'))
     const voiceTimeOptions = isVoiceContent ? (content?.voice_time_options || []) : []
     const selectedVoiceOption = isVoiceContent && voiceTimeOptions.length > 0 ? voiceTimeOptions[0] : null
     const priceNum = selectedVoiceOption ? selectedVoiceOption.price : parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
     if (isVoiceContent && Number.isFinite(priceNum) && priceNum <= 0) {
+      // 24시간 제한 먼저 검사 → 차단 시 바로 팝업 (휴대폰/비밀번호 입력 전)
+      const contentId = content?.id != null ? String(content.id) : ''
+      const FREE_VOICE_COOLDOWN_MS = 24 * 60 * 60 * 1000
+      if (typeof window !== 'undefined' && contentId) {
+        const lastAt = localStorage.getItem(`voice_free_start_${contentId}`)
+        if (lastAt) {
+          const elapsed = Date.now() - parseInt(lastAt, 10)
+          if (elapsed < FREE_VOICE_COOLDOWN_MS) {
+            setFreeVoiceOnceRemainingMs(FREE_VOICE_COOLDOWN_MS - elapsed)
+            setShowFreeVoiceOnceModal(true)
+            return
+          }
+        }
+      }
+      if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
+        showAlertMessage('이용내역 확인을 위해 휴대폰 번호를 입력해 주세요.')
+        return
+      }
+      if (!password || password.length < 4) {
+        showAlertMessage('이용내역 확인을 위해 비밀번호를 4자리 이상 입력해 주세요.')
+        return
+      }
       setSubmitting(true)
       const { generateOrderId } = await import('@/lib/payment-utils')
       const oid = generateOrderId()
@@ -3001,6 +3038,7 @@ function FormContent() {
         sessionStorage.setItem('payment_user_name', name)
         sessionStorage.setItem('payment_phone', phoneNumber)
         sessionStorage.setItem('payment_password', password || '')
+        sessionStorage.setItem('voice_pay_amount', '0')
         sessionStorage.setItem('payment_user_gender', gender || '')
         sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
         sessionStorage.setItem('payment_user_year', year || '')
@@ -3025,6 +3063,9 @@ function FormContent() {
           sessionStorage.setItem('payment_voice_time_option', JSON.stringify(selectedVoiceOption))
           sessionStorage.removeItem('voice_time_expired')
         }
+        try {
+          localStorage.setItem(`voice_free_start_${content.id}`, String(Date.now()))
+        } catch { /* ignore */ }
       }
       try {
         await startFortuneTellingWithContent(
@@ -3060,26 +3101,57 @@ function FormContent() {
 
   // 결제 처리 함수
   const handlePaymentSubmit = async (paymentMethod: 'card' | 'mobile') => {
-    // 휴대폰 번호와 비밀번호 검증
-    if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
-      showAlertMessage('휴대폰 번호를 모두 입력해주세요.')
-      return
-    }
-    
-    if (!password || password.length < 4) {
-      showAlertMessage('비밀번호를 4자리 이상 입력해주세요.')
-      return
-    }
-
     // 컨텐츠 정보 확인
     if (!content || !content.id) {
       showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
       return
     }
 
-    // payment_code 확인
     if (!content.payment_code) {
       showAlertMessage('결제 코드가 설정되지 않은 컨텐츠입니다. 관리자에게 문의해주세요.')
+      return
+    }
+
+    // 0원+무료 음성: 24시간 제한 먼저 검사 → 차단 시 전화번호/비밀번호 입력 없이 바로 안내 팝업
+    const rawOptsEarly = content?.voice_time_options
+    let voiceTimeOptionsEarly: Array<{ minutes: number; price: number; label: string }> = []
+    if (Array.isArray(rawOptsEarly)) voiceTimeOptionsEarly = rawOptsEarly
+    else if (typeof rawOptsEarly === 'string' && rawOptsEarly.trim()) {
+      try { voiceTimeOptionsEarly = JSON.parse(rawOptsEarly) } catch { voiceTimeOptionsEarly = [] }
+    }
+    const isVoiceContentEarly =
+      content?.content_type === 'voice' ||
+      !!content?.voice_model ||
+      !!content?.voice_persona_prompt ||
+      (Array.isArray(voiceTimeOptionsEarly) && voiceTimeOptionsEarly.length > 0) ||
+      (typeof content?.content_name === 'string' && content.content_name.includes('음성'))
+    const displayedPriceNumEarly = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
+    const isFreeVoiceEarly = isVoiceContentEarly && (!Number.isFinite(displayedPriceNumEarly) || displayedPriceNumEarly <= 0)
+    if (isFreeVoiceEarly) {
+      const contentId = content?.id != null ? String(content.id) : ''
+      const FREE_VOICE_COOLDOWN_MS = 24 * 60 * 60 * 1000
+      if (contentId && typeof window !== 'undefined') {
+        const lastAt = localStorage.getItem(`voice_free_start_${contentId}`)
+        if (lastAt) {
+          const elapsed = Date.now() - parseInt(lastAt, 10)
+          if (elapsed < FREE_VOICE_COOLDOWN_MS) {
+            setFreeVoiceOnceRemainingMs(FREE_VOICE_COOLDOWN_MS - elapsed)
+            setShowFreeVoiceOnceModal(true)
+            setShowPaymentPopup(false)
+            return
+          }
+        }
+      }
+    }
+
+    // 휴대폰 번호와 비밀번호 검증
+    if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
+      showAlertMessage('휴대폰 번호를 모두 입력해주세요.')
+      return
+    }
+
+    if (!password || password.length < 4) {
+      showAlertMessage('비밀번호를 4자리 이상 입력해주세요.')
       return
     }
 
@@ -3136,8 +3208,24 @@ function FormContent() {
         ? selectedVoiceOption.price
         : displayedPriceNum
 
-      // 보이스 대표 가격 0원: PG 없이 바로 보이스 화면으로 이동 (무료 체험 후 30초 남을 때 시간 상품 결제 유도)
+      // 보이스 대표 가격 0원: 24시간 내 1회만 무료 시작 가능
       if (isFreeVoice) {
+        const contentId = content?.id != null ? String(content.id) : ''
+        const FREE_VOICE_COOLDOWN_MS = 24 * 60 * 60 * 1000
+        if (contentId && typeof window !== 'undefined') {
+          const lastAt = localStorage.getItem(`voice_free_start_${contentId}`)
+          if (lastAt) {
+            const elapsed = Date.now() - parseInt(lastAt, 10)
+            if (elapsed < FREE_VOICE_COOLDOWN_MS) {
+              setShowPaymentPopup(false)
+              setSubmitting(false)
+              setPaymentProcessingMethod(null)
+              setFreeVoiceOnceRemainingMs(FREE_VOICE_COOLDOWN_MS - elapsed)
+              setShowFreeVoiceOnceModal(true)
+              return
+            }
+          }
+        }
         setShowPaymentPopup(false)
         setSubmitting(false)
         setPaymentProcessingMethod(null)
@@ -3175,6 +3263,9 @@ function FormContent() {
             sessionStorage.setItem('payment_voice_time_option', JSON.stringify(selectedVoiceOption))
             sessionStorage.removeItem('voice_time_expired')
           }
+          try {
+            localStorage.setItem(`voice_free_start_${content.id}`, String(Date.now()))
+          } catch { /* ignore */ }
         }
         await startFortuneTellingWithContent(
           Date.now(),
@@ -3308,6 +3399,7 @@ function FormContent() {
               localStorage.setItem('voice_payment_oid', oid)
               localStorage.setItem('voice_content_id', String(content.id))
             } catch { /* ignore */ }
+            sessionStorage.setItem('voice_pay_amount', String(priceNum))
           }
           // 음성형: 시간상품 정보 저장
           if (selectedVoiceOption) {
@@ -5053,6 +5145,35 @@ function FormContent() {
         onClose={() => setShowAlert(false)} 
       />
 
+      {/* 무료 음성상담 24시간 1회 제한 안내 팝업 */}
+      {showFreeVoiceOnceModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4 bg-black/60" onClick={() => setShowFreeVoiceOnceModal(false)}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">무료 음성상담 이용 안내</h3>
+            <p className="text-gray-600 text-sm mb-3">
+              무료 음성상담은 하루에 한 번만 이용할 수 있습니다.
+            </p>
+            <p className="text-gray-700 text-sm font-medium mb-1">상담 가능까지 남은 시간</p>
+            <p className="text-xl font-bold text-pink-600 mb-5 font-mono">
+              {(() => {
+                const totalSec = Math.max(0, Math.floor(freeVoiceOnceRemainingMs / 1000))
+                const h = Math.floor(totalSec / 3600)
+                const m = Math.floor((totalSec % 3600) / 60)
+                const s = totalSec % 60
+                return [h, m, s].map((v) => String(v).padStart(2, '0')).join(':')
+              })()}
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowFreeVoiceOnceModal(false)}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-semibold"
+            >
+              확인
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 결제 팝업 - 최상위 레벨로 이동하여 헤더 포함 전체 화면 덮기 */}
       {showPaymentPopup && (
         <div 
@@ -6167,6 +6288,66 @@ function FormContent() {
 
           {/* 본인 정보 및 이성 정보 입력 폼 */}
           <div className="pt-6 mt-6">
+          {/* 음성상담: 금액 위 전화번호·비밀번호 (나의 이용내역 / 다시듣기·대화보기용). 무료속성 미체크 + 0원이면 결제팝업에서 입력받으므로 미표시 */}
+          {content?.content_type === 'voice' && (() => {
+            const formPriceNum = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
+            const isZeroWon = Number.isFinite(formPriceNum) && formPriceNum <= 0
+            if (!isPpoingAttributes(content) && isZeroWon) return false
+            return true
+          })() && (
+            <div className="mb-6 pb-6 border-b border-gray-200">
+              <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">이용내역 확인 정보</h2>
+              <p className="text-sm text-gray-600 mb-4">나의 이용내역에서 다시듣기·대화보기를 보려면 아래 정보를 입력해 주세요.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">휴대폰 번호</label>
+                  <input
+                    type="text"
+                    value={
+                      !phoneNumber2
+                        ? `${phoneNumber1}-`
+                        : `${phoneNumber1}-${phoneNumber2}${phoneNumber3 ? '-' + phoneNumber3 : ''}`
+                    }
+                    onChange={(e) => {
+                      let value = e.target.value.replace(/[^0-9]/g, '')
+                      if (!value.startsWith('010')) {
+                        if (value.length < 3) value = '010'
+                        else value = '010' + value
+                      }
+                      if (value.length > 11) value = value.slice(0, 11)
+                      setPhoneNumber1('010')
+                      if (value.length <= 3) {
+                        setPhoneNumber2('')
+                        setPhoneNumber3('')
+                      } else if (value.length <= 7) {
+                        setPhoneNumber2(value.slice(3))
+                        setPhoneNumber3('')
+                      } else {
+                        setPhoneNumber2(value.slice(3, 7))
+                        setPhoneNumber3(value.slice(7))
+                      }
+                    }}
+                    className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
+                    placeholder="010-0000-0000"
+                    maxLength={13}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">비밀번호</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
+                    placeholder="비밀번호 4자리 이상"
+                  />
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-xs text-amber-800">* 다시보기 시 입력한 휴대폰/비밀번호가 필요합니다.</p>
+                </div>
+              </div>
+            </div>
+          )}
           {/* 금액 섹션 */}
           {((content?.price != null && String(content.price).trim() !== '') || content?.price === 0) && (
             <div className="mb-6 pb-6 border-b border-gray-200">

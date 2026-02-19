@@ -350,8 +350,10 @@ wss.on('connection', (ws) => {
                   temperature,
                 },
               }
-              // xAI는 input_audio_transcription 지원 여부 불확실하므로 일단 제외하거나 GPT인 경우만 추가
+              // GPT/xAI 모두 Realtime API 호환 전사 지원 (대화보기용)
               if (upstreamMode === 'gpt') {
+                sessionUpdate.session.input_audio_transcription = { model: 'gpt-4o-mini-transcribe' }
+              } else if (upstreamMode === 'xai') {
                 sessionUpdate.session.input_audio_transcription = { model: 'gpt-4o-mini-transcribe' }
               }
               
@@ -375,6 +377,12 @@ wss.on('connection', (ws) => {
               if (t === 'response.audio.delta' && evt?.delta) send({ type: 'audio', data: evt.delta })
               else if (t === 'response.output_text.delta' && evt?.delta?.trim()) send({ type: 'text', text: evt.delta })
               else if (t === 'input_audio_buffer.speech_started') send({ type: 'interrupted' })
+              else if (t === 'response.audio_transcript.done' && typeof evt?.transcript === 'string' && evt.transcript.trim()) {
+                send({ type: 'transcript', role: 'assistant', text: evt.transcript.trim() })
+              }
+              else if (t === 'conversation.item.input_audio_transcription.completed' && typeof evt?.transcript === 'string' && evt.transcript.trim()) {
+                send({ type: 'transcript', role: 'user', text: evt.transcript.trim() })
+              }
               else if (t === 'response.done') {
                 // 응답 완료 시 로그
                 // console.log(`[vertex-live-proxy] ${upstreamMode} response done`)
@@ -416,16 +424,13 @@ wss.on('connection', (ws) => {
             return
           }
 
-          // PCM 입력: session_settings를 URL 쿼리로 전달 (API 스키마: audio.encoding 필수). 메시지로 보내면 파싱 오류 나는 경우 대비
-          const audioParams = new URLSearchParams({
+          // PCM 입력: audio 설정은 연결 후 메시지로 전송 (system_prompt와 함께 보내기 위해)
+          const wsParams = new URLSearchParams({
             access_token: token,
             config_id: configId,
             verbose_transcription: 'true',
-            'session_settings[audio][encoding]': 'linear16',
-            'session_settings[audio][sample_rate]': '16000',
-            'session_settings[audio][channels]': '1',
           })
-          const wsUrl = `wss://api.hume.ai/v0/evi/chat?${audioParams.toString()}`
+          const wsUrl = `wss://api.hume.ai/v0/evi/chat?${wsParams.toString()}`
           console.log('[vertex-live-proxy] Hume connecting... ConfigID:', configId)
           
           try {
@@ -438,6 +443,17 @@ wss.on('connection', (ws) => {
 
           humeWs.on('open', () => {
             console.log('[vertex-live-proxy] Hume connected!')
+            // session_settings: audio만 전송. system_prompt는 Hume 콘텐츠 정책에 의해 차단될 수 있으므로
+            // 페르소나는 Hume 콘솔(Config)의 System prompt에 설정하고 config_id로 사용.
+            try {
+              const sessionSettings = {
+                type: 'session_settings',
+                audio: { encoding: 'linear16', sample_rate: 16000, channels: 1 },
+              }
+              humeWs.send(JSON.stringify(sessionSettings))
+            } catch (e) {
+              console.error('[vertex-live-proxy] Hume session_settings send error:', e?.message)
+            }
             connected = true
             send({ type: 'ready' })
           })
@@ -467,8 +483,22 @@ wss.on('connection', (ws) => {
         }
 
         // 3. Google Gemini (기존)
+        const GEMINI_DEFAULT_MODEL = 'gemini-live-2.5-flash-native-audio'
+        const requestedGeminiModel = (model && String(model).trim()) || GEMINI_DEFAULT_MODEL
+        // Live API 미지원/레거시 모델은 안정 모델로 강제 매핑
+        const GEMINI_UNSUPPORTED_LIVE_MODELS = new Set([
+          'gemini-2.0-flash-exp',
+        ])
+        const geminiModel = GEMINI_UNSUPPORTED_LIVE_MODELS.has(requestedGeminiModel)
+          ? GEMINI_DEFAULT_MODEL
+          : requestedGeminiModel
         try {
-          console.log('[vertex-live-proxy] Gemini connecting... Model:', model)
+          if (geminiModel !== requestedGeminiModel) {
+            console.warn(
+              `[vertex-live-proxy] Unsupported Gemini live model "${requestedGeminiModel}" -> fallback "${geminiModel}"`
+            )
+          }
+          console.log('[vertex-live-proxy] Gemini connecting... Model:', geminiModel)
           const aiClient = new GoogleGenAI({
             vertexai: true,
             project: PROJECT,
@@ -480,7 +510,7 @@ wss.on('connection', (ws) => {
             config.sessionResumption = { ...config.sessionResumption, handle: String(parsed.resumptionHandle).trim() }
           }
           
-          liveSession = await aiClient.live.connect({ model, config, callbacks })
+          liveSession = await aiClient.live.connect({ model: geminiModel, config, callbacks })
           console.log('[vertex-live-proxy] Gemini connected OK')
         } catch (err) {
           console.error('[vertex-live-proxy] Gemini connect error:', err?.message || err)
@@ -500,7 +530,22 @@ wss.on('connection', (ws) => {
             humeWs.send(JSON.stringify({ type: 'audio_input', data: parsed.data }))
           }
         } else {
-          liveSession?.send({ mimeType: 'audio/pcm;rate=24000', data: parsed.data })
+          if (liveSession) {
+            if (typeof liveSession.sendRealtimeInput === 'function') {
+              // 클라이언트(AudioRecorder) 입력은 16k PCM으로 전송
+              liveSession.sendRealtimeInput({
+                audio: {
+                  mimeType: 'audio/pcm;rate=16000',
+                  data: parsed.data,
+                },
+              })
+            } else if (typeof liveSession.send === 'function') {
+              // 구버전 SDK 호환
+              liveSession.send({ mimeType: 'audio/pcm;rate=16000', data: parsed.data })
+            } else {
+              console.warn('[vertex-live-proxy] Gemini liveSession has no audio send method')
+            }
+          }
         }
         return
       }

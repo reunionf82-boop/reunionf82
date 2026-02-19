@@ -28,7 +28,6 @@ const VOICE_PROVIDERS = [
   { id: 'gemini', label: 'Google Gemini' },
   { id: 'openai', label: 'OpenAI GPT' },
   { id: 'xai', label: 'xAI Grok' },
-  { id: 'hume', label: 'Hume EVI' },
 ]
 
 /** OpenAI Realtime API 음성 (GPT 전용) */
@@ -74,7 +73,6 @@ function getProviderFromModel(model: string, providerField?: string): string {
   if (providerField) return providerField
   if (/^gpt/i.test(model)) return 'openai'
   if (/^grok/i.test(model)) return 'xai'
-  if (/^hume/i.test(model) || /^evi/i.test(model)) return 'hume'
   return 'gemini'
 }
 
@@ -162,164 +160,178 @@ export default function VoiceAdminForm() {
           <div className="text-gray-400">로딩 중...</div>
         ) : (
           <div className="space-y-6">
-            {/* 0. 음성대화 모델 + 결제코드 (나란히) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
-                <h2 className="font-bold mb-4">음성대화 모델</h2>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-2">제공사 선택</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {VOICE_PROVIDERS.map((p) => {
-                        const isSelected = h.form.voice_provider === p.id
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              h.setForm((f) => ({
-                                ...f,
-                                voice_provider: p.id,
-                voice_model: p.id === 'gemini' ? 'gemini-2.0-flash-exp'
-                   : p.id === 'openai' ? 'gpt-4o-realtime-preview'
-                     : p.id === 'xai' ? 'grok-beta'
-                       : 'hume-evi-3'
-                              }))
-                            }}
-                            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all border-2 ${isSelected
-                              ? 'bg-violet-600/20 border-violet-500 text-white shadow-[0_0_15px_rgba(139,92,246,0.3)]'
-                              : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700 hover:border-gray-600'
-                              }`}
-                          >
-                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-violet-400' : 'border-gray-500'}`}>
-                              {isSelected && <div className="w-2 h-2 rounded-full bg-violet-400" />}
-                            </div>
-                            {p.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
+            {/* 0. 결제코드 (맨 처음) */}
+            <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+              <h2 className="font-bold mb-4">결제코드</h2>
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">결제코드 (자동 부여)</label>
+                <input
+                  value={h.id && !h.duplicateId ? h.form.payment_code : (h.nextPaymentCode || '로딩 중...')}
+                  readOnly disabled
+                  className="w-full max-w-md bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-gray-400 cursor-not-allowed" />
+                <p className="mt-1 text-xs text-gray-500">
+                  {h.id && !h.duplicateId
+                    ? '결제 코드는 자동으로 부여되며 변경할 수 없습니다.'
+                    : h.nextPaymentCode
+                      ? `다음 결제 코드: ${h.nextPaymentCode} (저장 시 자동 부여)`
+                      : '결제 코드를 조회하는 중...'}
+                </p>
+              </div>
+            </section>
 
-                  {/* Gemini 설정 */}
-                  {h.form.voice_provider === 'gemini' && (
-                    <div className="space-y-2 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
+            {/* 1. 음성대화 모델 */}
+            <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+              <h2 className="font-bold mb-4">음성대화 모델</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-gray-300 mb-2">제공사 선택</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {VOICE_PROVIDERS.map((p) => {
+                      const isSelected = h.form.voice_provider === p.id
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            h.setForm((f) => ({
+                              ...f,
+                              voice_provider: p.id,
+                              voice_model: p.id === 'gemini' ? 'gemini-live-2.5-flash-native-audio'
+                                : p.id === 'openai' ? 'gpt-4o-realtime-preview'
+                                  : 'grok-beta',
+                            }))
+                          }}
+                          className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all border-2 ${isSelected
+                            ? 'bg-violet-600/20 border-violet-500 text-white shadow-[0_0_15px_rgba(139,92,246,0.3)]'
+                            : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700 hover:border-gray-600'
+                            }`}
+                        >
+                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-violet-400' : 'border-gray-500'}`}>
+                            {isSelected && <div className="w-2 h-2 rounded-full bg-violet-400" />}
+                          </div>
+                          {p.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Gemini: 모델명 + 음성 성별 / 말투 / 보이스 이름 */}
+                {h.form.voice_provider === 'gemini' && (
+                  <div className="space-y-3 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
+                    <div>
                       <label className="block text-xs text-gray-400 mb-1">모델명</label>
                       <input
                         value={h.form.voice_model}
                         onChange={(e) => h.setForm((f) => ({ ...f, voice_model: e.target.value }))}
                         className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
                       />
-                      <p className="text-xs text-gray-500">기본값: gemini-2.5-flash-native-audio-preview-12-2025</p>
+                      <p className="text-xs text-gray-500 mt-0.5">기본값: gemini-live-2.5-flash-native-audio</p>
                     </div>
-                  )}
-
-                  {/* OpenAI GPT 설정 */}
-                  {h.form.voice_provider === 'openai' && (
-                    <div className="space-y-3 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
-                        <label className="block text-xs text-gray-400 mb-1">모델명</label>
-                        <input
-                          value={h.form.voice_model}
-                          onChange={(e) => h.setForm((f) => ({ ...f, voice_model: e.target.value }))}
-                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
-                        />
+                        <label className="block text-xs text-gray-400 mb-1">음성 성별</label>
+                        <div className="flex gap-4 h-[38px] items-center">
+                          <label className="flex items-center gap-2 cursor-pointer text-sm">
+                            <input type="radio" name="voice_gender" checked={h.form.voice_gender === 'female'} onChange={() => h.setForm((f) => ({ ...f, voice_gender: 'female' }))} />
+                            <span>여성</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer text-sm">
+                            <input type="radio" name="voice_gender" checked={h.form.voice_gender === 'male'} onChange={() => h.setForm((f) => ({ ...f, voice_gender: 'male' }))} />
+                            <span>남성</span>
+                          </label>
+                        </div>
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-400 mb-1">GPT 전용 음성</label>
-                        <select
-                          value={h.form.voice_gpt_name}
-                          onChange={(e) => h.setForm((f) => ({ ...f, voice_gpt_name: e.target.value }))}
-                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
-                        >
-                          {VOICE_GPT_NAMES.map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
-                          ))}
+                        <label className="block text-xs text-gray-400 mb-1">말투/성향</label>
+                        <select value={h.form.voice_style} onChange={(e) => h.setForm((f) => ({ ...f, voice_style: e.target.value }))}
+                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm">
+                          {VOICE_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-400 mb-1">Temperature ({h.form.voice_temperature})</label>
-                        <input
-                          type="range" min={0.6} max={1.2} step={0.05}
-                          value={h.form.voice_temperature}
-                          onChange={(e) => h.setForm((f) => ({ ...f, voice_temperature: parseFloat(e.target.value) }))}
-                          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* xAI Grok 설정 */}
-                  {h.form.voice_provider === 'xai' && (
-                    <div className="space-y-3 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-1">모델명</label>
-                        <input
-                          value={h.form.voice_model}
-                          onChange={(e) => h.setForm((f) => ({ ...f, voice_model: e.target.value }))}
-                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
-                          placeholder="예: grok-beta"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-1">Grok 전용 음성</label>
-                        <select
-                          value={h.form.voice_gpt_name} // xAI도 voice_gpt_name 필드 재사용 (구조 동일)
-                          onChange={(e) => h.setForm((f) => ({ ...f, voice_gpt_name: e.target.value }))}
-                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
-                        >
-                          {VOICE_XAI_NAMES.map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
-                          ))}
+                        <label className="block text-xs text-gray-400 mb-1">보이스 이름</label>
+                        <select value={h.form.voice_name} onChange={(e) => h.setForm((f) => ({ ...f, voice_name: e.target.value }))}
+                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm">
+                          {VOICE_NAMES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </div>
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-1">Temperature ({h.form.voice_temperature})</label>
-                        <input
-                          type="range" min={0.6} max={1.2} step={0.05}
-                          value={h.form.voice_temperature}
-                          onChange={(e) => h.setForm((f) => ({ ...f, voice_temperature: parseFloat(e.target.value) }))}
-                          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                        />
-                      </div>
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {/* Hume EVI 설정 */}
-                  {h.form.voice_provider === 'hume' && (
-                    <div className="space-y-3 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-1">Configuration ID (필수)</label>
-                        <input
-                          value={h.form.voice_hume_config_id}
-                          onChange={(e) => h.setForm((f) => ({ ...f, voice_hume_config_id: e.target.value }))}
-                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
-                          placeholder="예: 9993b94a-fd01-..."
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Hume 대시보드에서 생성한 Config ID를 입력하세요. 음성/속도/피치는 해당 Config를 따릅니다.</p>
-                      </div>
+                {/* OpenAI GPT: 모델명 + 음성 + Temperature */}
+                {h.form.voice_provider === 'openai' && (
+                  <div className="space-y-3 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">모델명</label>
+                      <input
+                        value={h.form.voice_model}
+                        onChange={(e) => h.setForm((f) => ({ ...f, voice_model: e.target.value }))}
+                        className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                      />
                     </div>
-                  )}
-                </div>
-              </section>
-              <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
-                <h2 className="font-bold mb-4">결제코드</h2>
-                <div>
-                  <label className="block text-sm text-gray-300 mb-1">결제코드 (자동 부여)</label>
-                  <input
-                    value={h.id && !h.duplicateId ? h.form.payment_code : (h.nextPaymentCode || '로딩 중...')}
-                    readOnly disabled
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-gray-400 cursor-not-allowed" />
-                  <p className="mt-1 text-xs text-gray-500">
-                    {h.id && !h.duplicateId
-                      ? '결제 코드는 자동으로 부여되며 변경할 수 없습니다.'
-                      : h.nextPaymentCode
-                        ? `다음 결제 코드: ${h.nextPaymentCode} (저장 시 자동 부여)`
-                        : '결제 코드를 조회하는 중...'}
-                  </p>
-                </div>
-              </section>
-            </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">GPT 전용 음성</label>
+                      <select
+                        value={h.form.voice_gpt_name}
+                        onChange={(e) => h.setForm((f) => ({ ...f, voice_gpt_name: e.target.value }))}
+                        className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                      >
+                        {VOICE_GPT_NAMES.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Temperature ({h.form.voice_temperature})</label>
+                      <input
+                        type="range" min={0.6} max={1.2} step={0.05}
+                        value={h.form.voice_temperature}
+                        onChange={(e) => h.setForm((f) => ({ ...f, voice_temperature: parseFloat(e.target.value) }))}
+                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* xAI Grok: 모델명 + 음성 + Temperature */}
+                {h.form.voice_provider === 'xai' && (
+                  <div className="space-y-3 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">모델명</label>
+                      <input
+                        value={h.form.voice_model}
+                        onChange={(e) => h.setForm((f) => ({ ...f, voice_model: e.target.value }))}
+                        className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                        placeholder="예: grok-beta"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Grok 전용 음성</label>
+                      <select
+                        value={h.form.voice_gpt_name}
+                        onChange={(e) => h.setForm((f) => ({ ...f, voice_gpt_name: e.target.value }))}
+                        className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                      >
+                        {VOICE_XAI_NAMES.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Temperature ({h.form.voice_temperature})</label>
+                      <input
+                        type="range" min={0.6} max={1.2} step={0.05}
+                        value={h.form.voice_temperature}
+                        onChange={(e) => h.setForm((f) => ({ ...f, voice_temperature: parseFloat(e.target.value) }))}
+                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
 
             {/* 1. 컨텐츠명/썸네일/가격/NEW·배포 */}
             <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
@@ -452,36 +464,7 @@ export default function VoiceAdminForm() {
                     )}
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-1">음성 성별</label>
-                    <div className="flex gap-4 h-[42px] items-center">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="voice_gender" checked={h.form.voice_gender === 'female'} onChange={() => h.setForm((f) => ({ ...f, voice_gender: 'female' }))} />
-                        <span>여성</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="voice_gender" checked={h.form.voice_gender === 'male'} onChange={() => h.setForm((f) => ({ ...f, voice_gender: 'male' }))} />
-                        <span>남성</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-1">말투/성향</label>
-                    <select value={h.form.voice_style} onChange={(e) => h.setForm((f) => ({ ...f, voice_style: e.target.value }))}
-                      className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white">
-                      {VOICE_STYLES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-1">보이스 이름</label>
-                    <select value={h.form.voice_name} onChange={(e) => h.setForm((f) => ({ ...f, voice_name: e.target.value }))}
-                      className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white">
-                      {VOICE_NAMES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </div>
-                </div>
-                {/* 음성 파라미터: Pitch, Speaking Rate, Volume Gain (API 지원 시 적용, 현재는 프롬프트로 전달) */}
+                {/* Gemini 전용: Pitch, Speaking Rate, Volume Gain */}
                 {h.form.voice_provider === 'gemini' && (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>

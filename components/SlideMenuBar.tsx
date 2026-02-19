@@ -165,7 +165,12 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
       const savedResponse = await fetch('/api/saved-results/list', { cache: 'no-store' })
       if (savedResponse.ok) {
         const savedData = await savedResponse.json()
-        const savedTitles = new Set((savedData.data || []).map((item: any) => item.title))
+        // 설백야에는 유료만: voice_pay_amount가 null(점사)이거나 > 0(유료 음성)인 항목만. 0원(무료 음성) 제외
+        const savedTitles = new Set(
+          (savedData.data || []).filter(
+            (item: any) => item.voice_pay_amount == null || Number(item.voice_pay_amount) > 0
+          ).map((item: any) => item.title)
+        )
         
         // 3. 결제한 컨텐츠 중 관리자에서 "배포" 체크한 것만 백야 섹션에 표시
         const paid = allContents.filter((content: any) => {

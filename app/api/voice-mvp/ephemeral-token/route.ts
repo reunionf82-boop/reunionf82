@@ -8,7 +8,7 @@ export const runtime = 'nodejs'
 function normalizeModel(model: string | undefined) {
   const raw = String(model || '').trim()
   const cleaned = raw.replace(/^models\//, '')
-  return cleaned || 'gemini-2.5-flash-native-audio-preview-12-2025'
+  return cleaned || 'gemini-live-2.5-flash-native-audio'
 }
 
 export async function POST(req: NextRequest) {

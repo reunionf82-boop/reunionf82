@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
       result_type, voice_messages, voice_audio_url, voice_duration_seconds, content_id,
       phone,
       injected_summary_item_refs,
+      voice_pay_amount,
     } = body
 
     const isVoice = result_type === 'voice'
@@ -69,6 +70,9 @@ export async function POST(request: NextRequest) {
       insertData.voice_audio_url = voice_audio_url || null
       insertData.voice_duration_seconds = voice_duration_seconds || null
       insertData.content_id = content_id || null
+      if (voice_pay_amount != null && Number.isFinite(Number(voice_pay_amount))) {
+        insertData.voice_pay_amount = Number(voice_pay_amount)
+      }
     } else {
       // 점사형: content_id 저장 (요약 시 컨텐츠별 글자수 조회용)
       const fortuneContentId = content?.id ?? content_id

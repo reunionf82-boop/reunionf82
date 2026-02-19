@@ -205,6 +205,7 @@ export async function GET(request: NextRequest) {
         result.voice_messages = item.voice_messages ?? null
         result.content_id = item.content_id ?? null
       }
+      if (item.voice_pay_amount != null) result.voice_pay_amount = item.voice_pay_amount
       return result
     })
 
