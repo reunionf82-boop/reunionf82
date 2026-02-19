@@ -24,9 +24,11 @@ const VOICE_NAMES = [
   { value: 'Puck', label: 'Puck (남성향)' },
 ]
 
-const VOICE_CHAT_MODELS = [
-  { id: 'gemini-2.5-flash-native-audio-preview-12-2025', label: 'Gemini (Native Audio 최신)' },
-  { id: 'gpt-4o-realtime-preview', label: 'GPT Realtime (최신)' },
+const VOICE_PROVIDERS = [
+  { id: 'gemini', label: 'Google Gemini' },
+  { id: 'openai', label: 'OpenAI GPT' },
+  { id: 'xai', label: 'xAI Grok' },
+  { id: 'hume', label: 'Hume EVI' },
 ]
 
 /** OpenAI Realtime API 음성 (GPT 전용) */
@@ -46,10 +48,14 @@ const VOICE_GPT_NAMES = [
   { value: 'marin', label: 'Marin (바다, 부드럽고 선명한, 추천)' },
 ]
 
-function isGptVoiceModel(stored: string): boolean {
-  const s = String(stored || '').trim()
-  return /^gpt(-4o)?-realtime/i.test(s)
-}
+/** xAI Grok Voice Agent 음성 */
+const VOICE_XAI_NAMES = [
+  { value: 'ara', label: 'Ara (따뜻함, 친근함)' },
+  { value: 'rex', label: 'Rex (자신감, 전문적)' },
+  { value: 'eve', label: 'Eve' },
+  { value: 'sal', label: 'Sal (부드러움, 균형)' },
+  { value: 'gork', label: 'Gork' },
+]
 
 /** DB 저장값이 라디오 id와 동일/동등한지 판별 (gpt-realtime, gpt-4o-realtime-preview-2024-12-17 등 변형 포함) */
 function voiceModelMatchesRadio(stored: string, radioId: string): boolean {
@@ -62,6 +68,14 @@ function voiceModelMatchesRadio(stored: string, radioId: string): boolean {
     return s.startsWith('gemini-2') || s.includes('gemini-2.5-flash')
   }
   return false
+}
+
+function getProviderFromModel(model: string, providerField?: string): string {
+  if (providerField) return providerField
+  if (/^gpt/i.test(model)) return 'openai'
+  if (/^grok/i.test(model)) return 'xai'
+  if (/^hume/i.test(model) || /^evi/i.test(model)) return 'hume'
+  return 'gemini'
 }
 
 export default function VoiceAdminForm() {
@@ -152,45 +166,138 @@ export default function VoiceAdminForm() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
                 <h2 className="font-bold mb-4">음성대화 모델</h2>
-                <div className="space-y-3">
-                  <label className="block text-sm text-gray-300 mb-1">모델 선택</label>
-                  <div className="space-y-2">
-                    {VOICE_CHAT_MODELS.map((m) => (
-                      <label key={m.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-200">
-                        <input
-                          type="radio"
-                          name="voice_model"
-                          checked={voiceModelMatchesRadio(h.form.voice_model, m.id)}
-                          onChange={() => h.setForm((f) => ({ ...f, voice_model: m.id }))}
-                        />
-                        <span>{m.label}</span>
-                        <span className="text-xs text-gray-500">({m.id})</span>
-                      </label>
-                    ))}
-                  </div>
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">직접 입력 (커스텀 모델)</label>
-                    <input
-                      value={h.form.voice_model}
-                      onChange={(e) => h.setForm((f) => ({ ...f, voice_model: e.target.value }))}
-                      className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm"
-                      placeholder="예: gemini-2.5-flash-native-audio-preview-12-2025 또는 gpt-4o-realtime-preview"
-                    />
+                    <label className="block text-sm text-gray-300 mb-2">제공사 선택</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {VOICE_PROVIDERS.map((p) => {
+                        const isSelected = h.form.voice_provider === p.id
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              h.setForm((f) => ({
+                                ...f,
+                                voice_provider: p.id,
+                voice_model: p.id === 'gemini' ? 'gemini-2.0-flash-exp'
+                   : p.id === 'openai' ? 'gpt-4o-realtime-preview'
+                     : p.id === 'xai' ? 'grok-beta'
+                       : 'hume-evi-3'
+                              }))
+                            }}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all border-2 ${isSelected
+                              ? 'bg-violet-600/20 border-violet-500 text-white shadow-[0_0_15px_rgba(139,92,246,0.3)]'
+                              : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700 hover:border-gray-600'
+                              }`}
+                          >
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-violet-400' : 'border-gray-500'}`}>
+                              {isSelected && <div className="w-2 h-2 rounded-full bg-violet-400" />}
+                            </div>
+                            {p.label}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-500">Gemini/GPT 중 하나를 선택하거나 커스텀 모델명을 직접 입력할 수 있습니다.</p>
-                  {isGptVoiceModel(h.form.voice_model) && (
-                    <div className="mt-4 pt-4 border-t border-gray-600">
-                      <label className="block text-sm text-gray-300 mb-1">GPT 전용 음성</label>
-                      <select
-                        value={h.form.voice_gpt_name}
-                        onChange={(e) => h.setForm((f) => ({ ...f, voice_gpt_name: e.target.value }))}
-                        className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                      >
-                        {VOICE_GPT_NAMES.map((o) => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
-                      <p className="text-xs text-gray-500 mt-1">OpenAI Realtime API 음성. Cedar/Marin이 품질 추천.</p>
+
+                  {/* Gemini 설정 */}
+                  {h.form.voice_provider === 'gemini' && (
+                    <div className="space-y-2 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
+                      <label className="block text-xs text-gray-400 mb-1">모델명</label>
+                      <input
+                        value={h.form.voice_model}
+                        onChange={(e) => h.setForm((f) => ({ ...f, voice_model: e.target.value }))}
+                        className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                      />
+                      <p className="text-xs text-gray-500">기본값: gemini-2.5-flash-native-audio-preview-12-2025</p>
+                    </div>
+                  )}
+
+                  {/* OpenAI GPT 설정 */}
+                  {h.form.voice_provider === 'openai' && (
+                    <div className="space-y-3 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">모델명</label>
+                        <input
+                          value={h.form.voice_model}
+                          onChange={(e) => h.setForm((f) => ({ ...f, voice_model: e.target.value }))}
+                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">GPT 전용 음성</label>
+                        <select
+                          value={h.form.voice_gpt_name}
+                          onChange={(e) => h.setForm((f) => ({ ...f, voice_gpt_name: e.target.value }))}
+                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                        >
+                          {VOICE_GPT_NAMES.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Temperature ({h.form.voice_temperature})</label>
+                        <input
+                          type="range" min={0.6} max={1.2} step={0.05}
+                          value={h.form.voice_temperature}
+                          onChange={(e) => h.setForm((f) => ({ ...f, voice_temperature: parseFloat(e.target.value) }))}
+                          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* xAI Grok 설정 */}
+                  {h.form.voice_provider === 'xai' && (
+                    <div className="space-y-3 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">모델명</label>
+                        <input
+                          value={h.form.voice_model}
+                          onChange={(e) => h.setForm((f) => ({ ...f, voice_model: e.target.value }))}
+                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                          placeholder="예: grok-beta"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Grok 전용 음성</label>
+                        <select
+                          value={h.form.voice_gpt_name} // xAI도 voice_gpt_name 필드 재사용 (구조 동일)
+                          onChange={(e) => h.setForm((f) => ({ ...f, voice_gpt_name: e.target.value }))}
+                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                        >
+                          {VOICE_XAI_NAMES.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Temperature ({h.form.voice_temperature})</label>
+                        <input
+                          type="range" min={0.6} max={1.2} step={0.05}
+                          value={h.form.voice_temperature}
+                          onChange={(e) => h.setForm((f) => ({ ...f, voice_temperature: parseFloat(e.target.value) }))}
+                          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Hume EVI 설정 */}
+                  {h.form.voice_provider === 'hume' && (
+                    <div className="space-y-3 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Configuration ID (필수)</label>
+                        <input
+                          value={h.form.voice_hume_config_id}
+                          onChange={(e) => h.setForm((f) => ({ ...f, voice_hume_config_id: e.target.value }))}
+                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                          placeholder="예: 9993b94a-fd01-..."
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Hume 대시보드에서 생성한 Config ID를 입력하세요. 음성/속도/피치는 해당 Config를 따릅니다.</p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -375,32 +482,34 @@ export default function VoiceAdminForm() {
                   </div>
                 </div>
                 {/* 음성 파라미터: Pitch, Speaking Rate, Volume Gain (API 지원 시 적용, 현재는 프롬프트로 전달) */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-1">Pitch (음높이, semitones)</label>
-                    <input type="number" step={0.5} min={-20} max={20}
-                      value={h.form.voice_pitch === '' ? '' : h.form.voice_pitch}
-                      onChange={(e) => h.setForm((f) => ({ ...f, voice_pitch: e.target.value === '' ? '' : parseFloat(e.target.value) || '' }))}
-                      className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                      placeholder="-20~20 (차분:-0.5~-1.5, 밝음:+2)" />
+                {h.form.voice_provider === 'gemini' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Pitch (음높이, semitones)</label>
+                      <input type="number" step={0.5} min={-20} max={20}
+                        value={h.form.voice_pitch === '' ? '' : h.form.voice_pitch}
+                        onChange={(e) => h.setForm((f) => ({ ...f, voice_pitch: e.target.value === '' ? '' : parseFloat(e.target.value) || '' }))}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                        placeholder="-20~20 (차분:-0.5~-1.5, 밝음:+2)" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Speaking Rate (발화 속도)</label>
+                      <input type="number" step={0.05} min={0.25} max={4}
+                        value={h.form.voice_speaking_rate === '' ? '' : h.form.voice_speaking_rate}
+                        onChange={(e) => h.setForm((f) => ({ ...f, voice_speaking_rate: e.target.value === '' ? '' : parseFloat(e.target.value) || '' }))}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                        placeholder="0.25~4 (별님아씨 추천 0.8~0.9)" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Volume Gain (dB)</label>
+                      <input type="number" step={0.5} min={-96} max={16}
+                        value={h.form.voice_volume_gain === '' ? '' : h.form.voice_volume_gain}
+                        onChange={(e) => h.setForm((f) => ({ ...f, voice_volume_gain: e.target.value === '' ? '' : parseFloat(e.target.value) || '' }))}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                        placeholder="-96~16 (속삭임 시 +2 등)" />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-1">Speaking Rate (발화 속도)</label>
-                    <input type="number" step={0.05} min={0.25} max={4}
-                      value={h.form.voice_speaking_rate === '' ? '' : h.form.voice_speaking_rate}
-                      onChange={(e) => h.setForm((f) => ({ ...f, voice_speaking_rate: e.target.value === '' ? '' : parseFloat(e.target.value) || '' }))}
-                      className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                      placeholder="0.25~4 (별님아씨 추천 0.8~0.9)" />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-1">Volume Gain (dB)</label>
-                    <input type="number" step={0.5} min={-96} max={16}
-                      value={h.form.voice_volume_gain === '' ? '' : h.form.voice_volume_gain}
-                      onChange={(e) => h.setForm((f) => ({ ...f, voice_volume_gain: e.target.value === '' ? '' : parseFloat(e.target.value) || '' }))}
-                      className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                      placeholder="-96~16 (속삭임 시 +2 등)" />
-                  </div>
-                </div>
+                )}
                 <div>
                   <label className="block text-sm text-gray-300 mb-1">페르소나 프롬프트</label>
                   <textarea value={h.form.voice_persona_prompt} onChange={(e) => h.setForm((f) => ({ ...f, voice_persona_prompt: e.target.value }))}

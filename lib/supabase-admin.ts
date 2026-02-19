@@ -95,7 +95,12 @@ export interface ContentData {
   voice_model?: string
   /** GPT Realtime 전용 음성 (alloy, echo, fable, onyx, nova, shimmer, cedar, marin 등) */
   voice_gpt_name?: string
+  voice_temperature?: number
   voice_advisor_video_url?: string
+  /** 음성 제공사: gemini | openai | xai | hume */
+  voice_provider?: string
+  /** Hume EVI Configuration ID */
+  voice_hume_config_id?: string
   voice_gender?: string
   voice_style?: string
   voice_tendency?: string

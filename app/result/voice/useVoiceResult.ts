@@ -26,7 +26,7 @@ import VolMeterWorket from '@/lib/voice-mvp/genai-live/worklets/vol-meter'
 import { Modality } from '@google/genai/web'
 
 /* ── 상수 ────────────────────────────────── */
-const LIVE_MODEL_FALLBACK = 'gemini-2.5-flash-native-audio-preview-12-2025'
+const LIVE_MODEL_FALLBACK = 'gemini-2.0-flash-exp'
 
 const AUTO_RECONNECT_MAX = 3
 const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
@@ -51,15 +51,25 @@ function normalizeLiveModel(base: string) {
   const trimmed = String(base || '').trim()
   if (!trimmed) return LIVE_MODEL_FALLBACK
   const model = trimmed.replace(/^models\//, '')
-  // GPT 계열은 그대로 전달 (외부 프록시/서버 설정에서 처리)
+  
+  // GPT, Grok, Hume 등 타사 모델은 그대로 통과
   if (/^gpt/i.test(model)) return model
-  if (model.includes('-exp')) return LIVE_MODEL_FALLBACK
-  if (model.includes('native-audio')) return model
+  if (/^grok/i.test(model)) return model
+  if (/^hume/i.test(model) || /^evi/i.test(model)) return model
+  
+  // Gemini 모델
+  if (model.includes('gemini')) return model
+  
   return LIVE_MODEL_FALLBACK
 }
 
 function isGptRealtimeModel(model: string) {
   return /^gpt/i.test(String(model || '').trim())
+}
+
+/** Hume EVI: audio_output이 WAV base64이므로 PCM 스트리머 대신 큐+Audio 재생 */
+function isHumeModel(model: string) {
+  return /^hume/i.test(String(model || '').trim()) || /^evi/i.test(String(model || '').trim())
 }
 
 function isIOSDevice() {
@@ -210,6 +220,10 @@ export function useVoiceResult() {
   const currentUserTurnViolationsRef = useRef<Set<EtiquetteViolationType>>(new Set())
   /** 현재 user 턴 누적 텍스트 (스트리밍 전사 조각 합쳐서 예의/위기 감지) */
   const currentUserTurnTextRef = useRef('')
+  /** Hume EVI: audio_output은 WAV base64 → 큐에 쌓아 HTMLAudioElement로 재생 */
+  const humeAudioQueueRef = useRef<Blob[]>([])
+  const humeCurrentAudioRef = useRef<HTMLAudioElement | null>(null)
+  const playHumeQueueRef = useRef<(() => void) | null>(null)
 
   /* ── 음성 대화 저장용 refs ──────────────── */
   const audioChunksRef = useRef<string[]>([]) // AI 오디오 base64 청크 누적 (fallback용)
@@ -625,8 +639,21 @@ ${manseText || '(만세력 없음)'}
     if (isGptRealtimeModel(model)) {
       return String(contentData?.voice_gpt_name || 'alloy').trim().toLowerCase()
     }
+    // xAI는 voice_gpt_name 필드를 같이 사용 (구조 동일)
+    if (/^grok/i.test(model)) {
+      return String(contentData?.voice_gpt_name || 'ara').trim().toLowerCase()
+    }
     return String(contentData?.voice_name || 'Aoede').trim()
   }, [contentData, model])
+
+  const humeConfigId = useMemo(() => {
+    return String(contentData?.voice_hume_config_id || '').trim()
+  }, [contentData])
+
+  const temperature = useMemo(() => {
+    if (contentData?.voice_temperature != null) return Number(contentData.voice_temperature)
+    return 0.8
+  }, [contentData])
 
   /* ── 타이머 ────────────────────────────── */
   const startTimer = useCallback(() => {
@@ -795,6 +822,7 @@ ${manseText || '(만세력 없음)'}
       responseModalities: [Modality.AUDIO],
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
       systemInstruction: { parts: [{ text: `${sysText}\n\n${systemAndContext.contextText}` }] },
+      temperature,
     }
 
     pendingWs.onopen = () => {
@@ -827,16 +855,32 @@ ${manseText || '(만세력 없음)'}
           return
         }
         if (msg.type === 'audio' && msg.data) {
+          if (isHumeModel(model)) {
+            const buf = base64ToArrayBuffer(msg.data)
+            const blob = new Blob([buf], { type: 'audio/wav' })
+            humeAudioQueueRef.current.push(blob)
+            playHumeQueueRef.current?.()
+            return
+          }
           const buf = base64ToArrayBuffer(msg.data)
           streamerRef.current?.addPCM16(new Uint8Array(buf))
           return
         }
-        if (msg.type === 'interrupted') { streamerRef.current?.stop(); isAiSpeakingRef.current = false }
+        if (msg.type === 'interrupted') {
+          if (isHumeModel(model)) {
+            humeCurrentAudioRef.current?.pause()
+            humeCurrentAudioRef.current = null
+            humeAudioQueueRef.current.length = 0
+          }
+          streamerRef.current?.stop()
+          isAiSpeakingRef.current = false
+          return
+        }
       } catch { /* ignore */ }
     }
     pendingWs.onerror = () => { pendingWsRef.current = null; plannedFailoverRef.current = false; setError('리전 전환 실패.') }
     pendingWs.onclose = () => { if (pendingWsRef.current === pendingWs) { pendingWsRef.current = null; plannedFailoverRef.current = false } }
-  }, [systemAndContext, model, voiceName, startFailoverCheckInterval])
+  }, [systemAndContext, model, voiceName, temperature, humeConfigId, startFailoverCheckInterval])
 
   connectPendingFailoverRef.current = connectPendingFailover
 
@@ -861,6 +905,9 @@ ${manseText || '(만세력 없음)'}
     clearSilenceTimer()
     recorderRef.current?.stop()
     streamerRef.current?.stop()
+    humeCurrentAudioRef.current?.pause()
+    humeCurrentAudioRef.current = null
+    humeAudioQueueRef.current.length = 0
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'disconnect' }))
       wsRef.current.close()
@@ -1066,6 +1113,10 @@ ${manseText || '(만세력 없음)'}
         systemInstruction: { parts: [{ text: `${sysText}\n\n${contextText}` }] },
         // AI가 먼저 말하도록 Proactive Audio 활성화
         proactivity: { proactiveAudio: true },
+        // GPT/xAI 온도 설정 (프록시에서 처리)
+        temperature,
+        // Hume 설정
+        humeConfigId,
       }
 
       const wsUrl = resolveWsUrl()
@@ -1078,6 +1129,35 @@ ${manseText || '(만세력 없음)'}
       }
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
+
+      /** Hume EVI: audio_output(WAV) 큐를 순서대로 HTMLAudioElement로 재생 */
+      const playHumeQueue = () => {
+        if (humeCurrentAudioRef.current) return
+        if (humeAudioQueueRef.current.length === 0) {
+          isAiSpeakingRef.current = false
+          return
+        }
+        const blob = humeAudioQueueRef.current.shift()!
+        const url = URL.createObjectURL(blob)
+        const audio = new Audio(url)
+        humeCurrentAudioRef.current = audio
+        audio.onended = () => {
+          URL.revokeObjectURL(url)
+          humeCurrentAudioRef.current = null
+          playHumeQueue()
+        }
+        audio.onerror = () => {
+          URL.revokeObjectURL(url)
+          humeCurrentAudioRef.current = null
+          playHumeQueue()
+        }
+        audio.play().catch(() => {
+          URL.revokeObjectURL(url)
+          humeCurrentAudioRef.current = null
+          playHumeQueue()
+        })
+      }
+      playHumeQueueRef.current = playHumeQueue
 
       ws.onopen = () => {
         try {
@@ -1208,10 +1288,29 @@ ${manseText || '(만세력 없음)'}
           }
           if (msg.type === 'audio' && msg.data) {
             clearSilenceTimer()
+            if (isHumeModel(model)) {
+              // Hume EVI: data는 base64 WAV. 큐에 넣고 HTMLAudioElement로 재생 (PCM 스트리머 사용 안 함)
+              const buf = base64ToArrayBuffer(msg.data)
+              const blob = new Blob([buf], { type: 'audio/wav' })
+              humeAudioQueueRef.current.push(blob)
+              audioChunksRef.current.push(msg.data)
+              if (!isAiSpeakingRef.current) {
+                isAiSpeakingRef.current = true
+                const list = conversationSoundsRef.current.filter(Boolean) as HTMLAudioElement[]
+                const roll = Math.random()
+                const prob = bubbleProbRef.current
+                if (list.length > 0 && roll < prob) {
+                  const chosen = list[Math.floor(Math.random() * list.length)]
+                  chosen.currentTime = 0
+                  chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
+                }
+              }
+              playHumeQueue()
+              return
+            }
             const buf = base64ToArrayBuffer(msg.data)
             if (!isAiSpeakingRef.current) {
               isAiSpeakingRef.current = true
-              // 대화중 소리 (확률적, 목록 중 랜덤 1개)
               const list = conversationSoundsRef.current.filter(Boolean) as HTMLAudioElement[]
               const roll = Math.random()
               const prob = bubbleProbRef.current
@@ -1242,9 +1341,7 @@ ${manseText || '(만세력 없음)'}
               streamer.addPCM16(new Uint8Array(buf))
             }
             void streamAndPlay()
-            // AI 오디오 청크 누적 (다시듣기용)
             audioChunksRef.current.push(msg.data)
-            // 침묵깨기 타이머는 streamer.onComplete에서 시작 (재생이 끝난 후)
             return
           }
           if (msg.type === 'text' && msg.text) {
@@ -1302,6 +1399,11 @@ ${manseText || '(만세력 없음)'}
             return
           }
           if (msg.type === 'interrupted') {
+            if (isHumeModel(model)) {
+              humeCurrentAudioRef.current?.pause()
+              humeCurrentAudioRef.current = null
+              humeAudioQueueRef.current.length = 0
+            }
             streamerRef.current?.stop()
             isAiSpeakingRef.current = false
             clearSilenceTimer()

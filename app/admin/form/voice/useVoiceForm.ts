@@ -32,8 +32,14 @@ export interface VoiceFormData {
   recommendation: string
   menu_composition: string
   voice_model: string
+  /** 음성 프로바이더: gemini | gpt | grok | hume-evi-3 등 */
+  voice_provider: string
   /** GPT Realtime 전용 음성 (alloy, echo, fable, onyx, nova, shimmer, cedar, marin 등) */
   voice_gpt_name: string
+  /** GPT Realtime 전용 Temperature (0.6~1.2) */
+  voice_temperature: number
+  /** Hume EVI 전용 Config ID */
+  voice_hume_config_id: string
   voice_advisor_video_url: string
   voice_gender: 'female' | 'male'
   voice_style: string
@@ -102,7 +108,10 @@ const INITIAL_FORM: VoiceFormData = {
   recommendation: '',
   menu_composition: '',
   voice_model: 'gpt-4o-realtime-preview',
+  voice_provider: 'gemini',
   voice_gpt_name: 'alloy',
+  voice_temperature: 0.8,
+  voice_hume_config_id: '',
   voice_advisor_video_url: '',
   voice_gender: 'female',
   voice_style: 'warm',
@@ -226,8 +235,11 @@ export function useVoiceForm() {
           introduction: c.introduction ?? '',
           recommendation: c.recommendation ?? '',
           menu_composition: c.menu_composition ?? '',
-          voice_model: c.voice_model ?? 'gpt-4o-realtime-preview',
+          voice_model: c.voice_model ?? 'gemini-2.5-flash-native-audio-preview-12-2025',
+          voice_provider: c.voice_provider ?? 'gemini',
           voice_gpt_name: c.voice_gpt_name ?? 'alloy',
+          voice_temperature: c.voice_temperature ?? 0.8,
+          voice_hume_config_id: c.voice_hume_config_id ?? '',
           voice_advisor_video_url: c.voice_advisor_video_url ?? '',
           voice_gender: c.voice_gender === 'male' ? 'male' : 'female',
           voice_style: c.voice_style ?? c.voice_tendency ?? 'warm',
@@ -442,6 +454,10 @@ export function useVoiceForm() {
         voice_time_options: JSON.stringify(form.voice_time_options),
         voice_conversation_sounds: form.voice_conversation_sounds,
         voice_conversation_sound_probability_pct: form.voice_conversation_sound_probability_pct,
+        voice_provider: rest.voice_provider,
+        voice_hume_config_id: rest.voice_hume_config_id,
+        voice_gpt_name: rest.voice_gpt_name,
+        voice_temperature: rest.voice_temperature,
         voice_pitch: rest.voice_pitch === '' || rest.voice_pitch == null ? null : Number(rest.voice_pitch),
         voice_speaking_rate: rest.voice_speaking_rate === '' || rest.voice_speaking_rate == null ? null : Number(rest.voice_speaking_rate),
         voice_volume_gain: rest.voice_volume_gain === '' || rest.voice_volume_gain == null ? null : Number(rest.voice_volume_gain),

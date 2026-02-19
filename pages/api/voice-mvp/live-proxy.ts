@@ -288,6 +288,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
                 )
                 const openAiVoice = mapVoiceNameToOpenAi(geminiVoiceName)
                 const openAiModel = mapToOpenAiRealtimeModel(model)
+                const temperature = (config as any)?.temperature != null ? Number((config as any).temperature) : 0.8
+
                 send({ type: 'connecting' })
                 const wsUrl = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(openAiModel)}`
                 console.log('[live-proxy] openai connecting', { model: openAiModel, hasKey: !!apiKey })
@@ -334,6 +336,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
                             create_response: true,
                             interrupt_response: true,
                           },
+                          temperature,
                         },
                       })
                     )
