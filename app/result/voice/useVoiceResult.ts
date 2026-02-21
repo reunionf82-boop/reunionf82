@@ -178,10 +178,22 @@ export function useVoiceResult() {
   /* ── 타이머 ────────────────────────────── */
   const [totalSeconds, setTotalSeconds] = useState(0) // 구매한 총 초
   const [remainingSeconds, setRemainingSeconds] = useState(0)
+  const remainingSecondsRef = useRef(0)
+  useEffect(() => {
+    remainingSecondsRef.current = remainingSeconds
+  }, [remainingSeconds])
   const [showExtendPopup, setShowExtendPopup] = useState(false)
+  /** 1분 무료 연장 팝업 (무료시작/이용가능시간 1회만, 팝업 떠 있을 때 타이머 계속) */
+  const [showFreeExtendPopup, setShowFreeExtendPopup] = useState(false)
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const extendPopupShownRef = useRef(false)
   const sessionStartedRef = useRef(false)
+  /** 무료시작(또는 이용가능시간) 진입이면 true, 바로이용하기 결제 후면 false */
+  const isFreeStartSessionRef = useRef(true)
+  /** 1분 무료 연장 팝업을 이번 세션에서 이미 띄웠으면 true (1회만 표시) */
+  const freeExtendPopupShownThisSessionRef = useRef(false)
+  /** 시간 0이 됐는데 연장 팝업을 띄우지 않은 경우(무료 연장 24h 사용함): 자동 저장 후 폼으로 가기 위함 */
+  const timeHitZeroNoExtendPopupRef = useRef(false)
 
   /* ── WS / 오디오 refs ──────────────────── */
   const wsRef = useRef<WebSocket | null>(null)
@@ -214,6 +226,8 @@ export function useVoiceResult() {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** AI 발화 종료 시각. 스피커 에코·볼륨 decay로 타이머가 무효화되는 것을 방지. 종료 직후 3초간은 볼륨으로 clear 안 함 (3초 침묵 타이머 전체 커버) */
   const lastAiSpeechEndAtRef = useRef(0)
+  /** 사용자 전사가 마지막으로 수신된 시각. 침묵깨기 발동 시 사용자가 방금 말했으면 스킵해 질문에 답하도록 함 */
+  const lastUserTranscriptAtRef = useRef(0)
   /** 뿌잉 예의 확립: 당일(세션) 예의 위반 횟수. 2회 시 상담 종료 */
   const etiquetteViolationCountRef = useRef(0)
   /** 현재 user 턴에서 이미 감지한 위반 유형 (같은 턴 내 중복 카운트 방지) */
@@ -291,6 +305,12 @@ export function useVoiceResult() {
         }
         contentIdRef.current = cid
 
+        // 상담 종료(시간 0) 후 폼을 나갔다가 이전 버튼으로 재진입한 경우 → 폼으로 리다이렉트(반응 없음)
+        if (sessionStorage.getItem('voice_time_expired') === '1') {
+          window.location.replace('/form?id=' + encodeURIComponent(cid))
+          return
+        }
+
         // 콘텐츠 상세 로드 (캐시 무효화: 저장 후 소리 설정이 바로 반영되도록)
         const res = await fetch(`/api/content/${cid}?full=true&_t=${Date.now()}`, { cache: 'no-store' })
         if (!res.ok) throw new Error('콘텐츠를 불러올 수 없습니다.')
@@ -307,25 +327,32 @@ export function useVoiceResult() {
         }
         console.log('[VoiceResult] voice_time_options:', c?.voice_time_options)
 
-        // 시간 결정: sessionStorage 값 → voice_time_options 첫 번째 → fallback 5분
-        let voiceMin = 5
-        if (storedVoiceMin) {
-          voiceMin = parseInt(storedVoiceMin, 10)
-        } else if (Array.isArray(c?.voice_time_options) && c.voice_time_options.length > 0) {
-          voiceMin = c.voice_time_options[0].minutes || 5
+        // 시간 결정: sessionStorage → 기본시간(type:'default' 또는 price 0) → fallback 5분
+        const opts = Array.isArray(c?.voice_time_options) ? c.voice_time_options : []
+        const defaultOpt = opts.find((o: any) => o?.type === 'default' || (o && Number(o?.price) === 0))
+        const defaultSecs = defaultOpt ? (Number(defaultOpt.minutes || 0) * 60 + Number(defaultOpt.seconds ?? 0)) || 300 : 300
+        const storedTotalSec = sessionStorage.getItem('payment_voice_total_seconds')
+        let secs = 300
+        if (storedTotalSec) {
+          const n = parseInt(storedTotalSec, 10)
+          if (Number.isFinite(n) && n > 0) secs = n
+        } else if (storedVoiceMin) {
+          secs = parseInt(storedVoiceMin, 10) * 60
+        } else {
+          secs = defaultSecs
         }
+        const voiceMin = Math.floor(secs / 60)
         voiceMinutesRef.current = voiceMin
-        const secs = voiceMin * 60
         setTotalSeconds(secs)
-        // 이전에 시간이 0이 된 적 있으면 재진입 시에도 0 유지 (이전/홈 후 다시 5분으로 복구 방지)
         const expired = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('voice_time_expired') === '1'
         setRemainingSeconds(expired ? 0 : secs)
-        console.log('[VoiceResult] voiceMinutes:', voiceMin, '(source:', storedVoiceMin ? 'sessionStorage' : 'voice_time_options[0]', ')', expired ? ', expired: remaining=0' : '')
+        console.log('[VoiceResult] voiceMinutes:', voiceMin, '(source:', storedVoiceMin ? 'sessionStorage' : 'defaultTime', ')', expired ? ', expired: remaining=0' : '')
 
         setContentData(c)
+        isFreeStartSessionRef.current = !sessionStorage.getItem('voice_entered_by_100')
 
-        // 방문 빈도 (당일 localStorage 기준)
-        const count = getAndIncrementVisitCountToday()
+        // 방문 빈도 (당일 localStorage, 상품별 개별 카운트)
+        const count = getAndIncrementVisitCountToday(cid)
         setVisitCountToday(count)
 
         // 효과음 세팅
@@ -655,27 +682,56 @@ ${manseText || '(만세력 없음)'}
     return 0.8
   }, [contentData])
 
+  /** 결제 진행 중(보빌리언스 팝업 열림)일 때 타이머 멈춤 */
+  const extendPaymentInProgressRef = useRef(false)
+  /** 시간연장/충전 팝업: 떠 있을 때 AI 말 끝난 뒤에만 타이머 멈춤 */
+  const extendPopupOpenRef = useRef(false)
+  /** 시간연장/충전 팝업 떠 있을 때 마이크 복원용 (닫을 때 이 값으로 복원) */
+  const extendPopupMutedRestoreRef = useRef(false)
+  const prevExtendPopupOpenRef = useRef(false)
+  useEffect(() => {
+    const wasOpen = prevExtendPopupOpenRef.current
+    prevExtendPopupOpenRef.current = showExtendPopup
+    extendPopupOpenRef.current = showExtendPopup
+    if (showExtendPopup) {
+      if (!wasOpen) extendPopupMutedRestoreRef.current = muted
+      setMuted(true)
+      recorderRef.current?.stop()
+    } else {
+      setMuted(extendPopupMutedRestoreRef.current)
+      if (connected) recorderRef.current?.start().catch(() => {})
+    }
+  }, [showExtendPopup, muted, connected])
+
   /* ── 타이머 ────────────────────────────── */
   const startTimer = useCallback(() => {
     if (timerIntervalRef.current) return
     sessionStartedRef.current = true
     timerIntervalRef.current = setInterval(() => {
       setRemainingSeconds((prev) => {
+        if (extendPaymentInProgressRef.current) return prev
+        if (extendPopupOpenRef.current && !isAiSpeakingRef.current) return prev
         const next = prev - 1
-        // 30초 전 추가결제 팝업 (무료 연장을 이미 24h 내 사용했으면 연장 팝업 자체를 띄우지 않음)
+        // 30초 전: 무료시작 1회 → 1분 무료 연장 팝업 / 그 외 → 시간연장·충전 팝업 (팝업 띄울 때마다 sessionStorage 재확인 → 리셋 후에도 정확히 동작)
         if (next === 30 && !extendPopupShownRef.current) {
           extendPopupShownRef.current = true
-          const cid = contentIdRef.current
-          const FREE_EXTEND_COOLDOWN_MS = 24 * 60 * 60 * 1000
-          let alreadyUsedFreeExtend = false
-          if (typeof window !== 'undefined' && cid) {
-            const lastAt = localStorage.getItem(`voice_free_extend_${cid}`)
-            if (lastAt) {
-              const elapsed = Date.now() - parseInt(lastAt, 10)
-              if (elapsed < FREE_EXTEND_COOLDOWN_MS) alreadyUsedFreeExtend = true
+          const isFreeStartNow = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
+          if (isFreeStartNow && !freeExtendPopupShownThisSessionRef.current) {
+            freeExtendPopupShownThisSessionRef.current = true
+            setShowFreeExtendPopup(true)
+          } else {
+            const cid = contentIdRef.current
+            const FREE_EXTEND_COOLDOWN_MS = 24 * 60 * 60 * 1000
+            let alreadyUsedFreeExtend = false
+            if (typeof window !== 'undefined' && cid) {
+              const lastAt = localStorage.getItem(`voice_free_extend_${cid}`)
+              if (lastAt) {
+                const elapsed = Date.now() - parseInt(lastAt, 10)
+                if (elapsed < FREE_EXTEND_COOLDOWN_MS) alreadyUsedFreeExtend = true
+              }
             }
+            if (!alreadyUsedFreeExtend) setShowExtendPopup(true)
           }
-          if (!alreadyUsedFreeExtend) setShowExtendPopup(true)
         }
         // 시간 종료
         if (next <= 0) {
@@ -686,33 +742,48 @@ ${manseText || '(만세력 없음)'}
           try {
             sessionStorage.setItem('voice_time_expired', '1')
           } catch { /* ignore */ }
-          // 연장 팝업이 이미 떠 있는 상태면 닫고 disconnect → 저장 후 상담종료 팝업 표시
           if (extendPopupShownRef.current) {
-            setTimeout(() => {
-              setShowExtendPopup(false)
-              disconnectInternalRef.current?.()
-            }, 0)
+            timeHitZeroNoExtendPopupRef.current = true
             return 0
           }
-          // 연장 팝업이 아직 표시되지 않았으면 표시 (무료 연장 이미 사용했으면 띄우지 않음)
           extendPopupShownRef.current = true
-          const cid0 = contentIdRef.current
-          const FREE_EXTEND_COOLDOWN_MS_0 = 24 * 60 * 60 * 1000
-          let alreadyUsedFreeExtend0 = false
-          if (typeof window !== 'undefined' && cid0) {
-            const lastAt0 = localStorage.getItem(`voice_free_extend_${cid0}`)
-            if (lastAt0) {
-              const elapsed0 = Date.now() - parseInt(lastAt0, 10)
-              if (elapsed0 < FREE_EXTEND_COOLDOWN_MS_0) alreadyUsedFreeExtend0 = true
+          const isFreeStartAtZero = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
+          if (isFreeStartAtZero && !freeExtendPopupShownThisSessionRef.current) {
+            freeExtendPopupShownThisSessionRef.current = true
+            setShowFreeExtendPopup(true)
+          } else {
+            const cid0 = contentIdRef.current
+            const FREE_EXTEND_COOLDOWN_MS_0 = 24 * 60 * 60 * 1000
+            let alreadyUsedFreeExtend0 = false
+            if (typeof window !== 'undefined' && cid0) {
+              const lastAt0 = localStorage.getItem(`voice_free_extend_${cid0}`)
+              if (lastAt0) {
+                const elapsed0 = Date.now() - parseInt(lastAt0, 10)
+                if (elapsed0 < FREE_EXTEND_COOLDOWN_MS_0) alreadyUsedFreeExtend0 = true
+              }
+            }
+            if (!alreadyUsedFreeExtend0) {
+              setShowExtendPopup(true)
+            } else {
+              timeHitZeroNoExtendPopupRef.current = true
             }
           }
-          if (!alreadyUsedFreeExtend0) setShowExtendPopup(true)
           return 0
         }
         return next
       })
     }, 1000)
   }, [])
+
+  /** 시간 0 되었을 때(연장 팝업 띄운 경우 포함): 무료 연장 팝업 즉시 제거 → 자동 저장 → 안내 팝업 → 확인 시 폼으로 */
+  useEffect(() => {
+    if (remainingSeconds <= 0 && timeHitZeroNoExtendPopupRef.current && disconnectInternalRef.current) {
+      timeHitZeroNoExtendPopupRef.current = false
+      setShowFreeExtendPopup(false)
+      setShowExtendPopup(false)
+      disconnectInternalRef.current()
+    }
+  }, [remainingSeconds])
 
   /* ── 침묵 깨기 ─────────────────────────── */
   const clearSilenceTimer = useCallback(() => {
@@ -759,6 +830,9 @@ ${manseText || '(만세력 없음)'}
     }
     if (isAiSpeakingRef.current) {
       onTtsEnd?.()
+      return
+    }
+    if (Date.now() - lastUserTranscriptAtRef.current < 5000) {
       return
     }
     clearSilenceTimer()
@@ -840,7 +914,10 @@ ${manseText || '(만세력 없음)'}
     if (priorContext) sysText = `${sysText}\n\n[이전 상담 맥락 (이어서 상담해 주세요)]\n${priorContext}`
     const config = {
       responseModalities: [Modality.AUDIO],
-      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+      speechConfig: {
+        languageCode: 'ko-KR',
+        voiceConfig: { prebuiltVoiceConfig: { voiceName } },
+      },
       systemInstruction: { parts: [{ text: `${sysText}\n\n${systemAndContext.contextText}` }] },
       temperature,
     }
@@ -1016,43 +1093,45 @@ ${manseText || '(만세력 없음)'}
           setOutVolume(ev.data.volume)
         })
         // AI 재생이 끝난 후에만 침묵깨기 타이머 시작 (AI가 말하는 중에는 미발동)
+        // [일시 비활성화] 침묵깨기 로직 주석 처리 — 음성모델 티키타카 테스트용
         streamer.onComplete = () => {
           isAiSpeakingRef.current = false
           lastAiSpeechEndAtRef.current = Date.now()
           clearSilenceTimer()
-          const sessionStart = sessionStartTimeRef.current
-          if (sessionStart != null && Date.now() - sessionStart < 5000) return
-          if (skipSilenceBreakRef.current) return
-          if (showConsultationEndModalRef.current) return
-          if (mutedRef.current) return
-          const doSend = sendSilenceBreakRef.current
-          const s1 = silenceBreakSecs.first * 1000
-          const s2 = silenceBreakSecs.second * 1000
-          const s3 = silenceBreakSecs.third * 1000
-          console.log('[침묵깨기] 타이머 설정 (AI 발화 종료 후)', { first: silenceBreakSecs.first, second: silenceBreakSecs.second, third: silenceBreakSecs.third }, '초')
-          silenceTimerRef.current = setTimeout(() => {
-            silenceTimerRef.current = null
-            if (showConsultationEndModalRef.current) return
-            doSend(silenceBreakSecs.first, () => {
-              if (showConsultationEndModalRef.current) return
-              if (!mutedRef.current && !silenceTimerRef.current) {
-                silenceTimerRef.current = setTimeout(() => {
-                  silenceTimerRef.current = null
-                  if (showConsultationEndModalRef.current) return
-                  doSend(silenceBreakSecs.second, () => {
-                    if (showConsultationEndModalRef.current) return
-                    if (!mutedRef.current && !silenceTimerRef.current) {
-                      silenceTimerRef.current = setTimeout(() => {
-                        silenceTimerRef.current = null
-                        if (showConsultationEndModalRef.current) return
-                        doSend(1, undefined)
-                      }, s3)
-                    }
-                  })
-                }, s2)
-              }
-            })
-          }, s1)
+          // --- 침묵깨기 타이머 설정 (주석 처리) ---
+          // const sessionStart = sessionStartTimeRef.current
+          // if (sessionStart != null && Date.now() - sessionStart < 5000) return
+          // if (skipSilenceBreakRef.current) return
+          // if (showConsultationEndModalRef.current) return
+          // if (mutedRef.current) return
+          // const doSend = sendSilenceBreakRef.current
+          // const s1 = silenceBreakSecs.first * 1000
+          // const s2 = silenceBreakSecs.second * 1000
+          // const s3 = silenceBreakSecs.third * 1000
+          // console.log('[침묵깨기] 타이머 설정 (AI 발화 종료 후)', { first: silenceBreakSecs.first, second: silenceBreakSecs.second, third: silenceBreakSecs.third }, '초')
+          // silenceTimerRef.current = setTimeout(() => {
+          //   silenceTimerRef.current = null
+          //   if (showConsultationEndModalRef.current) return
+          //   doSend(silenceBreakSecs.first, () => {
+          //     if (showConsultationEndModalRef.current) return
+          //     if (!mutedRef.current && !silenceTimerRef.current) {
+          //       silenceTimerRef.current = setTimeout(() => {
+          //         silenceTimerRef.current = null
+          //         if (showConsultationEndModalRef.current) return
+          //         doSend(silenceBreakSecs.second, () => {
+          //           if (showConsultationEndModalRef.current) return
+          //           if (!mutedRef.current && !silenceTimerRef.current) {
+          //             silenceTimerRef.current = setTimeout(() => {
+          //               silenceTimerRef.current = null
+          //               if (showConsultationEndModalRef.current) return
+          //               doSend(1, undefined)
+          //             }, s3)
+          //           }
+          //         })
+          //       }, s2)
+          //     }
+          //   })
+          // }, s1)
         }
         streamerRef.current = streamer
 
@@ -1129,7 +1208,10 @@ ${manseText || '(만세력 없음)'}
 
       const config: any = {
         responseModalities: [Modality.AUDIO],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+        speechConfig: {
+          languageCode: 'ko-KR',
+          voiceConfig: { prebuiltVoiceConfig: { voiceName } },
+        },
         systemInstruction: { parts: [{ text: `${sysText}\n\n${contextText}` }] },
         // AI가 먼저 말하도록 Proactive Audio 활성화
         proactivity: { proactiveAudio: true },
@@ -1232,6 +1314,26 @@ ${manseText || '(만세력 없음)'}
               userName2
                 ? `[시스템] 내담자 "${userName2}"님이 추가 결제 후 다시 접속했습니다. "다시 오셨군요" 등의 자연스러운 인사와 함께, 이전 대화 맥락을 기억하면서 이어서 상담해 주세요.`
                 : `[시스템] 내담자가 추가 결제 후 다시 접속했습니다. 이전 대화 맥락을 기억하면서 자연스럽게 이어서 상담해 주세요.`
+            const startRecorderDelayed = () => {
+              const startRecorder = async () => {
+                if (!recorderRef.current || wsRef.current?.readyState !== WebSocket.OPEN || mutedRef.current) return
+                try {
+                  if (isIOSDevice()) {
+                    const primedStream = iosMicStreamPromiseRef.current
+                      ? await iosMicStreamPromiseRef.current
+                      : undefined
+                    await recorderRef.current!.start(primedStream, iosRecorderContextRef.current ?? undefined)
+                    iosRecorderContextRef.current = null
+                  } else {
+                    await recorderRef.current!.start()
+                  }
+                } catch (e: any) {
+                  setError(e?.message || '마이크를 사용할 수 없습니다.')
+                }
+              }
+              void startRecorder()
+            }
+            setTimeout(startRecorderDelayed, 1500)
             ;(async () => {
               let greetTrigger: string
               const fromContent = isResumedSession
@@ -1284,25 +1386,6 @@ ${manseText || '(만세력 없음)'}
               }
               sendGreet()
               setTimeout(sendGreet, 100)
-              setTimeout(() => {
-                const startRecorder = async () => {
-                  if (!recorderRef.current || wsRef.current?.readyState !== WebSocket.OPEN || muted) return
-                  try {
-                    if (isIOSDevice()) {
-                      const primedStream = iosMicStreamPromiseRef.current
-                        ? await iosMicStreamPromiseRef.current
-                        : undefined
-                      await recorderRef.current.start(primedStream, iosRecorderContextRef.current ?? undefined)
-                      iosRecorderContextRef.current = null
-                    } else {
-                      await recorderRef.current.start()
-                    }
-                  } catch (e: any) {
-                    setError(e?.message || '마이크를 사용할 수 없습니다.')
-                  }
-                }
-                void startRecorder()
-              }, 1500)
             })()
             return
           }
@@ -1378,6 +1461,10 @@ ${manseText || '(만세력 없음)'}
             const role = msg.role === 'user' ? 'user' : 'assistant'
             const txt = String(msg.text).trim()
             if (txt) {
+              if (role === 'user') {
+                lastUserTranscriptAtRef.current = Date.now()
+                clearSilenceTimer()
+              }
               const isPpoingSession = isPpoingAttributes(contentData)
               if (role === 'assistant') {
                 currentUserTurnViolationsRef.current = new Set()
@@ -1487,6 +1574,7 @@ ${manseText || '(만세력 없음)'}
       if (!recorderRef.current) recorderRef.current = new AudioRecorder(16000)
       const recorder = recorderRef.current
       const onData = (base64: string) => {
+        if (extendPopupOpenRef.current) return
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
         wsRef.current.send(JSON.stringify({ type: 'audio', data: base64, mimeType: 'audio/pcm;rate=16000' }))
       }
@@ -1529,19 +1617,59 @@ ${manseText || '(만세력 없음)'}
   /* ── 추가 결제 닫기 ─────────────────────── */
   const dismissExtendPopup = useCallback(() => {
     setShowExtendPopup(false)
-    // 시간이 이미 0 이하이면 상담 종료 (대화 저장 포함)
-    if (remainingSeconds <= 0) {
-      disconnectInternal() // 기본적으로 대화 저장 트리거됨
+    if (remainingSecondsRef.current <= 0) {
+      disconnectInternal()
     }
-  }, [remainingSeconds])
+  }, [])
+
+  /* ── 1분 무료 연장 팝업 (무료시작 1회만, 팝업 중 타이머 계속) ── */
+  const dismissFreeExtendPopup = useCallback(() => {
+    setShowFreeExtendPopup(false)
+    if (remainingSecondsRef.current <= 0) {
+      disconnectInternal()
+    }
+  }, [])
+  const handleFreeExtend1Min = useCallback(() => {
+    const cid = contentIdRef.current
+    if (typeof window !== 'undefined' && cid) {
+      try {
+        localStorage.setItem(`voice_free_extend_${cid}`, String(Date.now()))
+      } catch { /* ignore */ }
+    }
+    const addSec = 60
+    setRemainingSeconds((prev) => prev + addSec)
+    setTotalSeconds((prev) => prev + addSec)
+    if (!timerIntervalRef.current && connected) startTimer()
+    setShowFreeExtendPopup(false)
+  }, [connected, startTimer])
 
   /* ── 보이스 화면 내 추가 결제 (In-Page Payment) ── */
-  const [selectedExtendOption, setSelectedExtendOption] = useState<{ minutes: number; price: number; label: string } | null>(null)
+  const [selectedExtendOption, setSelectedExtendOption] = useState<{ minutes: number; seconds?: number; price: number; label: string; charge?: boolean } | null>(null)
+  const [extendPaymentMethod, setExtendPaymentMethod] = useState<'card' | 'mobile'>('card')
   const [extendPaymentProcessing, setExtendPaymentProcessing] = useState(false)
   const paymentWindowRef = useRef<Window | null>(null)
   /** 무료 연장 24시간 1회 제한: 차단 시 팝업용 */
   const [showFreeExtendBlockedPopup, setShowFreeExtendBlockedPopup] = useState(false)
   const [freeExtendBlockedRemainingMs, setFreeExtendBlockedRemainingMs] = useState(0)
+
+  /* ── 1000원 충전식 잔액 (12초당 19원 차감) ── */
+  const [balanceWan, setBalanceWan] = useState<number>(0)
+  const useBalanceModeRef = useRef(false)
+  const balanceDeductIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const fetchBalance = useCallback(async () => {
+    const cid = contentIdRef.current
+    const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
+    if (!cid || !phone) return
+    try {
+      const res = await fetch(`/api/voice/balance?contentId=${encodeURIComponent(cid)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
+      const data = await res.json()
+      if (data?.success && typeof data.balance_wan === 'number') setBalanceWan(data.balance_wan)
+    } catch { /* ignore */ }
+  }, [])
+  useEffect(() => {
+    if (!contentData?.id) return
+    fetchBalance()
+  }, [contentData?.id, fetchBalance])
 
   useEffect(() => {
     if (!showFreeExtendBlockedPopup || freeExtendBlockedRemainingMs <= 0) return
@@ -1551,12 +1679,13 @@ ${manseText || '(만세력 없음)'}
     return () => clearInterval(t)
   }, [showFreeExtendBlockedPopup, freeExtendBlockedRemainingMs])
 
-  const handleExtendPayment = useCallback(async (option: { minutes: number; price: number; label: string }) => {
+  const handleExtendPayment = useCallback(async (option: { minutes: number; seconds?: number; price: number; label: string; charge?: boolean }, paymentMethodOverride?: 'card' | 'mobile') => {
     if (extendPaymentProcessing) return
     setExtendPaymentProcessing(true)
+    extendPaymentInProgressRef.current = true
     try {
       // 0원 무료 추가: 24시간 내 1회만 가능 (이미 사용했으면 연장 팝업 자체를 안 띄우므로 여기 오는 경우는 드묾; 차단 시 별도 팝업 없이 그냥 return)
-      if (option.price <= 0) {
+      if (!option.charge && option.price <= 0) {
         const cid = contentIdRef.current
         const FREE_EXTEND_COOLDOWN_MS = 24 * 60 * 60 * 1000
         if (typeof window !== 'undefined' && cid) {
@@ -1564,6 +1693,7 @@ ${manseText || '(만세력 없음)'}
           if (lastAt) {
             const elapsed = Date.now() - parseInt(lastAt, 10)
             if (elapsed < FREE_EXTEND_COOLDOWN_MS) {
+              extendPaymentInProgressRef.current = false
               setExtendPaymentProcessing(false)
               return
             }
@@ -1574,12 +1704,14 @@ ${manseText || '(만세력 없음)'}
             localStorage.setItem(`voice_free_extend_${contentIdRef.current}`, String(Date.now()))
           }
         } catch { /* ignore */ }
-        setRemainingSeconds((prev) => prev + option.minutes * 60)
-        setTotalSeconds((prev) => prev + option.minutes * 60)
+        const addSec = (option.minutes || 0) * 60 + (option.seconds ?? 0)
+        setRemainingSeconds((prev) => prev + addSec)
+        setTotalSeconds((prev) => prev + addSec)
         if (!timerIntervalRef.current && connected) startTimer()
         extendPopupShownRef.current = false
         setShowExtendPopup(false)
         setSelectedExtendOption(null)
+        extendPaymentInProgressRef.current = false
         setExtendPaymentProcessing(false)
         return
       }
@@ -1587,7 +1719,7 @@ ${manseText || '(만세력 없음)'}
       const { generateOrderId } = await import('@/lib/payment-utils')
       const oid = generateOrderId()
       const cid = contentIdRef.current
-      const paymentMethod = sessionStorage.getItem('payment_method') || 'card'
+      const paymentMethod = paymentMethodOverride ?? (sessionStorage.getItem('payment_method') || 'card')
       const userName = sessionStorage.getItem('payment_user_name') || ''
       const phoneNumber = sessionStorage.getItem('payment_phone') || ''
       const gender = sessionStorage.getItem('payment_user_gender') || null
@@ -1676,18 +1808,40 @@ ${manseText || '(만세력 없음)'}
           }
         }
         if (confirmed) {
-          // 시간 연장
-          setRemainingSeconds((prev) => prev + option.minutes * 60)
-          setTotalSeconds((prev) => prev + option.minutes * 60)
-          // 타이머가 멈춰있으면 다시 시작
-          if (!timerIntervalRef.current && connected) {
-            startTimer()
+          if (option.charge) {
+            try {
+              const chargeRes = await fetch('/api/voice/balance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'charge', oid: successOid, contentId: cid, phone: phoneNumber }),
+              })
+              const chargeData = await chargeRes.json()
+              if (chargeData?.success && typeof chargeData.balance_wan === 'number') {
+                setBalanceWan(chargeData.balance_wan)
+              }
+            } catch (e) {
+              console.error('[VoiceResult] balance charge api error:', e)
+            }
+            extendPopupShownRef.current = false
+            setShowExtendPopup(false)
+            setSelectedExtendOption(null)
+            extendPaymentInProgressRef.current = false
+            setExtendPaymentProcessing(false)
+            localStorage.removeItem('payment_success_oid')
+            localStorage.removeItem('payment_success_timestamp')
+            localStorage.removeItem('payment_success_signal')
+            return
           }
-          extendPopupShownRef.current = false // 다음 30초 남을 때 다시 팝업 표시
+          const addSec = (option.minutes || 0) * 60 + (option.seconds ?? 0)
+          setRemainingSeconds((prev) => prev + addSec)
+          setTotalSeconds((prev) => prev + addSec)
+          if (!timerIntervalRef.current && connected) startTimer()
+          extendPopupShownRef.current = false
           setShowExtendPopup(false)
           setSelectedExtendOption(null)
-          console.log('[VoiceResult] time extended by', option.minutes, 'minutes')
+          console.log('[VoiceResult] time extended by', addSec, 'seconds')
         }
+        extendPaymentInProgressRef.current = false
         setExtendPaymentProcessing(false)
         // cleanup
         localStorage.removeItem('payment_success_oid')
@@ -1754,6 +1908,7 @@ ${manseText || '(만세력 없음)'}
 
       if (!paymentWindow) {
         alert('팝업이 차단되었습니다. 브라우저 설정에서 팝업을 허용해주세요.')
+        extendPaymentInProgressRef.current = false
         setExtendPaymentProcessing(false)
         document.body.removeChild(form)
         return
@@ -1803,9 +1958,11 @@ ${manseText || '(만세력 없음)'}
               if (statusData.success && statusData.status === 'success') {
                 await processExtendSuccess(oid)
               } else {
+                extendPaymentInProgressRef.current = false
                 setExtendPaymentProcessing(false)
               }
             } else {
+              extendPaymentInProgressRef.current = false
               setExtendPaymentProcessing(false)
             }
             cleanup()
@@ -1827,9 +1984,86 @@ ${manseText || '(만세력 없음)'}
     } catch (e: any) {
       console.error('[VoiceResult] extend payment error:', e)
       alert(e?.message || '결제 처리 중 오류가 발생했습니다.')
+      extendPaymentInProgressRef.current = false
       setExtendPaymentProcessing(false)
     }
   }, [contentData, connected, extendPaymentProcessing, startTimer])
+
+  /** 잔액으로 계속. 콘텐츠 설정(rate_seconds당 rate_won원)으로 차감, 1초만 넘겨도 1블록 전체 차감 */
+  const handleUseBalanceContinue = useCallback(async () => {
+    const cid = contentIdRef.current
+    const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
+    if (!cid || !phone) return
+    const chargeOpt = contentData?.voice_time_options && Array.isArray(contentData.voice_time_options)
+      ? (contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge')
+      : null
+    const rateSeconds = Math.max(1, chargeOpt?.rate_seconds ?? 12)
+    const rateWon = Math.max(1, chargeOpt?.rate_won ?? 19)
+    try {
+      const res = await fetch('/api/voice/balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'deduct', contentId: cid, phone, secondsUsed: rateSeconds, rate_seconds: rateSeconds, rate_won: rateWon }),
+      })
+      const data = await res.json()
+      if (res.status === 402 || !data?.success) {
+        alert('잔액이 부족합니다.')
+        return
+      }
+      setBalanceWan(data.balance_wan ?? 0)
+      setRemainingSeconds((prev) => prev + rateSeconds)
+      setTotalSeconds((prev) => prev + rateSeconds)
+      if (!timerIntervalRef.current && connected) startTimer()
+      useBalanceModeRef.current = true
+      setShowExtendPopup(false)
+      setSelectedExtendOption(null)
+
+      if (balanceDeductIntervalRef.current) clearInterval(balanceDeductIntervalRef.current)
+      balanceDeductIntervalRef.current = setInterval(async () => {
+        if (!useBalanceModeRef.current) return
+        const cid2 = contentIdRef.current
+        const phone2 = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
+        if (!cid2 || !phone2) return
+        try {
+          const r = await fetch('/api/voice/balance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'deduct', contentId: cid2, phone: phone2, secondsUsed: rateSeconds, rate_seconds: rateSeconds, rate_won: rateWon }),
+          })
+          const d = await r.json()
+          if (r.status === 402 || !d?.success) {
+            useBalanceModeRef.current = false
+            if (balanceDeductIntervalRef.current) {
+              clearInterval(balanceDeductIntervalRef.current)
+              balanceDeductIntervalRef.current = null
+            }
+            setRemainingSeconds(0)
+            alert('잔액이 부족하여 상담 시간이 종료됩니다.')
+            return
+          }
+          setBalanceWan(d.balance_wan ?? 0)
+          setRemainingSeconds((prev) => prev + rateSeconds)
+        } catch {
+          useBalanceModeRef.current = false
+          if (balanceDeductIntervalRef.current) {
+            clearInterval(balanceDeductIntervalRef.current)
+            balanceDeductIntervalRef.current = null
+          }
+        }
+      }, rateSeconds * 1000)
+    } catch (e: any) {
+      alert(e?.message || '잔액 차감 중 오류가 발생했습니다.')
+    }
+  }, [contentData, connected, startTimer])
+
+  useEffect(() => {
+    return () => {
+      if (balanceDeductIntervalRef.current) {
+        clearInterval(balanceDeductIntervalRef.current)
+        balanceDeductIntervalRef.current = null
+      }
+    }
+  }, [])
 
   /* ── 상담 종료 시 대화 + 오디오 저장 ────── */
   const saveConversation = useCallback(async () => {
@@ -2084,6 +2318,9 @@ ${manseText || '(만세력 없음)'}
     totalSeconds,
     remainingSeconds,
     showExtendPopup,
+    showFreeExtendPopup,
+    dismissFreeExtendPopup,
+    handleFreeExtend1Min,
     connect,
     disconnect,
     toggleMute,
@@ -2095,8 +2332,14 @@ ${manseText || '(만세력 없음)'}
     // 추가 결제 (In-Page)
     selectedExtendOption,
     setSelectedExtendOption,
+    extendPaymentMethod,
+    setExtendPaymentMethod,
     extendPaymentProcessing,
     handleExtendPayment,
+    // 1000원 충전식 잔액
+    balanceWan,
+    fetchBalance,
+    handleUseBalanceContinue,
     // 무료 연장 24h 1회 제한 차단 팝업
     showFreeExtendBlockedPopup,
     setShowFreeExtendBlockedPopup,

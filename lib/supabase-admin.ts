@@ -206,8 +206,18 @@ export async function getContentById(id: number) {
     } else {
       data.preview_thumbnails = []
     }
+    // voice_time_options(JSONB) 문자열이면 파싱 — 보이스 연장/충전 옵션
+    if (data.voice_time_options != null) {
+      try {
+        const raw = data.voice_time_options
+        data.voice_time_options = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (!Array.isArray(data.voice_time_options)) data.voice_time_options = []
+      } catch {
+        data.voice_time_options = []
+      }
+    }
   }
-  
+
   return data
 }
 

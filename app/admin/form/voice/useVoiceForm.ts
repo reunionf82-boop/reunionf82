@@ -5,10 +5,44 @@ import { buildProtectedHtml, extractImageUrlsFromHtml } from './voice-form-html'
 export type ContentImageModalType = 'introduction' | 'recommendation' | 'menu_composition' | null
 export type HtmlPreviewModeType = 'pc' | 'mobile'
 
-export interface VoiceTimeOption {
+/** 기본시간: 무료시작 시 폼에서 주어지는 시간 (가격 0원 또는 유료 전환 시 설정) */
+export interface VoiceTimeOptionDefault {
+  type: 'default'
   minutes: number
+  seconds?: number
   price: number
   label: string
+}
+/** 시간연장: 보이스 화면에서 상담시간 연장 시 선택하는 유료 옵션 */
+export interface VoiceTimeOptionExtension {
+  type: 'extension'
+  minutes: number
+  seconds?: number
+  price: number
+  label: string
+}
+/** 충전시간: 분:초 + 충전 1회 가격 + 차감 단위(N초당 M원) */
+export interface VoiceTimeOptionCharge {
+  type: 'charge'
+  minutes: number
+  seconds?: number
+  /** 충전 1회 가격(원). 예: 1000 */
+  price: number
+  label?: string
+  rate_seconds: number
+  rate_won: number
+}
+export type VoiceTimeOption = VoiceTimeOptionDefault | VoiceTimeOptionExtension | VoiceTimeOptionCharge
+
+/** 레거시: type 없이 저장된 항목은 extension으로 간주 */
+export function isExtensionOption(o: any): o is VoiceTimeOptionExtension {
+  return o?.type === 'extension' || (o && o.type != 'default' && o.type != 'charge' && typeof o?.price === 'number')
+}
+export function isDefaultOption(o: any): o is VoiceTimeOptionDefault {
+  return o?.type === 'default'
+}
+export function isChargeOption(o: any): o is VoiceTimeOptionCharge {
+  return o?.type === 'charge'
 }
 
 export interface VoiceConversationSound {
@@ -123,7 +157,11 @@ const INITIAL_FORM: VoiceFormData = {
   voice_start_sound_url: '',
   voice_conversation_sounds: [],
   voice_conversation_sound_probability_pct: 5,
-  voice_time_options: [{ minutes: 5, price: 3000, label: '5분' }],
+  voice_time_options: [
+    { type: 'default', minutes: 5, seconds: 0, price: 0, label: '5분(무료)' },
+    { type: 'extension', minutes: 5, seconds: 0, price: 3000, label: '5분 연장' },
+    { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19 },
+  ],
   voice_pitch: '',
   voice_speaking_rate: '',
   voice_volume_gain: '',
@@ -216,10 +254,60 @@ export function useVoiceForm() {
         const c = data?.data ?? data
         if (!c) return
         const timeOpts = c.voice_time_options
-        let parsedTimeOpts: VoiceTimeOption[] = [{ minutes: 5, price: 3000, label: '5분' }]
+        let parsedTimeOpts: VoiceTimeOption[] = [
+          { type: 'default', minutes: 5, seconds: 0, price: 0, label: '5분(무료)' },
+          { type: 'extension', minutes: 5, seconds: 0, price: 3000, label: '5분 연장' },
+          { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19 },
+        ]
         if (timeOpts) {
-          const arr = typeof timeOpts === 'string' ? JSON.parse(timeOpts) : timeOpts
-          if (Array.isArray(arr) && arr.length > 0) parsedTimeOpts = arr
+          try {
+            const arr = typeof timeOpts === 'string' ? JSON.parse(timeOpts) : timeOpts
+            if (Array.isArray(arr) && arr.length > 0) {
+              const normalized: VoiceTimeOption[] = []
+              let hasDefault = false
+              let hasCharge = false
+              for (const o of arr) {
+                if (o?.type === 'default' || (o && (o.price === 0 || o.price === '0') && !hasDefault)) {
+                  normalized.push({
+                    type: 'default',
+                    minutes: Math.max(0, parseInt(o?.minutes, 10) || 0),
+                    seconds: Math.min(59, Math.max(0, parseInt(o?.seconds, 10) || 0)),
+                    price: parseInt(o?.price, 10) || 0,
+                    label: String(o?.label ?? '').trim() || '0분(무료)',
+                  })
+                  hasDefault = true
+                } else if (o?.type === 'charge' || (o?.rate_seconds != null && o?.rate_won != null)) {
+                  normalized.push({
+                    type: 'charge',
+                    minutes: Math.max(0, parseInt(o?.minutes, 10) || 11),
+                    seconds: Math.min(59, Math.max(0, parseInt(o?.seconds, 10) || 0)),
+                    price: Math.max(0, parseInt(o?.price, 10) || 1000),
+                    label: String(o?.label ?? '').trim() || undefined,
+                    rate_seconds: Math.max(1, parseInt(o?.rate_seconds, 10) || 12),
+                    rate_won: Math.max(1, parseInt(o?.rate_won, 10) || 19),
+                  })
+                  hasCharge = true
+                } else {
+                  normalized.push({
+                    type: 'extension',
+                    minutes: Math.max(0, parseInt(o?.minutes, 10) || 0),
+                    seconds: Math.min(59, Math.max(0, parseInt(o?.seconds, 10) || 0)),
+                    price: parseInt(o?.price, 10) || 0,
+                    label: String(o?.label ?? '').trim() || '0분',
+                  })
+                }
+              }
+              if (!hasDefault) {
+                normalized.unshift({ type: 'default', minutes: 5, seconds: 0, price: 0, label: '5분(무료)' })
+              }
+              if (!hasCharge) {
+                normalized.push({ type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19 })
+              }
+              parsedTimeOpts = normalized
+            }
+          } catch {
+            /* keep default parsedTimeOpts */
+          }
         }
         const loadedForm: VoiceFormData = {
           content_type: 'voice',
@@ -387,17 +475,33 @@ export function useVoiceForm() {
     setShowHtmlPreview(true)
   }
 
-  // 시간 상품 관리
+  // 시간 상품 관리: 기본시간(1개) / 시간연장(N개) / 충전시간(1개)
   const addTimeOption = () => {
-    setForm((f) => ({ ...f, voice_time_options: [...f.voice_time_options, { minutes: 5, price: 3000, label: '5분' }] }))
+    setForm((f) => ({
+      ...f,
+      voice_time_options: [...f.voice_time_options, { type: 'extension', minutes: 5, seconds: 0, price: 3000, label: '5분 연장' }],
+    }))
   }
   const removeTimeOption = (index: number) => {
-    setForm((f) => ({ ...f, voice_time_options: f.voice_time_options.filter((_, i) => i !== index) }))
+    setForm((f) => {
+      const opt = f.voice_time_options[index]
+      if (opt && (opt as any).type !== 'extension') return f // 기본시간·충전시간은 삭제 불가
+      return { ...f, voice_time_options: f.voice_time_options.filter((_, i) => i !== index) }
+    })
   }
-  const updateTimeOption = (index: number, key: keyof VoiceTimeOption, value: string | number) => {
+  const updateTimeOption = (index: number, key: string, value: string | number) => {
     setForm((f) => {
       const opts = [...f.voice_time_options]
-      opts[index] = { ...opts[index], [key]: value }
+      const o = opts[index] as any
+      if (!o) return f
+      if (o.type === 'default') {
+        opts[index] = { ...o, [key]: key === 'minutes' || key === 'seconds' || key === 'price' ? Number(value) : value }
+      } else if (o.type === 'extension') {
+        opts[index] = { ...o, [key]: key === 'minutes' || key === 'seconds' || key === 'price' ? Number(value) : value }
+      } else if (o.type === 'charge') {
+        if (key === 'rate_seconds' || key === 'rate_won' || key === 'price' || key === 'minutes' || key === 'seconds') opts[index] = { ...o, [key]: Number(value) }
+        else opts[index] = { ...o, [key]: value }
+      }
       return { ...f, voice_time_options: opts }
     })
   }
@@ -438,7 +542,11 @@ export function useVoiceForm() {
   // 저장
   const handleSave = async () => {
     if (!form.content_name?.trim()) { alert('컨텐츠명을 입력하세요.'); return }
-    if (form.voice_time_options.length === 0) { alert('시간 상품을 1개 이상 추가하세요.'); return }
+    const hasDefault = form.voice_time_options.some((o: any) => o?.type === 'default')
+    const hasExtension = form.voice_time_options.some((o: any) => o?.type === 'extension')
+    const hasCharge = form.voice_time_options.some((o: any) => o?.type === 'charge')
+    if (!hasDefault || !hasCharge) { alert('기본시간과 충전시간 설정이 필요합니다.'); return }
+    if (!hasExtension) { alert('시간연장 옵션을 1개 이상 추가하세요.'); return }
     setSaving(true)
     try {
       const { show_exposed, ...rest } = form

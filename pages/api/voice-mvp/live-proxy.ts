@@ -330,7 +330,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
                           modalities: ['text', 'audio'],
                           input_audio_format: 'pcm16',
                           output_audio_format: 'pcm16',
-                          input_audio_transcription: { model: 'gpt-4o-mini-transcribe' },
+                          input_audio_transcription: { model: 'gpt-4o-mini-transcribe', language: 'ko' },
                           turn_detection: {
                             type: 'server_vad',
                             create_response: true,

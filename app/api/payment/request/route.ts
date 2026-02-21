@@ -17,7 +17,7 @@ import { generateOrderId, truncateStringByBytes } from '@/lib/payment-utils'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { paymentMethod, contentId, paymentCode, name, pay, userName, phoneNumber, oid: clientOid } = body
+    const { paymentMethod, contentId, paymentCode, name, pay, userName, phoneNumber, oid: clientOid, successOrigin: clientSuccessOrigin } = body
 
     // 필수 파라미터 검증
     if (!paymentMethod || !contentId || !paymentCode || !name || !pay) {
@@ -51,13 +51,14 @@ export async function POST(request: NextRequest) {
       ? 'https://www.fortune82.com/api/payment/reqcard.html'
       : 'https://www.fortune82.com/api/payment/reqhp.html'
 
-    // 성공/실패 URL 생성
-    // 중요: 로컬(localhost) 테스트 중이라도 결제 서버가 localhost 리다이렉트를 막을 수 있으므로,
-    // 운영 도메인(reunion.fortune82.com)으로 강제 리다이렉트하여 DB 업데이트를 트리거한다.
-    // (로컬과 운영이 같은 Supabase DB를 쓴다면 로컬에서도 폴링으로 감지 가능)
+    // 성공/실패 URL: 클라이언트가 successOrigin 전달 시 해당 origin 사용(로컬 개발용), 아니면 운영 도메인
     const productionOrigin = 'https://reunion.fortune82.com'
-    const successUrl = `${productionOrigin}/payment/success?oid=${encodeURIComponent(oid)}`
-    const failUrl = `${productionOrigin}/payment/error?code=T001&msg=close`
+    const allowedOrigin = typeof clientSuccessOrigin === 'string' && clientSuccessOrigin.trim() &&
+      (clientSuccessOrigin.startsWith('http://localhost') || clientSuccessOrigin.startsWith('https://localhost') || clientSuccessOrigin === productionOrigin)
+      ? clientSuccessOrigin.replace(/\/$/, '')
+      : productionOrigin
+    const successUrl = `${allowedOrigin}/payment/success?oid=${encodeURIComponent(oid)}`
+    const failUrl = `${allowedOrigin}/payment/error?code=T001&msg=close`
 
     // 결제 요청 데이터 준비
     // (성공/실패 리다이렉트 URL도 포함시켜 결제사가 우리 페이지로 돌아오게 함)

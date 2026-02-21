@@ -12,9 +12,17 @@ import PrivacyPopup from '@/components/PrivacyPopup'
 import MyHistoryPopup from '@/components/MyHistoryPopup'
 import AlertPopup from '@/components/AlertPopup'
 import SlideMenuBar from '@/components/SlideMenuBar'
+import SocialShareButtons from '@/components/SocialShareButtons'
 import SupabaseVideo from '@/components/SupabaseVideo'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
+
+/** 바로이용하기 결제 금액. PG T103(아이템 금액 오류) 시 .env에 NEXT_PUBLIC_SKIP_WAIT_PAY_AMOUNT=1000 등으로 최소 결제 금액에 맞춰 설정 */
+const SKIP_WAIT_PAY_AMOUNT = (() => {
+  if (typeof process === 'undefined' || !process.env.NEXT_PUBLIC_SKIP_WAIT_PAY_AMOUNT) return 100
+  const n = parseInt(process.env.NEXT_PUBLIC_SKIP_WAIT_PAY_AMOUNT, 10)
+  return Number.isFinite(n) && n >= 100 ? n : 100
+})()
 
 function FormContent() {
   const searchParams = useSearchParams()
@@ -613,6 +621,8 @@ function FormContent() {
   
   // 결제 창 참조 (닫기용)
   const paymentWindowRef = useRef<Window | null>(null)
+  // 바로이용하기 폴링 interval (성공 페이지가 oid 없이 로드될 때 clear용)
+  const skipWaitIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // 제출이 끝나면(성공/실패 포함) 결제 버튼 로딩 상태 해제
   useEffect(() => {
@@ -631,6 +641,10 @@ function FormContent() {
   // 무료 음성상담 24시간 1회 제한: 차단 시 팝업
   const [showFreeVoiceOnceModal, setShowFreeVoiceOnceModal] = useState(false)
   const [freeVoiceOnceRemainingMs, setFreeVoiceOnceRemainingMs] = useState(0)
+  // 0원 음성 폼: 이용 가능 시간 역카운트(1초마다)
+  const [freeVoiceFormRemainingMs, setFreeVoiceFormRemainingMs] = useState(0)
+  // 바로이용하기(100원 결제) 팝업
+  const [showSkipWaitPopup, setShowSkipWaitPopup] = useState(false)
   
   // 로딩 팝업 상태 (PDF 생성 등)
   const [showLoadingPopup, setShowLoadingPopup] = useState(false)
@@ -664,6 +678,23 @@ function FormContent() {
     }, 1000)
     return () => clearInterval(t)
   }, [showFreeVoiceOnceModal, freeVoiceOnceRemainingMs])
+
+  // 0원 음성 폼: 이용 가능 시간 역카운트 (1초마다)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !content?.id || content?.content_type !== 'voice') return
+    const p = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
+    if (!Number.isFinite(p) || p > 0) return
+    const contentId = String(content.id)
+    const lastAt = localStorage.getItem(`voice_free_start_${contentId}`)
+    const FREE_MS = 24 * 60 * 60 * 1000
+    const remaining = lastAt ? Math.max(0, FREE_MS - (Date.now() - parseInt(lastAt, 10))) : 0
+    setFreeVoiceFormRemainingMs(remaining)
+    if (remaining <= 0) return
+    const t = setInterval(() => {
+      setFreeVoiceFormRemainingMs((prev) => Math.max(0, prev - 1000))
+    }, 1000)
+    return () => clearInterval(t)
+  }, [content?.id, content?.content_type, content?.price])
   
   // 개인정보 수집 및 이용 팝업 상태
   const [showPrivacyPopup, setShowPrivacyPopup] = useState(false)
@@ -2588,6 +2619,16 @@ function FormContent() {
         setPaymentProcessingMethod(null)
         return
       }
+
+      // 바로이용하기(100원) 음성 결제: 생년월일 없이 바로 음성 결과로 이동
+      if (typeof window !== 'undefined' && sessionStorage.getItem('voice_entered_by_100')) {
+        isProcessing = false
+        setShowPaymentPopup(false)
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
+        window.location.href = `/result/voice?oid=${encodeURIComponent(oid)}`
+        return
+      }
       
       // sessionStorage에서 사용자 정보 가져오기
       const paymentUserName = sessionStorage.getItem('payment_user_name')
@@ -2797,7 +2838,29 @@ function FormContent() {
       if (event.origin !== window.location.origin) {
         return
       }
-      
+      // 성공 페이지가 oid 없이 로드됨(PG가 쿼리스트링 제거 시) → 본창이 저장된 oid로 complete 후 리다이렉트
+      if (event.data?.type === 'PAYMENT_SUCCESS_POPUP_LOADED' && event.data?.hasOid === false) {
+        const storedOid = typeof window !== 'undefined' ? sessionStorage.getItem('payment_oid') : null
+        const isSkipWait = typeof window !== 'undefined' ? sessionStorage.getItem('voice_entered_by_100') : null
+        if (storedOid && isSkipWait) {
+          if (skipWaitIntervalRef.current) {
+            clearInterval(skipWaitIntervalRef.current)
+            skipWaitIntervalRef.current = null
+          }
+          try {
+            await fetch('/api/payment/complete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ oid: storedOid, password: sessionStorage.getItem('payment_password') || null }),
+            })
+          } catch { /* ignore */ }
+          setSubmitting(false)
+          setTimeout(() => {
+            window.location.href = `/result/voice?oid=${encodeURIComponent(storedOid)}`
+          }, 50)
+        }
+        return
+      }
       // PAYMENT_SUCCESS 타입 메시지만 처리
       if (event.data?.type === 'PAYMENT_SUCCESS' && event.data?.oid) {
 
@@ -3032,6 +3095,7 @@ function FormContent() {
       const oid = generateOrderId()
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
       if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('voice_entered_by_100')
         sessionStorage.setItem('payment_oid', oid)
         sessionStorage.setItem('payment_method', 'card')
         sessionStorage.setItem('payment_content_id', String(content.id))
@@ -3059,7 +3123,10 @@ function FormContent() {
           localStorage.setItem('voice_content_id', String(content.id))
         } catch { /* ignore */ }
         if (selectedVoiceOption) {
+          const sec = (selectedVoiceOption as { minutes?: number; seconds?: number }).seconds ?? 0
+          const totalSec = (selectedVoiceOption.minutes || 0) * 60 + sec
           sessionStorage.setItem('payment_voice_minutes', String(selectedVoiceOption.minutes))
+          sessionStorage.setItem('payment_voice_total_seconds', String(totalSec || 300))
           sessionStorage.setItem('payment_voice_time_option', JSON.stringify(selectedVoiceOption))
           sessionStorage.removeItem('voice_time_expired')
         }
@@ -3199,6 +3266,10 @@ function FormContent() {
         !!content?.voice_persona_prompt ||
         (Array.isArray(voiceTimeOptions) && voiceTimeOptions.length > 0) ||
         (typeof content?.content_name === 'string' && content.content_name.includes('음성'))
+      /** 무료시작 시 사용: 기본시간(type:'default' 또는 price 0) */
+      const defaultVoiceOption = isVoiceContent && Array.isArray(voiceTimeOptions)
+        ? (voiceTimeOptions.find((o: any) => o?.type === 'default' || Number(o?.price) === 0) || voiceTimeOptions[0])
+        : null
       const selectedVoiceOption = isVoiceContent && voiceTimeOptions.length > 0 ? voiceTimeOptions[0] : null
 
       // PG 진행 여부: 팝업 이용금액과 동일하게 content.price 기준으로 0원 여부 판단 (voice_time_options[0] 아님)
@@ -3233,6 +3304,7 @@ function FormContent() {
         const oid = generateOrderId()
         const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
         if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('voice_entered_by_100')
           sessionStorage.setItem('payment_oid', oid)
           sessionStorage.setItem('payment_method', 'card')
           sessionStorage.setItem('payment_content_id', String(content.id))
@@ -3258,9 +3330,12 @@ function FormContent() {
             localStorage.setItem('voice_payment_oid', oid)
             localStorage.setItem('voice_content_id', String(content.id))
           } catch { /* ignore */ }
-          if (selectedVoiceOption) {
-            sessionStorage.setItem('payment_voice_minutes', String(selectedVoiceOption.minutes))
-            sessionStorage.setItem('payment_voice_time_option', JSON.stringify(selectedVoiceOption))
+          if (defaultVoiceOption) {
+            const sec = (defaultVoiceOption as { minutes?: number; seconds?: number }).seconds ?? 0
+            const totalSec = (defaultVoiceOption.minutes || 0) * 60 + sec
+            sessionStorage.setItem('payment_voice_minutes', String(defaultVoiceOption.minutes))
+            sessionStorage.setItem('payment_voice_total_seconds', String(totalSec || 300))
+            sessionStorage.setItem('payment_voice_time_option', JSON.stringify(defaultVoiceOption))
             sessionStorage.removeItem('voice_time_expired')
           }
           try {
@@ -3403,7 +3478,10 @@ function FormContent() {
           }
           // 음성형: 시간상품 정보 저장
           if (selectedVoiceOption) {
+            const sec = (selectedVoiceOption as { minutes?: number; seconds?: number }).seconds ?? 0
+            const totalSec = (selectedVoiceOption.minutes || 0) * 60 + sec
             sessionStorage.setItem('payment_voice_minutes', String(selectedVoiceOption.minutes))
+            sessionStorage.setItem('payment_voice_total_seconds', String(totalSec || 300))
             sessionStorage.setItem('payment_voice_time_option', JSON.stringify(selectedVoiceOption))
             sessionStorage.removeItem('voice_time_expired')
           }
@@ -3678,6 +3756,302 @@ function FormContent() {
       setSubmitting(false)
       setPaymentProcessingMethod(null)
       showAlertMessage(error?.message || '결제 처리 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 바로이용하기: 즉시 이용 금액 결제 후 음성 시작 (전화번호·비밀번호 필수, 카드/휴대폰 선택)
+  const handleSkipWaitPay100 = async (paymentMethod: 'card' | 'mobile') => {
+    if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
+      showAlertMessage('전화번호를 입력해 주세요. (이용내역 확인용)')
+      return
+    }
+    if (!password || password.length < 4) {
+      showAlertMessage('비밀번호를 4자리 이상 입력해 주세요.')
+      return
+    }
+    if (!content || !content.id || !content.payment_code) {
+      showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
+      return
+    }
+    setShowSkipWaitPopup(false)
+    setSubmitting(true)
+    try {
+      const { generateOrderId } = await import('@/lib/payment-utils')
+      const oid = generateOrderId()
+      const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+      const skipWaitOption = { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' }
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('payment_oid', oid)
+        sessionStorage.setItem('payment_method', paymentMethod)
+        sessionStorage.setItem('payment_content_id', String(content.id))
+        sessionStorage.setItem('payment_user_name', name)
+        sessionStorage.setItem('payment_phone', phoneNumber)
+        sessionStorage.setItem('payment_password', password)
+        sessionStorage.setItem('voice_pay_amount', String(SKIP_WAIT_PAY_AMOUNT))
+        sessionStorage.setItem('voice_entered_by_100', '1')
+        sessionStorage.setItem('payment_voice_minutes', '1')
+        sessionStorage.setItem('payment_voice_total_seconds', '60')
+        sessionStorage.setItem('payment_voice_time_option', JSON.stringify(skipWaitOption))
+        sessionStorage.removeItem('voice_time_expired')
+        sessionStorage.setItem('payment_user_gender', gender || '')
+        sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
+        sessionStorage.setItem('payment_user_year', year || '')
+        sessionStorage.setItem('payment_user_month', month || '')
+        sessionStorage.setItem('payment_user_day', day || '')
+        sessionStorage.setItem('payment_user_birth_hour', birthHour || '')
+        if (partnerName) {
+          sessionStorage.setItem('payment_partner_name', partnerName)
+          sessionStorage.setItem('payment_partner_gender', partnerGender || '')
+          sessionStorage.setItem('payment_partner_calendar_type', partnerCalendarType || 'solar')
+          sessionStorage.setItem('payment_partner_year', partnerYear || '')
+          sessionStorage.setItem('payment_partner_month', partnerMonth || '')
+          sessionStorage.setItem('payment_partner_day', partnerDay || '')
+          sessionStorage.setItem('payment_partner_birth_hour', partnerBirthHour || '')
+        }
+        try {
+          localStorage.setItem('voice_payment_oid', oid)
+          localStorage.setItem('voice_content_id', String(content.id))
+        } catch { /* ignore */ }
+      }
+      // DB에 pending 저장 필수: 성공 페이지의 complete가 이 행을 success로 갱신하고, 폴링이 success를 감지함
+      const saveRes = await fetch('/api/payment/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          oid,
+          contentId: content.id,
+          paymentCode: content.payment_code,
+          name: content.content_name || '',
+          pay: SKIP_WAIT_PAY_AMOUNT,
+          paymentType: paymentMethod,
+          userName: name,
+          phoneNumber,
+          gender: (gender as 'male' | 'female' | '') || null,
+          password: typeof window !== 'undefined' ? sessionStorage.getItem('payment_password') : null,
+          status: 'pending',
+          calendarType: calendarType || undefined,
+          birthYear: year ? parseInt(String(year), 10) : undefined,
+          birthMonth: month ? parseInt(String(month), 10) : undefined,
+          birthDay: day ? parseInt(String(day), 10) : undefined,
+          birthHour: birthHour || undefined,
+          voice_minutes: 1,
+          voice_time_option: JSON.stringify(skipWaitOption),
+        }),
+      })
+      if (!saveRes.ok) {
+        const errData = await saveRes.json().catch(() => ({}))
+        throw new Error(errData?.error || '결제 정보 저장에 실패했습니다.')
+      }
+      const saveData = await saveRes.json().catch(() => ({}))
+      if (!saveData?.success) {
+        throw new Error(saveData?.error || '결제 정보 저장에 실패했습니다.')
+      }
+      const paymentRequestResponse = await fetch('/api/payment/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentMethod,
+          contentId: content.id,
+          paymentCode: content.payment_code,
+          name: content.content_name || '',
+          pay: SKIP_WAIT_PAY_AMOUNT,
+          userName: name,
+          phoneNumber,
+          oid,
+          successOrigin: typeof window !== 'undefined' ? window.location.origin : undefined,
+        }),
+      })
+      if (!paymentRequestResponse.ok) {
+        const errorData = await paymentRequestResponse.json().catch(() => ({}))
+        throw new Error(errorData.error || '결제 요청에 실패했습니다.')
+      }
+      const paymentRequestData = await paymentRequestResponse.json()
+      if (!paymentRequestData.success) {
+        throw new Error(paymentRequestData.error || '결제 요청에 실패했습니다.')
+      }
+      const { paymentUrl, formData, successUrl, failUrl } = paymentRequestData.data
+      const form = document.createElement('form')
+      form.method = 'POST'
+      form.action = paymentUrl
+      form.style.display = 'none'
+      const redirectFields: Record<string, string> = {
+        successUrl, failUrl, success_url: successUrl, fail_url: failUrl,
+        returnUrl: successUrl, return_url: successUrl, ret_url: successUrl, nextUrl: successUrl,
+      }
+      const fullFormData: Record<string, string> = {
+        ...Object.fromEntries(Object.entries(formData).map(([k, v]) => [k, String(v)])),
+        ...redirectFields,
+      }
+      Object.entries(fullFormData).forEach(([key, value]) => {
+        const input = document.createElement('input')
+        input.type = 'hidden'
+        input.name = key
+        input.value = String(value)
+        form.appendChild(input)
+      })
+      document.body.appendChild(form)
+      const paymentWindowName = `payment_${oid}`
+      const paymentWindow = window.open('about:blank', paymentWindowName, 'width=800,height=600')
+      paymentWindowRef.current = paymentWindow
+      if (!paymentWindow) {
+        alert('팝업이 차단되었습니다. 브라우저에서 팝업을 허용해 주세요.')
+        setSubmitting(false)
+        return
+      }
+      form.target = paymentWindowName
+      paymentWindow.focus()
+      setTimeout(() => {
+        try { form.submit() } catch { try { paymentWindow.focus() } catch {} }
+      }, 100)
+      setTimeout(() => {
+        if (document.body.contains(form)) document.body.removeChild(form)
+      }, 100)
+
+      // 결제 성공 감지: 서버 폴링 + 창 닫힘 시 확인. 성공 시 전역 핸들러 의존 없이 직접 이동.
+      const doSkipWaitSuccess = () => {
+        if (skipWaitIntervalRef.current) {
+          clearInterval(skipWaitIntervalRef.current)
+          skipWaitIntervalRef.current = null
+        }
+        setSubmitting(false)
+        try {
+          if (paymentWindowRef.current && !paymentWindowRef.current.closed) paymentWindowRef.current.close()
+        } catch { /* ignore */ }
+        setTimeout(() => {
+          window.location.href = `/result/voice?oid=${encodeURIComponent(oid)}`
+        }, 50)
+      }
+      let skipWaitCheckCount = 0
+      skipWaitIntervalRef.current = setInterval(async () => {
+        try {
+          skipWaitCheckCount++
+          // 매 틱마다 상태 확인 (2초마다가 아님)
+          const statusRes = await fetch(`/api/payment/status?oid=${oid}`, { cache: 'no-store' })
+          const statusData = await statusRes.json().catch(() => ({}))
+          if (statusData?.success && statusData?.status === 'success') {
+            clearInterval(skipWaitIntervalRef.current!)
+            skipWaitIntervalRef.current = null
+            doSkipWaitSuccess()
+            return
+          }
+          if (paymentWindow.closed) {
+            clearInterval(skipWaitIntervalRef.current!)
+            skipWaitIntervalRef.current = null
+            // 성공 페이지가 complete 호출을 못 했을 수 있으므로 한 번 호출 후 재확인
+            try {
+              await fetch('/api/payment/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ oid, password: typeof window !== 'undefined' ? sessionStorage.getItem('payment_password') : null }),
+              })
+            } catch { /* ignore */ }
+            await new Promise((r) => setTimeout(r, 800))
+            const statusRes = await fetch(`/api/payment/status?oid=${oid}`, { cache: 'no-store' })
+            const statusData = await statusRes.json().catch(() => ({}))
+            if (statusData?.success && statusData?.status === 'success') {
+              doSkipWaitSuccess()
+            } else {
+              setSubmitting(false)
+            }
+          }
+        } catch { /* ignore */ }
+      }, 1000)
+    } catch (error: any) {
+      setSubmitting(false)
+      showAlertMessage(error?.message || '결제 요청 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 바로이용하기: 관리자 언락 시 결제 없이 보이스 화면 진입 (운영자 테스트)
+  const handleSkipWaitOperatorTest = async () => {
+    if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
+      showAlertMessage('전화번호를 입력해 주세요. (이용내역 확인용)')
+      return
+    }
+    if (!password || password.length < 4) {
+      showAlertMessage('비밀번호를 4자리 이상 입력해 주세요.')
+      return
+    }
+    if (!content || !content.id || !content.payment_code) {
+      showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const { generateOrderId } = await import('@/lib/payment-utils')
+      const oid = generateOrderId()
+      const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+      const skipWaitOption = { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' }
+      const saveRes = await fetch('/api/payment/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          oid,
+          contentId: content.id,
+          paymentCode: content.payment_code,
+          name: content.content_name || '',
+          pay: SKIP_WAIT_PAY_AMOUNT,
+          paymentType: 'card',
+          userName: name,
+          phoneNumber,
+          gender: (gender as 'male' | 'female' | '') || null,
+          password: typeof window !== 'undefined' ? sessionStorage.getItem('payment_password') : null,
+          status: 'success',
+          calendarType: calendarType || undefined,
+          birthYear: year ? parseInt(String(year), 10) : undefined,
+          birthMonth: month ? parseInt(String(month), 10) : undefined,
+          birthDay: day ? parseInt(String(day), 10) : undefined,
+          birthHour: birthHour || undefined,
+          voice_minutes: 1,
+          voice_time_option: JSON.stringify(skipWaitOption),
+        }),
+      })
+      if (!saveRes.ok) {
+        const errData = await saveRes.json().catch(() => ({}))
+        throw new Error(errData?.error || '결제 정보 저장에 실패했습니다.')
+      }
+      const saveData = await saveRes.json().catch(() => ({}))
+      if (!saveData?.success) {
+        throw new Error(saveData?.error || '결제 정보 저장에 실패했습니다.')
+      }
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('voice_time_expired')
+        sessionStorage.setItem('payment_oid', oid)
+        sessionStorage.setItem('result_content_id', String(content.id))
+        sessionStorage.setItem('payment_content_id', String(content.id))
+        sessionStorage.setItem('payment_user_name', name)
+        sessionStorage.setItem('payment_phone', phoneNumber)
+        sessionStorage.setItem('payment_password', password)
+        sessionStorage.setItem('voice_entered_by_100', '1')
+        sessionStorage.setItem('payment_voice_minutes', '1')
+        sessionStorage.setItem('payment_voice_total_seconds', '60')
+        sessionStorage.setItem('payment_voice_time_option', JSON.stringify(skipWaitOption))
+        sessionStorage.setItem('payment_user_gender', gender || '')
+        sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
+        sessionStorage.setItem('payment_user_year', year || '')
+        sessionStorage.setItem('payment_user_month', month || '')
+        sessionStorage.setItem('payment_user_day', day || '')
+        sessionStorage.setItem('payment_user_birth_hour', birthHour || '')
+        try {
+          localStorage.setItem('voice_payment_oid', oid)
+          localStorage.setItem('voice_content_id', String(content.id))
+        } catch { /* ignore */ }
+        if (partnerName) {
+          sessionStorage.setItem('payment_partner_name', partnerName)
+          sessionStorage.setItem('payment_partner_gender', partnerGender || '')
+          sessionStorage.setItem('payment_partner_calendar_type', partnerCalendarType || 'solar')
+          sessionStorage.setItem('payment_partner_year', partnerYear || '')
+          sessionStorage.setItem('payment_partner_month', partnerMonth || '')
+          sessionStorage.setItem('payment_partner_day', partnerDay || '')
+          sessionStorage.setItem('payment_partner_birth_hour', partnerBirthHour || '')
+        }
+      }
+      setShowSkipWaitPopup(false)
+      setSubmitting(false)
+      window.location.href = `/result/voice?oid=${encodeURIComponent(oid)}`
+    } catch (error: any) {
+      setSubmitting(false)
+      showAlertMessage(error?.message || '운영자 테스트 처리 중 오류가 발생했습니다.')
     }
   }
 
@@ -5170,6 +5544,157 @@ function FormContent() {
             >
               확인
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 바로이용하기 팝업 (결제정보 팝업과 동일 레이아웃) */}
+      {showSkipWaitPopup && (
+        <div
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+        >
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
+          <div
+            className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 - 결제정보와 동일 */}
+            <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
+              <h2 className="text-xl font-bold text-white cursor-default">바로이용하기</h2>
+              <button
+                type="button"
+                onClick={() => setShowSkipWaitPopup(false)}
+                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
+                disabled={submitting}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* 안내/금액 박스 - 결제정보와 동일 스타일 */}
+              <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
+                <div className="space-y-2">
+                  <p className="text-sm text-gray-700">
+                    기다리면 무료로 이용할 수 있습니다. {SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원 결제하고 즉시 시작할까요?
+                  </p>
+                  <div className="flex justify-between items-center pt-2 border-t border-pink-300">
+                    <span className="text-sm font-medium text-gray-700">즉시 이용 금액</span>
+                    <span className="text-xl font-bold text-pink-500">{SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 휴대폰 번호 - 결제정보와 동일 */}
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">휴대폰 번호</label>
+                <input
+                  type="text"
+                  value={
+                    !phoneNumber2
+                      ? `${phoneNumber1}-`
+                      : `${phoneNumber1}-${phoneNumber2}${phoneNumber3 ? '-' + phoneNumber3 : ''}`
+                  }
+                  onChange={(e) => {
+                    let value = e.target.value.replace(/[^0-9]/g, '')
+                    if (!value.startsWith('010')) {
+                      value = value.length < 3 ? '010' : '010' + value
+                    }
+                    if (value.length > 11) value = value.slice(0, 11)
+                    setPhoneNumber1('010')
+                    if (value.length <= 3) {
+                      setPhoneNumber2('')
+                      setPhoneNumber3('')
+                    } else if (value.length <= 7) {
+                      setPhoneNumber2(value.slice(3))
+                      setPhoneNumber3('')
+                    } else {
+                      setPhoneNumber2(value.slice(3, 7))
+                      setPhoneNumber3(value.slice(7))
+                    }
+                  }}
+                  className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
+                  placeholder="010-0000-0000"
+                  maxLength={13}
+                />
+              </div>
+
+              {/* 비밀번호 - 결제정보와 동일 */}
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">비밀번호</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
+                  placeholder="비밀번호를 입력하세요 (4자리 이상)"
+                />
+              </div>
+
+              {/* 안내 메시지 - 결제정보와 동일 */}
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-6">
+                <p className="text-xs text-red-600 flex items-start">
+                  <span className="font-bold mr-1">*</span>
+                  <span>다시보기 시, 입력한 휴대폰/비밀번호가 필요합니다.</span>
+                </p>
+              </div>
+
+              {/* 버튼 - 1행: 기다리기(크게) / 2행: ○○원 카드결제, ○○원 휴대폰 결제 */}
+              <div className="flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowSkipWaitPopup(false)}
+                  className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-5 px-4 rounded-xl transition-colors text-lg"
+                >
+                  기다리기
+                </button>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleSkipWaitPay100('card')}
+                    disabled={submitting}
+                    className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {submitting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                        <span>처리 중...</span>
+                      </>
+                    ) : (
+                      `${SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원 카드결제`
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSkipWaitPay100('mobile')}
+                    disabled={submitting}
+                    className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {submitting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                        <span>처리 중...</span>
+                      </>
+                    ) : (
+                      `${SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원 휴대폰 결제`
+                    )}
+                  </button>
+                </div>
+                {devUnlockEnabled && (
+                  <button
+                    type="button"
+                    onClick={handleSkipWaitOperatorTest}
+                    disabled={submitting}
+                    className="w-full mt-3 bg-sky-500 hover:bg-sky-600 text-white font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {submitting ? '처리 중...' : '운영자 테스트'}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -6891,6 +7416,45 @@ function FormContent() {
               </div>
             </div>
 
+            {/* 0원 음성: 이용 가능 시간(24h 역카운트) + 바로이용하기 */}
+            {content?.content_type === 'voice' && content != null && (() => {
+              const p = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
+              if (!Number.isFinite(p) || p > 0) return null
+              const ms = freeVoiceFormRemainingMs
+              if (ms <= 0) return null
+              const h = Math.floor(ms / 3600000)
+              const m = Math.floor((ms % 3600000) / 60000)
+              const s = Math.floor((ms % 60000) / 1000)
+              const timeStr = [h, m, s].map((v) => String(v).padStart(2, '0')).join(':')
+              return (
+                <div className="flex flex-wrap items-center justify-between gap-3 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">이용 가능 시간</span>
+                    <span className="font-semibold text-gray-900 tabular-nums">
+                      {timeStr} 후 이용 가능
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!agreeTerms) {
+                        showAlertMessage('서비스 이용 약관에 동의해주세요.')
+                        return
+                      }
+                      if (!agreePrivacy) {
+                        showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
+                        return
+                      }
+                      setShowSkipWaitPopup(true)
+                    }}
+                    className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"
+                  >
+                    바로이용하기
+                  </button>
+                </div>
+              )
+            })()}
+
             {/* 버튼 영역: 컨텐츠 로드 후 가격이 명시적으로 0원일 때만 "무료시작", 그 외(로딩 중·미로드·유료) 기본 "결제하기" */}
             <div className="flex flex-col sm:flex-row gap-3 mt-6">
               {(() => {
@@ -6919,6 +7483,17 @@ function FormContent() {
                 이전으로
               </button>
             </div>
+            {/* 음성 0원일 때 무료시작 버튼 아래 친구에게 공유하기 */}
+            {content?.content_type === 'voice' && content != null && (() => {
+              const p = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
+              if (!Number.isFinite(p) || p > 0) return null
+              return (
+                <div className="mt-4 flex flex-col items-center gap-2 overflow-visible w-full">
+                  <span className="text-sm text-gray-500">친구에게 공유하기</span>
+                  <SocialShareButtons title={content?.content_name ? `${content.content_name} 음성상담` : '음성상담'} size={36} className="w-full justify-center" />
+                </div>
+              )
+            })()}
           </div>
         </div>
 

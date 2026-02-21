@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useCallback } from 'react'
 import { isPpoingAttributes } from '@/lib/voice-mvp/ppoing-rules'
+import SocialShareButtons from '@/components/SocialShareButtons'
 import { useVoiceResult } from './useVoiceResult'
 
 /* 만세력 스타일 (voice-mvp에서 가져옴). 모바일: 가로 스크롤 없이 폰트/패딩 축소로 맞춤 */
@@ -368,6 +369,12 @@ export default function VoiceResultContent() {
           />
         </div>
 
+        {/* 친구에게 공유하기 (이퀄라이저 밑, 가운데 정렬) */}
+        <div className="flex flex-col items-center gap-2 py-2 overflow-visible w-full min-w-0">
+          <span className="text-sm text-gray-500">친구에게 공유하기</span>
+          <SocialShareButtons title={h.contentData?.content_name ? `${h.contentData.content_name} 음성상담` : '음성상담'} size={36} className="w-full justify-center" />
+        </div>
+
         {/* 마이크 민감도 */}
         <div className="flex items-center gap-2 flex-nowrap min-w-0">
           <span className="text-gray-500 text-sm shrink-0">마이크 민감도</span>
@@ -415,53 +422,26 @@ export default function VoiceResultContent() {
         <div className="mt-auto pb-4 space-y-3">
           {h.connected ? (
             <div className="flex items-center gap-3">
-              {/* 마이크 토글 */}
-              <button
-                type="button"
-                onClick={h.toggleMute}
-                className="group relative flex-1 overflow-hidden rounded-2xl transition-all duration-300 active:scale-[0.97]"
-              >
-                <div className={`absolute inset-0 transition-all duration-500 ${
-                  h.muted
-                    ? 'bg-gradient-to-br from-rose-500 via-red-500 to-orange-500'
-                    : 'bg-gradient-to-br from-sky-400 via-blue-500 to-indigo-500'
-                }`} />
-                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-white/10" />
-                <div className="relative flex items-center justify-center gap-2.5 py-4 px-5">
-                  {h.muted ? (
-                    <svg className="w-5 h-5 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 19L5 5m14 0v5a7 7 0 01-11.465 5.39M12 19a7 7 0 01-7-7V8m14 4a7 7 0 01-.515 2.634" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
-                    </svg>
-                  )}
-                  <span className="text-white font-semibold text-[15px] tracking-wide">
-                    {h.muted ? '마이크 켜기' : '마이크 끄기'}
-                  </span>
-                </div>
-              </button>
               {/* 종료 */}
               <button
                 type="button"
                 onClick={h.onExitClick}
                 disabled={h.savingConversation}
-                className="group relative overflow-hidden rounded-2xl transition-all duration-300 active:scale-[0.97] disabled:opacity-50"
+                className="group relative overflow-hidden rounded-xl transition-all duration-300 active:scale-[0.97] disabled:opacity-50"
               >
                 <div className="absolute inset-0 bg-gradient-to-br from-gray-100 to-gray-200 group-hover:from-gray-200 group-hover:to-gray-300 transition-all duration-300" />
-                <div className="relative flex items-center justify-center gap-2 py-4 px-6">
+                <div className="relative flex items-center justify-center gap-1.5 py-2.5 px-4">
                   {h.savingConversation ? (
-                    <svg className="animate-spin w-5 h-5 text-gray-600" viewBox="0 0 24 24" fill="none">
+                    <svg className="animate-spin w-4 h-4 text-gray-600" viewBox="0 0 24 24" fill="none">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
                   ) : (
-                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
                     </svg>
                   )}
-                  <span className="text-gray-700 font-semibold text-[15px]">
+                  <span className="text-gray-700 font-semibold text-[13px]">
                     {h.savingConversation ? '저장 중...' : '종료'}
                   </span>
                 </div>
@@ -475,67 +455,134 @@ export default function VoiceResultContent() {
               </svg>
               <span className="text-gray-600 font-semibold text-base">상담 내용 저장 중...</span>
             </div>
-          ) : !h.showConsultationEndModal ? (
-            <button
-              type="button"
-              onClick={h.connect}
-              disabled={h.remainingSeconds <= 0}
-              className="group relative w-full overflow-hidden rounded-2xl transition-all duration-300 active:scale-[0.98] disabled:opacity-60 disabled:pointer-events-none"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-purple-500 to-fuchsia-500" />
-              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-r from-violet-500 via-purple-400 to-fuchsia-400" />
-              {/* 반짝이 효과 */}
-              <div className="absolute inset-0 overflow-hidden">
-                <div className="absolute -top-1/2 -left-1/2 w-full h-full bg-gradient-to-br from-white/20 to-transparent rotate-12 group-hover:translate-x-[200%] group-hover:translate-y-[200%] transition-transform duration-700" />
-              </div>
-              <div className="relative flex items-center justify-center gap-3 py-[18px]">
-                <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                </div>
-                <span className="text-white font-bold text-lg tracking-wider">
-                  {h.remainingSeconds <= 0 ? '시간 종료' : '상담 시작'}
-                </span>
-              </div>
-            </button>
-          ) : null}
-
-          {!h.connected && h.remainingSeconds <= 0 && !h.showConsultationEndModal ? (
-            <button
-              type="button"
-              onClick={h.requestLeave}
-              className="group relative w-full overflow-hidden rounded-2xl transition-all duration-300 active:scale-[0.98]"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-violet-600 to-indigo-600 group-hover:from-violet-500 group-hover:to-indigo-500 transition-all duration-300" />
-              <div className="relative flex items-center justify-center gap-2 py-3.5">
-                <svg className="w-4 h-4 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-                <span className="text-white font-semibold text-[15px]">다른 상담 보기</span>
-              </div>
-            </button>
           ) : null}
         </div>
       </main>
 
-      {/* 추가 결제 팝업 — 시간 상품 선택 */}
-      {h.showExtendPopup ? (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-1">상담 시간 연장</h3>
-            <p className="text-gray-500 text-sm mb-4">
-              {h.remainingSeconds > 0
-                ? `${h.remainingSeconds}초 후 상담이 종료됩니다.`
-                : '상담 시간이 종료되었습니다.'}
-              {' '}원하는 시간을 선택해 주세요.
-            </p>
+      {/* 1분 무료 연장 팝업 (무료시작 1회만, 팝업 떠 있어도 타이머 계속) */}
+      {h.showFreeExtendPopup ? (
+        <div
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9998] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998 }}
+        >
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
+          <div
+            className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-4">
+              <h2 className="text-xl font-bold text-white cursor-default">무료 연장</h2>
+              <button
+                type="button"
+                onClick={h.dismissFreeExtendPopup}
+                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-700 text-sm mb-6">
+                상담 시간이 곧 끝납니다. 1분 무료 연장을 사용할 수 있습니다. (이번 상담 중 1회)
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={h.handleFreeExtend1Min}
+                  className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all"
+                >
+                  1분 무료 연장
+                </button>
+                <button
+                  type="button"
+                  onClick={h.dismissFreeExtendPopup}
+                  className="px-4 py-3 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium transition-all"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
-            {/* 시간 상품 목록 (선택 전에도 0원 옵션이 있으면 버튼 라벨 "무료추가") */}
-            {Array.isArray(h.contentData?.voice_time_options) && h.contentData.voice_time_options.length > 0 ? (
+      {/* 시간연장/충전 팝업 — 폼 결제정보와 동일 레이아웃: 헤더 + 본문 */}
+      {h.showExtendPopup ? (
+        <div
+          className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+        >
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
+          <div
+            className="relative w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 - 폼 결제정보와 동일 */}
+            <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
+              <h2 className="text-xl font-bold text-white cursor-default">상담 시간 연장</h2>
+              <button
+                type="button"
+                onClick={h.dismissExtendPopup}
+                disabled={h.extendPaymentProcessing}
+                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors disabled:opacity-70"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* 안내 섹션 - 결제정보의 이용금액 박스와 유사 */}
+              <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
+                <p className="text-gray-700 text-sm">
+                  {h.remainingSeconds > 0
+                    ? `${h.remainingSeconds}초 후 상담이 종료됩니다.`
+                    : '상담 시간이 종료되었습니다.'}
+                  {' '}원하는 시간을 선택해 주세요.
+                </p>
+              </div>
+
+              {/* 현재 잔액 (충전식) */}
+            {(() => {
+              const chargeOpt = Array.isArray(h.contentData?.voice_time_options) ? (h.contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
+              const rateSeconds = chargeOpt?.rate_seconds ?? 12
+              const rateWon = chargeOpt?.rate_won ?? 19
+              return (
+                <>
+                  {(h.balanceWan ?? 0) >= 0 && (
+                    <p className="text-sm text-gray-600 mb-2">현재 잔액: <span className="font-bold text-violet-600">{(h.balanceWan ?? 0).toLocaleString()}원</span> ({rateSeconds}초당 {rateWon}원 차감)</p>
+                  )}
+                  {(h.balanceWan ?? 0) >= (chargeOpt?.rate_won ?? 19) && (
+                    <div className="mb-4">
+                      <button
+                        type="button"
+                        onClick={h.handleUseBalanceContinue}
+                        disabled={h.extendPaymentProcessing}
+                        className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all disabled:opacity-50"
+                      >
+                        잔액으로 계속 ({rateSeconds}초당 {rateWon}원 차감)
+                      </button>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+
+            {/* 시간연장 옵션(extension) + 1000원 충전(charge) */}
+            {(() => {
+              const opts = Array.isArray(h.contentData?.voice_time_options) ? h.contentData.voice_time_options : []
+              const extensionOpts = opts.filter((o: any) => o?.type === 'extension' || (o?.price > 0 && o?.type !== 'charge' && o?.type !== 'default'))
+              const chargeOpt = opts.find((o: any) => o?.type === 'charge') as { rate_seconds?: number; rate_won?: number; price?: number; label?: string } | undefined
+              const rateSeconds = chargeOpt?.rate_seconds ?? 12
+              const rateWon = chargeOpt?.rate_won ?? 19
+              const chargePrice = Number(chargeOpt?.price) ?? 1000
+              const chargeLabel = (chargeOpt?.label && String(chargeOpt.label).trim()) ? String(chargeOpt.label).trim() : `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)`
+              return (extensionOpts.length > 0 || true) ? (
               <div className="space-y-2 mb-5">
-                {h.contentData.voice_time_options.map((opt: { minutes: number; price: number; label: string }, idx: number) => {
-                  const isSelected = h.selectedExtendOption?.minutes === opt.minutes && h.selectedExtendOption?.price === opt.price
+                {extensionOpts.map((opt: { minutes: number; seconds?: number; price: number; label: string }, idx: number) => {
+                  const isSelected = !(opt as any).charge && h.selectedExtendOption?.minutes === opt.minutes && (h.selectedExtendOption?.seconds ?? 0) === (opt.seconds ?? 0) && h.selectedExtendOption?.price === opt.price
                   return (
                     <button
                       key={idx}
@@ -564,16 +611,90 @@ export default function VoiceResultContent() {
                     </button>
                   )
                 })}
+                {/* 충전: admin/form/voice 충전시간 라벨·가격·차감 단위 연동 */}
+                {(() => {
+                  const chargeOption = { minutes: 0, seconds: 0, price: chargePrice, label: chargeLabel, charge: true as const }
+                  const isChargeSelected = h.selectedExtendOption?.charge === true
+                  return (
+                    <button
+                      key="charge"
+                      type="button"
+                      onClick={() => h.setSelectedExtendOption(chargeOption)}
+                      disabled={h.extendPaymentProcessing}
+                      className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${
+                        isChargeSelected ? 'border-violet-500 bg-violet-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                      } ${h.extendPaymentProcessing ? 'opacity-50 pointer-events-none' : ''}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isChargeSelected ? 'border-violet-500' : 'border-gray-300'}`}>
+                          {isChargeSelected ? <div className="w-2.5 h-2.5 rounded-full bg-violet-500" /> : null}
+                        </div>
+                        <span className={`font-semibold text-[15px] ${isChargeSelected ? 'text-violet-700' : 'text-gray-800'}`}>
+                          {chargeLabel}
+                        </span>
+                      </div>
+                      <span className={`font-bold text-[15px] ${isChargeSelected ? 'text-violet-600' : 'text-gray-600'}`}>
+                        {chargePrice.toLocaleString()}원
+                      </span>
+                    </button>
+                  )
+                })()}
               </div>
             ) : (
-              <p className="text-gray-400 text-sm mb-5">시간 상품이 등록되지 않았습니다.</p>
+              <div className="space-y-2 mb-5">
+                <button
+                  type="button"
+                  onClick={() => h.setSelectedExtendOption({ minutes: 0, seconds: 0, price: chargePrice, label: chargeLabel, charge: true })}
+                  disabled={h.extendPaymentProcessing}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${
+                    h.selectedExtendOption?.charge ? 'border-violet-500 bg-violet-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                  } ${h.extendPaymentProcessing ? 'opacity-50 pointer-events-none' : ''}`}
+                >
+                  <span className="font-semibold text-[15px]">{chargeLabel}</span>
+                  <span className="font-bold text-[15px]">{chargePrice.toLocaleString()}원</span>
+                </button>
+              </div>
+            );
+            })()}
+
+            {/* 유료 선택 시 결제 방식 선택 (카드 / 휴대폰) */}
+            {((h.selectedExtendOption?.price ?? 0) > 0) && (
+              <div className="mb-5">
+                <p className="text-sm font-semibold text-gray-700 mb-2">결제 방식</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => h.setExtendPaymentMethod('card')}
+                    disabled={h.extendPaymentProcessing}
+                    className={`flex-1 py-2.5 rounded-xl border-2 font-medium transition-all disabled:opacity-50 ${
+                      h.extendPaymentMethod === 'card'
+                        ? 'border-violet-500 bg-violet-50 text-violet-700'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    카드결제
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => h.setExtendPaymentMethod('mobile')}
+                    disabled={h.extendPaymentProcessing}
+                    className={`flex-1 py-2.5 rounded-xl border-2 font-medium transition-all disabled:opacity-50 ${
+                      h.extendPaymentMethod === 'mobile'
+                        ? 'border-violet-500 bg-violet-50 text-violet-700'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    휴대폰결제
+                  </button>
+                </div>
+              </div>
             )}
 
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => {
-                  if (h.selectedExtendOption) h.handleExtendPayment(h.selectedExtendOption)
+                  if (h.selectedExtendOption) h.handleExtendPayment(h.selectedExtendOption, (h.selectedExtendOption?.price ?? 0) > 0 ? h.extendPaymentMethod : undefined)
                 }}
                 disabled={!h.selectedExtendOption || h.extendPaymentProcessing}
                 className="flex-1 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-bold transition-all disabled:opacity-50 disabled:pointer-events-none"
@@ -600,6 +721,7 @@ export default function VoiceResultContent() {
               >
                 닫기
               </button>
+            </div>
             </div>
           </div>
         </div>

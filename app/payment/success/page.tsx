@@ -8,6 +8,17 @@ function PaymentSuccessContent() {
   const oid = searchParams.get('oid')
   const [completeDone, setCompleteDone] = useState(false)
 
+  // oid 없이 로드된 경우: PG가 쿼리스트링을 제거했을 수 있음 → opener에 알려 본창이 저장된 oid로 complete 호출하도록
+  useEffect(() => {
+    if (typeof window === 'undefined' || oid) return
+    if (window.opener && !window.opener.closed) {
+      try {
+        // 동일 origin만 수신하도록 (리다이렉트된 도메인 기준)
+        window.opener.postMessage({ type: 'PAYMENT_SUCCESS_POPUP_LOADED', hasOid: false }, '*')
+      } catch { /* ignore */ }
+    }
+  }, [oid])
+
   useEffect(() => {
     if (typeof window === 'undefined' || !oid) {
       return
@@ -37,89 +48,68 @@ function PaymentSuccessContent() {
         if (attempt < 3) await new Promise((r) => setTimeout(r, 800 * attempt))
       }
     }
-    runCompleteWithRetry()
 
     // 2. opener 함수 직접 호출 (주 방식)
-    // 통화 내용: "본창에 함수 하나 만들어 놓고 오픈창에서 호출하면 된다"
-    // "오픈창에서 이 오픈어의 함수를 호출하면 돼요"
     const callOpenerFunction = async () => {
       if (window.opener && !window.opener.closed) {
         try {
-          // 본창에 정의된 함수 직접 호출
           const opener = window.opener as any
           if (typeof opener.handlePaymentSuccess === 'function') {
-
             await opener.handlePaymentSuccess(oid)
-
             return true
-          } else {
-
           }
-        } catch (error) {
-
+        } catch {
+          // ignore
         }
-      } else {
-
       }
       return false
     }
 
-    // fallback: localStorage 저장 (opener 호출 실패 시 대비)
-    try {
-      localStorage.setItem('payment_success_oid', oid)
-      localStorage.setItem('payment_success_timestamp', Date.now().toString())
-      localStorage.setItem('payment_success_signal', `${oid}:${Date.now()}:${Math.random().toString(16).slice(2)}`)
-    } catch {
-      // localStorage가 막혀도 무시
-    }
+    // DB 업데이트를 먼저 완료한 뒤 opener 호출 → 본창에서 status 조회 시 success 확실히 반영
+    runCompleteWithRetry().then(() => {
+      try {
+        localStorage.setItem('payment_success_oid', oid)
+        localStorage.setItem('payment_success_timestamp', Date.now().toString())
+        localStorage.setItem('payment_success_signal', `${oid}:${Date.now()}:${Math.random().toString(16).slice(2)}`)
+      } catch {
+        // ignore
+      }
 
-    // DB 업데이트 후 약간의 딜레이를 주고 opener 함수 호출 시도 (DB 업데이트가 완료될 시간 확보)
-    setTimeout(() => {
-      // 즉시 opener 함수 호출 시도
       let functionCalled = false
-      callOpenerFunction().then(result => { 
-        functionCalled = result
-        if (result) {
+      const tryClose = () => {
+        if (window.opener && !window.opener.closed && !functionCalled) return
+        try {
+          window.close()
+        } catch {}
+      }
 
-        }
-      })
+      // DB 반영 직후 약간 딜레이 후 opener 호출 (본창 폴링/status와 겹치지 않도록)
+      setTimeout(() => {
+        callOpenerFunction().then((result) => {
+          functionCalled = result
+          if (result) setTimeout(tryClose, 500)
+        })
 
-      // 추가로 여러 번 시도 (opener가 준비될 시간 확보)
-      let attemptCount = 0
-      const maxAttempts = 20 // 더 많이 시도
-      const messageInterval = setInterval(() => {
-        attemptCount++
-        if (window.opener && !window.opener.closed) {
-          if (!functionCalled) {
-            callOpenerFunction().then(result => { 
-              functionCalled = result
-              if (result) {
-
-              }
+        let attemptCount = 0
+        const messageInterval = setInterval(() => {
+          attemptCount++
+          if (!functionCalled && window.opener && !window.opener.closed) {
+            callOpenerFunction().then((result) => {
+              if (result) functionCalled = true
             })
           }
-        } else {
+          if (attemptCount >= 20 || functionCalled) {
+            clearInterval(messageInterval)
+            setTimeout(tryClose, 500)
+          }
+        }, 100)
 
-        }
-        
-        // 최대 시도 횟수에 도달하거나 성공적으로 처리되면 창 닫기
-        if (attemptCount >= maxAttempts || functionCalled) {
+        setTimeout(() => {
           clearInterval(messageInterval)
-          // 너무 빨리 닫히면 전달이 씹히는 브라우저가 있어 약간 대기
-          setTimeout(() => {
-
-            window.close()
-          }, 500)
-        }
-      }, 100)
-
-      // 최대 3초 후에는 무조건 창 닫기
-      setTimeout(() => {
-        clearInterval(messageInterval)
-
-        window.close()
-      }, 3000)
-    }, 300) // DB 업데이트 완료를 위한 딜레이
+          tryClose()
+        }, 3000)
+      }, 200)
+    })
   }, [oid])
 
   // oid 없음: PG가 쿼리스트링을 누락한 경우 등 — 사용자 안내 후 창 닫기

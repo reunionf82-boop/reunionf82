@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useVoiceForm } from './useVoiceForm'
+import { useVoiceForm, isDefaultOption, isExtensionOption, isChargeOption } from './useVoiceForm'
 
 const addCacheBusting = (url: string | null | undefined): string => {
   if (!url || !url.trim()) return ''
@@ -114,6 +114,45 @@ export default function VoiceAdminForm() {
             </button>
           </div>
         </div>
+
+        {/* 보이스 테스트 리셋 (동작 확인용) */}
+        {h.id && !h.duplicateId && (
+          <div className="mb-6 p-4 bg-amber-900/30 border border-amber-700 rounded-xl">
+            <p className="text-amber-200 text-sm font-medium mb-2">보이스 테스트 데이터 리셋</p>
+            <p className="text-gray-400 text-xs mb-3">
+              이 컨텐츠(ID: {h.id})에 대한 무료시작·무료연장·방문횟수·만료 플래그를 브라우저 저장소에서 삭제합니다. 동일 브라우저에서 다시 무료시작/1분 무료 연장/시간연장 팝업 동작을 확인할 때 사용하세요.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  const cid = String(h.id)
+                  if (typeof sessionStorage !== 'undefined') {
+                    sessionStorage.removeItem('voice_entered_by_100')
+                    sessionStorage.removeItem('voice_time_expired')
+                  }
+                  if (typeof localStorage !== 'undefined') {
+                    localStorage.removeItem(`voice_free_extend_${cid}`)
+                    localStorage.removeItem(`voice_free_start_${cid}`)
+                    const prefix = `voice:visits:${cid}:`
+                    const toRemove: string[] = []
+                    for (let i = 0; i < localStorage.length; i++) {
+                      const k = localStorage.key(i)
+                      if (k?.startsWith(prefix)) toRemove.push(k)
+                    }
+                    toRemove.forEach((k) => localStorage.removeItem(k))
+                  }
+                  alert('보이스 테스트 데이터가 리셋되었습니다.\n\n• 1분 무료 연장 확인: 폼에서 「무료시작」 버튼으로 진입하세요. (바로이용하기 → 운영자 테스트가 아님)\n• 이미 보이스 탭이 열려 있으면, 그 탭에서 30초/0초가 될 때 1분 무료 연장 팝업이 뜹니다.')
+                } catch (e) {
+                  alert('리셋 중 오류: ' + (e as Error)?.message)
+                }
+              }}
+              className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium"
+            >
+              이 컨텐츠 보이스 테스트 리셋
+            </button>
+          </div>
+        )}
 
         {/* 취소 확인 커스텀 모달 */}
         {h.showCancelConfirm && (
@@ -607,35 +646,135 @@ export default function VoiceAdminForm() {
               </div>
             </section>
 
-            {/* 3. 시간 상품 관리 */}
+            {/* 3. 시간 상품 관리: 기본시간 / 시간연장 / 충전시간 */}
             <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-bold">시간 상품</h2>
-                <button type="button" onClick={h.addTimeOption} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-3 py-1 rounded-lg">+ 추가</button>
+              <h2 className="font-bold mb-4">시간 상품</h2>
+
+              {/* 3-1. 기본시간: 무료시작 시 폼에서 주어지는 시간 */}
+              <div className="mb-6">
+                <h3 className="text-sm font-medium text-emerald-400 mb-2">기본시간</h3>
+                <p className="text-xs text-gray-500 mb-2">폼에서 무료시작 시 주어지는 시간 (0원이면 무료, 유료 전환 시 가격 설정)</p>
+                {h.form.voice_time_options.map((opt, idx) =>
+                  isDefaultOption(opt) ? (
+                    <div key={idx} className="flex gap-3 items-end bg-gray-900 p-3 rounded-lg">
+                      <div className="flex-1">
+                        <label className="block text-xs text-gray-400 mb-1">라벨</label>
+                        <input value={opt.label} onChange={(e) => h.updateTimeOption(idx, 'label', e.target.value)}
+                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" placeholder="예: 5분(무료)" />
+                      </div>
+                      <div className="flex gap-1 items-end">
+                        <div className="w-14">
+                          <label className="block text-xs text-gray-400 mb-1">분</label>
+                          <input type="number" min={0} value={opt.minutes} onChange={(e) => h.updateTimeOption(idx, 'minutes', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
+                        </div>
+                        <span className="text-gray-500 pb-1.5">:</span>
+                        <div className="w-14">
+                          <label className="block text-xs text-gray-400 mb-1">초</label>
+                          <input type="number" min={0} max={59} value={opt.seconds ?? 0} onChange={(e) => h.updateTimeOption(idx, 'seconds', Math.min(59, Math.max(0, parseInt(e.target.value, 10) || 0)))}
+                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
+                        </div>
+                      </div>
+                      <div className="w-28">
+                        <label className="block text-xs text-gray-400 mb-1">가격(원)</label>
+                        <input type="number" min={0} value={opt.price} onChange={(e) => h.updateTimeOption(idx, 'price', parseInt(e.target.value, 10) || 0)}
+                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
+                      </div>
+                    </div>
+                  ) : null
+                )}
               </div>
-              <div className="space-y-3">
-                {h.form.voice_time_options.map((opt, idx) => (
-                  <div key={idx} className="flex gap-3 items-end bg-gray-900 p-3 rounded-lg">
-                    <div className="flex-1">
-                      <label className="block text-xs text-gray-400 mb-1">라벨</label>
-                      <input value={opt.label} onChange={(e) => h.updateTimeOption(idx, 'label', e.target.value)}
-                        className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" placeholder="예: 5분" />
+
+              {/* 3-2. 시간연장: 보이스 화면에서 상담시간 연장 옵션 */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium text-violet-400">시간연장</h3>
+                  <button type="button" onClick={h.addTimeOption} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-3 py-1 rounded-lg">+ 추가</button>
+                </div>
+                <p className="text-xs text-gray-500 mb-2">보이스 화면에서 상담시간 연장 시 선택하는 유료 옵션</p>
+                <div className="space-y-3">
+                  {h.form.voice_time_options.map((opt, idx) =>
+                    isExtensionOption(opt) ? (
+                      <div key={idx} className="flex gap-3 items-end bg-gray-900 p-3 rounded-lg">
+                        <div className="flex-1">
+                          <label className="block text-xs text-gray-400 mb-1">라벨</label>
+                          <input value={opt.label} onChange={(e) => h.updateTimeOption(idx, 'label', e.target.value)}
+                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" placeholder="예: 5분 연장" />
+                        </div>
+                        <div className="flex gap-1 items-end">
+                          <div className="w-14">
+                            <label className="block text-xs text-gray-400 mb-1">분</label>
+                            <input type="number" min={0} value={opt.minutes} onChange={(e) => h.updateTimeOption(idx, 'minutes', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                              className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
+                          </div>
+                          <span className="text-gray-500 pb-1.5">:</span>
+                          <div className="w-14">
+                            <label className="block text-xs text-gray-400 mb-1">초</label>
+                            <input type="number" min={0} max={59} value={opt.seconds ?? 0} onChange={(e) => h.updateTimeOption(idx, 'seconds', Math.min(59, Math.max(0, parseInt(e.target.value, 10) || 0)))}
+                              className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
+                          </div>
+                        </div>
+                        <div className="w-28">
+                          <label className="block text-xs text-gray-400 mb-1">가격(원)</label>
+                          <input type="number" min={0} value={opt.price} onChange={(e) => h.updateTimeOption(idx, 'price', parseInt(e.target.value, 10) || 0)}
+                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
+                        </div>
+                        <button type="button" onClick={() => h.removeTimeOption(idx)} className="text-red-400 hover:text-red-300 text-sm px-2 py-1">&times;</button>
+                      </div>
+                    ) : null
+                  )}
+                </div>
+              </div>
+
+              {/* 3-3. 충전시간: 라벨 / 분:초 / 가격 → 그 아래 차감주기·차감금액 */}
+              <div>
+                <h3 className="text-sm font-medium text-amber-400 mb-2">충전시간</h3>
+                <p className="text-xs text-gray-500 mb-2">라벨·분:초·가격 순, 그 아래 차감 단위(예: 12초당 19원)</p>
+                {h.form.voice_time_options.map((opt, idx) =>
+                  isChargeOption(opt) ? (
+                    <div key={idx} className="bg-gray-900 p-3 rounded-lg space-y-3">
+                      <div className="flex gap-3 items-end">
+                        <div className="flex-1">
+                          <label className="block text-xs text-gray-400 mb-1">라벨</label>
+                          <input value={opt.label ?? ''} onChange={(e) => h.updateTimeOption(idx, 'label', e.target.value)}
+                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" placeholder="예: 1000원 충전" />
+                        </div>
+                        <div className="flex gap-1 items-end">
+                          <div className="w-14">
+                            <label className="block text-xs text-gray-400 mb-1">분</label>
+                            <input type="number" min={0} value={opt.minutes} onChange={(e) => h.updateTimeOption(idx, 'minutes', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                              className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
+                          </div>
+                          <span className="text-gray-500 pb-1.5">:</span>
+                          <div className="w-14">
+                            <label className="block text-xs text-gray-400 mb-1">초</label>
+                            <input type="number" min={0} max={59} value={opt.seconds ?? 0} onChange={(e) => h.updateTimeOption(idx, 'seconds', Math.min(59, Math.max(0, parseInt(e.target.value, 10) || 0)))}
+                              className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
+                          </div>
+                        </div>
+                        <div className="w-28">
+                          <label className="block text-xs text-gray-400 mb-1">가격(원)</label>
+                          <input type="number" min={0} value={opt.price} onChange={(e) => h.updateTimeOption(idx, 'price', parseInt(e.target.value, 10) || 1000)}
+                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" placeholder="1000" />
+                        </div>
+                      </div>
+                      <div className="flex gap-3 items-end pt-1 border-t border-gray-700">
+                        <div className="w-20">
+                          <label className="block text-xs text-gray-400 mb-1">차감 주기(초)</label>
+                          <input type="number" min={1} value={opt.rate_seconds} onChange={(e) => h.updateTimeOption(idx, 'rate_seconds', Math.max(1, parseInt(e.target.value, 10) || 12))}
+                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
+                        </div>
+                        <span className="text-gray-500 pb-1.5">초당</span>
+                        <div className="w-24">
+                          <label className="block text-xs text-gray-400 mb-1">차감 금액(원)</label>
+                          <input type="number" min={1} value={opt.rate_won} onChange={(e) => h.updateTimeOption(idx, 'rate_won', Math.max(1, parseInt(e.target.value, 10) || 19))}
+                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
+                        </div>
+                        <span className="text-gray-500 text-sm pb-1.5">원 차감</span>
+                      </div>
                     </div>
-                    <div className="w-24">
-                      <label className="block text-xs text-gray-400 mb-1">시간(분)</label>
-                      <input type="number" min={1} value={opt.minutes} onChange={(e) => h.updateTimeOption(idx, 'minutes', parseInt(e.target.value, 10) || 1)}
-                        className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
-                    </div>
-                    <div className="w-28">
-                      <label className="block text-xs text-gray-400 mb-1">가격(원)</label>
-                      <input type="number" min={0} value={opt.price} onChange={(e) => h.updateTimeOption(idx, 'price', parseInt(e.target.value, 10) || 0)}
-                        className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
-                    </div>
-                    {h.form.voice_time_options.length > 1 && (
-                      <button type="button" onClick={() => h.removeTimeOption(idx)} className="text-red-400 hover:text-red-300 text-sm px-2 py-1">&times;</button>
-                    )}
-                  </div>
-                ))}
+                  ) : null
+                )}
               </div>
             </section>
 

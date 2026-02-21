@@ -118,8 +118,8 @@ export function getKoreaContextVars(): KoreaContextVars {
   }
 }
 
-/** result/voice: 오늘 방문 횟수 반환 및 1 증가. localStorage `voice:visits:YYYY-MM-DD` 사용 */
-export function getAndIncrementVisitCountToday(): number {
+/** result/voice: 오늘 방문 횟수 반환 및 1 증가. 상품(컨텐츠)별 개별 카운트. localStorage `voice:visits:{contentId}:YYYY-MM-DD` 사용 */
+export function getAndIncrementVisitCountToday(contentId?: string | number): number {
   if (typeof window === 'undefined') return 1
   try {
     const now = new Date()
@@ -130,7 +130,8 @@ export function getAndIncrementVisitCountToday(): number {
     const m = String(kstDate.getMonth() + 1).padStart(2, '0')
     const d = String(kstDate.getDate()).padStart(2, '0')
     const today = `${y}-${m}-${d}`
-    const key = `voice:visits:${today}`
+    const id = contentId != null && contentId !== '' ? String(contentId) : 'default'
+    const key = `voice:visits:${id}:${today}`
     const raw = window.localStorage.getItem(key)
     const count = raw ? Math.max(0, parseInt(raw, 10) || 0) : 0
     const next = count + 1
