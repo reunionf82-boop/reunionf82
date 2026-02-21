@@ -18,25 +18,6 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
   return window.btoa(binary)
 }
 
-/** 브라우저가 16k를 무시하고 48k 등으로 동작할 수 있으므로, 항상 16kHz mono s16le로 리샘플링 후 전송 */
-function resampleTo16k(int16Array: Int16Array, sourceSampleRate: number): Int16Array {
-  const TARGET_RATE = 16000
-  if (sourceSampleRate === TARGET_RATE) return int16Array
-  const inLen = int16Array.length
-  const outLen = Math.floor((inLen * TARGET_RATE) / sourceSampleRate)
-  if (outLen <= 0) return int16Array
-  const out = new Int16Array(outLen)
-  for (let i = 0; i < outLen; i++) {
-    const srcIdx = (i * sourceSampleRate) / TARGET_RATE
-    const idx0 = Math.floor(srcIdx)
-    const idx1 = Math.min(idx0 + 1, inLen - 1)
-    const t = srcIdx - idx0
-    const v = int16Array[idx0] * (1 - t) + int16Array[idx1] * t
-    out[i] = Math.max(-32768, Math.min(32767, Math.round(v)))
-  }
-  return out
-}
-
 export class AudioRecorder extends EventEmitter {
   stream: MediaStream | undefined
   audioContext: AudioContext | undefined
@@ -93,11 +74,8 @@ export class AudioRecorder extends EventEmitter {
 
       this.recordingWorklet.port.onmessage = async (ev: MessageEvent) => {
         const arrayBuffer = (ev.data as any)?.data?.int16arrayBuffer
-        if (arrayBuffer && this.audioContext) {
-          const actualRate = this.audioContext.sampleRate
-          const int16 = new Int16Array(arrayBuffer)
-          const out = resampleTo16k(int16, actualRate)
-          const arrayBufferString = arrayBufferToBase64(out.buffer as ArrayBuffer)
+        if (arrayBuffer) {
+          const arrayBufferString = arrayBufferToBase64(arrayBuffer)
           this.emit('data', arrayBufferString)
         }
       }

@@ -693,11 +693,13 @@ ${manseText || '(만세력 없음)'}
     const wasOpen = prevExtendPopupOpenRef.current
     prevExtendPopupOpenRef.current = showExtendPopup
     extendPopupOpenRef.current = showExtendPopup
-    if (showExtendPopup) {
-      if (!wasOpen) extendPopupMutedRestoreRef.current = muted
+    // popup이 실제로 열리거나 닫힐 때만 처리 (connected 변경 시엔 무시)
+    if (showExtendPopup && !wasOpen) {
+      extendPopupMutedRestoreRef.current = muted
       setMuted(true)
       recorderRef.current?.stop()
-    } else {
+    } else if (!showExtendPopup && wasOpen) {
+      // popup이 닫힐 때만 recorder 재시작 (connected 변경엔 반응하지 않음)
       setMuted(extendPopupMutedRestoreRef.current)
       if (connected) recorderRef.current?.start().catch(() => {})
     }
@@ -912,12 +914,14 @@ ${manseText || '(만세력 없음)'}
 
     let sysText = systemAndContext.systemText
     if (priorContext) sysText = `${sysText}\n\n[이전 상담 맥락 (이어서 상담해 주세요)]\n${priorContext}`
+    const failoverWsUrl = resolveWsUrl()
+    const failoverUsesInternal = failoverWsUrl.includes('/api/voice-mvp/live-proxy')
+    const failoverSpeechConfig = failoverUsesInternal
+      ? { languageCode: 'ko-KR' as const, voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
+      : { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
     const config = {
       responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        languageCode: 'ko-KR',
-        voiceConfig: { prebuiltVoiceConfig: { voiceName } },
-      },
+      speechConfig: failoverSpeechConfig,
       systemInstruction: { parts: [{ text: `${sysText}\n\n${systemAndContext.contextText}` }] },
       temperature,
     }
@@ -1093,45 +1097,43 @@ ${manseText || '(만세력 없음)'}
           setOutVolume(ev.data.volume)
         })
         // AI 재생이 끝난 후에만 침묵깨기 타이머 시작 (AI가 말하는 중에는 미발동)
-        // [일시 비활성화] 침묵깨기 로직 주석 처리 — 음성모델 티키타카 테스트용
         streamer.onComplete = () => {
           isAiSpeakingRef.current = false
           lastAiSpeechEndAtRef.current = Date.now()
           clearSilenceTimer()
-          // --- 침묵깨기 타이머 설정 (주석 처리) ---
-          // const sessionStart = sessionStartTimeRef.current
-          // if (sessionStart != null && Date.now() - sessionStart < 5000) return
-          // if (skipSilenceBreakRef.current) return
-          // if (showConsultationEndModalRef.current) return
-          // if (mutedRef.current) return
-          // const doSend = sendSilenceBreakRef.current
-          // const s1 = silenceBreakSecs.first * 1000
-          // const s2 = silenceBreakSecs.second * 1000
-          // const s3 = silenceBreakSecs.third * 1000
-          // console.log('[침묵깨기] 타이머 설정 (AI 발화 종료 후)', { first: silenceBreakSecs.first, second: silenceBreakSecs.second, third: silenceBreakSecs.third }, '초')
-          // silenceTimerRef.current = setTimeout(() => {
-          //   silenceTimerRef.current = null
-          //   if (showConsultationEndModalRef.current) return
-          //   doSend(silenceBreakSecs.first, () => {
-          //     if (showConsultationEndModalRef.current) return
-          //     if (!mutedRef.current && !silenceTimerRef.current) {
-          //       silenceTimerRef.current = setTimeout(() => {
-          //         silenceTimerRef.current = null
-          //         if (showConsultationEndModalRef.current) return
-          //         doSend(silenceBreakSecs.second, () => {
-          //           if (showConsultationEndModalRef.current) return
-          //           if (!mutedRef.current && !silenceTimerRef.current) {
-          //             silenceTimerRef.current = setTimeout(() => {
-          //               silenceTimerRef.current = null
-          //               if (showConsultationEndModalRef.current) return
-          //               doSend(1, undefined)
-          //             }, s3)
-          //           }
-          //         })
-          //       }, s2)
-          //     }
-          //   })
-          // }, s1)
+          const sessionStart = sessionStartTimeRef.current
+          if (sessionStart != null && Date.now() - sessionStart < 5000) return
+          if (skipSilenceBreakRef.current) return
+          if (showConsultationEndModalRef.current) return
+          if (mutedRef.current) return
+          const doSend = sendSilenceBreakRef.current
+          const s1 = silenceBreakSecs.first * 1000
+          const s2 = silenceBreakSecs.second * 1000
+          const s3 = silenceBreakSecs.third * 1000
+          console.log('[침묵깨기] 타이머 설정 (AI 발화 종료 후)', { first: silenceBreakSecs.first, second: silenceBreakSecs.second, third: silenceBreakSecs.third }, '초')
+          silenceTimerRef.current = setTimeout(() => {
+            silenceTimerRef.current = null
+            if (showConsultationEndModalRef.current) return
+            doSend(silenceBreakSecs.first, () => {
+              if (showConsultationEndModalRef.current) return
+              if (!mutedRef.current && !silenceTimerRef.current) {
+                silenceTimerRef.current = setTimeout(() => {
+                  silenceTimerRef.current = null
+                  if (showConsultationEndModalRef.current) return
+                  doSend(silenceBreakSecs.second, () => {
+                    if (showConsultationEndModalRef.current) return
+                    if (!mutedRef.current && !silenceTimerRef.current) {
+                      silenceTimerRef.current = setTimeout(() => {
+                        silenceTimerRef.current = null
+                        if (showConsultationEndModalRef.current) return
+                        doSend(1, undefined)
+                      }, s3)
+                    }
+                  })
+                }, s2)
+              }
+            })
+          }, s1)
         }
         streamerRef.current = streamer
 
@@ -1206,12 +1208,16 @@ ${manseText || '(만세력 없음)'}
         }
       } catch { /* ignore */ }
 
+      const wsUrl = resolveWsUrl()
+      const envProxy = String(process.env.NEXT_PUBLIC_VERTEX_LIVE_PROXY_URL || '').trim()
+      const usesInternalProxy = wsUrl.includes('/api/voice-mvp/live-proxy')
+      const speechConfig: any = usesInternalProxy
+        ? { languageCode: 'ko-KR', voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
+        : { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
+
       const config: any = {
         responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          languageCode: 'ko-KR',
-          voiceConfig: { prebuiltVoiceConfig: { voiceName } },
-        },
+        speechConfig,
         systemInstruction: { parts: [{ text: `${sysText}\n\n${contextText}` }] },
         // AI가 먼저 말하도록 Proactive Audio 활성화
         proactivity: { proactiveAudio: true },
@@ -1220,10 +1226,6 @@ ${manseText || '(만세력 없음)'}
         // Hume 설정
         humeConfigId,
       }
-
-      const wsUrl = resolveWsUrl()
-      const envProxy = String(process.env.NEXT_PUBLIC_VERTEX_LIVE_PROXY_URL || '').trim()
-      const usesInternalProxy = wsUrl.includes('/api/voice-mvp/live-proxy')
       // Next API live-proxy는 upgrade 핸들러 등록을 위해 HTTP 초기화 호출이 선행되어야 함.
       if (!envProxy || usesInternalProxy) {
         const initUrl = `${window.location.origin}/api/voice-mvp/live-proxy`
