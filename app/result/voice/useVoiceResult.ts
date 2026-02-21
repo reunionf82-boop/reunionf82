@@ -714,25 +714,17 @@ ${manseText || '(만세력 없음)'}
         if (extendPaymentInProgressRef.current) return prev
         if (extendPopupOpenRef.current && !isAiSpeakingRef.current) return prev
         const next = prev - 1
-        // 30초 전: 무료시작 1회 → 1분 무료 연장 팝업 / 그 외 → 시간연장·충전 팝업 (팝업 띄울 때마다 sessionStorage 재확인 → 리셋 후에도 정확히 동작)
+        // 30초 전: 무료시작 1회 → 1분 무료 연장 팝업 / 유료진입·이미 무료팝업 봤음 → 시간연장·충전 팝업
         if (next === 30 && !extendPopupShownRef.current) {
           extendPopupShownRef.current = true
           const isFreeStartNow = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
           if (isFreeStartNow && !freeExtendPopupShownThisSessionRef.current) {
+            // 무료시작 + 이번 세션 첫 팝업 → 1분 무료 연장 팝업
             freeExtendPopupShownThisSessionRef.current = true
             setShowFreeExtendPopup(true)
           } else {
-            const cid = contentIdRef.current
-            const FREE_EXTEND_COOLDOWN_MS = 24 * 60 * 60 * 1000
-            let alreadyUsedFreeExtend = false
-            if (typeof window !== 'undefined' && cid) {
-              const lastAt = localStorage.getItem(`voice_free_extend_${cid}`)
-              if (lastAt) {
-                const elapsed = Date.now() - parseInt(lastAt, 10)
-                if (elapsed < FREE_EXTEND_COOLDOWN_MS) alreadyUsedFreeExtend = true
-              }
-            }
-            if (!alreadyUsedFreeExtend) setShowExtendPopup(true)
+            // 유료진입(바로이용하기) 또는 무료시작이지만 이미 무료팝업 봤음 → 항상 연장 팝업
+            setShowExtendPopup(true)
           }
         }
         // 시간 종료
@@ -751,24 +743,12 @@ ${manseText || '(만세력 없음)'}
           extendPopupShownRef.current = true
           const isFreeStartAtZero = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
           if (isFreeStartAtZero && !freeExtendPopupShownThisSessionRef.current) {
+            // 무료시작 + 이번 세션 첫 팝업 → 1분 무료 연장 팝업
             freeExtendPopupShownThisSessionRef.current = true
             setShowFreeExtendPopup(true)
           } else {
-            const cid0 = contentIdRef.current
-            const FREE_EXTEND_COOLDOWN_MS_0 = 24 * 60 * 60 * 1000
-            let alreadyUsedFreeExtend0 = false
-            if (typeof window !== 'undefined' && cid0) {
-              const lastAt0 = localStorage.getItem(`voice_free_extend_${cid0}`)
-              if (lastAt0) {
-                const elapsed0 = Date.now() - parseInt(lastAt0, 10)
-                if (elapsed0 < FREE_EXTEND_COOLDOWN_MS_0) alreadyUsedFreeExtend0 = true
-              }
-            }
-            if (!alreadyUsedFreeExtend0) {
-              setShowExtendPopup(true)
-            } else {
-              timeHitZeroNoExtendPopupRef.current = true
-            }
+            // 유료진입 또는 무료시작이지만 이미 무료팝업 봤음 → 항상 연장 팝업
+            setShowExtendPopup(true)
           }
           return 0
         }
