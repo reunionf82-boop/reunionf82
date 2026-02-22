@@ -183,6 +183,8 @@ export function useVoiceResult() {
     remainingSecondsRef.current = remainingSeconds
   }, [remainingSeconds])
   const [showExtendPopup, setShowExtendPopup] = useState(false)
+  /** 연장 팝업을 '상담시간 연장하기' 버튼으로 연 경우 true → 종료 메시지 박스 숨김 */
+  const [extendPopupOpenedByButton, setExtendPopupOpenedByButton] = useState(false)
   /** 1분 무료 연장 팝업 (무료시작/이용가능시간 1회만, 팝업 떠 있을 때 타이머 계속) */
   const [showFreeExtendPopup, setShowFreeExtendPopup] = useState(false)
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -194,7 +196,8 @@ export function useVoiceResult() {
   const freeExtendPopupShownThisSessionRef = useRef(false)
   /** 시간 0이 됐는데 연장 팝업을 띄우지 않은 경우(무료 연장 24h 사용함): 자동 저장 후 폼으로 가기 위함 */
   const timeHitZeroNoExtendPopupRef = useRef(false)
-
+  /** 시간 0 전환 시 세션 1회만 끊었는지 (오디오 즉시 정지용) */
+  const disconnectedAtZeroRef = useRef(false)
   /* ── WS / 오디오 refs ──────────────────── */
   const wsRef = useRef<WebSocket | null>(null)
   const recorderRef = useRef<AudioRecorder | null>(null)
@@ -278,7 +281,7 @@ export function useVoiceResult() {
   mutedRef.current = muted
   const micSensitivityRef = useRef(micSensitivity)
   micSensitivityRef.current = micSensitivity
-  /** 5회 이상 방문 시 "오늘은 이제 그만!" 배웅 멘트가 나오므로 침묵깨기 미발동 */
+  /** 5회 이상 방문 시 걱정/잔소리 톤이므로 침묵깨기 미발동 */
   const skipSilenceBreakRef = useRef(false)
   skipSilenceBreakRef.current = isPpoingAttributes(contentData) && visitCountToday >= 5
 
@@ -604,6 +607,7 @@ export function useVoiceResult() {
 - 시간/날짜 질문 시 context의 한국 시각(KST)만 사용. UTC·GMT 언급 절대 금지.
 ${persona ? `\n[페르소나]\n${persona}\n` : ''}
 - ${styleInstruction(style)}
+- 끝까지 페르소나와 세계관에 맞는 자연스러운 말투를 유지하세요. 단조롭거나 국어책 읽듯 낭독하지 마세요.
 - 목표: 공감 + 구체적 조언 + 마지막에 질문 1개
 - 길이: 6~12문장
 ${speechLine}
@@ -719,11 +723,11 @@ ${manseText || '(만세력 없음)'}
           extendPopupShownRef.current = true
           const isFreeStartNow = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
           if (isFreeStartNow && !freeExtendPopupShownThisSessionRef.current) {
-            // 무료시작 + 이번 세션 첫 팝업 → 1분 무료 연장 팝업
             freeExtendPopupShownThisSessionRef.current = true
+            setExtendPopupOpenedByButton(false)
             setShowFreeExtendPopup(true)
           } else {
-            // 유료진입(바로이용하기) 또는 무료시작이지만 이미 무료팝업 봤음 → 항상 연장 팝업
+            setExtendPopupOpenedByButton(false)
             setShowExtendPopup(true)
           }
         }
@@ -743,11 +747,11 @@ ${manseText || '(만세력 없음)'}
           extendPopupShownRef.current = true
           const isFreeStartAtZero = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
           if (isFreeStartAtZero && !freeExtendPopupShownThisSessionRef.current) {
-            // 무료시작 + 이번 세션 첫 팝업 → 1분 무료 연장 팝업
             freeExtendPopupShownThisSessionRef.current = true
+            setExtendPopupOpenedByButton(false)
             setShowFreeExtendPopup(true)
           } else {
-            // 유료진입 또는 무료시작이지만 이미 무료팝업 봤음 → 항상 연장 팝업
+            setExtendPopupOpenedByButton(false)
             setShowExtendPopup(true)
           }
           return 0
@@ -757,15 +761,22 @@ ${manseText || '(만세력 없음)'}
     }, 1000)
   }, [])
 
-  /** 시간 0 되었을 때(연장 팝업 띄운 경우 포함): 무료 연장 팝업 즉시 제거 → 자동 저장 → 안내 팝업 → 확인 시 폼으로 */
+  /** 시간 0 되었을 때: 무조건 세션 1회 끊어서 오디오 즉시 정지. 연장 팝업 미표시 경로면 팝업 닫고 저장 후 폼으로 */
+  /** totalSeconds > 0 일 때만 동작 (초기 마운트 시 remainingSeconds=0으로 즉시 disconnect되는 것 방지) */
   useEffect(() => {
-    if (remainingSeconds <= 0 && timeHitZeroNoExtendPopupRef.current && disconnectInternalRef.current) {
-      timeHitZeroNoExtendPopupRef.current = false
-      setShowFreeExtendPopup(false)
-      setShowExtendPopup(false)
-      disconnectInternalRef.current()
+    if (totalSeconds <= 0) return
+    if (remainingSeconds <= 0 && disconnectInternalRef.current) {
+      if (!disconnectedAtZeroRef.current) {
+        disconnectedAtZeroRef.current = true
+        disconnectInternalRef.current()
+      }
+      if (timeHitZeroNoExtendPopupRef.current) {
+        timeHitZeroNoExtendPopupRef.current = false
+        setShowFreeExtendPopup(false)
+        setShowExtendPopup(false)
+      }
     }
-  }, [remainingSeconds])
+  }, [totalSeconds, remainingSeconds])
 
   /* ── 침묵 깨기 ─────────────────────────── */
   const clearSilenceTimer = useCallback(() => {
@@ -899,10 +910,13 @@ ${manseText || '(만세력 없음)'}
     const failoverSpeechConfig = failoverUsesInternal
       ? { languageCode: 'ko-KR' as const, voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
       : { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
+    const grokNativeKoHint = /^grok/i.test(model)
+      ? '\n\n[음성 입력 해석] 사용자 음성은 한국어로 해석할 것. 한국어 발음·억양을 고려해 인식할 것.\n\n[음성 출력] 반드시 한국어로만 답할 것. 한국어 네이티브 화자와 같은 자연스러운 발음·억양·리듬을 유지할 것. 외국인 억양이 들리지 않도록 할 것.'
+      : ''
     const config = {
       responseModalities: [Modality.AUDIO],
       speechConfig: failoverSpeechConfig,
-      systemInstruction: { parts: [{ text: `${sysText}\n\n${systemAndContext.contextText}` }] },
+      systemInstruction: { parts: [{ text: `${sysText}\n\n${systemAndContext.contextText}${grokNativeKoHint}` }] },
       temperature,
     }
 
@@ -1018,6 +1032,17 @@ ${manseText || '(만세력 없음)'}
     // 상담 종료 시 대화 저장 (skipSave=true: 추가 결제 후 재진입용)
     if (!skipSave && !conversationSavedRef.current) {
       setTimeout(() => { saveConversationRef.current?.() }, 100)
+    }
+    // 시간이 남은 채로 종료한 경우 잔여시간 저장 (폼에서 상담잔여시간으로 재상담 가능)
+    const sec = remainingSecondsRef.current
+    const cid = contentIdRef.current
+    const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
+    if (!skipSave && sec > 0 && cid && phone) {
+      fetch('/api/voice/balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save_remaining', contentId: cid, phone, remainingSeconds: sec }),
+      }).catch(() => {})
     }
     iosMicStreamPromiseRef.current = null
     iosContextWorkaroundDoneRef.current = false
@@ -1195,10 +1220,15 @@ ${manseText || '(만세력 없음)'}
         ? { languageCode: 'ko-KR', voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
         : { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
 
+      // xAI Grok: 문서상 시스템 지시에 선호 언어·억양 명시 가능 → 네이티브 한국어 발음 지시
+      const grokNativeKoHint = /^grok/i.test(model)
+        ? '\n\n[음성 입력 해석] 사용자 음성은 한국어로 해석할 것. 한국어 발음·억양을 고려해 인식할 것.\n\n[음성 출력] 반드시 한국어로만 답할 것. 한국어 네이티브 화자와 같은 자연스러운 발음·억양·리듬을 유지할 것. 외국인 억양이 들리지 않도록 할 것.'
+        : ''
+
       const config: any = {
         responseModalities: [Modality.AUDIO],
         speechConfig,
-        systemInstruction: { parts: [{ text: `${sysText}\n\n${contextText}` }] },
+        systemInstruction: { parts: [{ text: `${sysText}\n\n${contextText}${grokNativeKoHint}` }] },
         // AI가 먼저 말하도록 Proactive Audio 활성화
         proactivity: { proactiveAudio: true },
         // GPT/xAI 온도 설정 (프록시에서 처리)
@@ -1598,10 +1628,17 @@ ${manseText || '(만세력 없음)'}
 
   /* ── 추가 결제 닫기 ─────────────────────── */
   const dismissExtendPopup = useCallback(() => {
+    setExtendPopupOpenedByButton(false)
     setShowExtendPopup(false)
     if (remainingSecondsRef.current <= 0) {
       disconnectInternal()
     }
+  }, [])
+
+  /** 상담시간 연장하기 버튼 클릭: 연장 팝업을 띄우고, 이때는 '상담 시간이 종료되었습니다' 메시지 박스 숨김 */
+  const openExtendPopupByButton = useCallback(() => {
+    setExtendPopupOpenedByButton(true)
+    setShowExtendPopup(true)
   }, [])
 
   /* ── 1분 무료 연장 팝업 (무료시작 1회만, 팝업 중 타이머 계속) ── */
@@ -1689,7 +1726,9 @@ ${manseText || '(만세력 없음)'}
         const addSec = (option.minutes || 0) * 60 + (option.seconds ?? 0)
         setRemainingSeconds((prev) => prev + addSec)
         setTotalSeconds((prev) => prev + addSec)
-        if (!timerIntervalRef.current && connected) startTimer()
+        if (!timerIntervalRef.current) startTimer()
+        disconnectedAtZeroRef.current = false
+        try { connect() } catch { /* ignore */ }
         extendPopupShownRef.current = false
         setShowExtendPopup(false)
         setSelectedExtendOption(null)
@@ -1804,6 +1843,20 @@ ${manseText || '(만세력 없음)'}
             } catch (e) {
               console.error('[VoiceResult] balance charge api error:', e)
             }
+            // 충전차감: 결제 금액으로 산출한 시간만큼 타이머에 한 번에 추가 (rate_seconds당 rate_won원)
+            const chargeOpt = contentData?.voice_time_options && Array.isArray(contentData.voice_time_options)
+              ? (contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge')
+              : null
+            const rateSeconds = Math.max(1, chargeOpt?.rate_seconds ?? 12)
+            const rateWon = Math.max(1, chargeOpt?.rate_won ?? 19)
+            const addSec = Math.floor((Number(option.price) / rateWon) * rateSeconds)
+            if (addSec > 0) {
+              setRemainingSeconds((prev) => prev + addSec)
+              setTotalSeconds((prev) => prev + addSec)
+              if (!timerIntervalRef.current) startTimer()
+              disconnectedAtZeroRef.current = false
+              try { connect() } catch { /* ignore */ }
+            }
             extendPopupShownRef.current = false
             setShowExtendPopup(false)
             setSelectedExtendOption(null)
@@ -1817,7 +1870,9 @@ ${manseText || '(만세력 없음)'}
           const addSec = (option.minutes || 0) * 60 + (option.seconds ?? 0)
           setRemainingSeconds((prev) => prev + addSec)
           setTotalSeconds((prev) => prev + addSec)
-          if (!timerIntervalRef.current && connected) startTimer()
+          if (!timerIntervalRef.current) startTimer()
+          disconnectedAtZeroRef.current = false
+          try { connect() } catch { /* ignore */ }
           extendPopupShownRef.current = false
           setShowExtendPopup(false)
           setSelectedExtendOption(null)
@@ -1969,7 +2024,7 @@ ${manseText || '(만세력 없음)'}
       extendPaymentInProgressRef.current = false
       setExtendPaymentProcessing(false)
     }
-  }, [contentData, connected, extendPaymentProcessing, startTimer])
+  }, [contentData, connected, extendPaymentProcessing, startTimer, connect])
 
   /** 잔액으로 계속. 콘텐츠 설정(rate_seconds당 rate_won원)으로 차감, 1초만 넘겨도 1블록 전체 차감 */
   const handleUseBalanceContinue = useCallback(async () => {
@@ -2300,6 +2355,8 @@ ${manseText || '(만세력 없음)'}
     totalSeconds,
     remainingSeconds,
     showExtendPopup,
+    extendPopupOpenedByButton,
+    openExtendPopupByButton,
     showFreeExtendPopup,
     dismissFreeExtendPopup,
     handleFreeExtend1Min,

@@ -167,21 +167,13 @@ export function getVisitGuidanceText(visitCountToday: number): {
       closingHint: '장군님(할아버지, 할머니)이 가는 길을 지켜주시는 묘사. 조만간 다시 웃으며 만날 것을 기약.',
     }
   }
-  if (visitCountToday <= 9) {
-    return {
-      openingTheme: '걱정/잔소리',
-      closingTheme: '오늘은 그만',
-      openingHint:
-        '왜 자꾸 오냐며 귀엽게 잔소리함. 마음이 불안한 내담자를 안쓰러워함. 걱정스러운 분위기.',
-      closingHint: '"오늘은 이제 그만!"이라며 단호히 배웅. 내일 맑은 기운으로 오라고 약속함.',
-    }
-  }
+  // 5회 이상: 걱정/잔소리만 (자꾸 오니 뭔가 불안해? 식). 오늘은 그만·엄격·강제종료 테마는 사용하지 않음.
   return {
-    openingTheme: '엄격/훈육',
-    closingTheme: '강제 종료',
+    openingTheme: '걱정/잔소리',
+    closingTheme: '걱정/배웅',
     openingHint:
-      '할배(장군님)가 노하셨음을 알림. 똑같은 질문은 신령님을 시험하는 것이라 꾸짖음. 엄격한 분위기.',
-    closingHint: '"흥! 할배가 문 닫으래!"라며 강제 종료. 예의를 갖추지 않으면 복이 달아난다고 경고.',
+      '자꾸 오니 뭔가 불안한가 걱정하며 귀엽게 잔소리함. 마음이 불안한 내담자를 안쓰러워함. 걱정스러운 분위기.',
+    closingHint: '걱정스럽게 바래다주며 배웅. 내일 맑은 기운으로 오라고 따뜻히 약속함. "오늘은 그만"·강제 종료 말투 사용 금지.',
   }
 }
 

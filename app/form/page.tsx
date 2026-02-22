@@ -643,6 +643,10 @@ function FormContent() {
   const [freeVoiceOnceRemainingMs, setFreeVoiceOnceRemainingMs] = useState(0)
   // 0원 음성 폼: 이용 가능 시간 역카운트(1초마다)
   const [freeVoiceFormRemainingMs, setFreeVoiceFormRemainingMs] = useState(0)
+  // 음성 상담 잔여시간(초) - 종료 시 남은 시간 저장분, 폼에서 표시 후 재상담 가능
+  const [voiceRemainingSeconds, setVoiceRemainingSeconds] = useState(0)
+  // 음성 상담 잔여금액(원) - 충전 잔액, 폼에서 잔여시간과 함께 표시
+  const [voiceBalanceWan, setVoiceBalanceWan] = useState<number | null>(null)
   // 바로이용하기(100원 결제) 팝업
   const [showSkipWaitPopup, setShowSkipWaitPopup] = useState(false)
   
@@ -695,6 +699,23 @@ function FormContent() {
     }, 1000)
     return () => clearInterval(t)
   }, [content?.id, content?.content_type, content?.price])
+
+  // 음성 상담 잔여시간 조회 (콘텐츠 로드 후 전화번호 있으면 1회)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !content?.id || content?.content_type !== 'voice') return
+    const phone = sessionStorage.getItem('payment_phone')
+    if (!phone) return
+    let cancelled = false
+    fetch(`/api/voice/balance?contentId=${encodeURIComponent(content.id)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { remaining_seconds?: number; balance_wan?: number } | null) => {
+        if (cancelled || !data) return
+        if (typeof data.remaining_seconds === 'number') setVoiceRemainingSeconds(Math.max(0, data.remaining_seconds))
+        if (typeof data.balance_wan === 'number') setVoiceBalanceWan(data.balance_wan)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [content?.id, content?.content_type])
   
   // 개인정보 수집 및 이용 팝업 상태
   const [showPrivacyPopup, setShowPrivacyPopup] = useState(false)
@@ -5642,7 +5663,7 @@ function FormContent() {
                 </p>
               </div>
 
-              {/* 버튼 - 1행: 기다리기(크게) / 2행: ○○원 카드결제, ○○원 휴대폰 결제 */}
+              {/* 버튼 - 1행: 기다리기(크게) / 2행: 카드결제, 휴대폰 결제 */}
               <div className="flex flex-col gap-3">
                 <button
                   type="button"
@@ -5664,7 +5685,7 @@ function FormContent() {
                         <span>처리 중...</span>
                       </>
                     ) : (
-                      `${SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원 카드결제`
+                      '카드결제'
                     )}
                   </button>
                   <button
@@ -5679,7 +5700,7 @@ function FormContent() {
                         <span>처리 중...</span>
                       </>
                     ) : (
-                      `${SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원 휴대폰 결제`
+                      '휴대폰 결제'
                     )}
                   </button>
                 </div>
@@ -7415,6 +7436,71 @@ function FormContent() {
                 </label>
               </div>
             </div>
+
+            {/* 음성: 상담잔여시간·잔여금액 (종료 시 남은 시간 저장분 + 충전 잔액) → 잔여시간으로 상담 */}
+            {content?.content_type === 'voice' && content != null && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0)) && (() => {
+              const sec = voiceRemainingSeconds
+              const h = Math.floor(sec / 3600)
+              const m = Math.floor((sec % 3600) / 60)
+              const s = sec % 60
+              const timeStr = [h, m, s].map((v) => String(v).padStart(2, '0')).join(':')
+              const showBalance = voiceBalanceWan != null && voiceBalanceWan > 0
+              return (
+                <div className="flex flex-wrap items-center justify-between gap-3 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    {voiceRemainingSeconds > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600">상담잔여시간</span>
+                        <span className="font-semibold text-gray-900 tabular-nums">{timeStr}</span>
+                      </div>
+                    )}
+                    {showBalance && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600">잔여금액</span>
+                        <span className="font-semibold text-gray-900 tabular-nums">{voiceBalanceWan.toLocaleString()}원</span>
+                      </div>
+                    )}
+                  </div>
+                  {voiceRemainingSeconds > 0 && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!agreeTerms) {
+                          showAlertMessage('서비스 이용 약관에 동의해주세요.')
+                          return
+                        }
+                        if (!agreePrivacy) {
+                          showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
+                          return
+                        }
+                        const phone = sessionStorage.getItem('payment_phone')
+                        if (!phone) {
+                          showAlertMessage('전화번호 정보가 없습니다.')
+                          return
+                        }
+                        try {
+                          const res = await fetch('/api/voice/balance', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'consume_remaining', contentId: content.id, phone }),
+                          })
+                          if (!res.ok) return
+                          sessionStorage.setItem('payment_voice_total_seconds', String(voiceRemainingSeconds))
+                          sessionStorage.removeItem('voice_time_expired')
+                          setVoiceRemainingSeconds(0)
+                          window.location.href = `/result/voice?id=${encodeURIComponent(content.id)}`
+                        } catch {
+                          showAlertMessage('잔여시간 사용 처리에 실패했습니다.')
+                        }
+                      }}
+                      className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"
+                    >
+                      잔여시간으로 상담
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
 
             {/* 0원 음성: 이용 가능 시간(24h 역카운트) + 바로이용하기 */}
             {content?.content_type === 'voice' && content != null && (() => {

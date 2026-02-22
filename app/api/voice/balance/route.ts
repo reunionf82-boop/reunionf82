@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     const supabase = getAdminSupabaseClient()
     const { data, error } = await supabase
       .from('voice_balance')
-      .select('balance_wan')
+      .select('balance_wan, remaining_seconds')
       .eq('content_id', cid)
       .eq('phone', String(phone).trim())
       .maybeSingle()
@@ -37,8 +37,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 })
     }
 
-    const balance_wan = data?.balance_wan ?? 0
-    return NextResponse.json({ success: true, balance_wan })
+    const balance_wan = (data as any)?.balance_wan ?? 0
+    const remaining_seconds = (data as any)?.remaining_seconds ?? 0
+    return NextResponse.json({ success: true, balance_wan, remaining_seconds })
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e?.message || '서버 오류' }, { status: 500 })
   }
@@ -113,6 +114,79 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: upsertError.message }, { status: 500 })
       }
       return NextResponse.json({ success: true, balance_wan: nextBalance })
+    }
+
+    if (action === 'save_remaining') {
+      const { contentId, phone, remainingSeconds } = body
+      if (contentId == null || !phone || remainingSeconds == null) {
+        return NextResponse.json(
+          { success: false, error: 'save_remaining 시 contentId, phone, remainingSeconds 필요' },
+          { status: 400 }
+        )
+      }
+      const cid = parseInt(String(contentId), 10)
+      const sec = Math.max(0, parseInt(String(remainingSeconds), 10))
+      if (!Number.isFinite(cid)) {
+        return NextResponse.json({ success: false, error: 'contentId 숫자 필요' }, { status: 400 })
+      }
+      const supabase = getAdminSupabaseClient()
+      const { data: row } = await supabase
+        .from('voice_balance')
+        .select('balance_wan')
+        .eq('content_id', cid)
+        .eq('phone', String(phone).trim())
+        .maybeSingle()
+      const currentWan = (row as any)?.balance_wan ?? 0
+      const { error: upsertError } = await supabase
+        .from('voice_balance')
+        .upsert(
+          {
+            content_id: cid,
+            phone: String(phone).trim(),
+            balance_wan: currentWan,
+            remaining_seconds: sec,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'content_id,phone' }
+        )
+      if (upsertError) {
+        return NextResponse.json({ success: false, error: upsertError.message }, { status: 500 })
+      }
+      return NextResponse.json({ success: true, remaining_seconds: sec })
+    }
+
+    if (action === 'consume_remaining') {
+      const { contentId, phone } = body
+      if (contentId == null || !phone) {
+        return NextResponse.json(
+          { success: false, error: 'consume_remaining 시 contentId, phone 필요' },
+          { status: 400 }
+        )
+      }
+      const cid = parseInt(String(contentId), 10)
+      if (!Number.isFinite(cid)) {
+        return NextResponse.json({ success: false, error: 'contentId 숫자 필요' }, { status: 400 })
+      }
+      const supabase = getAdminSupabaseClient()
+      const { data: row } = await supabase
+        .from('voice_balance')
+        .select('balance_wan, remaining_seconds')
+        .eq('content_id', cid)
+        .eq('phone', String(phone).trim())
+        .maybeSingle()
+      const currentWan = (row as any)?.balance_wan ?? 0
+      const { error: updateError } = await supabase
+        .from('voice_balance')
+        .update({
+          remaining_seconds: 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('content_id', cid)
+        .eq('phone', String(phone).trim())
+      if (updateError) {
+        return NextResponse.json({ success: false, error: updateError.message }, { status: 500 })
+      }
+      return NextResponse.json({ success: true, remaining_seconds: 0, balance_wan: currentWan })
     }
 
     if (action === 'deduct') {

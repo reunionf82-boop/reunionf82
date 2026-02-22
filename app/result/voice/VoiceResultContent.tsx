@@ -446,6 +446,18 @@ export default function VoiceResultContent() {
                   </span>
                 </div>
               </button>
+              {/* 상담시간 연장하기 - 클릭 시 연장 팝업 (종료 메시지 박스 없음), 테마핑크 */}
+              <button
+                type="button"
+                onClick={h.openExtendPopupByButton}
+                disabled={h.savingConversation}
+                className="group relative overflow-hidden rounded-xl transition-all duration-300 active:scale-[0.97] disabled:opacity-50"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-pink-600 group-hover:from-pink-600 group-hover:to-pink-700 transition-all duration-300" />
+                <div className="relative flex items-center justify-center gap-1.5 py-2.5 px-4">
+                  <span className="text-white font-semibold text-[13px]">상담시간 연장하기</span>
+                </div>
+              </button>
             </div>
           ) : (h.savingConversation || h.isNavigatingAway) ? (
             <div className="w-full flex flex-col items-center gap-3 py-6">
@@ -534,41 +546,27 @@ export default function VoiceResultContent() {
             </div>
 
             <div className="p-6">
-              {/* 안내 섹션 - 결제정보의 이용금액 박스와 유사 */}
-              <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
-                <p className="text-gray-700 text-sm">
-                  {h.remainingSeconds > 0
-                    ? `${h.remainingSeconds}초 후 상담이 종료됩니다.`
-                    : '상담 시간이 종료되었습니다.'}
-                  {' '}원하는 시간을 선택해 주세요.
-                </p>
-              </div>
+              {/* 안내 섹션 - 버튼으로 연 경우 '상담 시간이 종료되었습니다' 메시지 박스 숨김 */}
+              {!h.extendPopupOpenedByButton && (
+                <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
+                  <p className="text-gray-700 text-sm">
+                    {h.remainingSeconds > 0
+                      ? `${h.remainingSeconds}초 후 상담이 종료됩니다.`
+                      : '상담 시간이 종료되었습니다.'}
+                    {' '}원하는 시간을 선택해 주세요.
+                  </p>
+                </div>
+              )}
 
-              {/* 현재 잔액 (충전식) */}
-            {(() => {
-              const chargeOpt = Array.isArray(h.contentData?.voice_time_options) ? (h.contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
-              const rateSeconds = chargeOpt?.rate_seconds ?? 12
-              const rateWon = chargeOpt?.rate_won ?? 19
-              return (
-                <>
-                  {(h.balanceWan ?? 0) >= 0 && (
-                    <p className="text-sm text-gray-600 mb-2">현재 잔액: <span className="font-bold text-violet-600">{(h.balanceWan ?? 0).toLocaleString()}원</span> ({rateSeconds}초당 {rateWon}원 차감)</p>
-                  )}
-                  {(h.balanceWan ?? 0) >= (chargeOpt?.rate_won ?? 19) && (
-                    <div className="mb-4">
-                      <button
-                        type="button"
-                        onClick={h.handleUseBalanceContinue}
-                        disabled={h.extendPaymentProcessing}
-                        className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all disabled:opacity-50"
-                      >
-                        잔액으로 계속 ({rateSeconds}초당 {rateWon}원 차감)
-                      </button>
-                    </div>
-                  )}
-                </>
-              )
-            })()}
+              {/* 현재 잔액 (충전식) - 12초당 18원 등 차감 단위는 콘텐츠 설정대로 표시 */}
+              {(() => {
+                const chargeOpt = Array.isArray(h.contentData?.voice_time_options) ? (h.contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
+                const rateSeconds = chargeOpt?.rate_seconds ?? 12
+                const rateWon = chargeOpt?.rate_won ?? 19
+                return (h.balanceWan ?? 0) >= 0 ? (
+                  <p className="text-sm text-gray-600 mb-4">현재 잔액: <span className="font-bold text-violet-600">{(h.balanceWan ?? 0).toLocaleString()}원</span> ({rateSeconds}초당 {rateWon}원 차감)</p>
+                ) : null
+              })()}
 
             {/* 시간연장 옵션(extension) + 1000원 충전(charge) */}
             {(() => {
@@ -707,11 +705,7 @@ export default function VoiceResultContent() {
                     </svg>
                     {((h.selectedExtendOption?.price ?? 0) <= 0) ? '추가 중...' : '결제 진행 중...'}
                   </span>
-                ) : (() => {
-                  const opts = h.contentData?.voice_time_options as { price: number }[] | undefined
-                  const price = h.selectedExtendOption?.price ?? opts?.[0]?.price ?? 0
-                  return price <= 0 ? '무료추가' : '결제하기'
-                })()}
+                ) : '결제하기'}
               </button>
               <button
                 type="button"

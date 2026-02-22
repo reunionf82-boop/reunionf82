@@ -223,6 +223,11 @@ wss.on('connection', (ws) => {
             resumable: resumption.resumable !== false,
           })
         }
+        // 연결 약 60초 전에 Vertex가 보내는 goAway → 클라이언트가 선제 재연결할 수 있도록 전달
+        if (msg?.goAway != null) {
+          const timeLeft = msg.goAway?.time_left ?? msg.goAway?.timeLeft ?? 60
+          send({ type: 'goAway', timeLeft })
+        }
         const turn = msg?.serverContent?.modelTurn
         const parts = turn?.parts || []
         const texts = []

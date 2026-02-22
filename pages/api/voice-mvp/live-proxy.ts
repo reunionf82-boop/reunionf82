@@ -14,6 +14,7 @@ type ClientInitMessage = {
   type: 'init'
   model: string
   config: LiveConnectConfig
+  resumptionHandle?: string
 }
 
 type ClientAudioMessage = {
@@ -30,11 +31,14 @@ type ClientTextMessage = {
 type ClientMessage = ClientInitMessage | ClientAudioMessage | ClientTextMessage | { type: 'disconnect' } | { type: 'ping' }
 
 type AnyServerMessage = {
-  type: 'audio' | 'text' | 'interrupted' | 'error' | 'ready' | 'transcript' | 'connecting'
+  type: 'audio' | 'text' | 'interrupted' | 'error' | 'ready' | 'transcript' | 'connecting' | 'sessionResumptionUpdate' | 'goAway'
   data?: string
   text?: string
   message?: string
   role?: 'user' | 'assistant'
+  newHandle?: string
+  resumable?: boolean
+  timeLeft?: number
 }
 
 export const config = {
@@ -79,19 +83,21 @@ const mapVoiceNameToOpenAi = (voiceName: string | undefined) => {
   return 'cedar'
 }
 
-const normalizeConfig = (cfg: LiveConnectConfig): LiveConnectConfig => {
+const normalizeConfig = (cfg: LiveConnectConfig, resumptionHandle?: string): LiveConnectConfig => {
   const responseModalities = Array.isArray(cfg?.responseModalities)
     ? cfg.responseModalities
     : [Modality.AUDIO]
-  return {
+  const base: LiveConnectConfig = {
     ...cfg,
     responseModalities,
-    // AI가 먼저 말하도록 (실서버 포함)
     proactivity: (cfg as any)?.proactivity ?? { proactiveAudio: true },
-    // 음성 전사 활성화 (AI 출력 + 사용자 입력 모두 텍스트로 전사)
     outputAudioTranscription: (cfg as any)?.outputAudioTranscription ?? {},
     inputAudioTranscription: (cfg as any)?.inputAudioTranscription ?? {},
   } as LiveConnectConfig
+  if (resumptionHandle?.trim()) {
+    (base as any).sessionResumption = { ...((base as any).sessionResumption || {}), handle: resumptionHandle.trim() }
+  }
+  return base
 }
 
 const partsFromMessage = (msg: LiveServerMessage): Part[] => {
@@ -177,6 +183,18 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
             const topKeys = Object.keys(msgAny || {}).filter((k: string) => k !== 'serverContent' && k !== 'sessionResumptionUpdate')
             if (topKeys.length > 0) {
               console.log('[live-proxy] top-level msg keys:', topKeys.join(', '))
+            }
+            const resumption = msgAny?.sessionResumptionUpdate
+            if (resumption && (resumption.newHandle || resumption.resumable === false)) {
+              send({
+                type: 'sessionResumptionUpdate',
+                newHandle: resumption.newHandle || '',
+                resumable: resumption.resumable !== false,
+              })
+            }
+            if (msgAny?.goAway != null) {
+              const timeLeft = msgAny.goAway?.time_left ?? msgAny.goAway?.timeLeft ?? 60
+              send({ type: 'goAway', timeLeft })
             }
 
             const parts = partsFromMessage(msg)
@@ -438,16 +456,19 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
               } else {
                 upstreamMode = 'gemini'
                 const client = getVertexClient()
+                const resumptionHandle = (parsed as ClientInitMessage).resumptionHandle?.trim()
+                const configWithResumption = normalizeConfig(parsed.config || {}, resumptionHandle)
                 try {
-                  const sysParts = (config as any)?.systemInstruction?.parts
+                  const sysParts = (configWithResumption as any)?.systemInstruction?.parts
                   const sysLen = sysParts?.[0]?.text ? String(sysParts[0].text).length : 0
                   console.log('[live-proxy] live.connect start', {
                     model,
-                    responseModalities: config?.responseModalities,
-                    hasSystemInstruction: !!(config as any)?.systemInstruction,
+                    responseModalities: configWithResumption?.responseModalities,
+                    hasSystemInstruction: !!(configWithResumption as any)?.systemInstruction,
                     systemInstructionLen: sysLen,
+                    hasResumptionHandle: !!resumptionHandle,
                   })
-                  liveSession = await client.live.connect({ model, config, callbacks })
+                  liveSession = await client.live.connect({ model, config: configWithResumption, callbacks })
                   console.log('[live-proxy] live.connect resolved')
                   if (!connected) {
                     connectTimeout = setTimeout(() => {
