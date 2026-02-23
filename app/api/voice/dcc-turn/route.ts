@@ -414,11 +414,12 @@ ${emotionTagRule}
             else ws.send(msg)
           }
           let fillerSentAt: number | null = null
-          if (!isStartTurn) {
-            const filler = DCC_FILLER_PHRASES[Math.floor(Math.random() * DCC_FILLER_PHRASES.length)]
-            sendCartesia(filler, false)
-            // ws.on('open')에서 실제 전송 시점 기록 → 본문 TTS는 맞장구 끝 + 1초 후 시작
-          }
+          // 맞장구: 주석 해제 시 본문 전 재생. 활성화 시 TTS 끊김/뚝뚝 소리 원인될 수 있어 일단 비활성화
+          // if (!isStartTurn) {
+          //   const filler = DCC_FILLER_PHRASES[Math.floor(Math.random() * DCC_FILLER_PHRASES.length)]
+          //   sendCartesia(filler, false)
+          //   // ws.on('open')에서 실제 전송 시점 기록 → 본문 TTS는 맞장구 끝 + 1초 후 시작
+          // }
 
           ws.on('open', () => {
             wsOpen = true
@@ -497,7 +498,6 @@ ${emotionTagRule}
                       pendingText = rest
                       const trimmed = chunk.trim()
                       if (!trimmed) continue
-                      // 맞장구 말이 끝나고 1초 뒤에 본문 TTS 시작
                       if (fillerSentAt !== null) {
                         const wait = fillerSentAt + DCC_FILLER_DURATION_MS + 1000 - Date.now()
                         if (wait > 0) await new Promise<void>(r => setTimeout(r, wait))

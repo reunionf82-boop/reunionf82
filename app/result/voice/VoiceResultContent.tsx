@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback, useState } from 'react'
 import { isPpoingAttributes } from '@/lib/voice-mvp/ppoing-rules'
 import SocialShareButtons from '@/components/SocialShareButtons'
 import { useVoiceResult } from './useVoiceResult'
@@ -260,6 +260,10 @@ function AudioEqualizer({
 
 export default function VoiceResultContent() {
   const h = useVoiceResult()
+  const [shareUrl, setShareUrl] = useState('')
+  useEffect(() => {
+    if (typeof window !== 'undefined') setShareUrl(window.location.href)
+  }, [])
 
   if (h.loading) {
     return (
@@ -466,9 +470,14 @@ export default function VoiceResultContent() {
         </div>
         )}
 
-        {/* 스크린 하단: 소셜 공유 버튼 (종료 버튼 아래) */}
-        <div className="mt-auto pt-4 pb-4 flex flex-col items-center w-full min-w-0">
-          <SocialShareButtons title={h.contentData?.content_name ? `${h.contentData.content_name} 음성상담` : '음성상담'} size={36} className="w-full justify-center" />
+        {/* 스크린 하단: 소셜 공유 버튼 (종료 버튼 아래, 클릭 보장을 위해 relative z-10) */}
+        <div className="relative z-10 mt-auto pt-4 pb-4 flex flex-col items-center w-full min-w-0">
+          <SocialShareButtons
+            url={shareUrl || undefined}
+            title={h.contentData?.content_name ? `${h.contentData.content_name} 음성상담` : '음성상담'}
+            size={36}
+            className="w-full justify-center"
+          />
         </div>
       </main>
 

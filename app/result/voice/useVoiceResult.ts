@@ -33,8 +33,10 @@ const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
 /** 정적 깨기: 이 볼륨 이상이면 사용자가 말하는 것으로 간주. micSensitivity(0-100)로 조정. */
 const SPEECH_THRESHOLD_MIN = 0.01
 const SPEECH_THRESHOLD_MAX = 0.05
-/** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. 낮출수록 빨리 인지 (너무 낮으면 말 끊김). */
-const DCC_SILENCE_END_MS = 500
+/** TTS 중단용: 볼륨이 (threshold * 이 값) 이상일 때만 TTS 멈춤. 스피커 에코/잡음으로 끊김 방지. */
+const TTS_INTERRUPT_VOLUME_FACTOR = 1.8
+/** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. 낮으면 말 끊김, 높으면 반응이 느려짐. */
+const DCC_SILENCE_END_MS = 850
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
 
@@ -244,6 +246,8 @@ export function useVoiceResult() {
   const dccStreamerRef = useRef<AudioStreamer | null>(null)
   /** DCC 재생 즉시 중단 플래그 (바지인) */
   const dccStopPlaybackRef = useRef(false)
+  /** DCC 최초 인사 턴 재생 중 여부. 이 구간에는 스피커 에코로 TTS 중단하지 않음(20초 전 일관 끊김 방지) */
+  const dccFirstTurnPlayingRef = useRef(false)
   /** DCC 연속 대화: 턴 경계(마지막 전송 시점의 청크 인덱스), VAD 침묵 시작 시각, 말하는 중 여부 */
   const dccLastTurnEndIndexRef = useRef(0)
   const dccSilenceStartRef = useRef<number | null>(null)
@@ -1274,6 +1278,8 @@ ${manseText || '(만세력 없음)'}
     dccSendingRef.current = true
     dccStopPlaybackRef.current = false
     setError('')
+    const isStartTurn = opts.transcript === '[시작]'
+    if (isStartTurn) dccFirstTurnPlayingRef.current = true
     try {
       const body: Record<string, unknown> = {
         contentId: parseInt(cid, 10),
@@ -1293,6 +1299,7 @@ ${manseText || '(만세력 없음)'}
 
       if (isStream && res.body) {
         if (!res.ok) {
+          if (isStartTurn) dccFirstTurnPlayingRef.current = false
           const errText = await res.text().catch(() => '')
           try {
             const errData = JSON.parse(errText)
@@ -1340,6 +1347,7 @@ ${manseText || '(만세력 없음)'}
                 if (assistantT) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
                 if (receivedAudio && dccStreamerRef.current) {
                   dccStreamerRef.current.onComplete = () => {
+                    if (isStartTurn) dccFirstTurnPlayingRef.current = false
                     stopDccPlayback(false)
                     onPlaybackComplete?.()
                   }
@@ -1351,7 +1359,10 @@ ${manseText || '(만세력 없음)'}
             }
           }
         }
-        if (!receivedAudio) onPlaybackComplete?.()
+        if (!receivedAudio) {
+          if (isStartTurn) dccFirstTurnPlayingRef.current = false
+          onPlaybackComplete?.()
+        }
         dccHistoryRef.current = [
           ...dccHistoryRef.current,
           ...(userT ? [{ role: 'user' as const, content: userT }] : []),
@@ -1383,6 +1394,7 @@ ${manseText || '(만세력 없음)'}
         const audio = new Audio(`data:audio/wav;base64,${audioB64}`)
         dccCurrentAudioRef.current = audio
         const clearOutVol = () => {
+          if (isStartTurn) dccFirstTurnPlayingRef.current = false
           dccCurrentAudioRef.current = null
           if (dccOutVolumeIntervalRef.current) {
             clearInterval(dccOutVolumeIntervalRef.current)
@@ -1395,8 +1407,9 @@ ${manseText || '(만세력 없음)'}
         audio.onended = clearOutVol
         audio.onerror = clearOutVol
         await audio.play().catch(clearOutVol)
-      } else if (onPlaybackComplete) {
-        onPlaybackComplete()
+      } else {
+        if (isStartTurn) dccFirstTurnPlayingRef.current = false
+        if (onPlaybackComplete) onPlaybackComplete()
       }
     } finally {
       dccSendingRef.current = false
@@ -1448,12 +1461,13 @@ ${manseText || '(만세력 없음)'}
     const sens = micSensitivityRef.current
     const threshold = SPEECH_THRESHOLD_MAX - (sens / 100) * (SPEECH_THRESHOLD_MAX - SPEECH_THRESHOLD_MIN)
     const onData = (base64: string) => { dccChunksRef.current.push(base64) }
+    const interruptThreshold = threshold * TTS_INTERRUPT_VOLUME_FACTOR
     const onVolume = (vol: number) => {
       setInVolume(vol)
       if (dccSendingRef.current) return
       if (vol > threshold) {
-        // TTS 재생 중 사용자 발화 감지 → 즉시 멈추고 이후 침묵 시 Deepgram STT로 전송
-        if (isAiSpeakingRef.current) {
+        // 최초 인사 턴 재생 중에는 볼륨으로 TTS 멈추지 않음 (스피커 에코로 20초 전 일관 끊김 방지)
+        if (!dccFirstTurnPlayingRef.current && isAiSpeakingRef.current && vol > interruptThreshold) {
           stopDccPlayback(true)
         }
         dccInSpeechRef.current = true
@@ -1499,6 +1513,7 @@ ${manseText || '(만세력 없음)'}
       ) return
       const isDccProvider = contentData?.voice_provider === 'deepgram-claude-cartesia'
       if (isDccProvider) {
+        // DCC는 streamerRef/WS를 쓰지 않으므로 침묵깨기 타이머는 설정되지 않음 (아래 streamer.onComplete 미실행)
         const cid = contentIdRef.current
         if (!cid) return
         dccSessionIdRef.current = `dcc-${cid}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -2053,8 +2068,9 @@ ${manseText || '(만세력 없음)'}
         setInVolume(vol)
         const sens = micSensitivityRef.current
         const threshold = SPEECH_THRESHOLD_MAX - (sens / 100) * (SPEECH_THRESHOLD_MAX - SPEECH_THRESHOLD_MIN)
-        // TTS 재생 중 사용자 발화(볼륨) 감지 → 즉시 멈춤, 서버가 전송 중인 오디오로 STT 처리
-        if (vol > threshold && isAiSpeakingRef.current) {
+        const interruptThreshold = threshold * TTS_INTERRUPT_VOLUME_FACTOR
+        // TTS 재생 중 사용자 발화(볼륨) 감지 → 즉시 멈춤. 기준을 높여 에코/잡음으로 끊김 방지
+        if (vol > interruptThreshold && isAiSpeakingRef.current) {
           if (isHumeModel(model)) {
             humeCurrentAudioRef.current?.pause()
             humeCurrentAudioRef.current = null
