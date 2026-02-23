@@ -9,10 +9,14 @@ import { createWorketFromSrc, registeredWorklets } from './audioworklet-registry
 const DEFAULT_MERGE_CHUNK_SAMPLES = 0
 const IOS_MERGE_CHUNK_SAMPLES = 24000 // 24k @ 24kHz = 1초, 재생 횟수 감소로 크랙 완화
 
+/** 재생 시작 전 최소로 쌓아둘 오디오 길이(초). 클로드 생성 지연 시 버퍼 언더런 방지(제미나이 제안) */
+const DEFAULT_MIN_BUFFER_DURATION = 0
+
 export class AudioStreamer {
   private sampleRate = 24000
   private bufferSize = 7680
   private initialBufferTime = 0.1
+  private minBufferDurationSeconds: number
   private mergeChunkSamples: number
   private audioQueue: Float32Array[] = []
   private isPlaying = false
@@ -29,10 +33,11 @@ export class AudioStreamer {
 
   constructor(
     public context: AudioContext,
-    options?: { bufferSize?: number; initialBufferTime?: number; mergeChunkSamples?: number }
+    options?: { bufferSize?: number; initialBufferTime?: number; mergeChunkSamples?: number; minBufferDurationSeconds?: number }
   ) {
     if (options?.bufferSize != null) this.bufferSize = options.bufferSize
     if (options?.initialBufferTime != null) this.initialBufferTime = options.initialBufferTime
+    this.minBufferDurationSeconds = options?.minBufferDurationSeconds ?? DEFAULT_MIN_BUFFER_DURATION
     this.mergeChunkSamples = options?.mergeChunkSamples ?? DEFAULT_MERGE_CHUNK_SAMPLES
     this.gainNode = this.context.createGain()
     this.source = this.context.createBufferSource()
@@ -94,10 +99,22 @@ export class AudioStreamer {
       this.audioQueue.push(processingBuffer)
     }
     if (!this.isPlaying) {
-      this.isPlaying = true
-      this.scheduledTime = this.context.currentTime + this.initialBufferTime
+      if (this.minBufferDurationSeconds > 0) {
+        const totalSamples = this.audioQueue.reduce((acc, c) => acc + c.length, 0)
+        const totalDurationSec = totalSamples / this.sampleRate
+        if (totalDurationSec >= this.minBufferDurationSeconds) {
+          this.isPlaying = true
+          this.scheduledTime = this.context.currentTime + 0.1
+          this.scheduleNextBuffer()
+        }
+      } else {
+        this.isPlaying = true
+        this.scheduledTime = this.context.currentTime + this.initialBufferTime
+        this.scheduleNextBuffer()
+      }
+    } else {
+      this.scheduleNextBuffer()
     }
-    this.scheduleNextBuffer()
   }
 
   private createAudioBuffer(audioData: Float32Array): AudioBuffer {
@@ -107,7 +124,7 @@ export class AudioStreamer {
   }
 
   private scheduleNextBuffer() {
-    const SCHEDULE_AHEAD_TIME = 0.6
+    const SCHEDULE_AHEAD_TIME = 1.0
 
     while (this.audioQueue.length > 0 && this.scheduledTime < this.context.currentTime + SCHEDULE_AHEAD_TIME) {
       let audioData: Float32Array
@@ -180,7 +197,7 @@ export class AudioStreamer {
         if (!this.checkInterval) {
           this.checkInterval = window.setInterval(() => {
             if (this.audioQueue.length > 0) this.scheduleNextBuffer()
-          }, 100) as unknown as number
+          }, 40) as unknown as number
         }
       }
     } else {

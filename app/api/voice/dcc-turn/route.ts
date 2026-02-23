@@ -136,8 +136,8 @@ function pcmBase64ToWavBase64(pcmBase64: string, sampleRate = CARTESIA_SAMPLE_RA
   return pcmBufferToWavBase64(Buffer.from(pcmBase64, 'base64'), sampleRate, numChannels, bitsPerSample)
 }
 
-/** 스트리밍 시 이 바이트 이상 모아서 한 PCM 청크 전송 (0.1초) */
-const STREAMING_PCM_FLUSH_BYTES = Math.floor((CARTESIA_SAMPLE_RATE * (CARTESIA_BITS / 8) * CARTESIA_NUM_CHANNELS) * 0.1)
+/** 스트리밍 시 이 바이트 이상 모아서 한 PCM 청크 전송. 자주 보낼수록 끊김 감소 (0.08초) */
+const STREAMING_PCM_FLUSH_BYTES = Math.floor((CARTESIA_SAMPLE_RATE * (CARTESIA_BITS / 8) * CARTESIA_NUM_CHANNELS) * 0.08)
 
 type ConversationMessage = { role: 'user' | 'assistant'; content: string }
 
@@ -198,6 +198,7 @@ export async function POST(req: NextRequest) {
     }
 
     const voiceId = cartesiaConfig.voice_id || '304fdbd8-65e6-40d6-ab78-f9d18b9efdf9'
+    /** Speed: 어드민 voice_cartesia_config.speed 슬라이더와 연결. 미설정 시 1 */
     const speed = Math.max(0.6, Math.min(1.5, cartesiaConfig.speed ?? 1))
     const volume = Math.max(0.5, Math.min(2, cartesiaConfig.volume ?? 1))
     const emotions = Array.isArray(cartesiaConfig.emotions) && cartesiaConfig.emotions.length > 0
@@ -343,9 +344,11 @@ ${emotionTagRule}
         generation_config: { speed, volume, emotion: primaryEmotion },
         output_format: { container: 'raw' as const, encoding: 'pcm_s16le' as const, sample_rate: CARTESIA_SAMPLE_RATE },
         context_id: contextId,
-        max_buffer_delay_ms: 1200,
+        max_buffer_delay_ms: 1800,
       }
 
+      /** 청크당 최대 길이. 너무 긴 한 덩어리는 Cartesia/연결 불안정 원인될 수 있어 분할 */
+      const MAX_CHUNK_CHARS = 280
       const extractChunk = (text: string) => {
         if (!text) return { chunk: '', rest: '' }
         const leadTrim = text.length - text.trimStart().length
@@ -353,15 +356,20 @@ ${emotionTagRule}
         if (!trimmed) return { chunk: '', rest: text }
         const punctIdx = trimmed.search(/[,，.。!?]/)
         if (punctIdx >= 0) {
-          const end = leadTrim + punctIdx + 1
+          const len = punctIdx + 1
+          const end = leadTrim + (len <= MAX_CHUNK_CHARS ? len : MAX_CHUNK_CHARS)
           return { chunk: text.slice(0, end), rest: text.slice(end) }
         }
         if (trimmed.length >= 12) {
           const spaceAt = trimmed.indexOf(' ', 11)
           if (spaceAt >= 0) {
-            const end = leadTrim + spaceAt + 1
+            const len = spaceAt + 1
+            const end = leadTrim + (len <= MAX_CHUNK_CHARS ? len : MAX_CHUNK_CHARS)
             return { chunk: text.slice(0, end), rest: text.slice(end) }
           }
+        }
+        if (trimmed.length > MAX_CHUNK_CHARS) {
+          return { chunk: text.slice(0, leadTrim + MAX_CHUNK_CHARS), rest: text.slice(leadTrim + MAX_CHUNK_CHARS) }
         }
         return { chunk: '', rest: text }
       }
@@ -466,10 +474,12 @@ ${emotionTagRule}
           })
           ws.on('error', () => resolveOnce())
           ws.on('close', () => resolveOnce())
+          // Cartesia: "We close idle WebSocket connections after 5 minutes." (idle = no activity)
+          // 우리는 5분으로 설정해, 긴 답변 중 우리가 먼저 WS를 닫지 않도록 함. 동작 중이면 idle 아님.
           setTimeout(() => {
             if (ws.readyState !== ws.CLOSED && ws.readyState !== ws.CLOSING) ws.close()
             resolveOnce()
-          }, 120000) // 2분: 긴 초대 인사·답변 시 중간 끊김 방지 (기존 60초)
+          }, 300000)
 
           ;(async () => {
             const reader = streamBody.getReader()

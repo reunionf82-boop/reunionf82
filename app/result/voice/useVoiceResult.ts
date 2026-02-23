@@ -34,9 +34,11 @@ const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
 const SPEECH_THRESHOLD_MIN = 0.01
 const SPEECH_THRESHOLD_MAX = 0.05
 /** TTS 중단용: 볼륨이 (threshold * 이 값) 이상일 때만 TTS 멈춤. 스피커 에코/잡음으로 끊김 방지. */
-const TTS_INTERRUPT_VOLUME_FACTOR = 1.8
+const TTS_INTERRUPT_VOLUME_FACTOR = 2.4
+/** TTS 중단 디바운스(ms): 이 시간 이상 연속으로 기준 초과 시에만 중단 (순간 스파이크 무시). */
+const TTS_INTERRUPT_DEBOUNCE_MS = 250
 /** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. 낮으면 말 끊김, 높으면 반응이 느려짐. */
-const DCC_SILENCE_END_MS = 650
+const DCC_SILENCE_END_MS = 400
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
 
@@ -253,6 +255,8 @@ export function useVoiceResult() {
   const dccSilenceStartRef = useRef<number | null>(null)
   const dccInSpeechRef = useRef(false)
   const dccVadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 볼륨이 interruptThreshold 초과한 시각. DEBOUNCE_MS 이상 유지 시에만 TTS 중단 */
+  const dccInterruptAboveSinceRef = useRef<number | null>(null)
   const closingForSwapRef = useRef(false)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** AI 발화 종료 시각. 스피커 에코·볼륨 decay로 타이머가 무효화되는 것을 방지. 종료 직후 3초간은 볼륨으로 clear 안 함 (3초 침묵 타이머 전체 커버) */
@@ -631,7 +635,11 @@ export function useVoiceResult() {
       dccPcmContextRef.current = new AudioCtx({ sampleRate: DCC_PCM_SAMPLE_RATE })
     }
     if (!dccStreamerRef.current) {
-      dccStreamerRef.current = new AudioStreamer(dccPcmContextRef.current, { mergeChunkSamples: DCC_PCM_SAMPLE_RATE, initialBufferTime: 0.8 })
+      dccStreamerRef.current = new AudioStreamer(dccPcmContextRef.current, {
+        mergeChunkSamples: Math.floor(DCC_PCM_SAMPLE_RATE * 0.5),
+        initialBufferTime: 1.2,
+        minBufferDurationSeconds: 1.0,
+      })
     }
     const ctx = dccPcmContextRef.current
     if (ctx.state === 'suspended') ctx.resume().catch(() => {})
@@ -1469,40 +1477,42 @@ ${manseText || '(만세력 없음)'}
     const sens = micSensitivityRef.current
     const threshold = SPEECH_THRESHOLD_MAX - (sens / 100) * (SPEECH_THRESHOLD_MAX - SPEECH_THRESHOLD_MIN)
     const onData = (base64: string) => { dccChunksRef.current.push(base64) }
-    const interruptThreshold = threshold * TTS_INTERRUPT_VOLUME_FACTOR
     const onVolume = (vol: number) => {
       setInVolume(vol)
       if (dccSendingRef.current) return
       if (vol > threshold) {
-        // 최초 인사 턴 재생 중에는 볼륨으로 TTS 멈추지 않음 (스피커 에코로 20초 전 일관 끊김 방지)
-        if (!dccFirstTurnPlayingRef.current && isAiSpeakingRef.current && vol > interruptThreshold) {
-          stopDccPlayback(true)
-        }
+        // TTS 중단: volume은 마이크 RMS만 사용(vol-meter.ts). 에코 제거 없어 스피커 TTS가 마이크에 잡히면
+        // vol > interruptThreshold로 잘못 중단됨. DCC는 에코 구분 불가하므로 볼륨 기반 중단 비활성화.
+        // (말하다 중단 + 완전 조용했는데 중단 → 코드상 이 경로가 유일 원인)
+        dccInterruptAboveSinceRef.current = null
         dccInSpeechRef.current = true
         dccSilenceStartRef.current = null
         if (dccVadTimerRef.current) {
           clearTimeout(dccVadTimerRef.current)
           dccVadTimerRef.current = null
         }
-      } else if (dccInSpeechRef.current) {
-        const now = Date.now()
-        if (dccSilenceStartRef.current === null) dccSilenceStartRef.current = now
-        if (!dccVadTimerRef.current) {
-          dccVadTimerRef.current = setTimeout(() => {
-            dccVadTimerRef.current = null
-            const chunks = dccChunksRef.current
-            const startIdx = dccLastTurnEndIndexRef.current
-            const toSend = chunks.slice(startIdx)
-            const minChunks = 8
-            if (toSend.length >= minChunks) {
-              const wavB64 = buildWavFromPcmChunks(toSend)
-              if (wavB64) sendDccTurn({ audioBase64: wavB64 })
-            }
-            dccLastTurnEndIndexRef.current = 0
-            dccChunksRef.current = []
-            dccInSpeechRef.current = false
-            dccSilenceStartRef.current = null
-          }, DCC_SILENCE_END_MS)
+      } else {
+        dccInterruptAboveSinceRef.current = null
+        if (dccInSpeechRef.current) {
+          const now = Date.now()
+          if (dccSilenceStartRef.current === null) dccSilenceStartRef.current = now
+          if (!dccVadTimerRef.current) {
+            dccVadTimerRef.current = setTimeout(() => {
+              dccVadTimerRef.current = null
+              const chunks = dccChunksRef.current
+              const startIdx = dccLastTurnEndIndexRef.current
+              const toSend = chunks.slice(startIdx)
+              const minChunks = 8
+              if (toSend.length >= minChunks) {
+                const wavB64 = buildWavFromPcmChunks(toSend)
+                if (wavB64) sendDccTurn({ audioBase64: wavB64 })
+              }
+              dccLastTurnEndIndexRef.current = 0
+              dccChunksRef.current = []
+              dccInSpeechRef.current = false
+              dccSilenceStartRef.current = null
+            }, DCC_SILENCE_END_MS)
+          }
         }
       }
     }
