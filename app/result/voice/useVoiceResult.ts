@@ -34,9 +34,9 @@ const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
 const SPEECH_THRESHOLD_MIN = 0.01
 const SPEECH_THRESHOLD_MAX = 0.05
 /** TTS 중단용: 볼륨이 (threshold * 이 값) 이상일 때만 TTS 멈춤. 스피커 에코/잡음으로 끊김 방지. */
-const TTS_INTERRUPT_VOLUME_FACTOR = 2.4
+const TTS_INTERRUPT_VOLUME_FACTOR = 2.0
 /** TTS 중단 디바운스(ms): 이 시간 이상 연속으로 기준 초과 시에만 중단 (순간 스파이크 무시). */
-const TTS_INTERRUPT_DEBOUNCE_MS = 250
+const TTS_INTERRUPT_DEBOUNCE_MS = 200
 /** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. 낮으면 말 끊김, 높으면 반응이 느려짐. */
 const DCC_SILENCE_END_MS = 400
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
@@ -1477,14 +1477,23 @@ ${manseText || '(만세력 없음)'}
     const rec = recorderRef.current
     const sens = micSensitivityRef.current
     const threshold = SPEECH_THRESHOLD_MAX - (sens / 100) * (SPEECH_THRESHOLD_MAX - SPEECH_THRESHOLD_MIN)
+    const interruptThreshold = threshold * TTS_INTERRUPT_VOLUME_FACTOR
     const onData = (base64: string) => { dccChunksRef.current.push(base64) }
     const onVolume = (vol: number) => {
       setInVolume(vol)
       if (dccSendingRef.current) return
       if (vol > threshold) {
-        // DCC 끼어들기(Barge-in) 비활성화: VAD 유령 트리거 방지(숨소리/옷깃/팬 소음으로 오탐 시 TTS 뚝 끊김).
-        // volume은 마이크 RMS만 사용(에코 구분 없음). 끊기면 백엔드 터미널에서 📝 Claude / ❌ Cartesia 로그 확인.
-        dccInterruptAboveSinceRef.current = null
+        // 끼어들기: AI 재생 중 볼륨이 기준 초과 250ms 유지 시 TTS 중단 (첫 인사 턴 포함)
+        if (isAiSpeakingRef.current && vol > interruptThreshold) {
+          const now = Date.now()
+          if (dccInterruptAboveSinceRef.current === null) dccInterruptAboveSinceRef.current = now
+          else if (now - dccInterruptAboveSinceRef.current >= TTS_INTERRUPT_DEBOUNCE_MS) {
+            stopDccPlayback(true)
+            dccInterruptAboveSinceRef.current = null
+          }
+        } else if (vol <= interruptThreshold) {
+          dccInterruptAboveSinceRef.current = null
+        }
         dccInSpeechRef.current = true
         dccSilenceStartRef.current = null
         if (dccVadTimerRef.current) {
@@ -1518,7 +1527,7 @@ ${manseText || '(만세력 없음)'}
     }
     rec.off('data', onData as any).off('volume', onVolume as any).on('data', onData as any).on('volume', onVolume as any)
     rec.start().then(() => setDccRecording(true)).catch((e: any) => setError(e?.message || '마이크를 사용할 수 없습니다.'))
-  }, [buildWavFromPcmChunks, sendDccTurn])
+  }, [buildWavFromPcmChunks, sendDccTurn, stopDccPlayback])
 
   const connect = useCallback(async () => {
     setError('')
