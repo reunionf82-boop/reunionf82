@@ -33,8 +33,8 @@ const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
 /** 정적 깨기: 이 볼륨 이상이면 사용자가 말하는 것으로 간주. micSensitivity(0-100)로 조정. */
 const SPEECH_THRESHOLD_MIN = 0.01
 const SPEECH_THRESHOLD_MAX = 0.05
-/** DCC 연속 대화: 말 멈춘 뒤 이 시간(ms) 지나면 한 턴으로 전송. 낮출수록 종료 시그널 빨리 뜸 (너무 낮으면 말 끊김). */
-const DCC_SILENCE_END_MS = 700
+/** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. 낮출수록 빨리 인지 (너무 낮으면 말 끊김). */
+const DCC_SILENCE_END_MS = 500
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
 
@@ -1770,17 +1770,11 @@ ${manseText || '(만세력 없음)'}
             // 타이머 시작
             startTimer()
 
-            // AI 첫 인사 트리거: 콘텐츠(어드민) 설정 우선, 없으면 API/기본값. {{userName}} 치환. 8006/무료속성은 유저정보 미전달
+            // AI 첫 인사: 콘텐츠(어드민) voice_initial_greet_prompt만 사용. {{userName}} 치환. 하드코딩 프롬프트 없음. 8006/무료속성은 유저정보 미전달
             const isPpoingGreet = isPpoingAttributes(contentData)
             const userName2 = isPpoingGreet ? '' : (typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_name') || '' : '')
-            const defaultInitial =
-              userName2
-                ? `[시스템] 내담자 "${userName2}"님이 접속했습니다. 먼저 따뜻하게 인사한 후 만세력을 기반으로 약 20초가량 사주 재물운 운세 재회운을 얘기해 주세요.`
-                : `[시스템] 내담자가 접속했습니다. 먼저 따뜻하게 인사한 후 만세력을 기반으로 약 20초가량 사주 재물운 운세 재회운을 얘기해 주세요.`
-            const defaultResumed =
-              userName2
-                ? `[시스템] 내담자 "${userName2}"님이 추가 결제 후 다시 접속했습니다. "다시 오셨군요" 등의 자연스러운 인사와 함께, 이전 대화 맥락을 기억하면서 이어서 상담해 주세요.`
-                : `[시스템] 내담자가 추가 결제 후 다시 접속했습니다. 이전 대화 맥락을 기억하면서 자연스럽게 이어서 상담해 주세요.`
+            const minimalFallbackInitial = '내담자가 접속했습니다. 짧게 인사해 주세요.'
+            const minimalFallbackResumed = '내담자가 다시 접속했습니다. 이어서 상담해 주세요.'
             const startRecorderDelayed = () => {
               const startRecorder = async () => {
                 if (!recorderRef.current || wsRef.current?.readyState !== WebSocket.OPEN || mutedRef.current) return
@@ -1812,14 +1806,13 @@ ${manseText || '(만세력 없음)'}
                 try {
                   const res = await fetch('/api/voice-mvp/initial-greet', { cache: 'no-store' })
                   const data = await res.json().catch(() => ({} as { initial?: string | null; resumed?: string | null }))
-                  const raw = isResumedSession
-                    ? (data.resumed ?? defaultResumed)
-                    : (data.initial ?? defaultInitial)
+                  const raw = isResumedSession ? (data.resumed ?? '') : (data.initial ?? '')
+                  const fallback = isResumedSession ? minimalFallbackResumed : minimalFallbackInitial
                   greetTrigger = typeof raw === 'string' && raw.trim()
                     ? raw.replace(/\{\{userName\}\}/g, userName2 || '')
-                    : (isResumedSession ? defaultResumed : defaultInitial)
+                    : fallback
                 } catch {
-                  greetTrigger = isResumedSession ? defaultResumed : defaultInitial
+                  greetTrigger = isResumedSession ? minimalFallbackResumed : minimalFallbackInitial
                 }
               }
               // 같은 전화번호 과거 상담 요약 중 아직 안부로 안 물어본 항목 조회 → 인사 직후 자연스럽게 안부 물어보기

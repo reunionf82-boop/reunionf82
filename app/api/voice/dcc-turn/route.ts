@@ -289,7 +289,7 @@ ${emotionTagRule}
     const isStartTurn = userTranscript.trim() === '[시작]'
     const userMessage = isStartTurn
       ? (initialGreetPrompt
-          ? `[상담 시작] 사용자가 방금 입장했습니다. 아래 [초대 인사 지침]을 반드시 따르세요. 지침에 분량(예: 약 20초)이나 첫방문/재방문 구분이 있으면 그에 맞춰 말하세요.\n[초대 인사 지침]\n${initialGreetPrompt}`
+          ? `[상담 시작] 사용자가 방금 입장했습니다. 아래 [초대 인사 지침]을 반드시 따르세요. 지침에 분량(예: 약 20초)이나 첫방문/재방문 구분이 있으면 그에 맞춰 말하세요. 분량이 적혀 있으면 그 길이를 넘지 말고 그 안에서 마무리하세요.\n[초대 인사 지침]\n${initialGreetPrompt}`
           : '[상담 시작] 사용자가 방금 입장했습니다. 짧고 친절하게 한 문장으로만 먼저 인사해 주세요.')
       : userTranscript
 
@@ -300,7 +300,7 @@ ${emotionTagRule}
 
     const claudeBody = {
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 8192, // 초대 인사·긴 답변 시 중간 잘림 방지 (기존 4096)
       stream: true,
       system: systemPrompt,
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
@@ -468,7 +468,7 @@ ${emotionTagRule}
           setTimeout(() => {
             if (ws.readyState !== ws.CLOSED && ws.readyState !== ws.CLOSING) ws.close()
             resolveOnce()
-          }, 60000)
+          }, 120000) // 2분: 긴 초대 인사·답변 시 중간 끊김 방지 (기존 60초)
 
           ;(async () => {
             const reader = streamBody.getReader()

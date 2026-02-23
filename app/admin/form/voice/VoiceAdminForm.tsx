@@ -865,13 +865,17 @@ export default function VoiceAdminForm() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-300 mb-1">음성 상담 최초 인사 (접속 시 AI에 주입)</label>
-                  <p className="text-gray-400 text-xs mb-1">접속 후 약 20초 동안 AI가 먼저 말할 내용. <code className="bg-gray-700 px-1 rounded">{'{{userName}}'}</code> 있으면 내담자 이름으로 치환됩니다.</p>
+                  <label className="block text-sm font-medium text-gray-200 mb-1">음성 상담 최초 인사 (접속 시 AI에 주입)</label>
+                  <p className="text-gray-400 text-xs mb-2">접속 후 AI가 먼저 말할 내용입니다. 반드시 여기에 입력한 프롬프트만 사용됩니다. <code className="bg-gray-700 px-1 rounded">{'{{userName}}'}</code> 있으면 내담자 이름으로 치환됩니다.</p>
+                  <div className="mb-2 p-3 bg-violet-950/40 border border-violet-700/60 rounded-lg">
+                    <p className="text-xs font-semibold text-violet-200 mb-1.5">권장 예시 (복사해서 아래 칸에 붙여 넣으세요)</p>
+                    <p className="text-gray-300 text-sm whitespace-pre-wrap break-words">내담자 &quot;{`{{userName}}`}&quot;님이 접속했습니다. 먼저 따뜻하게 인사한 후 신점으로 약 20초가량 오늘의 운세 중 특이한 부분만 공수를 내려주시오. 단, 당일 첫방문에만 적용하시오. 재방문시는 인사만 하시오.</p>
+                  </div>
                   <textarea value={h.form.voice_initial_greet_prompt} onChange={(e) => h.setForm((f) => ({ ...f, voice_initial_greet_prompt: e.target.value }))}
-                    className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white min-h-[80px] mb-2" placeholder="첫 상담 시 (예: [시스템] 내담자가 접속했습니다. 먼저 따뜻하게 인사한 후 ...)" />
+                    className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white min-h-[100px] mb-2" placeholder="위 권장 예시를 복사해 넣거나, 직접 작성하세요." />
                   <label className="block text-sm text-gray-300 mb-1 mt-3">재접속 시 (추가 결제 후)</label>
                   <textarea value={h.form.voice_resumed_greet_prompt} onChange={(e) => h.setForm((f) => ({ ...f, voice_resumed_greet_prompt: e.target.value }))}
-                    className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white min-h-[80px]" placeholder="재접속 시 (예: [시스템] 내담자가 추가 결제 후 다시 접속했습니다. ...)" />
+                    className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white min-h-[80px]" placeholder="재접속 시 인사 지시 (예: 다시 오셨군요, 이어서 상담해 주세요 등)" />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-300 mb-1">시작소리 (MP3, 드래그&amp;드롭 가능)</label>
