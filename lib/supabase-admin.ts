@@ -116,6 +116,8 @@ export interface ContentData {
   voice_time_options?: Array<{ minutes: number; price: number; label: string }>
   /** 침묵깨기 타이머(초) "재촉,관찰,환기" 순. 예: "3,5,5" (미설정 시 3,5,5) */
   voice_silence_break_config?: string
+  /** Deepgram+Claude+Cartesia 전용: JSON { gender, voice_id, voices_female, voices_male, speed, volume, emotions } */
+  voice_cartesia_config?: string | Record<string, unknown>
   /** 무료속성(8006 동일): 본인정보 숨김, 만세력 비표시, 음성모델 유저정보 미전달 등 */
   apply_ppoing_attributes?: boolean
   created_at?: string

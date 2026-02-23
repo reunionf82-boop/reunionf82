@@ -97,6 +97,29 @@ export interface VoiceFormData {
   voice_volume_gain: number | ''
   /** 침묵깨기 타이머(초) "재촉,관찰,환기" 순. 예: "3,5,5" */
   voice_silence_break_config: string
+  /** Deepgram+Claude+Cartesia 전용: JSON 설정 (gender, voice_id, voices_female, voices_male, speed, volume, emotions) */
+  voice_cartesia_config: VoiceCartesiaConfig
+}
+
+export interface VoiceCartesiaVoiceEntry {
+  id: string
+  label: string
+}
+
+/** 'batch' = 한번에 말하기(REST), 'streaming' = 2~3단어 단위 WebSocket 스트리밍 */
+export type CartesiaTtsMode = 'batch' | 'streaming'
+
+export interface VoiceCartesiaConfig {
+  gender: 'female' | 'male'
+  voice_id: string
+  voices_female: VoiceCartesiaVoiceEntry[]
+  voices_male: VoiceCartesiaVoiceEntry[]
+  speed: number
+  volume: number
+  /** Cartesia TTS 기본 감정 (단일 선택, API generation_config.emotion에 사용) */
+  emotion?: string
+  emotions: string[]
+  tts_mode: CartesiaTtsMode
 }
 
 /** 이미지 → WebP 변환 (화질 열화 없이 lossless) */
@@ -166,6 +189,29 @@ const INITIAL_FORM: VoiceFormData = {
   voice_speaking_rate: '',
   voice_volume_gain: '',
   voice_silence_break_config: '3,5,5',
+  voice_cartesia_config: {
+    gender: 'female',
+    voice_id: '304fdbd8-65e6-40d6-ab78-f9d18b9efdf9',
+    tts_mode: 'batch' as CartesiaTtsMode,
+    voices_female: [
+      { id: '304fdbd8-65e6-40d6-ab78-f9d18b9efdf9', label: '지현 - 앵커우먼' },
+      { id: '15628352-2ede-4f1b-89e6-ceda0c983fbc', label: '지우 - 서비스 전문가' },
+      { id: '29e5f8b4-b953-4160-848f-40fae182235b', label: '미미 - 쇼 스토퍼' },
+      { id: '663afeec-d082-4ab5-827e-2e41bf73a25b', label: '재철 - 단호한 여성' },
+      { id: 'cd6c48a9-774b-4397-98b4-9948c0a790f0', label: '수진 - 도움되는 말투' },
+      { id: 'cac92886-4b7c-4bc1-a524-e0f79c0381be', label: '유나 - 다정한 언니' },
+    ],
+    voices_male: [
+      { id: 'af6beeea-d732-40b6-8292-73af0035b740', label: '병태 - 집행자' },
+      { id: '537a82ae-4926-4bfb-9aec-aff0b80a12a5', label: '민호 - 친근한 영혼' },
+      { id: 'f7755efb-1848-4321-aa22-5e5be5d32486', label: '려욱 - 느긋한 친구' },
+    ],
+    speed: 1.0,
+    volume: 1.0,
+    emotion: 'calm',
+    /** 특수 태그 전부 (TTS 연출: 웃음·한숨·놀람 등). 톤은 emotion 드롭다운 사용 */
+    emotions: ['[laughter]', '[sigh]', '[gasp]', '[um]', '[uh]', '[hmm]', '[clears throat]', '[cough]'],
+  },
 }
 
 export function useVoiceForm() {
@@ -357,6 +403,27 @@ export function useVoiceForm() {
           voice_silence_break_config: typeof c.voice_silence_break_config === 'string' && c.voice_silence_break_config.trim()
             ? c.voice_silence_break_config.trim()
             : '3,5,5',
+          voice_cartesia_config: (() => {
+            const raw = c.voice_cartesia_config
+            if (!raw) return INITIAL_FORM.voice_cartesia_config
+            try {
+              const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+              if (parsed && typeof parsed === 'object') {
+                return {
+                  gender: parsed.gender === 'male' ? 'male' : 'female',
+                  voice_id: String(parsed.voice_id ?? INITIAL_FORM.voice_cartesia_config.voice_id),
+                  voices_female: Array.isArray(parsed.voices_female) ? parsed.voices_female.map((v: any) => ({ id: String(v?.id ?? ''), label: String(v?.label ?? '') })) : INITIAL_FORM.voice_cartesia_config.voices_female,
+                  voices_male: Array.isArray(parsed.voices_male) ? parsed.voices_male.map((v: any) => ({ id: String(v?.id ?? ''), label: String(v?.label ?? '') })) : INITIAL_FORM.voice_cartesia_config.voices_male,
+                  speed: typeof parsed.speed === 'number' ? Math.max(0.6, Math.min(1.5, parsed.speed)) : 1.0,
+                  volume: typeof parsed.volume === 'number' ? Math.max(0.5, Math.min(2, parsed.volume)) : 1.0,
+                  emotion: typeof parsed.emotion === 'string' && parsed.emotion.trim() ? parsed.emotion.trim() : INITIAL_FORM.voice_cartesia_config.emotion ?? 'calm',
+                  emotions: Array.isArray(parsed.emotions) ? parsed.emotions.map((e: any) => String(e)) : INITIAL_FORM.voice_cartesia_config.emotions,
+                  tts_mode: parsed.tts_mode === 'streaming' ? 'streaming' : 'batch',
+                }
+              }
+            } catch { /* ignore */ }
+            return INITIAL_FORM.voice_cartesia_config
+          })(),
         }
         setForm(loadedForm)
         initialFormSnapshotRef.current = JSON.stringify({ ...loadedForm, voice_time_options: loadedForm.voice_time_options })
@@ -539,6 +606,82 @@ export function useVoiceForm() {
     })
   }
 
+  const updateCartesiaConfig = useCallback((patch: Partial<VoiceCartesiaConfig>) => {
+    setForm((f) => ({
+      ...f,
+      voice_cartesia_config: { ...f.voice_cartesia_config, ...patch },
+    }))
+  }, [])
+
+  const addCartesiaVoice = useCallback((gender: 'female' | 'male') => {
+    setForm((f) => {
+      const list = gender === 'female' ? [...f.voice_cartesia_config.voices_female, { id: '', label: '' }] : [...f.voice_cartesia_config.voices_male, { id: '', label: '' }]
+      return {
+        ...f,
+        voice_cartesia_config: {
+          ...f.voice_cartesia_config,
+          ...(gender === 'female' ? { voices_female: list } : { voices_male: list }),
+        },
+      }
+    })
+  }, [])
+
+  const removeCartesiaVoice = useCallback((gender: 'female' | 'male', index: number) => {
+    setForm((f) => {
+      const list = gender === 'female' ? f.voice_cartesia_config.voices_female.filter((_, i) => i !== index) : f.voice_cartesia_config.voices_male.filter((_, i) => i !== index)
+      const voiceId = f.voice_cartesia_config.voice_id
+      const stillPresent = list.some((v) => v.id === voiceId)
+      return {
+        ...f,
+        voice_cartesia_config: {
+          ...f.voice_cartesia_config,
+          ...(gender === 'female' ? { voices_female: list } : { voices_male: list }),
+          voice_id: stillPresent ? voiceId : (list[0]?.id ?? ''),
+        },
+      }
+    })
+  }, [])
+
+  const updateCartesiaVoiceEntry = useCallback((gender: 'female' | 'male', index: number, field: 'id' | 'label', value: string) => {
+    setForm((f) => {
+      const list = gender === 'female' ? [...f.voice_cartesia_config.voices_female] : [...f.voice_cartesia_config.voices_male]
+      if (!list[index]) return f
+      list[index] = { ...list[index], [field]: value }
+      return {
+        ...f,
+        voice_cartesia_config: {
+          ...f.voice_cartesia_config,
+          ...(gender === 'female' ? { voices_female: list } : { voices_male: list }),
+        },
+      }
+    })
+  }, [])
+
+  const previewCartesiaVoice = useCallback(async (voiceId: string) => {
+    if (!voiceId.trim()) return
+    try {
+      const res = await fetch('/api/voice/cartesia-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voiceId,
+          text: '안녕하세요, 이 보이스로 말할 수 있어요.',
+          speed: form.voice_cartesia_config.speed,
+          volume: form.voice_cartesia_config.volume,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.audioBase64) {
+        alert((data as any)?.error || '미리듣기 실패')
+        return
+      }
+      const audio = new Audio(`data:audio/wav;base64,${(data as any).audioBase64}`)
+      await audio.play().catch(() => alert('재생할 수 없습니다.'))
+    } catch (e) {
+      alert((e as Error)?.message || '미리듣기 실패')
+    }
+  }, [form.voice_cartesia_config.speed, form.voice_cartesia_config.volume])
+
   // 저장
   const handleSave = async () => {
     if (!form.content_name?.trim()) { alert('컨텐츠명을 입력하세요.'); return }
@@ -562,6 +705,7 @@ export function useVoiceForm() {
         voice_time_options: JSON.stringify(form.voice_time_options),
         voice_conversation_sounds: form.voice_conversation_sounds,
         voice_conversation_sound_probability_pct: form.voice_conversation_sound_probability_pct,
+        voice_model: rest.voice_model,
         voice_provider: rest.voice_provider,
         voice_hume_config_id: rest.voice_hume_config_id,
         voice_gpt_name: rest.voice_gpt_name,
@@ -569,6 +713,7 @@ export function useVoiceForm() {
         voice_pitch: rest.voice_pitch === '' || rest.voice_pitch == null ? null : Number(rest.voice_pitch),
         voice_speaking_rate: rest.voice_speaking_rate === '' || rest.voice_speaking_rate == null ? null : Number(rest.voice_speaking_rate),
         voice_volume_gain: rest.voice_volume_gain === '' || rest.voice_volume_gain == null ? null : Number(rest.voice_volume_gain),
+        voice_cartesia_config: rest.voice_cartesia_config ? (typeof rest.voice_cartesia_config === 'string' ? rest.voice_cartesia_config : JSON.stringify(rest.voice_cartesia_config)) : null,
       }
       if (!id) delete body.id
       const res = await fetch('/api/admin/content/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -623,6 +768,8 @@ export function useVoiceForm() {
     handleOpenHtmlPreview, setShowHtmlPreview,
     addTimeOption, removeTimeOption, updateTimeOption,
     addConversationSound, removeConversationSound, updateConversationSound, handleConversationSoundFileUpload,
+    updateCartesiaConfig,
+    addCartesiaVoice, removeCartesiaVoice, updateCartesiaVoiceEntry, previewCartesiaVoice,
     handleSave,
     handleDelete,
   }

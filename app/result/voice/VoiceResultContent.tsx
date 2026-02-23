@@ -421,7 +421,7 @@ export default function VoiceResultContent() {
         {/* 하단 컨트롤 */}
         <div className="mt-auto pb-4 space-y-3">
           {h.connected ? (
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {/* 종료 */}
               <button
                 type="button"

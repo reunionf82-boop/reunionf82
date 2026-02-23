@@ -4,6 +4,10 @@ const nextConfig = {
   images: {
     domains: ['www.fortune82.com'],
   },
+  // ws는 bufferutil 네이티브 모듈을 사용. 번들 시 mask is not a function 오류 방지
+  experimental: {
+    serverComponentsExternalPackages: ['ws', 'bufferutil', 'utf-8-validate'],
+  },
 }
 
 module.exports = nextConfig

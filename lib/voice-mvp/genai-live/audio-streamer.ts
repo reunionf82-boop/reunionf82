@@ -68,13 +68,15 @@ export class AudioStreamer {
     return this
   }
 
+  /** PCM 16bit Little-Endian → Float32. 엔디안·부호 처리 올바르게 해야 AM 라디오 노이즈가 사라짐 */
   private _processPCM16Chunk(chunk: Uint8Array): Float32Array {
-    const float32Array = new Float32Array(chunk.length / 2)
-    const dataView = new DataView(chunk.buffer)
+    const numSamples = chunk.length / 2
+    const float32Array = new Float32Array(numSamples)
+    const dataView = new DataView(chunk.buffer, chunk.byteOffset, chunk.byteLength)
 
-    for (let i = 0; i < chunk.length / 2; i++) {
-      const int16 = dataView.getInt16(i * 2, true)
-      float32Array[i] = int16 / 32768
+    for (let i = 0; i < numSamples; i++) {
+      const s = dataView.getInt16(i * 2, true)
+      float32Array[i] = s < 0 ? s / 32768 : s / 32767
     }
     return float32Array
   }
@@ -216,6 +218,15 @@ export class AudioStreamer {
   async resume() {
     if (this.context.state === 'suspended') {
       await this.context.resume()
+    }
+  }
+
+  /** 스트림 종료 신호: 큐가 비면 onComplete 호출 */
+  complete() {
+    this.isStreamComplete = true
+    if (!this.audioQueue.length && !this.endOfQueueAudioSource) {
+      this.isPlaying = false
+      this.onComplete()
     }
   }
 }

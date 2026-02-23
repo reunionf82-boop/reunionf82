@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { useVoiceForm, isDefaultOption, isExtensionOption, isChargeOption } from './useVoiceForm'
 
@@ -28,6 +29,7 @@ const VOICE_PROVIDERS = [
   { id: 'gemini', label: 'Google Gemini (분당 약 20원)' },
   { id: 'openai', label: 'OpenAI GPT (분당 약 270원)' },
   { id: 'xai', label: 'xAI Grok (분당 약 70원)' },
+  { id: 'deepgram-claude-cartesia', label: 'Deepgram+Claude+Cartesia (분당 약 69원)' },
 ]
 
 /** OpenAI Realtime API 음성 (GPT 전용) */
@@ -56,6 +58,95 @@ const VOICE_XAI_NAMES = [
   { value: 'gork', label: 'Gork' },
 ]
 
+/** Cartesia 감정 드롭다운 (단일 선택, TTS API에 전달) — 이미지 UI와 동일 */
+const CARTESIA_EMOTION_DROPDOWN: { value: string; label: string; emoji: string }[] = [
+  { value: 'neutral', label: 'Neutral (뉴트럴)', emoji: '😐' },
+  { value: 'calm', label: 'Calm (차분함)', emoji: '😌' },
+  { value: 'content', label: 'Content (만족함)', emoji: '😊' },
+  { value: 'excited', label: 'Excited (신남)', emoji: '🤩' },
+  { value: 'sad', label: 'Sad (슬픔)', emoji: '😔' },
+  { value: 'angry', label: 'Angry (화남)', emoji: '😠' },
+  { value: 'scared', label: 'Scared (두려움)', emoji: '😱' },
+]
+/** Cartesia Sonic-3 감정 태그 (id: API값, label: 한국어). 상담/운세에 적합한 것 포함 */
+const CARTESIA_EMOTIONS: { value: string; label: string }[] = [
+  { value: 'neutral', label: '중립 (neutral)' },
+  { value: 'calm', label: '차분함 (calm)' },
+  { value: 'content', label: '만족/편안 (content)' },
+  { value: 'peaceful', label: '평화로움 (peaceful)' },
+  { value: 'serene', label: '고요함 (serene)' },
+  { value: 'sympathetic', label: '공감 (sympathetic)' },
+  { value: 'grateful', label: '감사 (grateful)' },
+  { value: 'affectionate', label: '다정함 (affectionate)' },
+  { value: 'trust', label: '신뢰 (trust)' },
+  { value: 'contemplative', label: '숙고 (contemplative)' },
+  { value: 'mysterious', label: '신비로움 (mysterious)' },
+  { value: 'confident', label: '자신감 (confident)' },
+  { value: 'proud', label: '자부심 (proud)' },
+  { value: 'determined', label: '결연함 (determined)' },
+  { value: 'happy', label: '행복 (happy)' },
+  { value: 'excited', label: '흥분 (excited)' },
+  { value: 'enthusiastic', label: '열정 (enthusiastic)' },
+  { value: 'curious', label: '호기심 (curious)' },
+  { value: 'anticipation', label: '기대 (anticipation)' },
+  { value: 'amazed', label: '놀람 (amazed)' },
+  { value: 'surprised', label: '당황 (surprised)' },
+  { value: 'joking/comedic', label: '유머 (joking/comedic)' },
+  { value: 'flirtatious', label: '유혹 (flirtatious)' },
+  { value: 'sad', label: '슬픔 (sad)' },
+  { value: 'dejected', label: '낙담 (dejected)' },
+  { value: 'melancholic', label: '우울 (melancholic)' },
+  { value: 'disappointed', label: '실망 (disappointed)' },
+  { value: 'hurt', label: '상처 (hurt)' },
+  { value: 'apologetic', label: '사과 (apologetic)' },
+  { value: 'hesitant', label: '주저 (hesitant)' },
+  { value: 'anxious', label: '불안 (anxious)' },
+  { value: 'scared', label: '두려움 (scared)' },
+  { value: 'angry', label: '화남 (angry)' },
+  { value: 'frustrated', label: '좌절 (frustrated)' },
+  { value: 'resigned', label: '체념 (resigned)' },
+  { value: 'confused', label: '혼란 (confused)' },
+  { value: 'bored', label: '지루함 (bored)' },
+  { value: 'tired', label: '지침 (tired)' },
+  { value: 'distant', label: '냉담 (distant)' },
+  { value: 'skeptical', label: '회의적 (skeptical)' },
+  { value: 'nostalgic', label: '향수 (nostalgic)' },
+  { value: 'wistful', label: '그리움 (wistful)' },
+  { value: 'guilty', label: '죄책감 (guilty)' },
+  { value: 'insecure', label: '불안정 (insecure)' },
+  { value: 'rejected', label: '거절당함 (rejected)' },
+  { value: 'elated', label: '황홀 (elated)' },
+  { value: 'euphoric', label: '황홀경 (euphoric)' },
+  { value: 'triumphant', label: '승리감 (triumphant)' },
+  { value: 'mad', label: '광기 (mad)' },
+  { value: 'outraged', label: '분노 (outraged)' },
+  { value: 'agitated', label: '동요 (agitated)' },
+  { value: 'threatened', label: '위협 (threatened)' },
+  { value: 'disgusted', label: '혐오 (disgusted)' },
+  { value: 'contempt', label: '경멸 (contempt)' },
+  { value: 'envious', label: '질투 (envious)' },
+  { value: 'sarcastic', label: '비꼼 (sarcastic)' },
+  { value: 'ironic', label: '아이러니 (ironic)' },
+  { value: 'panicked', label: '공황 (panicked)' },
+  { value: 'alarmed', label: '경악 (alarmed)' },
+]
+/** Cartesia 특수 태그 (Nonverbalisms) — TTS가 말할 때 웃음·한숨·놀람 등 표현. 있는 건 다 넣어두면 좋음 */
+const CARTESIA_SPECIAL_TAGS = [
+  { value: '[laughter]', label: '웃음 [laughter]' },
+  { value: '[sigh]', label: '한숨 [sigh]' },
+  { value: '[gasp]', label: '놀람/헐떡임 [gasp]' },
+  { value: '[um]', label: '말 막힘 [um]' },
+  { value: '[uh]', label: '말 막힘 [uh]' },
+  { value: '[hmm]', label: '흠 [hmm]' },
+  { value: '[clears throat]', label: '목청 [clears throat]' },
+  { value: '[cough]', label: '기침 [cough]' },
+]
+/** 감정/특수 태그 전체 값 (All 체크/해제 및 기본값용) */
+const ALL_EMOTION_VALUES = [
+  ...CARTESIA_SPECIAL_TAGS.map((t) => t.value),
+  ...CARTESIA_EMOTIONS.map((t) => t.value),
+]
+
 /** DB 저장값이 라디오 id와 동일/동등한지 판별 (gpt-realtime, gpt-4o-realtime-preview-2024-12-17 등 변형 포함) */
 function voiceModelMatchesRadio(stored: string, radioId: string): boolean {
   const s = String(stored || '').trim()
@@ -78,6 +169,7 @@ function getProviderFromModel(model: string, providerField?: string): string {
 
 export default function VoiceAdminForm() {
   const h = useVoiceForm()
+  const [cartesiaDeleteConfirm, setCartesiaDeleteConfirm] = useState<{ gender: 'female' | 'male'; index: number } | null>(null)
 
   if (h.authenticated === null) {
     return (
@@ -188,6 +280,28 @@ export default function VoiceAdminForm() {
           </div>
         )}
 
+        {/* Cartesia 보이스 행 삭제 확인 팝업 */}
+        {cartesiaDeleteConfirm != null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setCartesiaDeleteConfirm(null)}>
+            <div className="bg-gray-800 rounded-xl shadow-xl border border-gray-600 p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+              <p className="text-gray-200 mb-6">이 보이스를 정말 삭제할까요?</p>
+              <div className="flex gap-3 justify-end">
+                <button type="button" onClick={() => setCartesiaDeleteConfirm(null)} className="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-500 text-white font-medium">취소</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    h.removeCartesiaVoice(cartesiaDeleteConfirm.gender, cartesiaDeleteConfirm.index)
+                    setCartesiaDeleteConfirm(null)
+                  }}
+                  className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium"
+                >
+                  삭제
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 저장 완료 커스텀 토스트 */}
         {h.showSaveSuccess && (
           <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 px-6 py-3 rounded-xl bg-emerald-600 text-white font-medium shadow-lg">
@@ -224,7 +338,7 @@ export default function VoiceAdminForm() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm text-gray-300 mb-2">제공사 선택</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {VOICE_PROVIDERS.map((p) => {
                       const isSelected = h.form.voice_provider === p.id
                       return (
@@ -237,7 +351,8 @@ export default function VoiceAdminForm() {
                               voice_provider: p.id,
                               voice_model: p.id === 'gemini' ? 'gemini-live-2.5-flash-native-audio'
                                 : p.id === 'openai' ? 'gpt-4o-realtime-preview'
-                                  : 'grok-beta',
+                                  : p.id === 'xai' ? 'grok-beta'
+                                    : 'deepgram-claude-cartesia',
                             }))
                           }}
                           className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all border-2 ${isSelected
@@ -366,6 +481,208 @@ export default function VoiceAdminForm() {
                         onChange={(e) => h.setForm((f) => ({ ...f, voice_temperature: parseFloat(e.target.value) }))}
                         className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                       />
+                    </div>
+                  </div>
+                )}
+
+                {/* Deepgram+Claude+Cartesia: 성별 + 보이스 목록(추가/삭제) + 속도/볼륨/감정 */}
+                {h.form.voice_provider === 'deepgram-claude-cartesia' && (
+                  <div className="space-y-4 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
+                    <div className="flex flex-wrap items-end gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">성별</label>
+                        <div className="flex gap-4 h-[38px] items-center">
+                          <label className="flex items-center gap-2 cursor-pointer text-sm">
+                            <input
+                              type="radio"
+                              name="cartesia_gender"
+                              checked={h.form.voice_cartesia_config.gender === 'female'}
+                              onChange={() => {
+                                const list = h.form.voice_cartesia_config.voices_female
+                                const firstId = list[0]?.id ?? ''
+                                h.updateCartesiaConfig({ gender: 'female', voice_id: firstId })
+                              }}
+                            />
+                            <span>여성</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer text-sm">
+                            <input
+                              type="radio"
+                              name="cartesia_gender"
+                              checked={h.form.voice_cartesia_config.gender === 'male'}
+                              onChange={() => {
+                                const list = h.form.voice_cartesia_config.voices_male
+                                const firstId = list[0]?.id ?? ''
+                                h.updateCartesiaConfig({ gender: 'male', voice_id: firstId })
+                              }}
+                            />
+                            <span>남성</span>
+                          </label>
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-[200px]">
+                        <label className="block text-xs text-gray-400 mb-1">사용할 보이스 선택</label>
+                        <select
+                          value={h.form.voice_cartesia_config.voice_id}
+                          onChange={(e) => h.updateCartesiaConfig({ voice_id: e.target.value })}
+                          className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                        >
+                          {(h.form.voice_cartesia_config.gender === 'female' ? h.form.voice_cartesia_config.voices_female : h.form.voice_cartesia_config.voices_male).map((v) => (
+                            <option key={v.id} value={v.id}>{v.label || v.id || '(이름 없음)'}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">말하기 방식</label>
+                        <div className="flex gap-4 h-[38px] items-center">
+                          <label className="flex items-center gap-2 cursor-pointer text-sm">
+                            <input
+                              type="radio"
+                              name="cartesia_tts_mode"
+                              checked={h.form.voice_cartesia_config.tts_mode === 'batch'}
+                              onChange={() => h.updateCartesiaConfig({ tts_mode: 'batch' })}
+                            />
+                            <span>한번에 말하기</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer text-sm">
+                            <input
+                              type="radio"
+                              name="cartesia_tts_mode"
+                              checked={h.form.voice_cartesia_config.tts_mode === 'streaming'}
+                              onChange={() => h.updateCartesiaConfig({ tts_mode: 'streaming' })}
+                            />
+                            <span>스트리밍 말하기</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">여성 보이스 목록 (추가/삭제 가능)</label>
+                      <div className="space-y-2">
+                        {h.form.voice_cartesia_config.voices_female.map((v, idx) => (
+                          <div key={idx} className="flex gap-2 items-center">
+                            <input
+                              value={v.label}
+                              onChange={(e) => h.updateCartesiaVoiceEntry('female', idx, 'label', e.target.value)}
+                              className="flex-1 min-w-0 bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                              placeholder="라벨 (한국어)"
+                            />
+                            <input
+                              value={v.id}
+                              onChange={(e) => h.updateCartesiaVoiceEntry('female', idx, 'id', e.target.value)}
+                              className="flex-1 min-w-0 bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm font-mono text-xs"
+                              placeholder="Voice ID (UUID)"
+                            />
+                            <button type="button" onClick={() => h.previewCartesiaVoice(v.id)} className="shrink-0 px-2 py-1 rounded bg-violet-600/80 hover:bg-violet-500 text-white text-xs">미리 듣기</button>
+                            <button type="button" onClick={() => setCartesiaDeleteConfirm({ gender: 'female', index: idx })} className="shrink-0 px-2 py-1 rounded bg-red-600/80 hover:bg-red-500 text-white text-xs">삭제</button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => h.addCartesiaVoice('female')} className="text-sm text-violet-400 hover:text-violet-300">+ 여성 보이스 추가</button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">남성 보이스 목록 (추가/삭제 가능)</label>
+                      <div className="space-y-2">
+                        {h.form.voice_cartesia_config.voices_male.map((v, idx) => (
+                          <div key={idx} className="flex gap-2 items-center">
+                            <input
+                              value={v.label}
+                              onChange={(e) => h.updateCartesiaVoiceEntry('male', idx, 'label', e.target.value)}
+                              className="flex-1 min-w-0 bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
+                              placeholder="라벨 (한국어)"
+                            />
+                            <input
+                              value={v.id}
+                              onChange={(e) => h.updateCartesiaVoiceEntry('male', idx, 'id', e.target.value)}
+                              className="flex-1 min-w-0 bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm font-mono text-xs"
+                              placeholder="Voice ID (UUID)"
+                            />
+                            <button type="button" onClick={() => h.previewCartesiaVoice(v.id)} className="shrink-0 px-2 py-1 rounded bg-violet-600/80 hover:bg-violet-500 text-white text-xs">미리 듣기</button>
+                            <button type="button" onClick={() => setCartesiaDeleteConfirm({ gender: 'male', index: idx })} className="shrink-0 px-2 py-1 rounded bg-red-600/80 hover:bg-red-500 text-white text-xs">삭제</button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => h.addCartesiaVoice('male')} className="text-sm text-violet-400 hover:text-violet-300">+ 남성 보이스 추가</button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-end gap-4">
+                      <div className="flex-1 min-w-[120px]">
+                        <label className="block text-xs text-gray-400 mb-1">속도 Speed ({h.form.voice_cartesia_config.speed})</label>
+                        <input
+                          type="range" min={0.6} max={1.5} step={0.05}
+                          value={h.form.voice_cartesia_config.speed}
+                          onChange={(e) => h.updateCartesiaConfig({ speed: parseFloat(e.target.value) })}
+                          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-[120px]">
+                        <label className="block text-xs text-gray-400 mb-1">볼륨 Volume ({h.form.voice_cartesia_config.volume})</label>
+                        <input
+                          type="range" min={0.5} max={2} step={0.05}
+                          value={h.form.voice_cartesia_config.volume}
+                          onChange={(e) => h.updateCartesiaConfig({ volume: parseFloat(e.target.value) })}
+                          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-[180px]">
+                        <label className="block text-xs text-gray-400 mb-1">emotion</label>
+                        <select
+                          value={h.form.voice_cartesia_config.emotion ?? ''}
+                          onChange={(e) => h.updateCartesiaConfig({ emotion: e.target.value || 'calm' })}
+                          className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="">Select emotion</option>
+                          {CARTESIA_EMOTION_DROPDOWN.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.emoji} {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    {/* 특수 태그 — TTS가 말할 때 웃음·공감 등 표현 (있는 건 다 넣어두면 좋음) */}
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">특수 태그 (TTS 연출)</label>
+                      <p className="text-gray-500 text-xs mb-2">체크한 태그를 답변에 넣으면 TTS가 말할 때 웃음·한숨·놀람 등을 표현합니다. 필요한 건 모두 켜두는 것을 권장합니다.</p>
+                      <div className="flex gap-2 mb-2">
+                        <button
+                          type="button"
+                          onClick={() => h.updateCartesiaConfig({ emotions: CARTESIA_SPECIAL_TAGS.map((t) => t.value) })}
+                          className="px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium"
+                        >
+                          전체 선택
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => h.updateCartesiaConfig({ emotions: [] })}
+                          className="px-3 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium"
+                        >
+                          전체 해제
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-3 p-2 bg-gray-800 rounded border border-gray-600">
+                        {CARTESIA_SPECIAL_TAGS.map((t) => {
+                          const checked = h.form.voice_cartesia_config.emotions.includes(t.value)
+                          return (
+                            <label key={t.value} className="flex items-center gap-2 cursor-pointer text-sm">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  const specialOnly = h.form.voice_cartesia_config.emotions.filter((x) =>
+                                    CARTESIA_SPECIAL_TAGS.some((s) => s.value === x)
+                                  )
+                                  const next = e.target.checked
+                                    ? [...specialOnly, t.value]
+                                    : specialOnly.filter((x) => x !== t.value)
+                                  h.updateCartesiaConfig({ emotions: next })
+                                }}
+                                className="rounded"
+                              />
+                              <span>{t.label}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}
