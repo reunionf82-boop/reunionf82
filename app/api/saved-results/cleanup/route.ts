@@ -24,25 +24,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 60일 이상 된 saved_results만 삭제. voice_conversation_summaries / voice_summary_asked 는 삭제하지 않음
-    // (안부 문맥은 이용내역 만료와 무관하게 유지해, 나중에 접속 시 안 물어본 항목에 대해 안부 가능)
+    // 60일 이상 된 saved_results(점사형) 및 saved_results_voice(음성형) 삭제
     const sixtyDaysAgo = new Date()
     sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60)
-    
-    const { data, error } = await supabase
+    const cutoff = sixtyDaysAgo.toISOString()
+
+    const { data: fortuneDeleted, error: errFortune } = await supabase
       .from('saved_results')
       .delete()
-      .lt('saved_at', sixtyDaysAgo.toISOString())
+      .lt('saved_at', cutoff)
       .select()
 
-    if (error) {
+    const { data: voiceDeleted, error: errVoice } = await supabase
+      .from('saved_results_voice')
+      .delete()
+      .lt('saved_at', cutoff)
+      .select()
+
+    if (errFortune || errVoice) {
       return NextResponse.json(
-        { error: '삭제 실패', details: error.message },
+        { error: '삭제 실패', details: errFortune?.message || errVoice?.message },
         { status: 500 }
       )
     }
 
-    const deletedCount = data?.length || 0
+    const deletedCount = (fortuneDeleted?.length || 0) + (voiceDeleted?.length || 0)
 
     return NextResponse.json({
       success: true,

@@ -2523,6 +2523,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                 savedResults.map((result) => {
                   // voice 판별: result_type이 'voice'이거나, voice_messages/voice_audio_url이 존재
                   const isVoice = result.result_type === 'voice' || !!result.voice_messages || !!result.voice_audio_url
+                  // 음성듣기: 녹음(voice_audio_url)이 저장된 경우에만 버튼 표시
                   const hasAudio = isVoice && !!result.voice_audio_url
                   return (
                   <div
@@ -2630,17 +2631,17 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                           </>
                         )}
 
-                        {/* 음성형: 다시듣기 (오디오 재생, 녹음이 있을 때만) */}
-                        {isVoice && hasAudio && (
+                        {/* 음성형: 음성듣기 (녹음이 저장된 경우에만 표시) */}
+                        {hasAudio && (
                           <button
                             onClick={() => window.open(`/result/voice/replay?id=${result.id}&autoplay=1`, '_blank')}
                             className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200"
-                            title="저장된 상담 음성 다시 듣기"
+                            title="저장된 상담 음성 듣기"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M12 6a7.975 7.975 0 015.657 2.343M12 6v12m0 0l-3-3m3 3l3-3" />
                             </svg>
-                            다시듣기
+                            음성듣기
                           </button>
                         )}
 

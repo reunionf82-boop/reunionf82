@@ -54,13 +54,13 @@ export async function GET(req: NextRequest) {
   const savedId = savedIdParam ? parseInt(savedIdParam, 10) : null
 
   if (!urlParam) {
-    return NextResponse.json({ error: 'url 쿼리가 필요합니다.' }, { status: 400 })
+    return NextResponse.json({ error: 'URL 쿼리가 필요합니다.' }, { status: 400 })
   }
   let webmUrl: string
   try {
     webmUrl = decodeURIComponent(urlParam)
   } catch {
-    return NextResponse.json({ error: 'url 인코딩이 올바르지 않습니다.' }, { status: 400 })
+    return NextResponse.json({ error: 'URL 인코딩이 올바르지 않습니다.' }, { status: 400 })
   }
   if (!isAllowedUrl(webmUrl)) {
     return NextResponse.json({ error: '허용되지 않은 URL입니다.' }, { status: 400 })
@@ -123,10 +123,16 @@ export async function GET(req: NextRequest) {
     const m4aUrl = urlData?.publicUrl || ''
 
     if (savedId != null && Number.isFinite(savedId)) {
-      await supabase
-        .from('saved_results')
+      const { error: voiceErr } = await supabase
+        .from('saved_results_voice')
         .update({ voice_audio_url_m4a: m4aUrl })
         .eq('id', savedId)
+      if (voiceErr) {
+        await supabase
+          .from('saved_results')
+          .update({ voice_audio_url_m4a: m4aUrl })
+          .eq('id', savedId)
+      }
     }
 
     return NextResponse.json({ url: m4aUrl, success: true })

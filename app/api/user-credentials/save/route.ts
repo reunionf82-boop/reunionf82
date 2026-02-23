@@ -19,7 +19,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { requestKey, savedId, phone, password, replaceRequestKey } = body
+    const { requestKey, savedId, voiceSavedId, phone, password, replaceRequestKey } = body
 
     if (!phone || !password) {
       return NextResponse.json(
@@ -28,9 +28,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!requestKey && !savedId) {
+    if (!requestKey && savedId == null && voiceSavedId == null) {
       return NextResponse.json(
-        { error: 'requestKey 또는 savedId 중 하나는 필수입니다.' },
+        { error: 'requestKey, savedId, voiceSavedId 중 하나는 필수입니다.' },
         { status: 400 }
       )
     }
@@ -133,9 +133,8 @@ export async function POST(request: NextRequest) {
           encrypted_password: plainPassword,
           expires_at: expiresAt.toISOString()
         }
-        if (savedId) {
-          updatePayload.saved_id = savedId
-        }
+        if (savedId != null) updatePayload.saved_id = savedId
+        if (voiceSavedId != null) updatePayload.voice_saved_id = voiceSavedId
 
         const { data: updated, error: updateError } = await supabase
           .from('user_credentials')
@@ -152,7 +151,7 @@ export async function POST(request: NextRequest) {
         }
 
         // 점사 완료: payment에 saved_id·fortune_status 반영 (다시보기 가능 상태 추적)
-        if (savedId) {
+        if (savedId != null) {
           await supabase
             .from('payments')
             .update({
@@ -168,6 +167,7 @@ export async function POST(request: NextRequest) {
           id: updated.id,
           requestKey: updated.request_key,
           savedId: updated.saved_id,
+          voiceSavedId: updated.voice_saved_id,
           updated: true
         })
       }
@@ -178,7 +178,8 @@ export async function POST(request: NextRequest) {
       .from('user_credentials')
       .insert({
         request_key: hasRequestKey ? normalizedRequestKey : null,
-        saved_id: savedId || null,
+        saved_id: savedId ?? null,
+        voice_saved_id: voiceSavedId ?? null,
         encrypted_phone: plainPhone,
         encrypted_password: plainPassword,
         created_at: getKSTNow(), // KST 기준으로 저장

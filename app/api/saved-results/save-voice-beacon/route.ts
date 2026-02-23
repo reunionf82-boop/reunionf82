@@ -17,14 +17,14 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 /**
  * 페이지 이탈(뒤로가기/탭닫기) 시 sendBeacon으로 호출되는 음성 대화 저장 API
  * POST /api/saved-results/save-voice-beacon
- * - saved_results에 voice 타입으로 저장
- * - _beacon_phone, _beacon_password가 있으면 user_credentials도 생성
+ * - saved_results_voice 테이블에 저장 (점사형 saved_results와 분리)
+ * - _beacon_phone, _beacon_password가 있으면 user_credentials에 voice_saved_id로 연결
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      title, html, result_type, voice_messages, voice_audio_url,
+      title, voice_messages, voice_audio_url,
       voice_duration_seconds, content_id, userName,
       _beacon_phone, _beacon_password,
       _beacon_injected_summary_item_refs,
@@ -35,10 +35,8 @@ export async function POST(request: NextRequest) {
     }
 
     const savedAtKST = getKSTNow()
-
-    const isVoice = result_type === 'voice'
     let finalVoiceMessages = voice_messages || null
-    if (isVoice && Array.isArray(finalVoiceMessages) && finalVoiceMessages.length > 0) {
+    if (Array.isArray(finalVoiceMessages) && finalVoiceMessages.length > 0) {
       try {
         finalVoiceMessages = await normalizeVoiceMessagesToKorean(finalVoiceMessages)
       } catch {
@@ -48,61 +46,32 @@ export async function POST(request: NextRequest) {
 
     const insertData: Record<string, any> = {
       title: title || '음성 상담',
-      html: html || (isVoice ? '' : null),
+      html: '',
       user_name: userName || null,
       saved_at: savedAtKST,
       created_at: savedAtKST,
-    }
-
-    // voice 필드 추가 (컬럼이 있을 때만 동작)
-    if (result_type === 'voice') {
-      insertData.result_type = 'voice'
-      insertData.voice_messages = finalVoiceMessages
-      insertData.voice_audio_url = voice_audio_url || null
-      insertData.voice_duration_seconds = voice_duration_seconds || null
-      insertData.content_id = content_id || null
+      voice_messages: finalVoiceMessages,
+      voice_audio_url: voice_audio_url || null,
+      voice_duration_seconds: voice_duration_seconds || null,
+      content_id: content_id || null,
     }
 
     const { data, error } = await supabase
-      .from('saved_results')
+      .from('saved_results_voice')
       .insert(insertData)
       .select('id')
       .single()
 
     if (error) {
-      // voice 컬럼이 없을 수 있음 → 기본 필드만으로 재시도
-      const fallbackData: Record<string, any> = {
-        title: title || '음성 상담',
-        html: `<p>음성 상담 기록 (자동 저장)</p>`,
-        user_name: userName || null,
-        saved_at: savedAtKST,
-        created_at: savedAtKST,
-      }
-      const { data: fbData, error: fbError } = await supabase
-        .from('saved_results')
-        .insert(fallbackData)
-        .select('id')
-        .single()
-
-      if (fbError || !fbData) {
-        return NextResponse.json({ success: false, error: fbError?.message || '저장 실패' }, { status: 500 })
-      }
-
-      // fallback 저장 성공 → credentials 연결
-      if (_beacon_phone && _beacon_password) {
-        await linkCredentials(fbData.id, _beacon_phone, _beacon_password)
-      }
-
-      return NextResponse.json({ success: true, id: fbData.id })
+      return NextResponse.json({ success: false, error: error.message || '저장 실패' }, { status: 500 })
     }
 
-    // voice 저장 성공 → credentials 연결
     if (data && _beacon_phone && _beacon_password) {
-      await linkCredentials(data.id, _beacon_phone, _beacon_password)
+      await linkCredentialsVoice(data.id, _beacon_phone, _beacon_password)
     }
 
     // 음성형: 대화 요약 생성 후 voice_conversation_summaries에 저장 (이미 물어본 항목은 LLM이 다시 넣지 않도록 제외)
-    if (data && isVoice && Array.isArray(finalVoiceMessages) && finalVoiceMessages.length > 0) {
+    if (data && Array.isArray(finalVoiceMessages) && finalVoiceMessages.length > 0) {
       const phoneNorm = normalizePhoneForVoice(_beacon_phone ?? '')
       if (phoneNorm) {
         try {
@@ -153,7 +122,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function linkCredentials(savedId: number, phone: string, password: string) {
+async function linkCredentialsVoice(voiceSavedId: number, phone: string, password: string) {
   try {
     const nowKST = new Date(getKSTNow())
     const expiresAt = new Date(nowKST.getTime() + 60 * 24 * 60 * 60 * 1000) // 60일
@@ -162,7 +131,8 @@ async function linkCredentials(savedId: number, phone: string, password: string)
       .from('user_credentials')
       .insert({
         request_key: null,
-        saved_id: savedId,
+        saved_id: null,
+        voice_saved_id: voiceSavedId,
         encrypted_phone: String(phone).trim(),
         encrypted_password: String(password).trim(),
         created_at: getKSTNow(),

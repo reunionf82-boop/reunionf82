@@ -170,6 +170,7 @@ function getProviderFromModel(model: string, providerField?: string): string {
 export default function VoiceAdminForm() {
   const h = useVoiceForm()
   const [cartesiaDeleteConfirm, setCartesiaDeleteConfirm] = useState<{ gender: 'female' | 'male'; index: number } | null>(null)
+  const [advisorVideoUrlInput, setAdvisorVideoUrlInput] = useState('')
 
   if (h.authenticated === null) {
     return (
@@ -743,7 +744,7 @@ export default function VoiceAdminForm() {
                         <button type="button" onClick={() => h.requestFileDelete('book_cover_thumbnail', '이미지 썸네일')}
                           className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center z-10">&times;</button>
                       </div>
-                      <a href={h.form.book_cover_thumbnail} target="_blank" rel="noopener noreferrer" className="text-violet-400 text-sm truncate max-w-xs">미리보기</a>
+                      <a href={h.form.book_cover_thumbnail} target="_blank" rel="noopener noreferrer" className="text-violet-400 text-sm truncate max-w-xs">크게보기</a>
                     </div>
                   )}
                 </div>
@@ -777,7 +778,7 @@ export default function VoiceAdminForm() {
                         <button type="button" onClick={(e) => { e.stopPropagation(); h.requestFileDelete('book_cover_thumbnail_video', '동영상 썸네일') }}
                           className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center z-10">&times;</button>
                       </div>
-                      <a href={h.form.book_cover_thumbnail_video} target="_blank" rel="noopener noreferrer" className="text-violet-400 text-sm truncate">동영상 미리보기</a>
+                      <a href={h.form.book_cover_thumbnail_video} target="_blank" rel="noopener noreferrer" className="text-violet-400 text-sm truncate">크게보기</a>
                     </div>
                   )}
                 </div>
@@ -789,40 +790,72 @@ export default function VoiceAdminForm() {
               <h2 className="font-bold mb-4">음성대화 설정</h2>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm text-gray-300 mb-1">애기동자 상담사 등록 (MP4, 드래그&amp;드롭 가능)</label>
+                  <label className="block text-sm text-gray-300 mb-1">애기동자 상담사 동영상 (여러 개 등록 가능 · 랜덤 순차 재생, MP4 드래그&amp;드롭 가능, 썸네일 우측 상단 X로 삭제)</label>
                   <div
                     className="border-2 border-dashed border-gray-600 hover:border-violet-500 rounded-lg p-4 transition-colors"
                     onDragOver={h.handleDragOver}
-                    onDrop={(e) => h.handleFileDrop(e, 'voice_advisor_video_url', 'video/')}
+                    onDrop={async (e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      if (h.uploadingAdvisorVideo) return
+                      const file = e.dataTransfer.files?.[0]
+                      if (!file) return
+                      const ext = file.name.split('.').pop()?.toLowerCase() || ''
+                      if (!['mp4', 'webm', 'mov'].includes(ext) && !file.type.startsWith('video/')) {
+                        alert('동영상 파일만 가능합니다.')
+                        return
+                      }
+                      try { await h.appendVideoByFile(file) } catch (err: unknown) { alert((err as Error)?.message || '업로드 실패') }
+                    }}
                   >
-                    <div className="flex gap-2 flex-wrap items-center">
+                    <div className="flex gap-2 flex-wrap items-center mb-3">
                       <input type="file" accept=".mp4,.webm,.mov,video/*" className="hidden" id="voice-advisor-video"
-                        onChange={(e) => { const f = e.target.files?.[0]; if (f) h.handleFileUpload(f, 'voice_advisor_video_url').catch((err: Error) => alert(err.message)); e.target.value = '' }} />
-                      <label htmlFor="voice-advisor-video" className="px-4 py-2 bg-gray-700 rounded-lg cursor-pointer text-sm hover:bg-gray-600 transition">MP4 업로드</label>
-                      <input value={h.form.voice_advisor_video_url} onChange={(e) => h.setForm((f) => ({ ...f, voice_advisor_video_url: e.target.value }))}
-                        className="flex-1 min-w-0 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm" placeholder="URL 입력 또는 파일 드래그&amp;드롭" />
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) h.appendVideoByFile(f).catch((err: Error) => alert(err.message)); e.target.value = '' }} disabled={h.uploadingAdvisorVideo} />
+                      <label htmlFor="voice-advisor-video" className={`px-4 py-2 rounded-lg text-sm transition ${h.uploadingAdvisorVideo ? 'bg-gray-600 cursor-wait' : 'bg-gray-700 hover:bg-gray-600 cursor-pointer'}`}>
+                        {h.uploadingAdvisorVideo ? 'Supabase 업로드 중...' : 'MP4 업로드'}
+                      </label>
+                      <input
+                        type="text"
+                        value={advisorVideoUrlInput}
+                        onChange={(e) => setAdvisorVideoUrlInput(e.target.value)}
+                        className="flex-1 min-w-[200px] bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm"
+                        placeholder="URL 입력 후 Enter로 추가 · URL보기 시 여기에 표시"
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter') return
+                          const url = advisorVideoUrlInput.trim()
+                          if (url) { h.appendVideoUrl(url); setAdvisorVideoUrlInput('') }
+                        }}
+                      />
                     </div>
-                    {h.form.voice_advisor_video_url && (
-                      <div className="mt-2 flex items-center gap-3 flex-wrap">
-                        <div className="relative group cursor-pointer"
-                          onClick={(e) => { const v = e.currentTarget.querySelector('video'); if (!v) return; if (v.paused) { v.muted = false; v.play().catch(() => {}) } else { v.pause(); v.currentTime = 0 } }}>
-                          <video
-                            src={h.form.voice_advisor_video_url}
-                            muted preload="metadata"
-                            className="w-16 h-16 object-cover rounded-lg border border-gray-600 bg-black"
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30 group-hover:bg-black/40 transition pointer-events-none">
-                            <svg className="w-6 h-6 text-white/80" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                    {h.form.voice_advisor_video_urls.length > 0 && (
+                      <div className="flex flex-wrap gap-4">
+                        {h.form.voice_advisor_video_urls.map((url, idx) => (
+                          <div key={idx} className="shrink-0 flex flex-col items-center gap-1">
+                            <div className="relative w-24 h-24">
+                              <div
+                                className="absolute inset-0 rounded-lg border border-gray-600 bg-black overflow-hidden group cursor-pointer"
+                                onClick={(e) => { const v = (e.currentTarget.querySelector('video') as HTMLVideoElement); if (v) { if (v.paused) { v.muted = false; v.play().catch(() => {}) } else { v.pause(); v.currentTime = 0 } } }}
+                              >
+                                <video src={url} muted preload="metadata" className="w-full h-full object-cover" />
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/40 transition pointer-events-none">
+                                  <svg className="w-8 h-8 text-white/80" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                aria-label="동영상 삭제"
+                                onClick={(e) => { e.stopPropagation(); h.removeVideoUrl(idx) }}
+                                className="absolute top-0 right-0 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white text-xs font-bold flex items-center justify-center z-10 -translate-y-1/2 translate-x-1/2"
+                              >
+                                &times;
+                              </button>
+                            </div>
+                            <div className="flex gap-1.5">
+                              <a href={url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-white text-xs">크게보기</a>
+                              <button type="button" onClick={() => setAdvisorVideoUrlInput(url)} className="px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-white text-xs">URL보기</button>
+                            </div>
                           </div>
-                        </div>
-                        <a href={h.form.voice_advisor_video_url} target="_blank" rel="noopener noreferrer" className="text-violet-400 text-sm">동영상 미리보기</a>
-                        <button
-                          type="button"
-                          onClick={() => h.setForm((f) => ({ ...f, voice_advisor_video_url: '' }))}
-                          className="px-3 py-1.5 rounded-lg text-sm bg-red-900/50 text-red-300 hover:bg-red-800/60 border border-red-700/50 transition"
-                        >
-                          동영상 삭제
-                        </button>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -902,6 +935,30 @@ export default function VoiceAdminForm() {
                       <div className="mt-2 flex items-center gap-2">
                         <audio src={h.form.voice_start_sound_url} controls className="max-w-full h-8" />
                         <button type="button" onClick={() => h.requestFileDelete('voice_start_sound_url', '시작소리')}
+                          className="bg-red-500 hover:bg-red-600 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0">&times;</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-300 mb-1">종료소리 (MP3, 드래그&amp;드롭 가능)</label>
+                  <p className="text-xs text-gray-500 mb-1">시간이 0이 되면 TTS를 끊고 이 소리를 재생한 뒤 자동 저장됩니다.</p>
+                  <div
+                    className="border-2 border-dashed border-gray-600 hover:border-violet-500 rounded-lg p-4 transition-colors"
+                    onDragOver={h.handleDragOver}
+                    onDrop={(e) => h.handleFileDrop(e, 'voice_end_sound_url', 'audio/')}
+                  >
+                    <div className="flex gap-2 flex-wrap items-center">
+                      <input type="file" accept=".mp3,.wav,.ogg,.m4a,audio/*" className="hidden" id="voice-end-sound"
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) h.handleFileUpload(f, 'voice_end_sound_url').catch((err: Error) => alert(err.message)); e.target.value = '' }} />
+                      <label htmlFor="voice-end-sound" className="px-4 py-2 bg-gray-700 rounded-lg cursor-pointer text-sm hover:bg-gray-600 transition">MP3 업로드</label>
+                      <input value={h.form.voice_end_sound_url} onChange={(e) => h.setForm((f) => ({ ...f, voice_end_sound_url: e.target.value }))}
+                        className="flex-1 min-w-0 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm" placeholder="URL 입력 또는 파일 드래그&amp;드롭" />
+                    </div>
+                    {h.form.voice_end_sound_url && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <audio src={h.form.voice_end_sound_url} controls className="max-w-full h-8" />
+                        <button type="button" onClick={() => h.requestFileDelete('voice_end_sound_url', '종료소리')}
                           className="bg-red-500 hover:bg-red-600 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0">&times;</button>
                       </div>
                     )}

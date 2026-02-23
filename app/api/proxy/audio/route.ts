@@ -26,10 +26,10 @@ export async function GET(req: NextRequest) {
   try {
     const url = req.nextUrl.searchParams.get('url') || ''
     if (!url) {
-      return NextResponse.json({ error: 'url is required' }, { status: 400 })
+      return NextResponse.json({ error: 'URL is required' }, { status: 400 })
     }
     if (!isAllowedAudioUrl(url)) {
-      return NextResponse.json({ error: 'url not allowed' }, { status: 400 })
+      return NextResponse.json({ error: 'URL not allowed' }, { status: 400 })
     }
 
     const upstream = await fetch(url, { cache: 'no-store' })

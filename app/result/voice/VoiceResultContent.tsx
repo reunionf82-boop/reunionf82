@@ -1,9 +1,67 @@
 'use client'
 
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { isPpoingAttributes } from '@/lib/voice-mvp/ppoing-rules'
 import SocialShareButtons from '@/components/SocialShareButtons'
 import { useVoiceResult } from './useVoiceResult'
+
+/** DB voice_advisor_video_url: 단일 URL 문자열 또는 JSON 배열 문자열 → string[] */
+function parseVideoUrls(raw: string | undefined): string[] {
+  if (!raw || typeof raw !== 'string') return []
+  const s = raw.trim()
+  if (!s) return []
+  if (s.startsWith('[')) {
+    try {
+      const arr = JSON.parse(s) as unknown
+      return Array.isArray(arr) ? arr.filter((u): u is string => typeof u === 'string' && !!u.trim()) : [s]
+    } catch { return [s] }
+  }
+  return [s]
+}
+
+/** 복수일 때 세션당 한 번 랜덤 선택된 URL 하나만 반환. 세션 끊기 전까지 동일 URL 반복 재생용 */
+function pickOneSessionVideoUrl(rawVideoUrl: string | undefined): string {
+  const list = parseVideoUrls(rawVideoUrl)
+  if (list.length === 0) return ''
+  if (list.length === 1) return list[0]
+  return list[Math.floor(Math.random() * list.length)]
+}
+
+function VoiceAdvisorVideoBlock({ rawVideoUrl }: { rawVideoUrl?: string }) {
+  const urls = useMemo(() => parseVideoUrls(rawVideoUrl), [rawVideoUrl])
+  const sessionVideoUrl = useMemo(() => pickOneSessionVideoUrl(rawVideoUrl), [rawVideoUrl])
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    if (urls.length === 0 || !sessionVideoUrl) return
+    const v = videoRef.current
+    if (!v) return
+    v.src = sessionVideoUrl
+    v.play().catch(() => {})
+  }, [sessionVideoUrl, urls.length])
+
+  if (urls.length === 0) {
+    return (
+      <div className="w-full rounded-2xl bg-gray-100 border border-gray-200 flex items-center justify-center py-12">
+        <p className="text-gray-400 text-sm">상담사 영상이 등록되지 않았습니다.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-full overflow-hidden rounded-2xl [contain:layout_paint] [will-change:transform]">
+      <video
+        ref={videoRef}
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="w-full object-cover"
+        preload="auto"
+      />
+    </div>
+  )
+}
 
 /* 만세력 스타일 (voice-mvp에서 가져옴). 모바일: 가로 스크롤 없이 폰트/패딩 축소로 맞춤 */
 const MANSE_STYLES = `
@@ -90,10 +148,11 @@ const MANSE_STYLES = `
 }
 `
 
-/* ── 캔버스 기반 오디오 이퀄라이저 ─────────────────── */
+/* ── 캔버스 기반 오디오 이퀄라이저: 좌=내 목소리(시안), 우=AI(보라) 시각적 구분 ─────────────────── */
 const BAR_COUNT = 48
-const DECAY = 0.92   // 바가 내려오는 속도 (높을수록 느림)
-const RISE  = 0.35   // 바가 올라가는 속도
+const HALF_BARS = BAR_COUNT / 2
+const DECAY = 0.92
+const RISE = 0.35
 
 function AudioEqualizer({
   inVolume,
@@ -107,7 +166,8 @@ function AudioEqualizer({
   outLabel: string
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const barsRef = useRef<number[]>(new Array(BAR_COUNT).fill(0))
+  const barsInRef = useRef<number[]>(new Array(HALF_BARS).fill(0))
+  const barsOutRef = useRef<number[]>(new Array(HALF_BARS).fill(0))
   const rafRef = useRef<number>(0)
   const inRef = useRef(0)
   const outRef = useRef(0)
@@ -133,113 +193,95 @@ function AudioEqualizer({
     }
     ctx.clearRect(0, 0, w, h)
 
-    // 볼륨 → 0~1 스케일링
     const scaleVol = (v: number) => {
       const x = Number.isFinite(v) ? Math.max(0, v) : 0
       return Math.min(1, Math.log10(1 + x * 50) / Math.log10(51))
     }
     const inPct = scaleVol(inRef.current)
     const outPct = scaleVol(outRef.current)
-    const combined = Math.max(inPct, outPct)
 
-    const bars = barsRef.current
-    const half = BAR_COUNT / 2
+    const halfW = w / 2
     const gap = 2
-    const totalGap = (BAR_COUNT - 1) * gap
-    const barW = Math.max(2, (w - totalGap) / BAR_COUNT)
-    const maxH = h - 20 // 라벨 공간
+    const totalGapLeft = (HALF_BARS - 1) * gap
+    const totalGapRight = (HALF_BARS - 1) * gap
+    const barWLeft = Math.max(2, (halfW - 4 - totalGapLeft) / HALF_BARS)
+    const barWRight = Math.max(2, (halfW - 4 - totalGapRight) / HALF_BARS)
+    const maxH = h - 22
 
-    // 각 바의 목표 높이 계산 (중앙이 높고 가장자리가 낮은 형태 + 랜덤 변동)
-    for (let i = 0; i < BAR_COUNT; i++) {
-      const distFromCenter = Math.abs(i - half) / half
-      const envelope = 1 - distFromCenter * distFromCenter * 0.6
-      const noise = 0.6 + Math.random() * 0.4
-      const target = combined * envelope * noise * maxH * 0.9
-      if (target > bars[i]) {
-        bars[i] = bars[i] + (target - bars[i]) * RISE
-      } else {
-        bars[i] = bars[i] * DECAY
+    const drawHalf = (
+      bars: number[],
+      pct: number,
+      startX: number,
+      barW: number,
+      isLeft: boolean
+    ) => {
+      const half = HALF_BARS / 2
+      for (let i = 0; i < HALF_BARS; i++) {
+        const distFromCenter = Math.abs(i - half) / half
+        const envelope = 1 - distFromCenter * distFromCenter * 0.5
+        const noise = 0.65 + Math.random() * 0.35
+        const target = pct * envelope * noise * maxH * 0.92
+        if (target > bars[i]) {
+          bars[i] = bars[i] + (target - bars[i]) * RISE
+        } else {
+          bars[i] = bars[i] * DECAY
+        }
+        if (bars[i] < 2) bars[i] = pct > 0.01 ? 2 + Math.random() * 4 : 2
       }
-      if (bars[i] < 2) bars[i] = combined > 0.01 ? 2 + Math.random() * 4 : 2
-    }
-
-    // 그라데이션 색상 그리기
-    for (let i = 0; i < BAR_COUNT; i++) {
-      const x = i * (barW + gap)
-      const barH = Math.max(2, bars[i])
-      const y = maxH - barH
-
-      // 수직 그라데이션: 위(따뜻한 색) → 아래(차가운 색)
-      const grad = ctx.createLinearGradient(x, y, x, maxH)
-      const ratio = i / BAR_COUNT
-
-      if (ratio < 0.25) {
-        // 왼쪽: 골드/옐로우 → 시안
-        grad.addColorStop(0, '#f59e0b')
-        grad.addColorStop(0.4, '#f97316')
-        grad.addColorStop(0.7, '#06b6d4')
-        grad.addColorStop(1, '#0891b2')
-      } else if (ratio < 0.5) {
-        // 중앙 왼쪽: 오렌지/레드 → 시안
-        grad.addColorStop(0, '#ef4444')
-        grad.addColorStop(0.3, '#f97316')
-        grad.addColorStop(0.6, '#06b6d4')
-        grad.addColorStop(1, '#22d3ee')
-      } else if (ratio < 0.75) {
-        // 중앙 오른쪽: 레드/핑크 → 시안
-        grad.addColorStop(0, '#ec4899')
-        grad.addColorStop(0.3, '#ef4444')
-        grad.addColorStop(0.6, '#0ea5e9')
-        grad.addColorStop(1, '#06b6d4')
-      } else {
-        // 오른쪽: 퍼플/핑크 → 블루
-        grad.addColorStop(0, '#a855f7')
-        grad.addColorStop(0.4, '#ec4899')
-        grad.addColorStop(0.7, '#6366f1')
-        grad.addColorStop(1, '#3b82f6')
-      }
-
-      ctx.fillStyle = grad
-      ctx.beginPath()
-      const r = Math.min(barW / 2, 3)
-      // 둥근 모서리 바
-      ctx.moveTo(x + r, y)
-      ctx.lineTo(x + barW - r, y)
-      ctx.quadraticCurveTo(x + barW, y, x + barW, y + r)
-      ctx.lineTo(x + barW, maxH)
-      ctx.lineTo(x, maxH)
-      ctx.lineTo(x, y + r)
-      ctx.quadraticCurveTo(x, y, x + r, y)
-      ctx.fill()
-
-      // 반짝이는 하이라이트 (바 상단)
-      if (barH > 10) {
-        ctx.fillStyle = 'rgba(255,255,255,0.25)'
-        ctx.fillRect(x + 1, y, barW - 2, 2)
+      for (let i = 0; i < HALF_BARS; i++) {
+        const x = startX + i * (barW + gap)
+        const barH = Math.max(2, bars[i])
+        const y = maxH - barH
+        const grad = ctx.createLinearGradient(x, y, x, maxH)
+        if (isLeft) {
+          grad.addColorStop(0, '#22d3ee')
+          grad.addColorStop(0.4, '#06b6d4')
+          grad.addColorStop(0.8, '#0891b2')
+          grad.addColorStop(1, '#0e7490')
+        } else {
+          grad.addColorStop(0, '#c084fc')
+          grad.addColorStop(0.35, '#a855f7')
+          grad.addColorStop(0.7, '#7c3aed')
+          grad.addColorStop(1, '#6d28d9')
+        }
+        ctx.fillStyle = grad
+        ctx.beginPath()
+        const r = Math.min(barW / 2, 3)
+        ctx.moveTo(x + r, y)
+        ctx.lineTo(x + barW - r, y)
+        ctx.quadraticCurveTo(x + barW, y, x + barW, y + r)
+        ctx.lineTo(x + barW, maxH)
+        ctx.lineTo(x, maxH)
+        ctx.lineTo(x, y + r)
+        ctx.quadraticCurveTo(x, y, x + r, y)
+        ctx.fill()
+        if (barH > 10) {
+          ctx.fillStyle = 'rgba(255,255,255,0.2)'
+          ctx.fillRect(x + 1, y, barW - 2, 2)
+        }
       }
     }
 
-    // 하단 반사 효과 (미러)
-    ctx.save()
-    ctx.globalAlpha = 0.12
-    ctx.scale(1, -1)
-    ctx.translate(0, -(maxH * 2) - 6)
-    for (let i = 0; i < BAR_COUNT; i++) {
-      const x = i * (barW + gap)
-      const barH = Math.min(bars[i] * 0.3, 12)
-      ctx.fillStyle = `rgba(100,200,255,0.5)`
-      ctx.fillRect(x, maxH - barH, barW, barH)
-    }
-    ctx.restore()
+    // 좌 = AI(보라), 우 = 내 목소리(시안)
+    drawHalf(barsOutRef.current, outPct, 2, barWLeft, false)
+    drawHalf(barsInRef.current, inPct, halfW + 2, barWRight, true)
 
-    // 라벨
-    ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif'
+    // 중앙 구분선 (누가 누구인지 한눈에)
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(halfW, 0)
+    ctx.lineTo(halfW, maxH)
+    ctx.stroke()
+
+    // 라벨: 좌 하단 = AI(보라 톤), 우 하단 = 내 목소리(시안 톤)
+    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif'
     ctx.textAlign = 'left'
-    ctx.fillStyle = '#64748b'
-    ctx.fillText(inLabel, 4, h - 4)
+    ctx.fillStyle = '#a855f7'
+    ctx.fillText(outLabel, 4, h - 5)
     ctx.textAlign = 'right'
-    ctx.fillStyle = '#64748b'
-    ctx.fillText(outLabel, w - 4, h - 4)
+    ctx.fillStyle = '#22d3ee'
+    ctx.fillText(inLabel, w - 4, h - 5)
 
     rafRef.current = requestAnimationFrame(draw)
   }, [inLabel, outLabel])
@@ -341,24 +383,22 @@ export default function VoiceResultContent() {
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm">{h.error}</div>
         ) : null}
 
-        {/* 상담사 영상: DCC 음성과 동시 재생 시 메인 스레드/GPU 경쟁으로 끊김이나 영상 멈춤 가능(과부하). 별도 레이어로 분리해 완화 */}
-        {h.contentData?.voice_advisor_video_url ? (
-          <div className="w-full overflow-hidden rounded-2xl [contain:layout_paint] [will-change:transform]">
-            <video
-              src={h.contentData.voice_advisor_video_url}
-              autoPlay
-              loop
-              muted
-              playsInline
-              className="w-full object-cover"
-              preload="auto"
-            />
-          </div>
-        ) : (
-          <div className="w-full rounded-2xl bg-gray-100 border border-gray-200 flex items-center justify-center py-12">
-            <p className="text-gray-400 text-sm">상담사 영상이 등록되지 않았습니다.</p>
-          </div>
-        )}
+        {/* 잔여금액 (메인 화면 상시 표시, 우측 상단에 시간 표시 있음. 차감주기/차감금액은 어드민 시간상품 설정에서 로드) */}
+        {(() => {
+          const chargeOpt = Array.isArray(h.contentData?.voice_time_options) ? (h.contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
+          if (!chargeOpt) return null
+          const rateSeconds = chargeOpt.rate_seconds ?? 12
+          const rateWon = chargeOpt.rate_won ?? 19
+          return (h.balanceWan ?? 0) >= 0 ? (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+              잔여금액 <span className="font-bold text-violet-600">{(h.balanceWan ?? 0).toLocaleString()}원</span>
+              {' '}(차감주기 {rateSeconds}초당 {rateWon}원)
+            </div>
+          ) : null
+        })()}
+
+        {/* 상담사 영상: 복수 시 세션당 하나 랜덤 선택 후 해당 동영상만 반복 재생. DCC 음성과 동시 재생 시 메인 스레드/GPU 경쟁 완화 위해 레이어 분리 */}
+        <VoiceAdvisorVideoBlock rawVideoUrl={h.contentData?.voice_advisor_video_url} />
 
         {/* 모바일 볼륨 안내 */}
         <p className="text-gray-500 text-xs text-center md:hidden">
@@ -388,7 +428,36 @@ export default function VoiceResultContent() {
           <span className="text-gray-400 text-xs shrink-0 tabular-nums">{h.micSensitivity ?? 50}%</span>
         </div>
 
-        {/* 종료 / 상담시간 연장하기 — 마이크 민감도와 소셜 버튼 사이 영역에서 비율로 가운데 */}
+        {/* 사주 만세력 (접기/펼치기) — 마이크 민감도 아래, 8006/무료속성이 아닐 때만 표시 */}
+        {!isPpoingAttributes(h.contentData) && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden voice-result-manse min-w-0">
+          <style dangerouslySetInnerHTML={{ __html: MANSE_STYLES }} />
+          <button
+            type="button"
+            onClick={() => h.setShowManse((v: boolean) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100 transition"
+          >
+            <span className="font-bold text-gray-700 text-sm">사주 만세력</span>
+            <svg
+              className={`w-5 h-5 text-gray-400 transition-transform duration-200 shrink-0 ${h.showManse ? 'rotate-180' : ''}`}
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {h.showManse ? (
+            <div className="px-4 pb-4 min-w-0 overflow-hidden">
+              {h.manseBlockHtml ? (
+                <div className="w-full max-w-full overflow-hidden" dangerouslySetInnerHTML={{ __html: h.manseBlockHtml }} />
+              ) : (
+                <p className="text-gray-500 text-sm py-2">생년월일 정보가 없어 만세력을 표시할 수 없습니다.</p>
+              )}
+            </div>
+          ) : null}
+        </div>
+        )}
+
+        {/* 종료 / 상담시간 연장하기 — 만세력과 소셜 버튼 사이 영역에서 비율로 가운데 */}
         <div className="flex-1 flex flex-col justify-center items-center min-h-0 py-4">
           <div className="flex flex-wrap items-center justify-center gap-3">
           {(h.savingConversation || h.isNavigatingAway) ? (
@@ -441,35 +510,6 @@ export default function VoiceResultContent() {
           )}
           </div>
         </div>
-
-        {/* 만세력 (접기/펼치기) — 8006/무료속성이 아닐 때만 표시 */}
-        {!isPpoingAttributes(h.contentData) && (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden voice-result-manse min-w-0">
-          <style dangerouslySetInnerHTML={{ __html: MANSE_STYLES }} />
-          <button
-            type="button"
-            onClick={() => h.setShowManse((v: boolean) => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100 transition"
-          >
-            <span className="font-bold text-gray-700 text-sm">사주 만세력</span>
-            <svg
-              className={`w-5 h-5 text-gray-400 transition-transform duration-200 shrink-0 ${h.showManse ? 'rotate-180' : ''}`}
-              fill="none" stroke="currentColor" viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          {h.showManse ? (
-            <div className="px-4 pb-4 min-w-0 overflow-hidden">
-              {h.manseBlockHtml ? (
-                <div className="w-full max-w-full overflow-hidden" dangerouslySetInnerHTML={{ __html: h.manseBlockHtml }} />
-              ) : (
-                <p className="text-gray-500 text-sm py-2">생년월일 정보가 없어 만세력을 표시할 수 없습니다.</p>
-              )}
-            </div>
-          ) : null}
-        </div>
-        )}
 
         {/* 스크린 하단: 소셜 공유 버튼 (종료 버튼 아래, 클릭 보장을 위해 relative z-10) */}
         <div className="relative z-10 mt-auto pt-4 pb-4 flex flex-col items-center w-full min-w-0">
@@ -569,13 +609,16 @@ export default function VoiceResultContent() {
                 </div>
               )}
 
-              {/* 현재 잔액 (충전식) - 12초당 18원 등 차감 단위는 콘텐츠 설정대로 표시 */}
+              {/* 현재 잔액 (충전식) - 우측 상단에 시간 표시 있음. 어드민 시간상품 차감주기·차감금액 표시 */}
               {(() => {
                 const chargeOpt = Array.isArray(h.contentData?.voice_time_options) ? (h.contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
                 const rateSeconds = chargeOpt?.rate_seconds ?? 12
                 const rateWon = chargeOpt?.rate_won ?? 19
                 return (h.balanceWan ?? 0) >= 0 ? (
-                  <p className="text-sm text-gray-600 mb-4">현재 잔액: <span className="font-bold text-violet-600">{(h.balanceWan ?? 0).toLocaleString()}원</span> ({rateSeconds}초당 {rateWon}원 차감)</p>
+                  <p className="text-sm text-gray-600 mb-4">
+                    잔여금액 <span className="font-bold text-violet-600">{(h.balanceWan ?? 0).toLocaleString()}원</span>
+                    {' '}(차감주기 {rateSeconds}초당 {rateWon}원)
+                  </p>
                 ) : null
               })()}
 
@@ -758,11 +801,8 @@ export default function VoiceResultContent() {
             </div>
 
             <div className="p-6">
-              <p className="text-gray-700 text-base mb-2">
+              <p className="text-gray-700 text-base mb-5">
                 상담시간이 남아 있어요. 정말로 그만 하시겠어요?
-              </p>
-              <p className="text-gray-500 text-sm mb-5">
-                남은 시간: <span className="font-semibold text-pink-600">{h.formatTime(h.remainingSeconds)}</span>
               </p>
               <div className="flex flex-row flex-nowrap items-center gap-3">
                 <button

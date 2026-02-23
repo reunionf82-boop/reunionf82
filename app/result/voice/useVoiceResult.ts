@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { buildManseBundle, type BirthInput, type CalendarType } from '@/lib/voice-mvp/manse'
 import {
   getKstTimeInstructionBlock,
   getKoreaContextVars,
@@ -18,12 +17,12 @@ import {
   isPpoingAttributes,
   type EtiquetteViolationType,
 } from '@/lib/voice-mvp/ppoing-rules'
-import { buildResultStyleManseBlock } from '@/lib/manse-ryeok-display'
 import { AudioRecorder, AUDIO_CONSTRAINTS } from '@/lib/voice-mvp/genai-live/audio-recorder'
 import { AudioStreamer } from '@/lib/voice-mvp/genai-live/audio-streamer'
 import { audioContext, base64ToArrayBuffer } from '@/lib/voice-mvp/genai-live/utils'
 import VolMeterWorket from '@/lib/voice-mvp/genai-live/worklets/vol-meter'
 import { Modality } from '@google/genai/web'
+import { computeManseFromFormInput } from '@/lib/manse-ryeok'
 
 /* ── 상수 ────────────────────────────────── */
 const LIVE_MODEL_FALLBACK = 'gemini-live-2.5-flash-native-audio'
@@ -33,12 +32,12 @@ const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
 /** 정적 깨기: 이 볼륨 이상이면 사용자가 말하는 것으로 간주. micSensitivity(0-100)로 조정. */
 const SPEECH_THRESHOLD_MIN = 0.01
 const SPEECH_THRESHOLD_MAX = 0.05
-/** TTS 중단용: 볼륨이 (threshold * 이 값) 이상일 때만 TTS 멈춤. 스피커 에코/잡음으로 끊김 방지. */
-const TTS_INTERRUPT_VOLUME_FACTOR = 2.0
+/** TTS 중단용: 볼륨이 (threshold * 이 값) 이상일 때 TTS 멈춤. 1.0=말 시작 감지와 동일, 높이면 에코 방지. */
+const TTS_INTERRUPT_VOLUME_FACTOR = 1.2
 /** TTS 중단 디바운스(ms): 이 시간 이상 연속으로 기준 초과 시에만 중단 (순간 스파이크 무시). */
-const TTS_INTERRUPT_DEBOUNCE_MS = 200
+const TTS_INTERRUPT_DEBOUNCE_MS = 120
 /** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. 낮으면 말 끊김, 높으면 반응이 느려짐. */
-const DCC_SILENCE_END_MS = 400
+const DCC_SILENCE_END_MS = 300
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
 
@@ -306,8 +305,13 @@ export function useVoiceResult() {
 
   // 효과음
   const startSoundRef = useRef<HTMLAudioElement | null>(null)
+  /** 시간 0 시 재생 (TTS 강제 중단 후 재생 → ended 시 자동저장) */
+  const endSoundRef = useRef<HTMLAudioElement | null>(null)
+  const endSoundPlayedRef = useRef(false)
   const conversationSoundsRef = useRef<(HTMLAudioElement | null)[]>([])
   const bubbleProbRef = useRef(0)
+  /** 대화중 소리 연타 방지: 재생 후 이 시간(ms)까지는 재생 안 함. 말하는 도중에도 나오도록 발화시작만이 아님 */
+  const conversationSoundCooldownUntilRef = useRef(0)
   const startSoundPlayedRef = useRef(false)
   const mutedRef = useRef(muted)
   mutedRef.current = muted
@@ -316,6 +320,8 @@ export function useVoiceResult() {
   /** 5회 이상 방문 시 걱정/잔소리 톤이므로 침묵깨기 미발동 */
   const skipSilenceBreakRef = useRef(false)
   skipSilenceBreakRef.current = isPpoingAttributes(contentData) && visitCountToday >= 5
+  /** 보이스 화면 시작 시점 KST(한 번 고정). 공수 시 이미 지나간 시간대는 공수하지 않도록 사용 */
+  const sessionStartKstRef = useRef<Date | null>(null)
 
   messagesRef.current = messages
 
@@ -390,7 +396,10 @@ export function useVoiceResult() {
                   const rateSec = Math.max(1, Number(chargeOpt?.rate_seconds) || 12)
                   const rateWon = Math.max(1, Number(chargeOpt?.rate_won) || 19)
                   secs = Math.floor(balanceWan / rateWon) * rateSec
-                  if (secs > 0) console.log('[VoiceResult] voiceMinutes from balance:', Math.floor(secs / 60), '(balance_wan:', balanceWan, 'rate:', rateSec, 's/', rateWon, 'won)')
+                  if (secs > 0) {
+                    console.log('[VoiceResult] voiceMinutes from balance:', Math.floor(secs / 60), '(balance_wan:', balanceWan, 'rate:', rateSec, 's/', rateWon, 'won)')
+                    enteredWithBalanceRef.current = true
+                  }
                 }
               }
             } catch { /* ignore */ }
@@ -411,6 +420,9 @@ export function useVoiceResult() {
         const count = getAndIncrementVisitCountToday(cid)
         setVisitCountToday(count)
 
+        // 보이스 화면 시작 시점 KST 고정 — 공수 시 이미 지나간 시간대는 공수하지 않도록
+        sessionStartKstRef.current = new Date()
+
         // 효과음 세팅
         const convSounds = c?.voice_conversation_sounds
         const soundList = Array.isArray(convSounds) && convSounds.length > 0
@@ -430,6 +442,16 @@ export function useVoiceResult() {
           startSoundRef.current = startAudio
           // 시작 소리는 상담 연결(ready) 시 한 번 재생하여 녹음에 포함됨 (페이지 로드 시 재생 제거)
         }
+        if (c?.voice_end_sound_url) {
+          const endAudio = new Audio()
+          endAudio.crossOrigin = 'anonymous'
+          endAudio.preload = 'auto'
+          endAudio.addEventListener('error', (e) => console.error('[VoiceResult] end sound load error:', e))
+          endSoundRef.current = endAudio
+        } else {
+          endSoundRef.current = null
+        }
+        endSoundPlayedRef.current = false
         conversationSoundsRef.current = soundList
           .filter((s: any) => s?.url)
           .map((s: any) => {
@@ -442,52 +464,32 @@ export function useVoiceResult() {
           })
         bubbleProbRef.current = probPct / 100
 
-        // 만세력 계산: sessionStorage → 없으면 oid로 API 조회 (모바일 팝업 등 fallback)
-        let gender = sessionStorage.getItem('payment_user_gender') || 'male'
-        let year = parseInt(sessionStorage.getItem('payment_user_year') || '0', 10)
-        let month = parseInt(sessionStorage.getItem('payment_user_month') || '0', 10)
-        let day = parseInt(sessionStorage.getItem('payment_user_day') || '0', 10)
-        let calendarType = (sessionStorage.getItem('payment_user_calendar_type') || 'solar') as CalendarType
-        let birthHour = sessionStorage.getItem('payment_user_birth_hour') || null
-        let userName = sessionStorage.getItem('payment_user_name') || ''
-
-        if (!year || !month || !day) {
-          // oid를 여러 소스에서 탐색 (모바일에서 sessionStorage가 유실될 수 있으므로)
-          const oid =
-            sessionStorage.getItem('payment_oid') ||
-            (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oid') : null) ||
-            localStorage.getItem('payment_success_oid') ||
-            localStorage.getItem('voice_payment_oid') ||
-            null
-          console.log('[VoiceResult] manse fallback oid:', oid, '(year/month/day missing)')
-          if (oid) {
-            try {
-              const manseRes = await fetch(`/api/payment/manse-data?oid=${encodeURIComponent(oid)}`, { cache: 'no-store' })
-              if (manseRes.ok) {
-                const manseJson = await manseRes.json()
-                const d = manseJson?.data
-                if (d?.birthYear != null && d?.birthMonth != null && d?.birthDay != null) {
-                  year = Number(d.birthYear)
-                  month = Number(d.birthMonth)
-                  day = Number(d.birthDay)
-                  birthHour = d.birthHour ?? null
-                  gender = d.gender === 'female' ? 'female' : 'male'
-                  calendarType = (d.calendarType || 'solar') as CalendarType
-                  userName = d.userName || ''
-                  console.log('[VoiceResult] manse data from API (oid fallback)')
-                }
-              }
-            } catch (err) {
-              console.warn('[VoiceResult] manse-data fetch failed:', err)
-            }
+        // 무료속성(8006)이 아닐 때만: 점사형과 동일한 만세력 로직(computeManseFromFormInput)으로 세션 본인정보로 계산 후 표시·LLM 주입
+        if (isPpoingAttributes(c)) {
+          setManseBlockHtml('')
+          setManseText('')
+        } else {
+          const userYear = sessionStorage.getItem('payment_user_year') || ''
+          const userMonth = sessionStorage.getItem('payment_user_month') || ''
+          const userDay = sessionStorage.getItem('payment_user_day') || ''
+          const userBirthHour = sessionStorage.getItem('payment_user_birth_hour') || ''
+          const userCalendarType = (sessionStorage.getItem('payment_user_calendar_type') || 'solar') as 'solar' | 'lunar' | 'lunar-leap'
+          const userName = sessionStorage.getItem('payment_user_name') || ''
+          const manseResult = computeManseFromFormInput({
+            userYear,
+            userMonth,
+            userDay,
+            userBirthHour: userBirthHour || undefined,
+            userCalendarType,
+            userName,
+          })
+          if (manseResult) {
+            setManseBlockHtml(manseResult.manseRyeokTable)
+            setManseText(manseResult.manseRyeokText)
+          } else {
+            setManseBlockHtml('')
+            setManseText('')
           }
-        }
-
-        if (year && month && day) {
-          const input: BirthInput = { name: userName, gender: gender as 'male' | 'female', year, month, day, calendarType, birthHour }
-          const bundle = buildManseBundle(input)
-          setManseBlockHtml(buildResultStyleManseBlock(bundle.manse_table))
-          setManseText(bundle.manse_text)
         }
       } catch (e: any) {
         setError(e?.message || '로딩 중 오류')
@@ -571,8 +573,9 @@ export function useVoiceResult() {
     history.pushState({ [key]: true }, '', window.location.href)
     const onPopState = () => {
       if (!sessionStartedRef.current) return
+      // 이전 버튼 눌렀을 때 즉시 TTS·마이크 중지 (모달 보여주기 전에 먼저 끔 → 폼으로 가도 소리 안 나게)
+      stopAllTTSRef.current()
       if (conversationSavedRef.current) {
-        stopAllTTSRef.current()
         try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
         router.replace('/form')
         return
@@ -614,15 +617,29 @@ export function useVoiceResult() {
     isAiSpeakingRef.current = false
   }, [])
 
-  /** 보이스 화면에서 폼으로 나갈 때(이전/팝업 확인/언마운트 등) TTS 즉시 중지 */
+  /** 보이스 화면에서 폼으로 나갈 때(이전/팝업 확인/언마운트 등) TTS·마이크·모든 소리 즉시 중지 */
   const stopAllTTSRef = useRef<() => void>(() => {})
   useEffect(() => {
     stopAllTTSRef.current = () => {
+      recorderRef.current?.stop()
       streamerRef.current?.stop()
       humeCurrentAudioRef.current?.pause()
       humeCurrentAudioRef.current = null
       humeAudioQueueRef.current.length = 0
       stopDccPlayback(false)
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+      }
+      startSoundRef.current?.pause()
+      if (startSoundRef.current) startSoundRef.current.currentTime = 0
+      endSoundRef.current?.pause()
+      if (endSoundRef.current) endSoundRef.current.currentTime = 0
+      conversationSoundsRef.current.forEach((a) => { a?.pause(); try { (a as HTMLAudioElement).currentTime = 0 } catch { /* ignore */ } })
+      setOutVolume(0)
+      isAiSpeakingRef.current = false
+    }
+    return () => {
+      stopAllTTSRef.current()
     }
   }, [stopDccPlayback])
 
@@ -654,6 +671,19 @@ export function useVoiceResult() {
     if (chunk.length === 0) return
     if (!dccOutVolumeIntervalRef.current) dccOutVolumeIntervalRef.current = setInterval(() => setOutVolume(0.35), 80)
     isAiSpeakingRef.current = true
+    // DCC도 대화중 소리: 말하는 도중 확률 재생 (쿨다운 4초)
+    const list = conversationSoundsRef.current.filter(Boolean) as HTMLAudioElement[]
+    const prob = bubbleProbRef.current
+    const now = Date.now()
+    if (list.length > 0 && prob > 0 && now >= conversationSoundCooldownUntilRef.current) {
+      const roll = Math.random()
+      if (roll < prob) {
+        const chosen = list[Math.floor(Math.random() * list.length)]
+        chosen.currentTime = 0
+        chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
+        conversationSoundCooldownUntilRef.current = now + 4000
+      }
+    }
     dccStreamerRef.current.addPCM16(chunk)
   }, [initDccPcmAudio])
 
@@ -753,27 +783,37 @@ ${speechLine}
 - 첫 인사는 2~3문장으로 짧게, 내담자가 편안함을 느끼도록 합니다.
 - 예시: "어서 오세요, [이름]님. 제가 기다리고 있었어요. 무엇이 궁금하신가요?"
 `
-    const kst = getKoreaContextVars()
-    // 8006(뿌잉): 유저정보(이름, 성별, 만세력) 음성모델에 전달하지 않음
+    const sessionKst = sessionStartKstRef.current ?? undefined
+    const kst = getKoreaContextVars(sessionKst)
+    // 무료속성(8006)일 때만 내정보·만세력 미참조. 무료속성 아닐 때는 폼 본인정보·만세력을 LLM에 주입.
     const skipUserInfo = isPpoing
-    const gender = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_gender') || 'female' : 'female'
-    const isMale = gender === 'male'
-    const honorificLine = isMale
-      ? '내담자 성별: 남성. 반드시 오빠 또는 삼촌으로 호칭할 것. 언니/이모 사용 금지.'
-      : '내담자 성별: 여성. 반드시 언니 또는 이모로 호칭할 것. 오빠/삼촌 사용 금지.'
-    const commonContextBlock = skipUserInfo
-      ? `${getKstTimeInstructionBlock()}
+    let userInfoBlock = ''
+    if (!skipUserInfo) {
+      const uName = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_name') || '' : ''
+      const uGender = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_gender') || '' : ''
+      const uYear = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_year') || '' : ''
+      const uMonth = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_month') || '' : ''
+      const uDay = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_day') || '' : ''
+      const uBirthHour = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_birth_hour') || '' : ''
+      const genderHint = uGender === 'male' ? '남성(호칭: ~님)' : uGender === 'female' ? '여성(호칭: ~님)' : ''
+      const birthLine = uYear && uMonth && uDay
+        ? `생년월일: ${uYear}년 ${uMonth}월 ${uDay}일${uBirthHour ? `, 태어난 시: ${uBirthHour}` : ''}`
+        : ''
+      userInfoBlock = `
+
+### 내담자 정보
+- 이름: ${uName || '(미입력)'}
+${genderHint ? `- 성별: ${genderHint}\n` : ''}${birthLine ? `- ${birthLine}\n` : ''}
+### 만세력(본인)
+${manseText && manseText.trim() ? manseText.trim() : '(만세력 정보 없음)'}
+`
+    }
+    const commonContextBlock = `${getKstTimeInstructionBlock(sessionKst)}
 - 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}
+- 공수(운세 말하기) 시 이미 지나간 시간대는 공수하지 말 것. 위 현재 시각을 기준으로 그 이후 시간만 공수할 것.
 
 `
-      : `${getKstTimeInstructionBlock()}
-
-### 호칭 규칙(필수)
-${honorificLine}
-- 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}
-
-`
-    // 방문 빈도·사계절·환기: 8006(뿌잉) 전용 (유저 이름 없이)
+    // 방문 빈도·사계절·환기: 뿌잉(8006) 전용 (오늘 온 횟수만 참조)
     let visitBlock = ''
     if (isPpoing) {
       const visitGuidance = getVisitGuidanceText(visitCountToday)
@@ -792,15 +832,9 @@ ${seasonBlock}
 - 상담이 5턴 이상 지속되거나 대화가 정체되면 [환기 시트] 중 하나를 무작위로 선택해 실행하세요. (아이 돌발행동, 영적 신호 감지, 신령님 개입, 육체적 피로, 환경 변화 인지 등) 내담자 감정에 맞춰 자연스럽게 끼워 넣으세요.
 `
     }
-    const userInfoBlock = skipUserInfo ? '' : `### 내담자 정보
-이름: ${userName}
-
-### 만세력
-${manseText || '(만세력 없음)'}
-`
     const contextText = `${commonContextBlock}${visitBlock}${userInfoBlock}`
     return { systemText, contextText }
-  }, [contentData, manseText, visitCountToday])
+  }, [contentData, visitCountToday, manseText])
 
   const voiceName = useMemo(() => {
     if (isGptRealtimeModel(model)) {
@@ -943,22 +977,45 @@ ${manseText || '(만세력 없음)'}
     }, 1000)
   }, [])
 
-  /** 시간 0 되었을 때: 무조건 세션 1회 끊어서 오디오 즉시 정지. 연장 팝업 미표시 경로면 팝업 닫고 저장 후 폼으로 */
+  /** 시간 0 되었을 때: TTS 무조건 끊고, 종료소리 있으면 재생 후 자동저장. 없으면 즉시 자동저장 */
   /** totalSeconds > 0 일 때만 동작 (초기 마운트 시 remainingSeconds=0으로 즉시 disconnect되는 것 방지) */
   useEffect(() => {
     if (totalSeconds <= 0) return
-    if (remainingSeconds <= 0 && disconnectInternalRef.current) {
-      if (!disconnectedAtZeroRef.current) {
-        disconnectedAtZeroRef.current = true
-        disconnectInternalRef.current()
-      }
+    if (remainingSeconds <= 0 && disconnectInternalRef.current && !disconnectedAtZeroRef.current) {
       if (timeHitZeroNoExtendPopupRef.current) {
         timeHitZeroNoExtendPopupRef.current = false
         setShowFreeExtendPopup(false)
         setShowExtendPopup(false)
       }
+      const doDisconnect = () => {
+        if (disconnectedAtZeroRef.current) return
+        disconnectedAtZeroRef.current = true
+        disconnectInternalRef.current?.()
+      }
+      // TTS/재생 무조건 중단 (말 중이어도 끊음)
+      stopAllTTSRef.current()
+      const endUrl = contentData?.voice_end_sound_url
+      const endEl = endSoundRef.current
+      if (endUrl && endEl && !endSoundPlayedRef.current) {
+        endSoundPlayedRef.current = true
+        endEl.src = getAudioSrc(endUrl)
+        const onDone = () => {
+          endEl.removeEventListener('ended', onDone)
+          endEl.removeEventListener('error', onDone)
+          doDisconnect()
+        }
+        endEl.addEventListener('ended', onDone, { once: true })
+        endEl.addEventListener('error', onDone, { once: true })
+        endEl.play().catch(() => onDone())
+        // 재생이 끝나지 않을 경우 대비 (최대 10초 후 자동저장)
+        setTimeout(() => {
+          if (!disconnectedAtZeroRef.current) doDisconnect()
+        }, 10000)
+      } else {
+        doDisconnect()
+      }
     }
-  }, [totalSeconds, remainingSeconds])
+  }, [totalSeconds, remainingSeconds, contentData?.voice_end_sound_url])
 
   /* ── 침묵 깨기 ─────────────────────────── */
   const clearSilenceTimer = useCallback(() => {
@@ -972,6 +1029,19 @@ ${manseText || '(만세력 없음)'}
     const streamer = streamerRef.current
     if (!streamer) return
     try { await streamer.resume() } catch { /* ignore */ }
+  }, [])
+
+  // 페이지가 숨겨지면(폼으로 이동·탭 전환 등) 즉시 TTS·마이크 중지 — 폼 화면인데도 소리가 나는 현상 방지
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        stopAllTTSRef.current()
+        disconnectInternalRef.current?.(true)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
   }, [])
 
   // iOS Safari: 포커스/복귀 후 AudioContext가 suspended면 AI 음성이 무음이 될 수 있어 복구
@@ -997,6 +1067,7 @@ ${manseText || '(만세력 없음)'}
   }, [connected, ensurePlaybackResumed])
 
   const sendSilenceBreakRef = useRef<(sec: number, onTtsEnd?: () => void) => Promise<void>>(async () => {})
+  const sendDccTurnRef = useRef<((opts: { transcript?: string; audioBase64?: string; userName?: string; silenceBreakText?: string }, onPlaybackComplete?: () => void) => Promise<void>) | null>(null)
 
   const sendSilenceBreak = useCallback(async (silenceSeconds: number, onTtsEnd?: () => void) => {
     if (showConsultationEndModalRef.current) {
@@ -1030,14 +1101,16 @@ ${manseText || '(만세력 없음)'}
       const text = String(data.text).trim()
       setMessages((prev) => [...prev, { role: 'assistant', text }])
 
-      // Live API로 전달해 AI 캐릭터 목소리로 재생 (speechSynthesis 로봇 음성 대체)
+      // WebSocket(Live API) 또는 DCC로 캐릭터 목소리 재생. 없을 때만 speechSynthesis(국어책 읽기 음성) 사용
       const ws = wsRef.current
+      const sid = dccSessionIdRef.current
       if (ws?.readyState === WebSocket.OPEN) {
         const instruction = `[침묵 깨기] 사용자가 ${silenceSeconds}초간 말이 없습니다. 당신이 먼저 말을 걸어야 합니다. 반드시 아래 문장만 음성으로 말하세요. 다른 설명이나 추가 말 금지: "${text}"`
         ws.send(JSON.stringify({ type: 'text', text: instruction }))
-        // 문장 길이에 맞춰 재생이 끝날 때까지 대기. 4초 고정이면 긴 문장 끝이 잘려서 다음 침묵 깨기가 이전 발화를 interrupt 함 (스펙트럼만 떨리고 말이 안 나오는 현상).
         const estimatedMs = Math.min(14000, Math.max(6000, text.length * 100))
         setTimeout(() => onTtsEnd?.(), estimatedMs)
+      } else if (sid && sendDccTurnRef.current) {
+        sendDccTurnRef.current({ silenceBreakText: text }, onTtsEnd)
       } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel()
         const u = new SpeechSynthesisUtterance(sanitizeForTts(text) || text)
@@ -1054,6 +1127,49 @@ ${manseText || '(만세력 없음)'}
   }, [clearSilenceTimer])
 
   sendSilenceBreakRef.current = sendSilenceBreak
+
+  /** AI 발화 종료 시 침묵깨기 타이머 시작 (WebSocket은 streamer.onComplete에서, DCC는 재생 완료 시 이 함수 호출) */
+  const startSilenceBreakTimerAfterPlayback = useCallback(() => {
+    isAiSpeakingRef.current = false
+    lastAiSpeechEndAtRef.current = Date.now()
+    clearSilenceTimer()
+    const sessionStart = sessionStartTimeRef.current
+    if (sessionStart != null && Date.now() - sessionStart < 5000) return
+    if (skipSilenceBreakRef.current) return
+    if (showConsultationEndModalRef.current) return
+    if (mutedRef.current) return
+    const doSend = sendSilenceBreakRef.current
+    const s1 = silenceBreakSecs.first * 1000
+    const s2 = silenceBreakSecs.second * 1000
+    const s3 = silenceBreakSecs.third * 1000
+    console.log('[침묵깨기] 타이머 설정 (AI 발화 종료 후)', { first: silenceBreakSecs.first, second: silenceBreakSecs.second, third: silenceBreakSecs.third }, '초')
+    silenceTimerRef.current = setTimeout(() => {
+      silenceTimerRef.current = null
+      if (showConsultationEndModalRef.current) return
+      doSend(silenceBreakSecs.first, () => {
+        if (showConsultationEndModalRef.current) return
+        if (!mutedRef.current && !silenceTimerRef.current) {
+          silenceTimerRef.current = setTimeout(() => {
+            silenceTimerRef.current = null
+            if (showConsultationEndModalRef.current) return
+            doSend(silenceBreakSecs.second, () => {
+              if (showConsultationEndModalRef.current) return
+              if (!mutedRef.current && !silenceTimerRef.current) {
+                silenceTimerRef.current = setTimeout(() => {
+                  silenceTimerRef.current = null
+                  if (showConsultationEndModalRef.current) return
+                  doSend(silenceBreakSecs.third, undefined)
+                }, s3)
+              }
+            })
+          }, s2)
+        }
+      })
+    }, s1)
+  }, [silenceBreakSecs, clearSilenceTimer])
+
+  const startSilenceBreakTimerRef = useRef<() => void>(() => {})
+  startSilenceBreakTimerRef.current = startSilenceBreakTimerAfterPlayback
 
   /* ── Failover ──────────────────────────── */
   const connectPendingFailoverRef = useRef<() => void>(() => {})
@@ -1178,6 +1294,8 @@ ${manseText || '(만세력 없음)'}
   const disconnectInternalRef = useRef<((skipSave?: boolean) => void) | null>(null)
 
   function disconnectInternal(skipSave = false) {
+    // 나가기/종료 시 항상 모든 TTS·재생 즉시 중지 (저장 후 폼 이동해도 소리 계속 나는 현상 방지)
+    stopAllTTSRef.current()
     manualDisconnectRef.current = true
     clearSilenceTimer()
     if (dccVadTimerRef.current) {
@@ -1286,7 +1404,7 @@ ${manseText || '(만세력 없음)'}
     return btoa(binary)
   }, [])
 
-  const sendDccTurn = useCallback(async (opts: { transcript?: string; audioBase64?: string; userName?: string }, onPlaybackComplete?: () => void) => {
+  const sendDccTurn = useCallback(async (opts: { transcript?: string; audioBase64?: string; userName?: string; silenceBreakText?: string }, onPlaybackComplete?: () => void) => {
     const cid = contentIdRef.current
     const sid = dccSessionIdRef.current
     if (!cid || !sid) return
@@ -1294,22 +1412,34 @@ ${manseText || '(만세력 없음)'}
     dccSendingRef.current = true
     dccStopPlaybackRef.current = false
     setError('')
-    const isStartTurn = opts.transcript === '[시작]'
+    const isSilenceBreak = !!opts.silenceBreakText
+    const isStartTurn = !isSilenceBreak && opts.transcript === '[시작]'
     if (isStartTurn) dccFirstTurnPlayingRef.current = true
     try {
       const body: Record<string, unknown> = {
         contentId: parseInt(cid, 10),
         sessionId: sid,
-        conversationHistory: dccHistoryRef.current,
+        conversationHistory: isSilenceBreak ? [] : dccHistoryRef.current,
       }
+      if (opts.silenceBreakText != null) body.silenceBreakText = opts.silenceBreakText
       if (opts.transcript != null) body.transcript = opts.transcript
       if (opts.audioBase64 != null) body.audioBase64 = opts.audioBase64
       if (opts.userName != null) body.userName = opts.userName
-      const res = await fetch('/api/voice/dcc-turn', {
+      if (systemAndContext.contextText) body.contextText = systemAndContext.contextText
+      const DCC_RETRY_DELAY_MS = 2000
+      let res: Response = await fetch('/api/voice/dcc-turn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
+      if (!res.ok && res.status === 502) {
+        await new Promise((r) => setTimeout(r, DCC_RETRY_DELAY_MS))
+        res = await fetch('/api/voice/dcc-turn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      }
       const contentType = res.headers.get('content-type') || ''
       const isStream = contentType.includes('ndjson') || contentType.includes('x-ndjson')
 
@@ -1317,12 +1447,16 @@ ${manseText || '(만세력 없음)'}
         if (!res.ok) {
           if (isStartTurn) dccFirstTurnPlayingRef.current = false
           const errText = await res.text().catch(() => '')
+          let userMsg = '일시적인 오류입니다. 다시 말씀해 주세요.'
           try {
-            const errData = JSON.parse(errText)
-            setError((errData as any)?.error || 'DCC 턴 처리 실패')
+            const errData = JSON.parse(errText) as { error?: string }
+            if (typeof errData?.error === 'string' && errData.error.length > 0 && errData.error.length < 120) {
+              userMsg = errData.error
+            }
           } catch {
-            setError(errText || 'DCC 턴 처리 실패')
+            /* use default userMsg */
           }
+          setError(userMsg)
           onPlaybackComplete?.()
           return
         }
@@ -1351,7 +1485,11 @@ ${manseText || '(만세력 없음)'}
               const parsed = JSON.parse(trimmed) as { type?: string; text?: string; assistantText?: string; base64?: string; format?: string; sampleRate?: number }
               if (parsed.type === 'userTranscript' && typeof parsed.text === 'string') {
                 userT = parsed.text
-                setMessages((prev) => [...prev, { role: 'user', text: userT }])
+                if (!isSilenceBreak) {
+                  setMessages((prev) => [...prev, { role: 'user', text: userT }])
+                  lastUserTranscriptAtRef.current = Date.now()
+                  clearSilenceTimer()
+                }
               } else if (parsed.type === 'audio' && typeof parsed.base64 === 'string') {
                 if (parsed.format === 'pcm_s16le') {
                   const ab = base64ToArrayBuffer(parsed.base64)
@@ -1360,11 +1498,12 @@ ${manseText || '(만세력 없음)'}
                 }
               } else if (parsed.type === 'done') {
                 assistantT = typeof parsed.assistantText === 'string' ? parsed.assistantText : ''
-                if (assistantT) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
+                if (assistantT && !isSilenceBreak) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
                 if (receivedAudio && dccStreamerRef.current) {
                   dccStreamerRef.current.onComplete = () => {
                     if (isStartTurn) dccFirstTurnPlayingRef.current = false
                     stopDccPlayback(false)
+                    startSilenceBreakTimerRef.current?.()
                     onPlaybackComplete?.()
                   }
                   dccStreamerRef.current.flush()
@@ -1378,34 +1517,56 @@ ${manseText || '(만세력 없음)'}
         }
         if (!receivedAudio) {
           if (isStartTurn) dccFirstTurnPlayingRef.current = false
+          startSilenceBreakTimerRef.current?.()
           onPlaybackComplete?.()
         }
-        dccHistoryRef.current = [
-          ...dccHistoryRef.current,
-          ...(userT ? [{ role: 'user' as const, content: userT }] : []),
-          ...(assistantT ? [{ role: 'assistant' as const, content: assistantT }] : []),
-        ].slice(-50)
+        if (!isSilenceBreak) {
+          dccHistoryRef.current = [
+            ...dccHistoryRef.current,
+            ...(userT ? [{ role: 'user' as const, content: userT }] : []),
+            ...(assistantT ? [{ role: 'assistant' as const, content: assistantT }] : []),
+          ].slice(-50)
+        }
         return
       }
 
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError((data as any).error || 'DCC 턴 처리 실패')
+        const errMsg = (data as any)?.error
+        setError(typeof errMsg === 'string' && errMsg.length > 0 && errMsg.length < 120 ? errMsg : '일시적인 오류입니다. 다시 말씀해 주세요.')
         onPlaybackComplete?.()
         return
       }
       const userT = (data as any).userTranscript
       const assistantT = (data as any).assistantText
       const audioB64 = (data as any).audioBase64
-      if (userT) setMessages((prev) => [...prev, { role: 'user', text: userT }])
-      if (assistantT) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
-      dccHistoryRef.current = [
-        ...dccHistoryRef.current,
-        ...(userT ? [{ role: 'user' as const, content: userT }] : []),
-        ...(assistantT ? [{ role: 'assistant' as const, content: assistantT }] : []),
-      ].slice(-50)
+      if (userT && !isSilenceBreak) {
+        setMessages((prev) => [...prev, { role: 'user', text: userT }])
+        lastUserTranscriptAtRef.current = Date.now()
+        clearSilenceTimer()
+      }
+      if (assistantT && !isSilenceBreak) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
+      if (!isSilenceBreak) {
+        dccHistoryRef.current = [
+          ...dccHistoryRef.current,
+          ...(userT ? [{ role: 'user' as const, content: userT }] : []),
+          ...(assistantT ? [{ role: 'assistant' as const, content: assistantT }] : []),
+        ].slice(-50)
+      }
       if (audioB64 && typeof audioB64 === 'string') {
         isAiSpeakingRef.current = true
+        const list = conversationSoundsRef.current.filter(Boolean) as HTMLAudioElement[]
+        const prob = bubbleProbRef.current
+        const now = Date.now()
+        if (list.length > 0 && prob > 0 && now >= conversationSoundCooldownUntilRef.current) {
+          const roll = Math.random()
+          if (roll < prob) {
+            const chosen = list[Math.floor(Math.random() * list.length)]
+            chosen.currentTime = 0
+            chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
+            conversationSoundCooldownUntilRef.current = now + 4000
+          }
+        }
         if (dccOutVolumeIntervalRef.current) clearInterval(dccOutVolumeIntervalRef.current)
         dccOutVolumeIntervalRef.current = setInterval(() => setOutVolume(0.35), 80)
         const audio = new Audio(`data:audio/wav;base64,${audioB64}`)
@@ -1419,6 +1580,7 @@ ${manseText || '(만세력 없음)'}
           }
           setOutVolume(0)
           isAiSpeakingRef.current = false
+          startSilenceBreakTimerRef.current?.()
           onPlaybackComplete?.()
         }
         audio.onended = clearOutVol
@@ -1431,7 +1593,8 @@ ${manseText || '(만세력 없음)'}
     } finally {
       dccSendingRef.current = false
     }
-  }, [])
+  }, [systemAndContext])
+  sendDccTurnRef.current = sendDccTurn
 
   const isDccProvider = contentData?.voice_provider === 'deepgram-claude-cartesia'
   const [dccRecording, setDccRecording] = useState(false)
@@ -1463,8 +1626,9 @@ ${manseText || '(만세력 없음)'}
     }
   }, [buildWavFromPcmChunks, sendDccTurn, stopDccPlayback])
 
-  /** DCC 연속 대화: 첫 인사 재생이 끝난 뒤 호출. 말하기 버튼 없이 VAD로 턴 감지 후 자동 전송 */
-  const startDccContinuousRecording = useCallback(() => {
+  /** DCC 연속 대화: 첫 인사 재생이 끝난 뒤 호출. 말하기 버튼 없이 VAD로 턴 감지 후 자동 전송.
+   * iOS: 사용자 제스처 직후 취득한 primedStream/primedContext 를 넘기면 수음 불가 이슈를 줄일 수 있음. */
+  const startDccContinuousRecording = useCallback((primedStream?: MediaStream, primedContext?: AudioContext) => {
     if (!recorderRef.current) recorderRef.current = new AudioRecorder(16000)
     dccChunksRef.current = []
     dccLastTurnEndIndexRef.current = 0
@@ -1526,8 +1690,54 @@ ${manseText || '(만세력 없음)'}
       }
     }
     rec.off('data', onData as any).off('volume', onVolume as any).on('data', onData as any).on('volume', onVolume as any)
-    rec.start().then(() => setDccRecording(true)).catch((e: any) => setError(e?.message || '마이크를 사용할 수 없습니다.'))
+    const startPromise = primedStream && primedContext
+      ? rec.start(primedStream, primedContext)
+      : rec.start()
+    startPromise.then(() => setDccRecording(true)).catch((e: any) => setError(e?.message || '마이크를 사용할 수 없습니다.'))
   }, [buildWavFromPcmChunks, sendDccTurn, stopDccPlayback])
+
+  /** 잔여금액으로 진입한 세션: 연결 후 차감주기마다 잔액 차감·UI 갱신 (remaining/total은 타이머가 이미 카운트다운 중이므로 갱신만) */
+  const startBalanceDeductIntervalIfNeeded = useCallback((data: typeof contentData) => {
+    if (!enteredWithBalanceRef.current) return
+    if (balanceDeductIntervalRef.current) return
+    const chargeOpt = data?.voice_time_options && Array.isArray(data.voice_time_options)
+      ? (data.voice_time_options as any[]).find((o: any) => o?.type === 'charge')
+      : null
+    const rateSeconds = Math.max(1, chargeOpt?.rate_seconds ?? 12)
+    const rateWon = Math.max(1, chargeOpt?.rate_won ?? 19)
+    useBalanceModeRef.current = true
+    balanceDeductIntervalRef.current = setInterval(async () => {
+      if (!useBalanceModeRef.current) return
+      const cid2 = contentIdRef.current
+      const phone2 = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
+      if (!cid2 || !phone2) return
+      try {
+        const r = await fetch('/api/voice/balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'deduct', contentId: cid2, phone: phone2, secondsUsed: rateSeconds, rate_seconds: rateSeconds, rate_won: rateWon }),
+        })
+        const d = await r.json()
+        if (r.status === 402 || !d?.success) {
+          useBalanceModeRef.current = false
+          if (balanceDeductIntervalRef.current) {
+            clearInterval(balanceDeductIntervalRef.current)
+            balanceDeductIntervalRef.current = null
+          }
+          setRemainingSeconds(0)
+          alert('잔액이 부족하여 상담 시간이 종료됩니다.')
+          return
+        }
+        setBalanceWan(d.balance_wan ?? 0)
+      } catch {
+        useBalanceModeRef.current = false
+        if (balanceDeductIntervalRef.current) {
+          clearInterval(balanceDeductIntervalRef.current)
+          balanceDeductIntervalRef.current = null
+        }
+      }
+    }, rateSeconds * 1000)
+  }, [])
 
   const connect = useCallback(async () => {
     setError('')
@@ -1548,12 +1758,61 @@ ${manseText || '(만세력 없음)'}
         dccHistoryRef.current = []
         setConnected(true)
         startTimer()
+        startBalanceDeductIntervalIfNeeded(contentData)
         if (startSoundRef.current && !startSoundPlayedRef.current) {
           startSoundPlayedRef.current = true
           startSoundRef.current.currentTime = 0
           startSoundRef.current.play().catch(() => {})
         }
-        startDccContinuousRecording()
+        // iOS: 사용자 제스처 직후 마이크 권한/스트림을 먼저 취득해야 수음 가능 (DCC는 이 블록에서 return 하므로 여기서 준비)
+        const isiOS = isIOSDevice()
+        if (isiOS) {
+          if (!iosRecorderContextRef.current) {
+            try {
+              iosRecorderContextRef.current = new AudioContext({ sampleRate: 16000 })
+            } catch {
+              /* ignore */
+            }
+          }
+          if (!iosMicStreamPromiseRef.current && navigator.mediaDevices?.getUserMedia) {
+            iosMicStreamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
+          }
+          const stream = await iosMicStreamPromiseRef.current?.catch(() => null)
+          const ctx = iosRecorderContextRef.current
+          if (stream && ctx) startDccContinuousRecording(stream, ctx)
+          else startDccContinuousRecording()
+        } else {
+          startDccContinuousRecording()
+        }
+        // DCC도 양방향 녹음(마이크+AI) → 나의 이용내역 음성듣기용 voice_audio_url 저장
+        ;(async () => {
+          const ctx = initDccPcmAudio()
+          if (!ctx || !dccStreamerRef.current) return
+          try {
+            const dest = ctx.createMediaStreamDestination()
+            mixedDestinationRef.current = dest
+            dccStreamerRef.current.connectExtraDestination(dest)
+            const micStream = iosMicStreamPromiseRef.current
+              ? await iosMicStreamPromiseRef.current
+              : await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
+            const micSource = ctx.createMediaStreamSource(micStream)
+            micSource.connect(dest)
+            micSourceNodeRef.current = micSource
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+              ? 'audio/webm;codecs=opus'
+              : 'audio/webm'
+            const mr = new MediaRecorder(dest.stream, { mimeType })
+            mixedChunksRef.current = []
+            mr.ondataavailable = (e) => {
+              if (e.data.size > 0) mixedChunksRef.current.push(e.data)
+            }
+            mr.start(1000)
+            mixedMediaRecorderRef.current = mr
+            console.log('[VoiceResult] DCC mixed audio recording started (mic + AI)')
+          } catch (recErr: any) {
+            console.warn('[VoiceResult] DCC mixed recording setup failed:', recErr?.message)
+          }
+        })()
         const dccUserName = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_name') || '' : ''
         sendDccTurn({ transcript: '[시작]', userName: dccUserName }, () => {
           dccLastTurnEndIndexRef.current = dccChunksRef.current.length
@@ -1628,7 +1887,7 @@ ${manseText || '(만세력 없음)'}
                       silenceTimerRef.current = setTimeout(() => {
                         silenceTimerRef.current = null
                         if (showConsultationEndModalRef.current) return
-                        doSend(1, undefined)
+                        doSend(silenceBreakSecs.third, undefined)
                       }, s3)
                     }
                   })
@@ -1811,6 +2070,7 @@ ${manseText || '(만세력 없음)'}
             }
             // 타이머 시작
             startTimer()
+            startBalanceDeductIntervalIfNeeded(contentData)
 
             // AI 첫 인사: 콘텐츠(어드민) voice_initial_greet_prompt만 사용. {{userName}} 치환. 하드코딩 프롬프트 없음. 8006/무료속성은 유저정보 미전달
             const isPpoingGreet = isPpoingAttributes(contentData)
@@ -1899,30 +2159,36 @@ ${manseText || '(만세력 없음)'}
               const blob = new Blob([buf], { type: 'audio/wav' })
               humeAudioQueueRef.current.push(blob)
               audioChunksRef.current.push(msg.data)
-              if (!isAiSpeakingRef.current) {
-                isAiSpeakingRef.current = true
-                const list = conversationSoundsRef.current.filter(Boolean) as HTMLAudioElement[]
+              if (!isAiSpeakingRef.current) isAiSpeakingRef.current = true
+              // 대화중 소리: 발화시작뿐 아니라 말하는 도중에도 확률로 재생 (쿨다운 4초)
+              const list = conversationSoundsRef.current.filter(Boolean) as HTMLAudioElement[]
+              const prob = bubbleProbRef.current
+              const now = Date.now()
+              if (list.length > 0 && prob > 0 && now >= conversationSoundCooldownUntilRef.current) {
                 const roll = Math.random()
-                const prob = bubbleProbRef.current
-                if (list.length > 0 && roll < prob) {
+                if (roll < prob) {
                   const chosen = list[Math.floor(Math.random() * list.length)]
                   chosen.currentTime = 0
                   chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
+                  conversationSoundCooldownUntilRef.current = now + 4000
                 }
               }
               playHumeQueue()
               return
             }
             const buf = base64ToArrayBuffer(msg.data)
-            if (!isAiSpeakingRef.current) {
-              isAiSpeakingRef.current = true
-              const list = conversationSoundsRef.current.filter(Boolean) as HTMLAudioElement[]
+            if (!isAiSpeakingRef.current) isAiSpeakingRef.current = true
+            // 대화중 소리: 발화시작뿐 아니라 말하는 도중에도 확률로 재생 (쿨다운 4초)
+            const list = conversationSoundsRef.current.filter(Boolean) as HTMLAudioElement[]
+            const prob = bubbleProbRef.current
+            const now = Date.now()
+            if (list.length > 0 && prob > 0 && now >= conversationSoundCooldownUntilRef.current) {
               const roll = Math.random()
-              const prob = bubbleProbRef.current
-              if (list.length > 0 && roll < prob) {
+              if (roll < prob) {
                 const chosen = list[Math.floor(Math.random() * list.length)]
                 chosen.currentTime = 0
                 chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
+                conversationSoundCooldownUntilRef.current = now + 4000
               }
             }
             const streamAndPlay = async () => {
@@ -2117,7 +2383,7 @@ ${manseText || '(만세력 없음)'}
     } catch (e: any) {
       setError(e?.message || '연결 실패')
     }
-  }, [contentData?.voice_provider, systemAndContext, model, voiceName, muted, silenceBreakSecs, startFailoverCheckInterval, startTimer, clearSilenceTimer, sendSilenceBreak, sendDccTurn])
+  }, [contentData, contentData?.voice_provider, systemAndContext, model, voiceName, muted, silenceBreakSecs, startFailoverCheckInterval, startTimer, startBalanceDeductIntervalIfNeeded, clearSilenceTimer, sendSilenceBreak, sendDccTurn])
 
   /* ── disconnect ─────────────────────────── */
   const disconnect = useCallback(async () => {
@@ -2188,6 +2454,8 @@ ${manseText || '(만세력 없음)'}
   const [balanceWan, setBalanceWan] = useState<number>(0)
   const useBalanceModeRef = useRef(false)
   const balanceDeductIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  /** 폼에서 잔여금액으로 상담 진입 시 true → 차감 주기마다 잔액 차감·UI 갱신 인터벌 자동 시작 */
+  const enteredWithBalanceRef = useRef(false)
   const fetchBalance = useCallback(async () => {
     const cid = contentIdRef.current
     const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
@@ -2737,7 +3005,7 @@ ${manseText || '(만세력 없음)'}
         console.warn('[VoiceResult] 요약이 DB에 저장되지 않았습니다. 전화번호가 전달되었는지, 또는 대화에 일정/포인트가 포함되었는지 확인하세요.')
       }
 
-      // 4) user_credentials에 savedId 연결 (나의 이용내역에서 조회 가능하도록)
+      // 4) user_credentials에 voice_saved_id로 연결 (나의 이용내역에서 조회 가능하도록, saved_results_voice 전용)
       if (savedId) {
         const phone = sessionStorage.getItem('payment_phone') || ''
         const password = sessionStorage.getItem('payment_password') || ''
@@ -2749,7 +3017,7 @@ ${manseText || '(만세력 없음)'}
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                savedId: parseInt(savedId, 10),
+                voiceSavedId: parseInt(savedId, 10),
                 phone,
                 password,
                 requestKey: requestKey || undefined,
@@ -2793,10 +3061,10 @@ ${manseText || '(만세력 없음)'}
     router.push('/form')
   }, [router])
 
-  /* ── 나가기 전 저장 확인: 이전/홈 시 모달 표시 (브라우저/모바일 뒤로가기와 동일) ── */
+  /* ── 나가기 전 저장 확인: 이전/홈 시 모달 표시 (브라우저/모바일 뒤로가기와 동일). 어떤 경우든 폼으로 나가면 즉시 TTS·마이크 중지 */
   const requestLeave = useCallback(() => {
+    stopAllTTSRef.current()
     if (conversationSavedRef.current) {
-      stopAllTTSRef.current()
       setIsNavigatingAway(true)
       try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
       router.push('/form')
@@ -2806,7 +3074,6 @@ ${manseText || '(만세력 없음)'}
       setShowLeaveConfirmModal(true)
       return
     }
-    stopAllTTSRef.current()
     setIsNavigatingAway(true)
     try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
     router.push('/form')
@@ -2824,7 +3091,7 @@ ${manseText || '(만세력 없음)'}
     setShowLeaveConfirmModal(false)
     setIsNavigatingAway(true)
     stopAllTTSRef.current()
-    disconnectInternal(true) // 폼으로 나가기 전 오디오·연결 즉시 정리 (저장 없음)
+    disconnectInternalRef.current?.(true)
     try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
     router.push('/form')
   }, [router])

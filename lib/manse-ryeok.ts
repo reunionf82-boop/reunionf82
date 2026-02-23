@@ -954,6 +954,65 @@ export function generateManseRyeokText(data: ManseRyeokData): string {
   text += `=== 연주 (Year Pillar) ===\n`
   text += `천간: ${data.year.gan}(${getGanHanja(data.year.gan)}) | 지지: ${data.year.ji}(${getJiHanja(data.year.ji)}) | 합쳐서: ${data.year.gan}${data.year.ji}(${getGanHanja(data.year.gan)}${getJiHanja(data.year.ji)})\n`
   text += `십성(천간): ${data.year.sibsung} | 십성(지지): ${data.year.jiSibsung}`
-  
+
   return text
+}
+
+/** 점사형(폼)과 동일한 만세력 계산 — 폼/보이스 등에서 공통 사용. 생년월일·태어난 시·달력 타입·이름으로 테이블·텍스트 생성 */
+export function computeManseFromFormInput(params: {
+  userYear: string
+  userMonth: string
+  userDay: string
+  userBirthHour?: string | null
+  userCalendarType?: 'solar' | 'lunar' | 'lunar-leap'
+  userName?: string
+}): { manseRyeokTable: string; manseRyeokText: string } | null {
+  const { userYear, userMonth, userDay, userBirthHour, userCalendarType = 'solar', userName = '' } = params
+  if (!userYear || !userMonth || !userDay) return null
+  try {
+    const birthYear = parseInt(userYear, 10)
+    const birthMonth = parseInt(userMonth, 10)
+    const birthDay = parseInt(userDay, 10)
+    if (!Number.isFinite(birthYear) || !Number.isFinite(birthMonth) || !Number.isFinite(birthDay)) return null
+    let birthHourNum = 10
+    if (userBirthHour) {
+      const hourMap: { [key: string]: number } = {
+        '子': 0, '丑': 2, '寅': 4, '卯': 6, '辰': 8, '巳': 10,
+        '午': 12, '未': 14, '申': 16, '酉': 18, '戌': 20, '亥': 22,
+      }
+      if (hourMap[userBirthHour] !== undefined) {
+        birthHourNum = hourMap[userBirthHour]
+      } else {
+        const hourMatch = userBirthHour.match(/(\d+)/)
+        if (hourMatch) birthHourNum = parseInt(hourMatch[1], 10)
+      }
+    }
+    const dayGanji = getDayGanji(birthYear, birthMonth, birthDay)
+    const dayGan = dayGanji.gan
+    const manseRyeokData = calculateManseRyeok(birthYear, birthMonth, birthDay, birthHourNum, dayGan)
+    let convertedDate: { year: number; month: number; day: number } | null = null
+    try {
+      if (userCalendarType === 'solar') {
+        convertedDate = convertSolarToLunarAccurate(birthYear, birthMonth, birthDay)
+      } else if (userCalendarType === 'lunar' || userCalendarType === 'lunar-leap') {
+        convertedDate = convertLunarToSolarAccurate(birthYear, birthMonth, birthDay, userCalendarType === 'lunar-leap')
+      }
+    } catch {
+      convertedDate = null
+    }
+    const captionInfo: ManseRyeokCaptionInfo = {
+      name: userName,
+      year: birthYear,
+      month: birthMonth,
+      day: birthDay,
+      hour: userBirthHour || null,
+      calendarType: userCalendarType,
+      convertedDate,
+    }
+    const manseRyeokTable = generateManseRyeokTable(manseRyeokData, userName, captionInfo)
+    const manseRyeokText = generateManseRyeokText(manseRyeokData)
+    return { manseRyeokTable, manseRyeokText }
+  } catch {
+    return null
+  }
 }

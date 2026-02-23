@@ -40,21 +40,21 @@ export type KoreaContextVars = {
 
 const KST = 'Asia/Seoul'
 
-/** 한국 표준시(KST) 기준 요일/시간대/특수일 변수 반환. 서버가 UTC여도 정확히 KST로 계산. */
-export function getKoreaContextVars(): KoreaContextVars {
-  const now = new Date()
+/** 한국 표준시(KST) 기준 요일/시간대/특수일 변수 반환. 서버가 UTC여도 정확히 KST로 계산. now 미지정 시 현재 시각 사용. */
+export function getKoreaContextVars(now?: Date): KoreaContextVars {
+  const t = now ?? new Date()
   const dateStr = new Intl.DateTimeFormat('ko-KR', {
     timeZone: KST,
     year: 'numeric',
     month: 'long',
     day: 'numeric',
-  }).format(now)
+  }).format(t)
   const timeStr = new Intl.DateTimeFormat('ko-KR', {
     timeZone: KST,
     hour: 'numeric',
     minute: '2-digit',
     hour12: false,
-  }).format(now)
+  }).format(t)
   const parts = new Intl.DateTimeFormat('ko-KR', {
     timeZone: KST,
     hour: 'numeric',
@@ -62,7 +62,7 @@ export function getKoreaContextVars(): KoreaContextVars {
     weekday: 'short',
     day: 'numeric',
     month: 'numeric',
-  }).formatToParts(now)
+  }).formatToParts(t)
   const getPart = (type: string) => parts.find((p) => p.type === type)?.value ?? '0'
   const hour = parseInt(getPart('hour'), 10) || 0
   const dayOfMonth = parseInt(getPart('day'), 10) || 1
@@ -72,7 +72,7 @@ export function getKoreaContextVars(): KoreaContextVars {
     일: 0, 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6,
     Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
   }
-  const dayOfWeek = WEEKDAY_MAP[weekdayShort] ?? new Date(now.getTime() + 9 * 60 * 60 * 1000).getUTCDay()
+  const dayOfWeek = WEEKDAY_MAP[weekdayShort] ?? new Date(t.getTime() + 9 * 60 * 60 * 1000).getUTCDay()
 
   let timeSlot: KoreaContextVars['timeSlot'] = 'afternoon'
   let timeSlotHint = '해가 높으니 양기가 짙어요.'
@@ -177,9 +177,9 @@ export function getVisitGuidanceText(visitCountToday: number): {
   }
 }
 
-/** 시간/날짜 질문 시 사용할 KST 안내 블록. UTC 언급 절대 금지 강조. */
-export function getKstTimeInstructionBlock(): string {
-  const v = getKoreaContextVars()
+/** 시간/날짜 질문 시 사용할 KST 안내 블록. UTC 언급 절대 금지 강조. now 미지정 시 현재 시각 사용. */
+export function getKstTimeInstructionBlock(now?: Date): string {
+  const v = getKoreaContextVars(now)
   const kstLine = `${v.dateStr} ${v.weekdayKo}요일 ${v.timeStr}`
   return `### 시간/날짜 응답 규칙(필수)
 현재 시각(한국 표준시 KST): ${kstLine}

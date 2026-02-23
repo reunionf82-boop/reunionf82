@@ -647,6 +647,8 @@ function FormContent() {
   const [voiceRemainingSeconds, setVoiceRemainingSeconds] = useState(0)
   // 음성 상담 잔여금액(원) - 충전 잔액, 폼에서 잔여시간과 함께 표시
   const [voiceBalanceWan, setVoiceBalanceWan] = useState<number | null>(null)
+  // 음성 0원 시 잔여 조회 완료 여부 (조회 전에는 이용가능시간 블록 미표시 → 스샷 깜빡임 방지)
+  const [voiceResidualCheckDone, setVoiceResidualCheckDone] = useState(false)
   // 바로이용하기(100원 결제) 팝업
   const [showSkipWaitPopup, setShowSkipWaitPopup] = useState(false)
   
@@ -700,22 +702,51 @@ function FormContent() {
     return () => clearInterval(t)
   }, [content?.id, content?.content_type, content?.price])
 
-  // 음성 상담 잔여시간 조회 (콘텐츠 로드 후 전화번호 있으면 1회)
-  useEffect(() => {
+  // 음성 상담 잔여시간·잔여금액 조회 (콘텐츠 로드 후 전화번호 있으면 1회 + 폼 복귀 시 재조회로 최신 반영)
+  const refetchVoiceBalance = useCallback(() => {
     if (typeof window === 'undefined' || !content?.id || content?.content_type !== 'voice') return
     const phone = sessionStorage.getItem('payment_phone')
     if (!phone) return
-    let cancelled = false
     fetch(`/api/voice/balance?contentId=${encodeURIComponent(content.id)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
       .then((r) => r.ok ? r.json() : null)
       .then((data: { remaining_seconds?: number; balance_wan?: number } | null) => {
-        if (cancelled || !data) return
+        if (!data) return
         if (typeof data.remaining_seconds === 'number') setVoiceRemainingSeconds(Math.max(0, data.remaining_seconds))
         if (typeof data.balance_wan === 'number') setVoiceBalanceWan(data.balance_wan)
       })
       .catch(() => {})
+  }, [content?.id, content?.content_type])
+  useEffect(() => {
+    if (typeof window === 'undefined' || !content?.id || content?.content_type !== 'voice') return
+    const phone = sessionStorage.getItem('payment_phone')
+    if (!phone) {
+      setVoiceResidualCheckDone(true)
+      return
+    }
+    setVoiceResidualCheckDone(false)
+    let cancelled = false
+    fetch(`/api/voice/balance?contentId=${encodeURIComponent(content.id)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { remaining_seconds?: number; balance_wan?: number } | null) => {
+        if (cancelled) return
+        if (data) {
+          if (typeof data.remaining_seconds === 'number') setVoiceRemainingSeconds(Math.max(0, data.remaining_seconds))
+          if (typeof data.balance_wan === 'number') setVoiceBalanceWan(data.balance_wan)
+        }
+        setVoiceResidualCheckDone(true)
+      })
+      .catch(() => { setVoiceResidualCheckDone(true) })
     return () => { cancelled = true }
   }, [content?.id, content?.content_type])
+  // 보이스 화면에서 폼으로 돌아왔을 때 잔여금액/잔여시간 갱신 (리셋 방지)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refetchVoiceBalance()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [refetchVoiceBalance])
   
   // 개인정보 수집 및 이용 팝업 상태
   const [showPrivacyPopup, setShowPrivacyPopup] = useState(false)
@@ -2465,10 +2496,11 @@ function FormContent() {
           }
         })()
 
-        // 점사 완료 건수 로드 (이용 인원 표시용)
+        // 완료 건수 로드 (이용 인원 표시용). 음성형은 saved_results_voice, 점사형은 saved_results 집계
         void (async () => {
           try {
-            const res = await fetch('/api/stats/completed-count')
+            const countType = foundContent.content_type === 'voice' ? 'voice' : 'fortune'
+            const res = await fetch(`/api/stats/completed-count?type=${countType}`)
             if (res.ok) {
               const data = await res.json()
               setCompletedCount(data.total_count ?? 0)
@@ -3083,13 +3115,47 @@ function FormContent() {
       return
     }
 
-    // 0원(무료) 음성: 24시간 내 1회만 무료 시작 가능
+    // 음성 + 잔여시간/잔여금액 있음 → 아래쪽 메인 버튼("잔여시간/잔여금액으로 상담") 클릭 시 여기서 처리
+    const hasVoiceResidual = content?.content_type === 'voice' && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0))
+    if (hasVoiceResidual) {
+      const phone = sessionStorage.getItem('payment_phone')
+      if (!phone) {
+        showAlertMessage('전화번호 정보가 없습니다.')
+        return
+      }
+      try {
+        if (voiceRemainingSeconds > 0) {
+          const res = await fetch('/api/voice/balance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'consume_remaining', contentId: content!.id, phone }),
+          })
+          if (!res.ok) return
+          sessionStorage.setItem('payment_voice_total_seconds', String(voiceRemainingSeconds))
+          sessionStorage.removeItem('voice_time_expired')
+          setVoiceRemainingSeconds(0)
+        } else {
+          sessionStorage.removeItem('payment_voice_total_seconds')
+          sessionStorage.removeItem('payment_voice_minutes')
+          sessionStorage.removeItem('voice_time_expired')
+        }
+        sessionStorage.setItem('result_content_id', String(content!.id))
+        sessionStorage.setItem('payment_content_id', String(content!.id))
+        try { localStorage.setItem('voice_content_id', String(content!.id)) } catch { /* ignore */ }
+        window.location.href = `/result/voice?id=${encodeURIComponent(content!.id)}`
+      } catch {
+        showAlertMessage('잔여시간 사용 처리에 실패했습니다.')
+      }
+      return
+    }
+
+    // 0원(무료) 음성 + 무료속성(8006)일 때만: 전화번호/비번 없으면 스샷 알림 후 무료시작. 무료속성이 아니면 결제정보 팝업으로 진행.
     const isVoiceContent = content?.content_type === 'voice' || !!(content?.voice_model ?? content?.voice_persona_prompt ?? (Array.isArray(content?.voice_time_options) && content.voice_time_options.length > 0)) || (typeof content?.content_name === 'string' && content.content_name.includes('음성'))
     const voiceTimeOptions = isVoiceContent ? (content?.voice_time_options || []) : []
     const selectedVoiceOption = isVoiceContent && voiceTimeOptions.length > 0 ? voiceTimeOptions[0] : null
     const priceNum = selectedVoiceOption ? selectedVoiceOption.price : parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
-    if (isVoiceContent && Number.isFinite(priceNum) && priceNum <= 0) {
-      // 24시간 제한 먼저 검사 → 차단 시 바로 팝업 (휴대폰/비밀번호 입력 전)
+    if (isVoiceContent && Number.isFinite(priceNum) && priceNum <= 0 && isPpoingAttributes(content)) {
+      // 무료속성(8006) 0원 음성만: 24시간 제한 검사 → 휴대폰/비번 없으면 스샷 알림; 있으면 무료시작
       const contentId = content?.id != null ? String(content.id) : ''
       const FREE_VOICE_COOLDOWN_MS = 24 * 60 * 60 * 1000
       if (typeof window !== 'undefined' && contentId) {
@@ -7440,82 +7506,48 @@ function FormContent() {
               </div>
             </div>
 
-            {/* 음성: 상담잔여시간·잔여금액 (종료 시 남은 시간 저장분 + 충전 잔액) → 잔여시간으로 상담 */}
+            {/* 음성: 잔여금액 + 상담가능 잔여 시간(차감단위 기준), 진입은 아래 메인 버튼으로 */}
             {content?.content_type === 'voice' && content != null && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0)) && (() => {
-              const sec = voiceRemainingSeconds
-              const h = Math.floor(sec / 3600)
-              const m = Math.floor((sec % 3600) / 60)
-              const s = sec % 60
-              const timeStr = [h, m, s].map((v) => String(v).padStart(2, '0')).join(':')
               const showBalance = voiceBalanceWan != null && voiceBalanceWan > 0
+              const chargeOpt = Array.isArray(content?.voice_time_options) ? (content.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
+              const rateSeconds = chargeOpt?.rate_seconds ?? 12
+              const rateWon = chargeOpt?.rate_won ?? 19
+              const secFromBalance = showBalance && rateWon > 0 ? Math.floor(voiceBalanceWan! / rateWon) * rateSeconds : 0
+              const h = Math.floor(secFromBalance / 3600)
+              const m = Math.floor((secFromBalance % 3600) / 60)
+              const s = secFromBalance % 60
+              const timeStrFromBalance = [h, m, s].map((v) => String(v).padStart(2, '0')).join(':')
+              const secSaved = voiceRemainingSeconds
+              const hSaved = Math.floor(secSaved / 3600)
+              const mSaved = Math.floor((secSaved % 3600) / 60)
+              const sSaved = secSaved % 60
+              const timeStrSaved = [hSaved, mSaved, sSaved].map((v) => String(v).padStart(2, '0')).join(':')
               return (
-                <div className="flex flex-wrap items-center justify-between gap-3 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                    {voiceRemainingSeconds > 0 && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600">상담잔여시간</span>
-                        <span className="font-semibold text-gray-900 tabular-nums">{timeStr}</span>
-                      </div>
-                    )}
-                    {showBalance && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600">잔여금액</span>
-                        <span className="font-semibold text-gray-900 tabular-nums">{voiceBalanceWan.toLocaleString()}원</span>
-                      </div>
-                    )}
-                  </div>
-                  {(voiceRemainingSeconds > 0 || (showBalance && voiceRemainingSeconds <= 0)) && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!agreeTerms) {
-                          showAlertMessage('서비스 이용 약관에 동의해주세요.')
-                          return
-                        }
-                        if (!agreePrivacy) {
-                          showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
-                          return
-                        }
-                        const phone = sessionStorage.getItem('payment_phone')
-                        if (!phone) {
-                          showAlertMessage('전화번호 정보가 없습니다.')
-                          return
-                        }
-                        try {
-                          if (voiceRemainingSeconds > 0) {
-                            const res = await fetch('/api/voice/balance', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ action: 'consume_remaining', contentId: content.id, phone }),
-                            })
-                            if (!res.ok) return
-                            sessionStorage.setItem('payment_voice_total_seconds', String(voiceRemainingSeconds))
-                            sessionStorage.removeItem('voice_time_expired')
-                            setVoiceRemainingSeconds(0)
-                          } else {
-                            sessionStorage.removeItem('payment_voice_total_seconds')
-                            sessionStorage.removeItem('payment_voice_minutes')
-                            sessionStorage.removeItem('voice_time_expired')
-                          }
-                          sessionStorage.setItem('result_content_id', String(content.id))
-                          sessionStorage.setItem('payment_content_id', String(content.id))
-                          try { localStorage.setItem('voice_content_id', String(content.id)) } catch { /* ignore */ }
-                          window.location.href = `/result/voice?id=${encodeURIComponent(content.id)}`
-                        } catch {
-                          showAlertMessage('잔여시간 사용 처리에 실패했습니다.')
-                        }
-                      }}
-                      className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"
-                    >
-                      {voiceRemainingSeconds > 0 ? '잔여시간으로 상담' : '잔여금액으로 상담'}
-                    </button>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  {showBalance && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600">잔여금액</span>
+                      <span className="font-semibold text-gray-900 tabular-nums">{voiceBalanceWan!.toLocaleString()}원</span>
+                    </div>
+                  )}
+                  {showBalance && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600">상담가능 잔여 시간</span>
+                      <span className="font-semibold text-gray-900 tabular-nums">{timeStrFromBalance}</span>
+                    </div>
+                  )}
+                  {!showBalance && voiceRemainingSeconds > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600">상담 가능한 시간</span>
+                      <span className="font-semibold text-gray-900 tabular-nums">{timeStrSaved}</span>
+                    </div>
                   )}
                 </div>
               )
             })()}
 
-            {/* 0원 음성: 이용 가능 시간(24h 역카운트) + 바로이용하기. 잔여시간/잔여금액이 있으면 이 블록은 숨김 */}
-            {content?.content_type === 'voice' && content != null && (() => {
+            {/* 0원 음성: 이용 가능 시간(24h 역카운트) + 바로이용하기. 잔여 조회 완료 후 잔여 없을 때만 표시(스샷 깜빡임 방지) */}
+            {content?.content_type === 'voice' && content != null && voiceResidualCheckDone && (() => {
               const p = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
               if (!Number.isFinite(p) || p > 0) return null
               if (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0)) return null
@@ -7554,13 +7586,19 @@ function FormContent() {
               )
             })()}
 
-            {/* 버튼 영역: 컨텐츠 로드 후 가격이 명시적으로 0원일 때만 "무료시작", 그 외(로딩 중·미로드·유료) 기본 "결제하기" */}
+            {/* 버튼 영역: 잔여 가능 시 "잔여시간/잔여금액으로 상담", 0원일 때 "무료시작", 그 외 "결제하기" */}
             <div className="flex flex-col sm:flex-row gap-3 mt-6">
               {(() => {
                 const priceVal = content?.price
                 const priceStr = priceVal != null && String(priceVal).trim() !== '' ? String(priceVal).replace(/[^0-9]/g, '') : null
                 const priceNum = priceStr !== null ? parseInt(priceStr, 10) : null
                 const isExplicitlyFree = content != null && priceNum !== null && Number.isFinite(priceNum) && priceNum <= 0
+                const hasResidual = content?.content_type === 'voice' && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0))
+                const mainButtonText = submitting
+                  ? '처리 중...'
+                  : hasResidual
+                    ? (voiceRemainingSeconds > 0 ? '잔여시간으로 상담' : '잔여금액으로 상담')
+                    : (isExplicitlyFree ? '무료시작' : '결제하기')
                 return (
                   <button
                     type="button"
@@ -7570,7 +7608,7 @@ function FormContent() {
                       'bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white'
                     }`}
                   >
-                    {submitting ? '처리 중...' : (isExplicitlyFree ? '무료시작' : '결제하기')}
+                    {mainButtonText}
                   </button>
                 )
               })()}
@@ -7595,11 +7633,15 @@ function FormContent() {
           </div>
         </div>
 
-        {/* 점사 완료 인원 표시: 40 + 실제 점사 완료 건수 */}
+        {/* 이용 인원 표시: 음성형은 saved_results_voice 건수만, 점사형은 40 + saved_results 건수 */}
         {content?.id && (
           <div className="mb-4 text-center">
             <p className="text-sm text-gray-600">
-              <span className="font-semibold text-pink-600">{(40 + completedCount).toLocaleString()}</span>명이 이용하셨습니다.
+              <span className="font-semibold text-pink-600">
+                {content?.content_type === 'voice'
+                  ? completedCount.toLocaleString()
+                  : (40 + completedCount).toLocaleString()}
+              </span>명이 이용하셨습니다.
             </p>
           </div>
         )}

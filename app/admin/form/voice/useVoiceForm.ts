@@ -74,7 +74,8 @@ export interface VoiceFormData {
   voice_temperature: number
   /** Hume EVI 전용 Config ID */
   voice_hume_config_id: string
-  voice_advisor_video_url: string
+  /** 상담사 동영상 URL 목록. 여러 개 등록 시 랜덤 순차 재생 */
+  voice_advisor_video_urls: string[]
   voice_gender: 'female' | 'male'
   voice_style: string
   voice_name: string
@@ -84,6 +85,8 @@ export interface VoiceFormData {
   voice_initial_greet_prompt: string
   voice_resumed_greet_prompt: string
   voice_start_sound_url: string
+  /** 시간 0 시 재생 후 자동저장 (TTS 강제 중단) */
+  voice_end_sound_url: string
   /** 대화중 소리 목록 (라벨 + URL). 여러 개 추가 가능 */
   voice_conversation_sounds: VoiceConversationSound[]
   /** 대화중 소리 발현 확률 % */
@@ -169,7 +172,7 @@ const INITIAL_FORM: VoiceFormData = {
   voice_gpt_name: 'alloy',
   voice_temperature: 0.8,
   voice_hume_config_id: '',
-  voice_advisor_video_url: '',
+  voice_advisor_video_urls: [],
   voice_gender: 'female',
   voice_style: 'warm',
   voice_name: 'Aoede',
@@ -178,6 +181,7 @@ const INITIAL_FORM: VoiceFormData = {
   voice_initial_greet_prompt: '',
   voice_resumed_greet_prompt: '',
   voice_start_sound_url: '',
+  voice_end_sound_url: '',
   voice_conversation_sounds: [],
   voice_conversation_sound_probability_pct: 5,
   voice_time_options: [
@@ -374,7 +378,19 @@ export function useVoiceForm() {
           voice_gpt_name: c.voice_gpt_name ?? 'alloy',
           voice_temperature: c.voice_temperature ?? 0.8,
           voice_hume_config_id: c.voice_hume_config_id ?? '',
-          voice_advisor_video_url: c.voice_advisor_video_url ?? '',
+          voice_advisor_video_urls: (() => {
+            const raw = c.voice_advisor_video_url
+            if (!raw || typeof raw !== 'string') return []
+            const s = raw.trim()
+            if (!s) return []
+            if (s.startsWith('[')) {
+              try {
+                const arr = JSON.parse(s) as unknown
+                return Array.isArray(arr) ? arr.filter((u): u is string => typeof u === 'string' && !!u.trim()) : [s]
+              } catch { return [s] }
+            }
+            return [s]
+          })(),
           voice_gender: c.voice_gender === 'male' ? 'male' : 'female',
           voice_style: c.voice_style ?? c.voice_tendency ?? 'warm',
           voice_name: c.voice_name ?? 'Aoede',
@@ -383,6 +399,7 @@ export function useVoiceForm() {
           voice_initial_greet_prompt: c.voice_initial_greet_prompt ?? '',
           voice_resumed_greet_prompt: c.voice_resumed_greet_prompt ?? '',
           voice_start_sound_url: c.voice_start_sound_url ?? '',
+          voice_end_sound_url: c.voice_end_sound_url ?? '',
           voice_conversation_sounds: (() => {
             const raw = c.voice_conversation_sounds
             if (Array.isArray(raw) && raw.length > 0) {
@@ -499,6 +516,37 @@ export function useVoiceForm() {
   }
 
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation() }
+
+  // 상담사 동영상 복수 등록
+  const appendVideoUrl = (url: string) => {
+    const u = url?.trim()
+    if (!u) return
+    setForm((f) => ({ ...f, voice_advisor_video_urls: [...f.voice_advisor_video_urls, u] }))
+  }
+  const removeVideoUrl = (index: number) => {
+    setForm((f) => ({ ...f, voice_advisor_video_urls: f.voice_advisor_video_urls.filter((_, i) => i !== index) }))
+  }
+  const [uploadingAdvisorVideo, setUploadingAdvisorVideo] = useState(false)
+  const appendVideoByFile = async (file: File) => {
+    setUploadingAdvisorVideo(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('folder', 'voice')
+      const res = await fetch('/api/admin/upload', { method: 'POST', body: fd })
+      const data = await res.json().catch(() => ({})) as { url?: string; error?: string; details?: unknown }
+      if (!res.ok) {
+        const msg = data?.error || res.statusText || '업로드 실패'
+        const details = data?.details ? ` (${JSON.stringify(data.details)})` : ''
+        throw new Error(msg + details)
+      }
+      const u = data?.url ?? ''
+      if (!u) throw new Error('업로드 응답에 URL이 없습니다.')
+      setForm((f) => ({ ...f, voice_advisor_video_urls: [...f.voice_advisor_video_urls, u] }))
+    } finally {
+      setUploadingAdvisorVideo(false)
+    }
+  }
 
   // 이미지 모달
   const handleOpenContentImagesModal = (type: 'introduction' | 'recommendation' | 'menu_composition') => {
@@ -692,9 +740,10 @@ export function useVoiceForm() {
     if (!hasExtension) { alert('시간연장 옵션을 1개 이상 추가하세요.'); return }
     setSaving(true)
     try {
-      const { show_exposed, ...rest } = form
+      const { show_exposed, voice_advisor_video_urls, ...rest } = form
       const body: Record<string, unknown> = {
         ...rest,
+        voice_advisor_video_url: voice_advisor_video_urls.length === 0 ? '' : voice_advisor_video_urls.length === 1 ? voice_advisor_video_urls[0] : JSON.stringify(voice_advisor_video_urls),
         voice_tendency: rest.voice_style, // voice_style과 동일 값 유지 (DB 호환)
         is_exposed: show_exposed,
         id: id && !duplicateId ? parseInt(id, 10) : undefined,
@@ -763,6 +812,7 @@ export function useVoiceForm() {
     // handlers
     handleFileUpload, requestFileDelete, deleteConfirm, deleting, confirmFileDelete, cancelFileDelete,
     handleFileDrop, handleDragOver,
+    appendVideoUrl, removeVideoUrl, appendVideoByFile, uploadingAdvisorVideo,
     handleOpenContentImagesModal, handleContentImageUpload,
     handleRemoveContentImage, handleCloseContentImagesModal,
     handleOpenHtmlPreview, setShowHtmlPreview,

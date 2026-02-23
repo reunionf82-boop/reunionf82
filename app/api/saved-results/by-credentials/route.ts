@@ -43,12 +43,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // user_credentials에서 만료되지 않은 모든 레코드 조회
+    // user_credentials에서 만료되지 않은 레코드 조회 (saved_id 또는 voice_saved_id 있는 것)
     const { data: credentials, error: credentialsError } = await supabase
       .from('user_credentials')
-      .select('saved_id, encrypted_phone, encrypted_password')
-      .gt('expires_at', new Date().toISOString()) // 만료되지 않은 것만
-      .not('saved_id', 'is', null) // saved_id가 null이 아닌 것만
+      .select('saved_id, voice_saved_id, encrypted_phone, encrypted_password')
+      .gt('expires_at', new Date().toISOString())
+      .or('saved_id.not.is.null,voice_saved_id.not.is.null')
 
     if (credentialsError) {
       return NextResponse.json(
@@ -64,102 +64,97 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 1단계: 전화번호를 기준으로 먼저 필터링 (전화번호가 프라이머리 키 역할)
-    // 전화번호가 일치하는 credential만 찾기
-    const phoneMatchedCredentials: Array<{ saved_id: number; encrypted_phone: string; encrypted_password: string }> = []
-    
-    for (const cred of credentials) {
-      if (!cred.saved_id) continue
-      
+    type CredRow = { saved_id: number | null; voice_saved_id: number | null; encrypted_phone: string; encrypted_password: string }
+    const phoneMatchedCredentials: CredRow[] = []
+
+    for (const cred of credentials as CredRow[]) {
+      if (!cred.saved_id && !cred.voice_saved_id) continue
       try {
         const decryptedPhone = plainOrDecrypt(cred.encrypted_phone)
         const normalizedDecryptedPhone = normalizePhone(decryptedPhone.trim())
-        
-        // 전화번호가 일치하는 credential만 수집 (1단계 필터링)
         if (normalizedDecryptedPhone === normalizedPhone) {
-          phoneMatchedCredentials.push({
-            saved_id: cred.saved_id,
-            encrypted_phone: cred.encrypted_phone,
-            encrypted_password: cred.encrypted_password
-          })
+          phoneMatchedCredentials.push(cred)
         }
-      } catch (decryptError) {
-        // 복호화 실패 시 건너뛰기
+      } catch {
         continue
       }
     }
-    
-    // 전화번호가 일치하는 credential이 없으면 종료
+
     if (phoneMatchedCredentials.length === 0) {
       return NextResponse.json(
         { success: false, error: '일치하는 이용내역을 찾을 수 없습니다.' },
         { status: 404 }
       )
     }
-    
-    // 2단계: 전화번호가 일치하는 credential 중에서 비밀번호도 일치하는 것만 선택
+
     const matchingSavedIds = new Set<number>()
-    
+    const matchingVoiceSavedIds = new Set<number>()
+
     for (const cred of phoneMatchedCredentials) {
       try {
         const decryptedPassword = plainOrDecrypt(cred.encrypted_password)
-        const normalizedDecryptedPassword = decryptedPassword.trim()
-        
-        // 비밀번호가 정확히 일치하는 경우만 추가 (2단계 필터링)
-        if (normalizedDecryptedPassword === normalizedPassword) {
-          matchingSavedIds.add(cred.saved_id)
-        }
-      } catch (decryptError) {
-        // 복호화 실패 시 건너뛰기
+        if (decryptedPassword.trim() !== normalizedPassword) continue
+        if (cred.saved_id != null) matchingSavedIds.add(cred.saved_id)
+        if (cred.voice_saved_id != null) matchingVoiceSavedIds.add(cred.voice_saved_id)
+      } catch {
         continue
       }
     }
-    
-    // Set을 배열로 변환
-    const matchingSavedIdsArray = Array.from(matchingSavedIds)
 
-    if (matchingSavedIdsArray.length === 0) {
+    const matchingSavedIdsArray = Array.from(matchingSavedIds)
+    const matchingVoiceSavedIdsArray = Array.from(matchingVoiceSavedIds)
+
+    if (matchingSavedIdsArray.length === 0 && matchingVoiceSavedIdsArray.length === 0) {
       return NextResponse.json(
         { success: false, error: '일치하는 이용내역을 찾을 수 없습니다.' },
         { status: 404 }
       )
     }
 
-    // saved_results에서 해당 saved_id들의 결과 조회 (최근 60일)
-    // 전화번호와 비밀번호가 정확히 일치하는 credential의 saved_id만 사용
     const sixtyDaysAgo = new Date()
     sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60)
 
-    const { data: savedResults, error: resultsError } = await supabase
-      .from('saved_results')
-      .select('*')
-      .in('id', matchingSavedIdsArray)
-      .gte('saved_at', sixtyDaysAgo.toISOString())
-      .order('saved_at', { ascending: false })
-
-    if (resultsError) {
-      return NextResponse.json(
-        { success: false, error: '저장된 결과 조회에 실패했습니다.', details: resultsError.message },
-        { status: 500 }
-      )
+    let fortuneResults: any[] = []
+    if (matchingSavedIdsArray.length > 0) {
+      const { data, error } = await supabase
+        .from('saved_results')
+        .select('*')
+        .in('id', matchingSavedIdsArray)
+        .gte('saved_at', sixtyDaysAgo.toISOString())
+        .order('saved_at', { ascending: false })
+      if (!error) fortuneResults = data || []
     }
 
-    // 최종 검증: 각 결과의 saved_id가 matchingSavedIdsArray에 포함되어 있는지 확인
-    // 그리고 해당 saved_id에 대한 credential이 전화번호와 비밀번호 모두 정확히 일치하는지 다시 확인
-    const verifiedResults: any[] = []
-    
-    for (const result of savedResults || []) {
-      // saved_id가 matchingSavedIdsArray에 포함되어 있는지 확인
-      if (!matchingSavedIdsArray.includes(result.id)) {
-        continue // 포함되지 않으면 건너뛰기
+    let voiceResults: any[] = []
+    if (matchingVoiceSavedIdsArray.length > 0) {
+      const { data, error } = await supabase
+        .from('saved_results_voice')
+        .select('*')
+        .in('id', matchingVoiceSavedIdsArray)
+        .gte('saved_at', sixtyDaysAgo.toISOString())
+        .order('saved_at', { ascending: false })
+      if (!error && data) {
+        voiceResults = data.map((r: any) => ({ ...r, result_type: 'voice' }))
       }
-      
-      // 해당 saved_id에 대한 credential이 전화번호와 비밀번호 모두 정확히 일치하는지 다시 확인
-      // phoneMatchedCredentials에서만 확인 (전화번호가 이미 일치하는 것들만)
+    }
+
+    const savedResults = [...fortuneResults, ...voiceResults].sort(
+      (a, b) => new Date(b.saved_at).getTime() - new Date(a.saved_at).getTime()
+    )
+
+    const verifiedResults: any[] = []
+    for (const result of savedResults) {
+      const isFortune = result.result_type !== 'voice'
+      const idInSet = isFortune
+        ? matchingSavedIdsArray.includes(result.id)
+        : matchingVoiceSavedIdsArray.includes(result.id)
+      if (!idInSet) continue
+
       let isValid = false
       for (const cred of phoneMatchedCredentials) {
-        if (cred.saved_id !== result.id) continue
-        
+        const idMatch = (cred.saved_id != null && cred.saved_id === result.id) || (cred.voice_saved_id != null && cred.voice_saved_id === result.id)
+        if (!idMatch) continue
+
         try {
           const decryptedPassword = plainOrDecrypt(cred.encrypted_password)
           const normalizedDecryptedPassword = decryptedPassword.trim()

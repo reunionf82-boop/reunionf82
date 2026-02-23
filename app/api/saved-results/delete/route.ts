@@ -27,35 +27,21 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    // saved_results만 삭제. voice_conversation_summaries / voice_summary_asked 는 삭제하지 않음
-    // (안부 문맥은 이용내역 삭제와 무관하게 유지해, 나중에 접속 시 안 물어본 항목에 대해 안부 가능)
-    const idNum = parseInt(id)
-    if (isNaN(idNum)) {
-      // 숫자가 아니면 문자열 ID로 시도
-      const { error } = await supabase
-        .from('saved_results')
-        .delete()
-        .eq('id', id)
-
-      if (error) {
-        return NextResponse.json(
-          { success: false, error: '저장된 결과 삭제에 실패했습니다.', details: error.message },
-          { status: 500 }
-        )
-      }
-    } else {
-      // 숫자 ID로 삭제
-      const { error } = await supabase
-        .from('saved_results')
-        .delete()
-        .eq('id', idNum)
-
-      if (error) {
-        return NextResponse.json(
-          { success: false, error: '저장된 결과 삭제에 실패했습니다.', details: error.message },
-          { status: 500 }
-        )
-      }
+    // 점사형 saved_results 또는 음성형 saved_results_voice 삭제
+    const idNum = parseInt(id, 10)
+    if (!Number.isFinite(idNum)) {
+      return NextResponse.json(
+        { success: false, error: '유효한 결과 ID가 아닙니다.' },
+        { status: 400 }
+      )
+    }
+    const { error: errFortune } = await supabase.from('saved_results').delete().eq('id', idNum)
+    const { error: errVoice } = await supabase.from('saved_results_voice').delete().eq('id', idNum)
+    if (errFortune && errVoice) {
+      return NextResponse.json(
+        { success: false, error: '저장된 결과 삭제에 실패했습니다.', details: errFortune?.message || errVoice?.message },
+        { status: 500 }
+      )
     }
 
     // 캐싱 방지 헤더 설정 (프로덕션 환경에서 브라우저/CDN 캐싱 방지)

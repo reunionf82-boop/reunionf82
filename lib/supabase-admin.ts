@@ -109,6 +109,8 @@ export interface ContentData {
   voice_initial_greet_prompt?: string
   voice_resumed_greet_prompt?: string
   voice_start_sound_url?: string
+  /** 시간 0 시 재생 후 자동저장 (TTS 강제 중단) */
+  voice_end_sound_url?: string
   voice_bubble_sound_url?: string
   voice_bubble_sound_probability_pct?: number
   voice_conversation_sounds?: Array<{ label: string; url: string }>

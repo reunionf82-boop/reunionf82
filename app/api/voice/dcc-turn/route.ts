@@ -20,6 +20,31 @@ const CARTESIA_URL = 'https://api.cartesia.ai/tts/bytes'
 const CARTESIA_WS_URL = 'wss://api.cartesia.ai/tts/websocket'
 const CARTESIA_VERSION = '2025-04-16'
 
+function isRetryableDeepgramError(status: number, _body: string): boolean {
+  return status === 408 || status === 429 || status === 503 || status === 504
+}
+
+function isRetryableClaudeError(status: number, body: string): boolean {
+  if (status === 429 || status === 503 || status === 504) return true
+  try {
+    const o = JSON.parse(body) as { error?: { type?: string } }
+    return o?.error?.type === 'rate_limit_error' || o?.error?.type === 'overloaded_error'
+  } catch {
+    return false
+  }
+}
+
+const DEEPGRAM_RETRY_MAX = 2
+const DEEPGRAM_RETRY_DELAYS_MS = [1000, 2000]
+/** Deepgram 요청 타임아웃(ms). 너무 짧으면 408 발생 가능 → 45초로 여유 두기 */
+const DEEPGRAM_FETCH_TIMEOUT_MS = 45000
+const CLAUDE_RETRY_MAX = 2
+const CLAUDE_RETRY_DELAYS_MS = [2000, 5000]
+/** Claude 입력 토큰 절약·rate_limit 예방: 대화 이력 최근 N턴(1턴=user+assistant 2메시지)만 사용 */
+const CLAUDE_HISTORY_MAX_MESSAGES = 40
+/** 시스템 컨텍스트(만세력 등) 최대 길이. 초과 시 잘라서 rate_limit 예방 */
+const CONTEXT_BLOCK_MAX_CHARS = 6000
+
 /** Cartesia 스트리밍: 쉼표/2~3단어 단위로 잘라 첫 소리 빨리 (제미나이급 티키타카). 공백 유지. */
 function chunkTextForTts(text: string, wordsPerChunk = 2): string[] {
   const t = text.trim()
@@ -158,13 +183,15 @@ function getOrCreateHistory(sessionId: string): ConversationMessage[] {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
-    const { contentId, sessionId, audioBase64, transcript: userTranscriptOverride, conversationHistory: clientHistory, userName: bodyUserName } = body as {
+    const { contentId, sessionId, audioBase64, transcript: userTranscriptOverride, conversationHistory: clientHistory, userName: bodyUserName, contextText: bodyContextText } = body as {
       contentId?: number
       sessionId?: string
       audioBase64?: string
       transcript?: string
       conversationHistory?: ConversationMessage[]
       userName?: string
+      /** 클라이언트에서 구성한 컨텍스트(KST·내담자 정보·만세력 등). 무료속성 아닐 때 주입 */
+      contextText?: string
     }
 
     if (!contentId || !sessionId) {
@@ -210,6 +237,134 @@ export async function POST(req: NextRequest) {
     const primaryEmotion = (cartesiaConfig.emotion && cartesiaConfig.emotion.trim()) || emotions[0] || 'calm'
     const ttsMode = cartesiaConfig.tts_mode === 'streaming' ? 'streaming' : 'batch'
 
+    /** 침묵깨기: 클라이언트가 지정한 문장만 캐릭터 목소리로 TTS (STT/Claude 생략) */
+    const silenceBreakText = (body as { silenceBreakText?: string }).silenceBreakText
+    if (typeof silenceBreakText === 'string' && silenceBreakText.trim()) {
+      const assistantText = silenceBreakText.trim()
+      const cartesiaKey = process.env.CARTESIA_API_KEY
+      if (!cartesiaKey) {
+        return NextResponse.json({ success: false, error: 'CARTESIA_API_KEY 미설정' }, { status: 500 })
+      }
+      if (ttsMode === 'streaming') {
+        const encoder = new TextEncoder()
+        const contextId = `dcc-sb-${sessionId}-${Date.now()}`
+        const basePayload = {
+          model_id: 'sonic-3',
+          voice: { mode: 'id' as const, id: voiceId },
+          language: 'ko',
+          generation_config: { speed, volume, emotion: primaryEmotion },
+          output_format: { container: 'raw' as const, encoding: 'pcm_s16le' as const, sample_rate: CARTESIA_SAMPLE_RATE },
+          context_id: contextId,
+          max_buffer_delay_ms: 1800,
+        }
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(JSON.stringify({ type: 'userTranscript', text: '' }) + '\n'))
+            const enqueueAudio = (pcmBuffer: Buffer) => {
+              if (!pcmBuffer?.length) return
+              try {
+                controller.enqueue(encoder.encode(JSON.stringify({
+                  type: 'audio' as const,
+                  base64: pcmBuffer.toString('base64'),
+                  format: 'pcm_s16le' as const,
+                  sampleRate: CARTESIA_SAMPLE_RATE,
+                }) + '\n'))
+              } catch (_) {}
+            }
+            let pcmBuffer = Buffer.alloc(0)
+            const flushPcm = () => {
+              if (pcmBuffer.length > 0) {
+                enqueueAudio(pcmBuffer)
+                pcmBuffer = Buffer.alloc(0)
+              }
+            }
+            const pushPcm = (pcm: Buffer) => {
+              if (!pcm?.length) return
+              pcmBuffer = Buffer.concat([pcmBuffer, pcm])
+              while (pcmBuffer.length >= STREAMING_PCM_FLUSH_BYTES) {
+                const toFlush = pcmBuffer.subarray(0, STREAMING_PCM_FLUSH_BYTES)
+                pcmBuffer = pcmBuffer.subarray(STREAMING_PCM_FLUSH_BYTES)
+                enqueueAudio(Buffer.from(toFlush))
+              }
+            }
+            const finish = () => {
+              try {
+                flushPcm()
+                controller.enqueue(encoder.encode(JSON.stringify({ type: 'done', assistantText }) + '\n'))
+                controller.close()
+              } catch (_) {}
+            }
+            const ws = new WebSocket(CARTESIA_WS_URL, {
+              headers: {
+                'Cartesia-Version': CARTESIA_VERSION,
+                Authorization: `Bearer ${cartesiaKey}`,
+              },
+            })
+            ws.on('open', () => {
+              ws.send(JSON.stringify({ ...basePayload, transcript: assistantText, continue: false }))
+            })
+            ws.on('message', (raw: Buffer | string) => {
+              const text = typeof raw === 'string' ? raw : raw.toString('utf-8')
+              try {
+                const msg = JSON.parse(text) as { type?: string; data?: string; done?: boolean }
+                if (msg.type === 'chunk' && typeof msg.data === 'string') {
+                  const pcm = Buffer.from(msg.data, 'base64')
+                  if (pcm.length > 0) pushPcm(pcm)
+                  flushPcm()
+                  return
+                }
+                if (msg.type === 'done') {
+                  flushPcm()
+                  ws.close()
+                  finish()
+                }
+              } catch {
+                if (Buffer.isBuffer(raw) && raw.length > 0) pushPcm(raw)
+              }
+            })
+            ws.on('error', () => finish())
+            ws.on('close', () => finish())
+            setTimeout(() => {
+              if (ws.readyState !== ws.CLOSED && ws.readyState !== ws.CLOSING) ws.close()
+              finish()
+            }, 60000)
+          },
+        })
+        return new NextResponse(stream, {
+          headers: { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' },
+        })
+      }
+      const ttsBody = {
+        model_id: 'sonic-3',
+        transcript: assistantText,
+        voice: { mode: 'id' as const, id: voiceId },
+        language: 'ko',
+        generation_config: { speed, volume, emotion: primaryEmotion },
+        output_format: { container: 'wav' as const, encoding: 'pcm_s16le' as const, sample_rate: CARTESIA_SAMPLE_RATE },
+      }
+      const cartesiaRes = await fetch(CARTESIA_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cartesia-Version': CARTESIA_VERSION,
+          Authorization: `Bearer ${cartesiaKey}`,
+        },
+        body: JSON.stringify(ttsBody),
+      })
+      if (!cartesiaRes.ok) {
+        const errText = await cartesiaRes.text()
+        return NextResponse.json({ success: false, error: 'Cartesia TTS 실패: ' + errText }, { status: 502 })
+      }
+      const audioArrayBuffer = await cartesiaRes.arrayBuffer()
+      const audioBase64Out = Buffer.from(audioArrayBuffer).toString('base64')
+      return NextResponse.json({
+        success: true,
+        userTranscript: '',
+        assistantText,
+        audioBase64: audioBase64Out,
+      })
+    }
+
     let userTranscript = userTranscriptOverride
     if (userTranscript == null && audioBase64) {
       const deepgramKey = process.env.DEEPGRAM_API_KEY
@@ -217,24 +372,57 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'DEEPGRAM_API_KEY 미설정' }, { status: 500 })
       }
       const audioBuf = Buffer.from(audioBase64, 'base64')
-      // 배치(한 번에 오디오 전송) 요청에서는 endpointing/interim_results 미지원 → 생략
-      const res = await fetch(
-        `${DEEPGRAM_URL}?model=nova-3&language=ko&smart_format=true&region=ko`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Token ${deepgramKey}`,
-            'Content-Type': 'audio/wav',
-          },
-          body: audioBuf,
+      let lastBody = ''
+      for (let attempt = 0; attempt <= DEEPGRAM_RETRY_MAX; attempt++) {
+        if (attempt > 0) {
+          const delay = DEEPGRAM_RETRY_DELAYS_MS[attempt - 1] ?? 2000
+          await new Promise((r) => setTimeout(r, delay))
         }
-      )
-      if (!res.ok) {
-        const errText = await res.text()
-        return NextResponse.json({ success: false, error: 'Deepgram STT 실패: ' + errText }, { status: 502 })
+        const ac = new AbortController()
+        const timeoutId = setTimeout(() => ac.abort(), DEEPGRAM_FETCH_TIMEOUT_MS)
+        let res: Response
+        try {
+          res = await fetch(
+            `${DEEPGRAM_URL}?model=nova-3&language=ko&smart_format=true&region=ko`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Token ${deepgramKey}`,
+                'Content-Type': 'audio/wav',
+              },
+              body: audioBuf,
+              signal: ac.signal,
+            }
+          )
+        } catch (e) {
+          clearTimeout(timeoutId)
+          lastBody = (e instanceof Error && e.name === 'AbortError') ? 'Request timeout' : String(e)
+          if (attempt === DEEPGRAM_RETRY_MAX) {
+            return NextResponse.json(
+              { success: false, error: '음성 인식이 일시적으로 지연되었습니다. 잠시 후 다시 말씀해 주세요.' },
+              { status: 502 }
+            )
+          }
+          continue
+        }
+        clearTimeout(timeoutId)
+        lastBody = await res.text()
+        if (res.ok) {
+          try {
+            const dg = JSON.parse(lastBody) as { results?: { channels?: { alternatives?: { transcript?: string }[] }[] } }
+            userTranscript = dg?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? ''
+          } catch {
+            userTranscript = ''
+          }
+          break
+        }
+        if (attempt === DEEPGRAM_RETRY_MAX || !isRetryableDeepgramError(res.status, lastBody)) {
+          const userMessage = isRetryableDeepgramError(res.status, lastBody)
+            ? '음성 인식이 일시적으로 지연되었습니다. 잠시 후 다시 말씀해 주세요.'
+            : '음성 인식을 처리하지 못했습니다. 다시 말씀해 주세요.'
+          return NextResponse.json({ success: false, error: userMessage }, { status: 502 })
+        }
       }
-      const dg = await res.json()
-      userTranscript = dg?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? ''
     }
 
     if (!userTranscript || typeof userTranscript !== 'string' || !userTranscript.trim()) {
@@ -258,7 +446,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, userTranscript: '', assistantText: '', audioBase64: '' })
     }
 
-    const history = clientHistory && Array.isArray(clientHistory) ? clientHistory : getOrCreateHistory(sessionId)
+    const rawHistory = clientHistory && Array.isArray(clientHistory) ? clientHistory : getOrCreateHistory(sessionId)
+    const history = rawHistory.slice(-CLAUDE_HISTORY_MAX_MESSAGES)
     const persona = String((content as any).voice_persona_prompt || '').trim()
     const counselorName = String((content as any).voice_counselor_name || '').trim()
     const initialGreetPromptRaw = String((content as any).voice_initial_greet_prompt || '').trim()
@@ -275,6 +464,10 @@ export async function POST(req: NextRequest) {
     const emotionTagRule = `- 답변에 특수 태그(TTS 연출)를 자연스럽게 포함하세요. 태그는 반드시 대괄호로 감싸서 사용합니다.
 - TTS 연출용 특수 태그: [laughter], [sigh], [gasp], [um], [uh], [hmm], [clears throat], [cough]. 아래 [TTS 연출]에 안내된 것만 사용하세요.
 - 과하지 않게 1~2곳만 사용하고, 문장 앞이나 중간에 배치하세요.`
+    const rawContext = typeof bodyContextText === 'string' ? bodyContextText.trim() : ''
+    const contextBlock = rawContext
+      ? `\n\n${rawContext.length <= CONTEXT_BLOCK_MAX_CHARS ? rawContext : rawContext.slice(0, CONTEXT_BLOCK_MAX_CHARS) + '\n(이하 생략)'}`
+      : ''
     const systemPrompt = `당신은 한국어로 대답하는 음성 상담사입니다.
 ${persona ? `[페르소나]\n${persona}\n` : ''}
 ${counselorName ? `상담사 이름: ${counselorName}. 자신을 이 이름으로 소개하고 대화하세요.\n` : ''}
@@ -282,7 +475,7 @@ ${lengthRule}
 ${firstWordRule}
 ${emotionTagRule}
 - 답변은 음성으로 읽기 좋게, 자연스러운 구어체로 작성하세요.
-- 필요한 경우 감정이나 웃음을 담아 말할 수 있습니다.${emotionHint}`
+- 필요한 경우 감정이나 웃음을 담아 말할 수 있습니다.${emotionHint}${contextBlock}`
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY
     if (!anthropicKey) {
@@ -308,24 +501,39 @@ ${emotionTagRule}
       stream: true,
       system: systemPrompt,
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
-      cache_control: { type: 'ephemeral' as const },
+      cache_control: { type: 'ephemeral' as const, ttl: '5m' as const },
     }
 
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify(claudeBody),
-    })
-
-    if (!claudeRes.ok) {
-      const errText = await claudeRes.text()
-      return NextResponse.json({ success: false, error: 'Claude API 실패: ' + errText }, { status: 502 })
+    let claudeRes: Response | null = null
+    for (let attempt = 0; attempt <= CLAUDE_RETRY_MAX; attempt++) {
+      if (attempt > 0) {
+        const delay = CLAUDE_RETRY_DELAYS_MS[attempt - 1] ?? 2000
+        await new Promise((r) => setTimeout(r, delay))
+      }
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify(claudeBody),
+      })
+      if (res.ok) {
+        claudeRes = res
+        break
+      }
+      const errBody = await res.text()
+      if (attempt === CLAUDE_RETRY_MAX || !isRetryableClaudeError(res.status, errBody)) {
+        const userMessage = isRetryableClaudeError(res.status, errBody)
+          ? '상담 응답이 바쁩니다. 잠시 후 다시 말씀해 주세요.'
+          : '상담 응답을 처리하지 못했습니다. 다시 말씀해 주세요.'
+        return NextResponse.json({ success: false, error: userMessage }, { status: 502 })
+      }
     }
-
+    if (!claudeRes) {
+      return NextResponse.json({ success: false, error: '상담 응답을 처리하지 못했습니다. 다시 말씀해 주세요.' }, { status: 502 })
+    }
     const cartesiaKey = process.env.CARTESIA_API_KEY
     if (!cartesiaKey) {
       return NextResponse.json({ success: false, error: 'CARTESIA_API_KEY 미설정' }, { status: 500 })
@@ -488,7 +696,6 @@ ${emotionTagRule}
             resolveOnce()
           })
           ws.on('close', () => {
-            console.log('🔌 Cartesia 웹소켓이 닫혔습니다.')
             resolveOnce()
           })
           // Cartesia: "We close idle WebSocket connections after 5 minutes." (idle = no activity)
@@ -518,7 +725,6 @@ ${emotionTagRule}
                   const parsed = JSON.parse(data) as { type?: string; delta?: { type?: string; text?: string } }
                   if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta' && parsed.delta?.text) {
                     const text = parsed.delta.text
-                    if (process.env.NODE_ENV !== 'production') console.log('📝 Claude 출력중:', text)
                     assistantText += text
                     pendingText += text
                     for (;;) {

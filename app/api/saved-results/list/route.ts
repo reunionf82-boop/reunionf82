@@ -35,17 +35,35 @@ export async function GET(request: NextRequest) {
         )
       }
 
-      const { data, error } = await supabase
+      let data: any = null
+      const { data: fortuneRow, error: fortuneError } = await supabase
         .from('saved_results')
         .select('*')
         .eq('id', parsedId)
         .maybeSingle()
-
-      if (error) {
+      if (fortuneError) {
         return NextResponse.json(
-          { success: false, error: '저장된 결과 조회에 실패했습니다.', details: error.message },
+          { success: false, error: '저장된 결과 조회에 실패했습니다.', details: fortuneError.message },
           { status: 500 }
         )
+      }
+      if (fortuneRow) {
+        data = fortuneRow
+      } else {
+        const { data: voiceRow, error: voiceError } = await supabase
+          .from('saved_results_voice')
+          .select('*')
+          .eq('id', parsedId)
+          .maybeSingle()
+        if (voiceError) {
+          return NextResponse.json(
+            { success: false, error: '저장된 결과 조회에 실패했습니다.', details: voiceError.message },
+            { status: 500 }
+          )
+        }
+        if (voiceRow) {
+          data = { ...voiceRow, result_type: 'voice' }
+        }
       }
 
       if (!data) {
