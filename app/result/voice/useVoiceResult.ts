@@ -36,7 +36,7 @@ const SPEECH_THRESHOLD_MAX = 0.05
 /** TTS 중단용: 볼륨이 (threshold * 이 값) 이상일 때만 TTS 멈춤. 스피커 에코/잡음으로 끊김 방지. */
 const TTS_INTERRUPT_VOLUME_FACTOR = 1.8
 /** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. 낮으면 말 끊김, 높으면 반응이 느려짐. */
-const DCC_SILENCE_END_MS = 850
+const DCC_SILENCE_END_MS = 650
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
 
@@ -850,18 +850,26 @@ ${manseText || '(만세력 없음)'}
     }
   }, [showExtendPopup, muted, connected])
 
-  /** 무료 연장 팝업(폼) 나오면 TTS 즉시 멈춤 */
+  /** 1분 무료 연장 팝업은 TTS 멈추지 않음 (팝업 떠 있어도 AI 말 계속 들리게) */
   const prevFreeExtendPopupRef = useRef(false)
   useEffect(() => {
-    const wasOpen = prevFreeExtendPopupRef.current
     prevFreeExtendPopupRef.current = showFreeExtendPopup
-    if (showFreeExtendPopup && !wasOpen) {
+  }, [showFreeExtendPopup])
+
+  /** 상담종료 팝업 떴을 때 TTS 즉시 중지 */
+  const prevConsultationEndModalRef = useRef(false)
+  useEffect(() => {
+    const wasOpen = prevConsultationEndModalRef.current
+    prevConsultationEndModalRef.current = showConsultationEndModal
+    if (showConsultationEndModal && !wasOpen) {
       streamerRef.current?.stop()
       humeCurrentAudioRef.current?.pause()
       humeCurrentAudioRef.current = null
       humeAudioQueueRef.current.length = 0
       dccCurrentAudioRef.current?.pause()
       dccCurrentAudioRef.current = null
+      dccStreamerRef.current?.stop()
+      dccStreamerRef.current = null
       if (dccPcmContextRef.current) {
         try { dccPcmContextRef.current.close() } catch { /* ignore */ }
         dccPcmContextRef.current = null
@@ -873,7 +881,7 @@ ${manseText || '(만세력 없음)'}
       setOutVolume(0)
       isAiSpeakingRef.current = false
     }
-  }, [showFreeExtendPopup])
+  }, [showConsultationEndModal])
 
   /* ── 타이머 ────────────────────────────── */
   const startTimer = useCallback(() => {
