@@ -96,8 +96,8 @@ export class AudioStreamer {
     if (!this.isPlaying) {
       this.isPlaying = true
       this.scheduledTime = this.context.currentTime + this.initialBufferTime
-      this.scheduleNextBuffer()
     }
+    this.scheduleNextBuffer()
   }
 
   private createAudioBuffer(audioData: Float32Array): AudioBuffer {
@@ -107,7 +107,7 @@ export class AudioStreamer {
   }
 
   private scheduleNextBuffer() {
-    const SCHEDULE_AHEAD_TIME = 0.2
+    const SCHEDULE_AHEAD_TIME = 0.6
 
     while (this.audioQueue.length > 0 && this.scheduledTime < this.context.currentTime + SCHEDULE_AHEAD_TIME) {
       let audioData: Float32Array

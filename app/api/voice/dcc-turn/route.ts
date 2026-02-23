@@ -15,7 +15,7 @@ import WebSocket from 'ws'
 const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen'
 const CARTESIA_URL = 'https://api.cartesia.ai/tts/bytes'
 const CARTESIA_WS_URL = 'wss://api.cartesia.ai/tts/websocket'
-const CARTESIA_VERSION = '2024-11-13'
+const CARTESIA_VERSION = '2025-04-16'
 
 /** Cartesia 스트리밍: 쉼표/2~3단어 단위로 잘라 첫 소리 빨리 (제미나이급 티키타카). 공백 유지. */
 function chunkTextForTts(text: string, wordsPerChunk = 2): string[] {
@@ -58,6 +58,55 @@ function chunkTextForTts(text: string, wordsPerChunk = 2): string[] {
 const CARTESIA_SAMPLE_RATE = 24000
 const CARTESIA_NUM_CHANNELS = 1
 const CARTESIA_BITS = 16
+
+/** 맞장구: 유저 말 끝 → 클로드 본문 전에 Cartesia에 먼저 재생해 클로드 생성 시간을 벌고, 곧바로 반응하는 느낌을 줌 */
+const DCC_FILLER_PHRASES = [
+  // 1. 생각과 정리를 암시하는 멘트 (가장 무난함)
+  '음... 잠시만요.',
+  '아, 잠시만요.',
+  '네, 잠깐만 기다려주세요.',
+  '음... 조금만요.',
+  '네, 잠시만 생각할게요.',
+  '어떤 의미인지 잠시 정리해 볼게요.',
+  '방금 하신 말씀을 잠깐 정리해 볼까요.',
+  '음, 제 생각을 조금 가다듬어 볼게요.',
+  '어떻게 말씀드릴지 잠깐 고민해 볼게요.',
+  '네, 차분히 한 번 정리해 보겠습니다.',
+  '음... 어떤 방향이 좋을지 잠시 볼게요.',
+  '방금 주신 이야기를 잠시 되짚어 볼게요.',
+  '네, 속으로 잠깐만 정리해 보겠습니다.',
+  '잠시만요, 생각을 조금 모아볼게요.',
+  '음, 이 부분은 잠시 고민이 필요하네요.',
+  '어떻게 풀어가면 좋을지 잠깐 짚어볼게요.',
+  '네, 찬찬히 한 번 생각해 보겠습니다.',
+  '잠시만요, 머릿속으로 조금 그려볼게요.',
+  '음, 방금 하신 말씀 잠시 새겨볼게요.',
+  '어떤 맥락인지 잠깐만 살펴볼게요.',
+  // 2. 상황 파악과 확인을 암시하는 멘트 (전문가 느낌)
+  '제가 한 번 찬찬히 들여다볼게요.',
+  '네, 그 부분 잠시만 확인해 볼게요.',
+  '잠시만요, 조금 더 깊이 살펴볼게요.',
+  '자, 어디 한 번 천천히 살펴볼까요.',
+  '음, 이 상황을 잠시만 짚고 넘어갈게요.',
+  '네, 조금만 더 자세히 들여다보겠습니다.',
+  '잠시만요, 찬찬히 한 번 읽어내 볼게요.',
+  '음, 어떤 상황인지 잠깐만 훑어볼게요.',
+  '자, 잠시만 집중해서 살펴볼게요.',
+  '네, 제가 한 번 조심스럽게 살펴볼게요.',
+  '잠시만요, 이 부분을 조금 더 파악해 볼게요.',
+  '음, 잠시만요. 조금 더 들여다보고 싶네요.',
+  '네, 잠깐만 시간을 두고 살펴볼게요.',
+  '자, 천천히 한 번 풀어볼까요.',
+  '잠시만요, 조금 더 확실히 짚어볼게요.',
+  '네, 잠깐만 살펴볼게요.',
+  '음... 잠깐만 짚어볼게요.',
+  '네, 잠시 머물러 볼게요.',
+  '아, 조금만 기다려 주시겠어요?',
+  '아... 네, 잠시만요.',
+]
+
+/** 맞장구 재생 예상 길이(ms). 이 시간 + 1초 후에 본문 TTS 시작 */
+const DCC_FILLER_DURATION_MS = 2500
 
 /** PCM 버퍼 → WAV base64 (청크마다 헤더 붙이면 틱틱 소리 나서, 버퍼 모아서 한 번만 씀) */
 function pcmBufferToWavBase64(pcm: Buffer, sampleRate = CARTESIA_SAMPLE_RATE, numChannels = CARTESIA_NUM_CHANNELS, bitsPerSample = CARTESIA_BITS): string {
@@ -294,6 +343,7 @@ ${emotionTagRule}
         generation_config: { speed, volume, emotion: primaryEmotion },
         output_format: { container: 'raw' as const, encoding: 'pcm_s16le' as const, sample_rate: CARTESIA_SAMPLE_RATE },
         context_id: contextId,
+        max_buffer_delay_ms: 1200,
       }
 
       const extractChunk = (text: string) => {
@@ -306,10 +356,12 @@ ${emotionTagRule}
           const end = leadTrim + punctIdx + 1
           return { chunk: text.slice(0, end), rest: text.slice(end) }
         }
-        const wordMatch = trimmed.match(/^(\S+\s+\S+)/)
-        if (wordMatch) {
-          const end = leadTrim + wordMatch[0].length
-          return { chunk: text.slice(0, end), rest: text.slice(end) }
+        if (trimmed.length >= 12) {
+          const spaceAt = trimmed.indexOf(' ', 11)
+          if (spaceAt >= 0) {
+            const end = leadTrim + spaceAt + 1
+            return { chunk: text.slice(0, end), rest: text.slice(end) }
+          }
         }
         return { chunk: '', rest: text }
       }
@@ -361,9 +413,16 @@ ${emotionTagRule}
             if (!wsOpen) pendingSends.push(msg)
             else ws.send(msg)
           }
+          let fillerSentAt: number | null = null
+          if (!isStartTurn) {
+            const filler = DCC_FILLER_PHRASES[Math.floor(Math.random() * DCC_FILLER_PHRASES.length)]
+            sendCartesia(filler, false)
+            // ws.on('open')에서 실제 전송 시점 기록 → 본문 TTS는 맞장구 끝 + 1초 후 시작
+          }
 
           ws.on('open', () => {
             wsOpen = true
+            if (pendingSends.length > 0) fillerSentAt = Date.now()
             for (const msg of pendingSends) ws.send(msg)
             pendingSends.length = 0
           })
@@ -375,28 +434,34 @@ ${emotionTagRule}
               pcmBuffer = Buffer.alloc(0)
             }
           }
+          const pushPcm = (pcm: Buffer) => {
+            if (pcm.length === 0) return
+            pcmBuffer = Buffer.concat([pcmBuffer, pcm])
+            while (pcmBuffer.length >= STREAMING_PCM_FLUSH_BYTES) {
+              const toFlush = pcmBuffer.subarray(0, STREAMING_PCM_FLUSH_BYTES)
+              pcmBuffer = pcmBuffer.subarray(STREAMING_PCM_FLUSH_BYTES)
+              enqueueAudio(Buffer.from(toFlush))
+            }
+          }
           ws.on('message', (raw: Buffer | string) => {
-            if (typeof raw === 'string') {
-              try {
-                const msg = JSON.parse(raw) as { done?: boolean }
-                if (msg.done === true) {
-                  flushPcm()
-                  ws.close()
-                  resolveOnce()
-                }
-              } catch {}
-              return
-            }
-            const pushPcm = (pcm: Buffer) => {
-              if (pcm.length === 0) return
-              pcmBuffer = Buffer.concat([pcmBuffer, pcm])
-              while (pcmBuffer.length >= STREAMING_PCM_FLUSH_BYTES) {
-                const toFlush = pcmBuffer.subarray(0, STREAMING_PCM_FLUSH_BYTES)
-                pcmBuffer = pcmBuffer.subarray(STREAMING_PCM_FLUSH_BYTES)
-                enqueueAudio(Buffer.from(toFlush))
+            const text = typeof raw === 'string' ? raw : raw.toString('utf-8')
+            try {
+              const msg = JSON.parse(text) as { type?: string; data?: string; done?: boolean }
+              if (msg.type === 'chunk' && typeof msg.data === 'string') {
+                const pcm = Buffer.from(msg.data, 'base64')
+                if (pcm.length > 0) pushPcm(pcm)
+                flushPcm()
+                return
               }
+              if (msg.type === 'done') {
+                flushPcm()
+                ws.close()
+                resolveOnce()
+                return
+              }
+            } catch {
+              if (Buffer.isBuffer(raw) && raw.length > 0) pushPcm(raw)
             }
-            if (Buffer.isBuffer(raw) && raw.length > 0) pushPcm(raw)
           })
           ws.on('error', () => resolveOnce())
           ws.on('close', () => resolveOnce())
@@ -432,6 +497,12 @@ ${emotionTagRule}
                       pendingText = rest
                       const trimmed = chunk.trim()
                       if (!trimmed) continue
+                      // 맞장구 말이 끝나고 1초 뒤에 본문 TTS 시작
+                      if (fillerSentAt !== null) {
+                        const wait = fillerSentAt + DCC_FILLER_DURATION_MS + 1000 - Date.now()
+                        if (wait > 0) await new Promise<void>(r => setTimeout(r, wait))
+                        fillerSentAt = null
+                      }
                       const toSend = sentAny ? ` ${trimmed}` : trimmed
                       sentAny = true
                       sendCartesia(toSend, false)

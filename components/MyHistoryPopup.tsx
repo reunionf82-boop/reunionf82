@@ -2603,11 +2603,12 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                           <button
                             onClick={() => window.open(`/result/voice/replay?id=${result.id}`, '_blank')}
                             className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap bg-violet-500 hover:bg-violet-600 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200"
+                            title="저장된 대화 내용 보기"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                             </svg>
-                            대화보기
+                            다시보기
                           </button>
                         ) : (
                           <>
@@ -2629,11 +2630,12 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                           </>
                         )}
 
-                        {/* 음성형: 다시듣기 (오디오 재생) */}
+                        {/* 음성형: 다시듣기 (오디오 재생, 녹음이 있을 때만) */}
                         {isVoice && hasAudio && (
                           <button
                             onClick={() => window.open(`/result/voice/replay?id=${result.id}&autoplay=1`, '_blank')}
                             className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors duration-200"
+                            title="저장된 상담 음성 다시 듣기"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M12 6a7.975 7.975 0 015.657 2.343M12 6v12m0 0l-3-3m3 3l3-3" />

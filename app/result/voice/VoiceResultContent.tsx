@@ -369,12 +369,6 @@ export default function VoiceResultContent() {
           />
         </div>
 
-        {/* 친구에게 공유하기 (이퀄라이저 밑, 가운데 정렬) */}
-        <div className="flex flex-col items-center gap-2 py-2 overflow-visible w-full min-w-0">
-          <span className="text-sm text-gray-500">친구에게 공유하기</span>
-          <SocialShareButtons title={h.contentData?.content_name ? `${h.contentData.content_name} 음성상담` : '음성상담'} size={36} className="w-full justify-center" />
-        </div>
-
         {/* 마이크 민감도 */}
         <div className="flex items-center gap-2 flex-nowrap min-w-0">
           <span className="text-gray-500 text-sm shrink-0">마이크 민감도</span>
@@ -387,6 +381,60 @@ export default function VoiceResultContent() {
             className="flex-1 min-w-0 h-2 rounded-full appearance-none bg-gray-200 accent-violet-500"
           />
           <span className="text-gray-400 text-xs shrink-0 tabular-nums">{h.micSensitivity ?? 50}%</span>
+        </div>
+
+        {/* 종료 / 상담시간 연장하기 — 마이크 민감도와 소셜 버튼 사이 영역에서 비율로 가운데 */}
+        <div className="flex-1 flex flex-col justify-center items-center min-h-0 py-4">
+          <div className="flex flex-wrap items-center justify-center gap-3">
+          {(h.savingConversation || h.isNavigatingAway) ? (
+            <div className="w-full flex flex-col items-center gap-3 py-6">
+              <svg className="animate-spin w-8 h-8 text-violet-500" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="text-gray-600 font-semibold text-base">상담 내용 저장 중...</span>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={h.onExitClick}
+                disabled={h.savingConversation}
+                className="group relative overflow-hidden rounded-xl transition-all duration-300 active:scale-[0.97] disabled:opacity-50"
+              >
+                <div className="absolute inset-0 bg-gradient-to-br from-gray-100 to-gray-200 group-hover:from-gray-200 group-hover:to-gray-300 transition-all duration-300" />
+                <div className="relative flex items-center justify-center gap-1.5 py-2.5 px-4">
+                  {h.savingConversation ? (
+                    <svg className="animate-spin w-4 h-4 text-gray-600" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
+                    </svg>
+                  )}
+                  <span className="text-gray-700 font-semibold text-[13px]">
+                    {h.savingConversation ? '저장 중...' : '종료'}
+                  </span>
+                </div>
+              </button>
+              {h.connected && (
+                <button
+                  type="button"
+                  onClick={h.openExtendPopupByButton}
+                  disabled={h.savingConversation}
+                  className="group relative overflow-hidden rounded-xl transition-all duration-300 active:scale-[0.97] disabled:opacity-50"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-pink-600 group-hover:from-pink-600 group-hover:to-pink-700 transition-all duration-300" />
+                  <div className="relative flex items-center justify-center gap-1.5 py-2.5 px-4">
+                    <span className="text-white font-semibold text-[13px]">상담시간 연장하기</span>
+                  </div>
+                </button>
+              )}
+            </>
+          )}
+          </div>
         </div>
 
         {/* 만세력 (접기/펼치기) — 8006/무료속성이 아닐 때만 표시 */}
@@ -418,56 +466,9 @@ export default function VoiceResultContent() {
         </div>
         )}
 
-        {/* 하단 컨트롤 */}
-        <div className="mt-auto pb-4 space-y-3">
-          {h.connected ? (
-            <div className="flex flex-wrap items-center gap-3">
-              {/* 종료 */}
-              <button
-                type="button"
-                onClick={h.onExitClick}
-                disabled={h.savingConversation}
-                className="group relative overflow-hidden rounded-xl transition-all duration-300 active:scale-[0.97] disabled:opacity-50"
-              >
-                <div className="absolute inset-0 bg-gradient-to-br from-gray-100 to-gray-200 group-hover:from-gray-200 group-hover:to-gray-300 transition-all duration-300" />
-                <div className="relative flex items-center justify-center gap-1.5 py-2.5 px-4">
-                  {h.savingConversation ? (
-                    <svg className="animate-spin w-4 h-4 text-gray-600" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
-                    </svg>
-                  )}
-                  <span className="text-gray-700 font-semibold text-[13px]">
-                    {h.savingConversation ? '저장 중...' : '종료'}
-                  </span>
-                </div>
-              </button>
-              {/* 상담시간 연장하기 - 클릭 시 연장 팝업 (종료 메시지 박스 없음), 테마핑크 */}
-              <button
-                type="button"
-                onClick={h.openExtendPopupByButton}
-                disabled={h.savingConversation}
-                className="group relative overflow-hidden rounded-xl transition-all duration-300 active:scale-[0.97] disabled:opacity-50"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-pink-600 group-hover:from-pink-600 group-hover:to-pink-700 transition-all duration-300" />
-                <div className="relative flex items-center justify-center gap-1.5 py-2.5 px-4">
-                  <span className="text-white font-semibold text-[13px]">상담시간 연장하기</span>
-                </div>
-              </button>
-            </div>
-          ) : (h.savingConversation || h.isNavigatingAway) ? (
-            <div className="w-full flex flex-col items-center gap-3 py-6">
-              <svg className="animate-spin w-8 h-8 text-violet-500" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              <span className="text-gray-600 font-semibold text-base">상담 내용 저장 중...</span>
-            </div>
-          ) : null}
+        {/* 스크린 하단: 소셜 공유 버튼 (종료 버튼 아래) */}
+        <div className="mt-auto pt-4 pb-4 flex flex-col items-center w-full min-w-0">
+          <SocialShareButtons title={h.contentData?.content_name ? `${h.contentData.content_name} 음성상담` : '음성상담'} size={36} className="w-full justify-center" />
         </div>
       </main>
 

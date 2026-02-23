@@ -6846,7 +6846,7 @@ function FormContent() {
           })() && (
             <div className="mb-6 pb-6 border-b border-gray-200">
               <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">이용내역 확인 정보</h2>
-              <p className="text-sm text-gray-600 mb-4">나의 이용내역에서 다시듣기·대화보기를 보려면 아래 정보를 입력해 주세요.</p>
+              <p className="text-sm text-gray-600 mb-4">나의 이용내역에서 다시보기·다시듣기를 보려면 아래 정보를 입력해 주세요.</p>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">휴대폰 번호</label>
@@ -7497,6 +7497,9 @@ function FormContent() {
                             sessionStorage.removeItem('payment_voice_minutes')
                             sessionStorage.removeItem('voice_time_expired')
                           }
+                          sessionStorage.setItem('result_content_id', String(content.id))
+                          sessionStorage.setItem('payment_content_id', String(content.id))
+                          try { localStorage.setItem('voice_content_id', String(content.id)) } catch { /* ignore */ }
                           window.location.href = `/result/voice?id=${encodeURIComponent(content.id)}`
                         } catch {
                           showAlertMessage('잔여시간 사용 처리에 실패했습니다.')
@@ -7579,13 +7582,12 @@ function FormContent() {
                 이전으로
               </button>
             </div>
-            {/* 음성 0원일 때 무료시작 버튼 아래 친구에게 공유하기 */}
+            {/* 음성 0원일 때 무료시작 버튼 아래 소셜 공유 */}
             {content?.content_type === 'voice' && content != null && (() => {
               const p = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
               if (!Number.isFinite(p) || p > 0) return null
               return (
                 <div className="mt-4 flex flex-col items-center gap-2 overflow-visible w-full">
-                  <span className="text-sm text-gray-500">친구에게 공유하기</span>
                   <SocialShareButtons title={content?.content_name ? `${content.content_name} 음성상담` : '음성상담'} size={36} className="w-full justify-center" />
                 </div>
               )

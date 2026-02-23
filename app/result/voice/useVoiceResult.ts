@@ -33,8 +33,8 @@ const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
 /** 정적 깨기: 이 볼륨 이상이면 사용자가 말하는 것으로 간주. micSensitivity(0-100)로 조정. */
 const SPEECH_THRESHOLD_MIN = 0.01
 const SPEECH_THRESHOLD_MAX = 0.05
-/** DCC 연속 대화: 말 멈춘 뒤 이 시간(ms) 지나면 한 턴으로 전송. 티키타카 빠르게 하려면 800~1000으로 낮추면 됨 (너무 낮으면 말 끊김). */
-const DCC_SILENCE_END_MS = 1400
+/** DCC 연속 대화: 말 멈춘 뒤 이 시간(ms) 지나면 한 턴으로 전송. 낮출수록 종료 시그널 빨리 뜸 (너무 낮으면 말 끊김). */
+const DCC_SILENCE_END_MS = 700
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
 
@@ -319,7 +319,9 @@ export function useVoiceResult() {
     if (typeof window === 'undefined') return
     ;(async () => {
       try {
+        const urlId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('id') : null
         const cid =
+          (urlId && urlId.trim() !== '' ? urlId.trim() : null) ||
           sessionStorage.getItem('result_content_id') ||
           sessionStorage.getItem('payment_content_id') ||
           localStorage.getItem('voice_content_id') ||
@@ -625,7 +627,7 @@ export function useVoiceResult() {
       dccPcmContextRef.current = new AudioCtx({ sampleRate: DCC_PCM_SAMPLE_RATE })
     }
     if (!dccStreamerRef.current) {
-      dccStreamerRef.current = new AudioStreamer(dccPcmContextRef.current, { mergeChunkSamples: DCC_PCM_SAMPLE_RATE })
+      dccStreamerRef.current = new AudioStreamer(dccPcmContextRef.current, { mergeChunkSamples: DCC_PCM_SAMPLE_RATE, initialBufferTime: 0.8 })
     }
     const ctx = dccPcmContextRef.current
     if (ctx.state === 'suspended') ctx.resume().catch(() => {})
@@ -643,10 +645,11 @@ export function useVoiceResult() {
     dccStreamerRef.current.addPCM16(chunk)
   }, [initDccPcmAudio])
 
-  /* ── 정리 ──────────────────────────────── */
+  /* ── 정리: 보이스 화면을 떠날 때(어떤 경로든) TTS·연결 즉시 중지 ──────────────────────────────── */
   useEffect(() => {
     return () => {
       stopAllTTSRef.current()
+      disconnectInternalRef.current?.(true)
       if (autoReconnectTimeoutRef.current) clearTimeout(autoReconnectTimeoutRef.current)
       if (failoverCheckIntervalRef.current) clearInterval(failoverCheckIntervalRef.current)
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current)
@@ -660,6 +663,8 @@ export function useVoiceResult() {
       humeAudioQueueRef.current.length = 0
       dccCurrentAudioRef.current?.pause()
       dccCurrentAudioRef.current = null
+      dccStreamerRef.current?.stop()
+      dccStreamerRef.current = null
       if (dccPcmContextRef.current) {
         try { dccPcmContextRef.current.close() } catch { /* ignore */ }
         dccPcmContextRef.current = null
