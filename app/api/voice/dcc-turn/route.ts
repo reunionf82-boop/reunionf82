@@ -12,6 +12,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
 import WebSocket from 'ws'
 
+/** 긴 답변(75초+) 시 서버 함수 타임아웃 방지. 30초 끊김 시 프록시 유휴 타임아웃은 NDJSON keepalive로 완화 */
+export const maxDuration = 300
+
 const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen'
 const CARTESIA_URL = 'https://api.cartesia.ai/tts/bytes'
 const CARTESIA_WS_URL = 'wss://api.cartesia.ai/tts/websocket'
@@ -301,7 +304,7 @@ ${emotionTagRule}
 
     const claudeBody = {
       model: 'claude-sonnet-4-6',
-      max_tokens: 8192, // 초대 인사·긴 답변 시 중간 잘림 방지 (기존 4096)
+      max_tokens: 8192, // 초대 인사·긴 답변 시 중간 잘림 방지. 제미나이 권장 2048+ (256/512면 말하다 뚝 끊김)
       stream: true,
       system: systemPrompt,
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
@@ -396,9 +399,17 @@ ${emotionTagRule}
             } catch (_) {}
           }
           let finished = false
+          const KEEPALIVE_MS = 15000
+          const keepaliveInterval = setInterval(() => {
+            if (finished) return
+            try {
+              controller.enqueue(encoder.encode(JSON.stringify({ type: 'keepalive' }) + '\n'))
+            } catch (_) {}
+          }, KEEPALIVE_MS)
           const resolveOnce = () => {
             if (finished) return
             finished = true
+            clearInterval(keepaliveInterval)
             if (pcmBuffer.length > 0) {
               enqueueAudio(pcmBuffer)
               pcmBuffer = Buffer.alloc(0)
@@ -472,8 +483,14 @@ ${emotionTagRule}
               if (Buffer.isBuffer(raw) && raw.length > 0) pushPcm(raw)
             }
           })
-          ws.on('error', () => resolveOnce())
-          ws.on('close', () => resolveOnce())
+          ws.on('error', (err) => {
+            console.error('❌ Cartesia 에러 발생!:', err)
+            resolveOnce()
+          })
+          ws.on('close', () => {
+            console.log('🔌 Cartesia 웹소켓이 닫혔습니다.')
+            resolveOnce()
+          })
           // Cartesia: "We close idle WebSocket connections after 5 minutes." (idle = no activity)
           // 우리는 5분으로 설정해, 긴 답변 중 우리가 먼저 WS를 닫지 않도록 함. 동작 중이면 idle 아님.
           setTimeout(() => {
@@ -500,8 +517,10 @@ ${emotionTagRule}
                 try {
                   const parsed = JSON.parse(data) as { type?: string; delta?: { type?: string; text?: string } }
                   if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta' && parsed.delta?.text) {
-                    assistantText += parsed.delta.text
-                    pendingText += parsed.delta.text
+                    const text = parsed.delta.text
+                    if (process.env.NODE_ENV !== 'production') console.log('📝 Claude 출력중:', text)
+                    assistantText += text
+                    pendingText += text
                     for (;;) {
                       const { chunk, rest } = extractChunk(pendingText)
                       if (!chunk) break

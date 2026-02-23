@@ -341,9 +341,9 @@ export default function VoiceResultContent() {
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm">{h.error}</div>
         ) : null}
 
-        {/* 애기동자 상담사 영상 (만세력 박스 바깥, 위쪽) */}
+        {/* 상담사 영상: DCC 음성과 동시 재생 시 메인 스레드/GPU 경쟁으로 끊김이나 영상 멈춤 가능(과부하). 별도 레이어로 분리해 완화 */}
         {h.contentData?.voice_advisor_video_url ? (
-          <div className="w-full overflow-hidden rounded-2xl">
+          <div className="w-full overflow-hidden rounded-2xl [contain:layout_paint] [will-change:transform]">
             <video
               src={h.contentData.voice_advisor_video_url}
               autoPlay
@@ -351,6 +351,7 @@ export default function VoiceResultContent() {
               muted
               playsInline
               className="w-full object-cover"
+              preload="auto"
             />
           </div>
         ) : (

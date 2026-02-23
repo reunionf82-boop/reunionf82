@@ -18,6 +18,13 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
   return window.btoa(binary)
 }
 
+/** 스피커 에코가 마이크로 들어가 VAD/자가중단 방지 (제미나이 권장). useVoiceResult 등에서도 동일 적용용 export */
+export const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: false,
+}
+
 export class AudioRecorder extends EventEmitter {
   stream: MediaStream | undefined
   audioContext: AudioContext | undefined
@@ -53,12 +60,13 @@ export class AudioRecorder extends EventEmitter {
     }
 
     this.starting = new Promise(async (resolve) => {
+      const audioOpt = { audio: AUDIO_CONSTRAINTS }
       if (!this.stream) {
-        this.stream = await navigator.mediaDevices!.getUserMedia({ audio: true })
+        this.stream = await navigator.mediaDevices!.getUserMedia(audioOpt)
       } else {
         const track = this.stream.getAudioTracks()[0]
         if (track?.readyState === 'ended') {
-          this.stream = await navigator.mediaDevices!.getUserMedia({ audio: true })
+          this.stream = await navigator.mediaDevices!.getUserMedia(audioOpt)
         }
       }
       if (!this.audioContext || !this.source) {

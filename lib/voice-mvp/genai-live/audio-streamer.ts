@@ -246,5 +246,20 @@ export class AudioStreamer {
       this.onComplete()
     }
   }
+
+  /**
+   * 남은 큐 강제 재생(Flush). EOS 시 minBufferDuration 미만으로 남은 찌꺼기가 재생 안 되는 무한 대기 방지(제미나이 제안).
+   * 목표치 무시하고 큐에 있는 오디오를 바로 재생 시작.
+   */
+  flush() {
+    if (this.audioQueue.length === 0) return
+    if (!this.isPlaying) {
+      this.isPlaying = true
+      this.scheduledTime = Math.max(this.scheduledTime, this.context.currentTime) + 0.05
+      this.scheduleNextBuffer()
+    } else {
+      this.scheduleNextBuffer()
+    }
+  }
 }
 

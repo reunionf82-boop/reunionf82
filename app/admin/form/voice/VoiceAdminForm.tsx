@@ -803,7 +803,7 @@ export default function VoiceAdminForm() {
                         className="flex-1 min-w-0 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm" placeholder="URL 입력 또는 파일 드래그&amp;드롭" />
                     </div>
                     {h.form.voice_advisor_video_url && (
-                      <div className="mt-2 flex items-center gap-3">
+                      <div className="mt-2 flex items-center gap-3 flex-wrap">
                         <div className="relative group cursor-pointer"
                           onClick={(e) => { const v = e.currentTarget.querySelector('video'); if (!v) return; if (v.paused) { v.muted = false; v.play().catch(() => {}) } else { v.pause(); v.currentTime = 0 } }}>
                           <video
@@ -816,6 +816,13 @@ export default function VoiceAdminForm() {
                           </div>
                         </div>
                         <a href={h.form.voice_advisor_video_url} target="_blank" rel="noopener noreferrer" className="text-violet-400 text-sm">동영상 미리보기</a>
+                        <button
+                          type="button"
+                          onClick={() => h.setForm((f) => ({ ...f, voice_advisor_video_url: '' }))}
+                          className="px-3 py-1.5 rounded-lg text-sm bg-red-900/50 text-red-300 hover:bg-red-800/60 border border-red-700/50 transition"
+                        >
+                          동영상 삭제
+                        </button>
                       </div>
                     )}
                   </div>

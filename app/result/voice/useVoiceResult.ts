@@ -19,7 +19,7 @@ import {
   type EtiquetteViolationType,
 } from '@/lib/voice-mvp/ppoing-rules'
 import { buildResultStyleManseBlock } from '@/lib/manse-ryeok-display'
-import { AudioRecorder } from '@/lib/voice-mvp/genai-live/audio-recorder'
+import { AudioRecorder, AUDIO_CONSTRAINTS } from '@/lib/voice-mvp/genai-live/audio-recorder'
 import { AudioStreamer } from '@/lib/voice-mvp/genai-live/audio-streamer'
 import { audioContext, base64ToArrayBuffer } from '@/lib/voice-mvp/genai-live/utils'
 import VolMeterWorket from '@/lib/voice-mvp/genai-live/worklets/vol-meter'
@@ -638,7 +638,7 @@ export function useVoiceResult() {
       dccStreamerRef.current = new AudioStreamer(dccPcmContextRef.current, {
         mergeChunkSamples: Math.floor(DCC_PCM_SAMPLE_RATE * 0.5),
         initialBufferTime: 1.2,
-        minBufferDurationSeconds: 1.0,
+        minBufferDurationSeconds: 1.2,
       })
     }
     const ctx = dccPcmContextRef.current
@@ -1367,6 +1367,7 @@ ${manseText || '(만세력 없음)'}
                     stopDccPlayback(false)
                     onPlaybackComplete?.()
                   }
+                  dccStreamerRef.current.flush()
                   dccStreamerRef.current.complete()
                 }
               }
@@ -1481,9 +1482,8 @@ ${manseText || '(만세력 없음)'}
       setInVolume(vol)
       if (dccSendingRef.current) return
       if (vol > threshold) {
-        // TTS 중단: volume은 마이크 RMS만 사용(vol-meter.ts). 에코 제거 없어 스피커 TTS가 마이크에 잡히면
-        // vol > interruptThreshold로 잘못 중단됨. DCC는 에코 구분 불가하므로 볼륨 기반 중단 비활성화.
-        // (말하다 중단 + 완전 조용했는데 중단 → 코드상 이 경로가 유일 원인)
+        // DCC 끼어들기(Barge-in) 비활성화: VAD 유령 트리거 방지(숨소리/옷깃/팬 소음으로 오탐 시 TTS 뚝 끊김).
+        // volume은 마이크 RMS만 사용(에코 구분 없음). 끊기면 백엔드 터미널에서 📝 Claude / ❌ Cartesia 로그 확인.
         dccInterruptAboveSinceRef.current = null
         dccInSpeechRef.current = true
         dccSilenceStartRef.current = null
@@ -1564,7 +1564,7 @@ ${manseText || '(만세력 없음)'}
           }
         }
         if (!iosMicStreamPromiseRef.current && navigator.mediaDevices?.getUserMedia) {
-          iosMicStreamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: true })
+          iosMicStreamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
         }
       }
 
@@ -1639,7 +1639,7 @@ ${manseText || '(만세력 없음)'}
           // 마이크 스트림을 AI 출력 AudioContext에 소스로 연결
           const micStream = iosMicStreamPromiseRef.current
             ? await iosMicStreamPromiseRef.current
-            : await navigator.mediaDevices.getUserMedia({ audio: true })
+            : await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
           const micSource = outCtx.createMediaStreamSource(micStream)
           micSource.connect(dest) // 마이크 → 녹음 destination
           micSourceNodeRef.current = micSource
