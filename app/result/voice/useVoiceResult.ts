@@ -574,9 +574,8 @@ export function useVoiceResult() {
     history.pushState({ [key]: true }, '', window.location.href)
     const onPopState = () => {
       if (!sessionStartedRef.current) return
-      // 이전 버튼 눌렀을 때 즉시 TTS·마이크 중지 (모달 보여주기 전에 먼저 끔 → 폼으로 가도 소리 안 나게)
-      stopAllTTSRef.current()
       if (conversationSavedRef.current) {
+        stopAllTTSRef.current()
         try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
         router.replace('/form')
         return
@@ -3079,10 +3078,10 @@ ${seasonBlock}
     router.push('/form')
   }, [router])
 
-  /* ── 나가기 전 저장 확인: 이전/홈 시 모달 표시 (브라우저/모바일 뒤로가기와 동일). 어떤 경우든 폼으로 나가면 즉시 TTS·마이크 중지 */
+  /* ── 나가기 전 저장 확인: 이전/홈 시 모달 표시 (브라우저/모바일 뒤로가기와 동일) */
   const requestLeave = useCallback(() => {
-    stopAllTTSRef.current()
     if (conversationSavedRef.current) {
+      stopAllTTSRef.current()
       setIsNavigatingAway(true)
       try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
       router.push('/form')
@@ -3092,6 +3091,7 @@ ${seasonBlock}
       setShowLeaveConfirmModal(true)
       return
     }
+    stopAllTTSRef.current()
     setIsNavigatingAway(true)
     try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
     router.push('/form')

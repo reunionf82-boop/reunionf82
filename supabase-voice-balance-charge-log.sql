@@ -10,3 +10,13 @@ CREATE TABLE IF NOT EXISTS voice_balance_charge_log (
 );
 
 COMMENT ON TABLE voice_balance_charge_log IS '음성 잔액 충전 멱등성: 동일 oid는 1회만 충전';
+
+-- RLS: 서버(service role)만 접근. anon/authenticated는 명시적으로 접근 불가 정책 적용
+ALTER TABLE voice_balance_charge_log ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "server_only_no_client_access"
+  ON voice_balance_charge_log
+  FOR ALL
+  TO anon, authenticated
+  USING (false)
+  WITH CHECK (false);
