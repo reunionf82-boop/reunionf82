@@ -1742,13 +1742,11 @@ ${seasonBlock}
   const connect = useCallback(async () => {
     setError('')
     startSoundPlayedRef.current = false // 이번 연결에서 ready 시 종소리 1회 재생
-    // iOS: 마이크+재생 동시 사용 시 스피커로 소리 나게 (play-and-record. playback만 쓰면 소리 안 남)
-    try {
-      if (typeof navigator !== 'undefined' && (navigator as any).audioSession?.type !== undefined) {
-        (navigator as any).audioSession.type = 'play-and-record'
-      }
-    } catch {
-      /* 미지원 환경 무시 */
+    // iOS: 사용자 제스처 직후 무음 재생으로 오디오 세션 활성화 → 스피커 모드로 들리게 (panana와 동일)
+    if (isIOSDevice() && typeof window !== 'undefined') {
+      const unlock = new Audio()
+      unlock.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+      void unlock.play().catch(() => {})
     }
     try {
       // 중복 connect 방지: CONNECTING 상태에서도 재호출되면 소켓이 교체되어 init 누락 가능
