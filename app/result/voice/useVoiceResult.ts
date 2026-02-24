@@ -1033,18 +1033,7 @@ ${seasonBlock}
     try { await streamer.resume() } catch { /* ignore */ }
   }, [])
 
-  // 페이지가 숨겨지면(폼으로 이동·탭 전환 등) 즉시 TTS·마이크 중지 — 폼 화면인데도 소리가 나는 현상 방지
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof document === 'undefined') return
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        stopAllTTSRef.current()
-        disconnectInternalRef.current?.(true)
-      }
-    }
-    document.addEventListener('visibilitychange', onVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
-  }, [])
+  // 탭 전환 시에는 중단하지 않음(다른 탭 보면서 들을 수 있도록). 실제 이탈 시에는 언마운트 cleanup에서 TTS·연결 중지.
 
   // iOS Safari: 포커스/복귀 후 AudioContext가 suspended면 AI 음성이 무음이 될 수 있어 복구
   useEffect(() => {
