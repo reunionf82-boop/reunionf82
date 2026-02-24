@@ -1742,10 +1742,10 @@ ${seasonBlock}
   const connect = useCallback(async () => {
     setError('')
     startSoundPlayedRef.current = false // 이번 연결에서 ready 시 종소리 1회 재생
-    // iOS: 통화(벨소리) 볼륨 대신 미디어 볼륨 사용 (Audio Session API, Safari 16.4+)
+    // iOS: 마이크+재생 동시 사용 시 스피커로 소리 나게 (play-and-record. playback만 쓰면 소리 안 남)
     try {
       if (typeof navigator !== 'undefined' && (navigator as any).audioSession?.type !== undefined) {
-        (navigator as any).audioSession.type = 'playback'
+        (navigator as any).audioSession.type = 'play-and-record'
       }
     } catch {
       /* 미지원 환경 무시 */
