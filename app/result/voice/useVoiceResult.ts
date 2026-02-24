@@ -37,9 +37,11 @@ const TTS_INTERRUPT_VOLUME_FACTOR = 1.2
 /** TTS 중단 디바운스(ms): 이 시간 이상 연속으로 기준 초과 시에만 중단 (순간 스파이크 무시). */
 const TTS_INTERRUPT_DEBOUNCE_MS = 120
 /** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. 낮으면 말 끊김, 높으면 반응이 느려짐. */
-const DCC_SILENCE_END_MS = 300
+const DCC_SILENCE_END_MS = 250
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
+/** 대화중 소리 연타 방지 쿨타임(ms). 이 간격 동안은 재생하지 않음 */
+const CONVERSATION_SOUND_COOLDOWN_MS = 20 * 1000
 
 const PRIMARY_REGION =
   (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_VERTEX_LIVE_PRIMARY_REGION) || 'us-central1'
@@ -656,8 +658,8 @@ export function useVoiceResult() {
     if (!dccStreamerRef.current) {
       dccStreamerRef.current = new AudioStreamer(dccPcmContextRef.current, {
         mergeChunkSamples: Math.floor(DCC_PCM_SAMPLE_RATE * 0.5),
-        initialBufferTime: 1.2,
-        minBufferDurationSeconds: 1.2,
+        initialBufferTime: 0.8,
+        minBufferDurationSeconds: 0.8,
       })
     }
     const ctx = dccPcmContextRef.current
@@ -683,7 +685,7 @@ export function useVoiceResult() {
         const chosen = list[Math.floor(Math.random() * list.length)]
         chosen.currentTime = 0
         chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
-        conversationSoundCooldownUntilRef.current = now + 4000
+        conversationSoundCooldownUntilRef.current = now + CONVERSATION_SOUND_COOLDOWN_MS
       }
     }
     dccStreamerRef.current.addPCM16(chunk)
@@ -1559,7 +1561,7 @@ ${seasonBlock}
             const chosen = list[Math.floor(Math.random() * list.length)]
             chosen.currentTime = 0
             chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
-            conversationSoundCooldownUntilRef.current = now + 4000
+            conversationSoundCooldownUntilRef.current = now + CONVERSATION_SOUND_COOLDOWN_MS
           }
         }
         if (dccOutVolumeIntervalRef.current) clearInterval(dccOutVolumeIntervalRef.current)
@@ -1673,7 +1675,7 @@ ${seasonBlock}
               const chunks = dccChunksRef.current
               const startIdx = dccLastTurnEndIndexRef.current
               const toSend = chunks.slice(startIdx)
-              const minChunks = 8
+              const minChunks = 6
               if (toSend.length >= minChunks) {
                 const wavB64 = buildWavFromPcmChunks(toSend)
                 if (wavB64) sendDccTurn({ audioBase64: wavB64 })
@@ -2176,7 +2178,7 @@ ${seasonBlock}
                   const chosen = list[Math.floor(Math.random() * list.length)]
                   chosen.currentTime = 0
                   chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
-                  conversationSoundCooldownUntilRef.current = now + 4000
+                  conversationSoundCooldownUntilRef.current = now + CONVERSATION_SOUND_COOLDOWN_MS
                 }
               }
               playHumeQueue()
@@ -2194,7 +2196,7 @@ ${seasonBlock}
                 const chosen = list[Math.floor(Math.random() * list.length)]
                 chosen.currentTime = 0
                 chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
-                conversationSoundCooldownUntilRef.current = now + 4000
+                conversationSoundCooldownUntilRef.current = now + CONVERSATION_SOUND_COOLDOWN_MS
               }
             }
             const streamAndPlay = async () => {

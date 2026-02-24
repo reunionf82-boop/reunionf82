@@ -255,7 +255,7 @@ export async function POST(req: NextRequest) {
           generation_config: { speed, volume, emotion: primaryEmotion },
           output_format: { container: 'raw' as const, encoding: 'pcm_s16le' as const, sample_rate: CARTESIA_SAMPLE_RATE },
           context_id: contextId,
-          max_buffer_delay_ms: 1800,
+          max_buffer_delay_ms: 1500,
         }
         const stream = new ReadableStream({
           start(controller) {
@@ -555,7 +555,7 @@ ${emotionTagRule}
         generation_config: { speed, volume, emotion: primaryEmotion },
         output_format: { container: 'raw' as const, encoding: 'pcm_s16le' as const, sample_rate: CARTESIA_SAMPLE_RATE },
         context_id: contextId,
-        max_buffer_delay_ms: 1800,
+        max_buffer_delay_ms: 1500,
       }
 
       /** 청크당 최대 길이. 너무 긴 한 덩어리는 Cartesia/연결 불안정 원인될 수 있어 분할 */
