@@ -33,6 +33,9 @@ function isWebmUrl(url: string): boolean {
   return /\.webm(\?|$)/i.test(url) || url.toLowerCase().includes('audio/webm')
 }
 
+/** iOS Safari: 무음 재생으로 오디오 세션 활성화 → 스피커 모드 (panana와 동일) */
+const IOS_UNLOCK_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+
 function VoiceReplayContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -40,6 +43,14 @@ function VoiceReplayContent() {
   const autoplay = searchParams?.get('autoplay') === '1'
 
   const [loading, setLoading] = useState(true)
+
+  // iOS: 다시듣기 페이지 진입 시 무음 WAV 1회 재생 → 스피커 모드 활성화
+  useEffect(() => {
+    if (isIOS() && typeof window !== 'undefined') {
+      const unlock = new Audio(IOS_UNLOCK_WAV)
+      void unlock.play().catch(() => {})
+    }
+  }, [])
   const [error, setError] = useState('')
   const [result, setResult] = useState<VoiceResult | null>(null)
 

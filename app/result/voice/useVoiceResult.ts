@@ -125,6 +125,27 @@ function pcm16Base64ToWavBlob(chunks: string[], sampleRate = DCC_PCM_SAMPLE_RATE
   return new Blob([buffer], { type: 'audio/wav' })
 }
 
+/** Blob(녹음 파일)의 실제 재생 시간(초). 이용내역 표시·플레이바와 일치시키기 위함. */
+function getBlobDurationSeconds(blob: Blob): Promise<number | null> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') {
+      resolve(null)
+      return
+    }
+    const url = URL.createObjectURL(blob)
+    const audio = new Audio()
+    audio.onloadedmetadata = () => {
+      URL.revokeObjectURL(url)
+      resolve(Number.isFinite(audio.duration) ? Math.round(audio.duration) : null)
+    }
+    audio.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(null)
+    }
+    audio.src = url
+  })
+}
+
 /** Supabase 스토리지 등 외부 오디오 URL을 같은 오리진 프록시로 바꿔, AudioContext/녹음 믹스 시 CORS 오류를 방지합니다. */
 function getAudioSrc(url: string): string {
   if (typeof url !== 'string' || !url.trim()) return url
@@ -600,7 +621,7 @@ export function useVoiceResult() {
     }
   }, [savingConversation, router])
 
-  /** DCC 재생 즉시 중단 (barge-in 포함) */
+  /** DCC 재생 즉시 중단 (barge-in 포함). 컨텍스트/스트리머는 null·close 하지 않음 → 믹스 녹음(나의 이용내역)이 세션 끝까지 계속 쌓이도록 */
   const stopDccPlayback = useCallback((markStop = true) => {
     if (markStop) dccStopPlaybackRef.current = true
     dccAbortControllerRef.current?.abort()
@@ -608,11 +629,6 @@ export function useVoiceResult() {
     dccCurrentAudioRef.current?.pause()
     dccCurrentAudioRef.current = null
     dccStreamerRef.current?.stop()
-    dccStreamerRef.current = null
-    if (dccPcmContextRef.current) {
-      try { dccPcmContextRef.current.close() } catch { /* ignore */ }
-      dccPcmContextRef.current = null
-    }
     if (dccOutVolumeIntervalRef.current) {
       clearInterval(dccOutVolumeIntervalRef.current)
       dccOutVolumeIntervalRef.current = null
@@ -2900,6 +2916,8 @@ ${seasonBlock}
 
     try {
       let voiceAudioUrl: string | null = null
+      /** 녹음 파일 실제 재생 길이(초). 없으면 세션 타이머로 대체 */
+      let recordedDurationSeconds: number | null = null
 
       // 1) 양방향 오디오 녹음 (마이크+AI) 업로드 우선, 없으면 AI 전용 PCM fallback
       if (mixedChunksRef.current.length > 0) {
@@ -2907,6 +2925,7 @@ ${seasonBlock}
         try {
           const mixedBlob = new Blob(mixedChunksRef.current, { type: mixedChunksRef.current[0]?.type || 'audio/webm' })
           console.log('[VoiceResult] Mixed audio size:', (mixedBlob.size / 1024 / 1024).toFixed(2), 'MB')
+          recordedDurationSeconds = await getBlobDurationSeconds(mixedBlob)
           const ext = mixedBlob.type.includes('webm') ? 'webm' : 'ogg'
           const formData = new FormData()
           formData.append('file', mixedBlob, `voice_${Date.now()}.${ext}`)
@@ -2927,6 +2946,7 @@ ${seasonBlock}
         try {
           const wavBlob = pcm16Base64ToWavBlob(audioChunksRef.current)
           console.log('[VoiceResult] WAV fallback size:', (wavBlob.size / 1024 / 1024).toFixed(2), 'MB')
+          if (recordedDurationSeconds == null) recordedDurationSeconds = await getBlobDurationSeconds(wavBlob)
           const formData = new FormData()
           formData.append('file', wavBlob, `voice_${Date.now()}.wav`)
           const uploadRes = await fetch('/api/voice-upload', { method: 'POST', body: formData })
@@ -2942,8 +2962,8 @@ ${seasonBlock}
         }
       }
 
-      // 2) 상담 시간(초) 계산
-      const durationSeconds = totalSeconds - remainingSeconds
+      // 2) 상담 시간(초): 녹음 실제 길이 우선, 없으면 세션 타이머 (이용내역 표시와 플레이바 일치)
+      const durationSeconds = recordedDurationSeconds ?? (totalSeconds - remainingSeconds)
 
       // 3) saved_results에 voice 타입으로 저장
       const userName = sessionStorage.getItem('payment_user_name') || ''
