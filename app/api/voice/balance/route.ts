@@ -88,6 +88,36 @@ export async function POST(request: NextRequest) {
       }
 
       const phoneStr = String(phone).trim()
+
+      // 멱등성: 동일 oid로 이미 충전된 적 있으면 잔액만 반환 (중복 충전 방지)
+      const { error: logError } = await supabase
+        .from('voice_balance_charge_log')
+        .insert({
+          oid: String(oid),
+          content_id: cid,
+          phone: phoneStr,
+          amount_wan: payAmount,
+        })
+
+      if (logError) {
+        if (logError.code === '23505') {
+          // unique_violation: 이미 충전된 oid → 현재 잔액만 반환
+          const { data: row } = await supabase
+            .from('voice_balance')
+            .select('balance_wan')
+            .eq('content_id', cid)
+            .eq('phone', phoneStr)
+            .maybeSingle()
+          const current = (row as any)?.balance_wan ?? 0
+          return NextResponse.json({ success: true, balance_wan: current })
+        }
+        if (logError.code === '42P01') {
+          // undefined_table: 마이그레이션 미적용 시 기존 동작 유지
+        } else {
+          return NextResponse.json({ success: false, error: logError.message }, { status: 500 })
+        }
+      }
+
       const { data: row } = await supabase
         .from('voice_balance')
         .select('balance_wan')

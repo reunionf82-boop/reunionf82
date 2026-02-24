@@ -247,6 +247,7 @@ export function useVoiceResult() {
   const dccStreamerRef = useRef<AudioStreamer | null>(null)
   /** DCC 재생 즉시 중단 플래그 (바지인) */
   const dccStopPlaybackRef = useRef(false)
+  const dccAbortControllerRef = useRef<AbortController | null>(null)
   /** DCC 최초 인사 턴 재생 중 여부. 이 구간에는 스피커 에코로 TTS 중단하지 않음(20초 전 일관 끊김 방지) */
   const dccFirstTurnPlayingRef = useRef(false)
   /** DCC 연속 대화: 턴 경계(마지막 전송 시점의 청크 인덱스), VAD 침묵 시작 시각, 말하는 중 여부 */
@@ -601,6 +602,8 @@ export function useVoiceResult() {
   /** DCC 재생 즉시 중단 (barge-in 포함) */
   const stopDccPlayback = useCallback((markStop = true) => {
     if (markStop) dccStopPlaybackRef.current = true
+    dccAbortControllerRef.current?.abort()
+    dccAbortControllerRef.current = null
     dccCurrentAudioRef.current?.pause()
     dccCurrentAudioRef.current = null
     dccStreamerRef.current?.stop()
@@ -626,7 +629,7 @@ export function useVoiceResult() {
       humeCurrentAudioRef.current?.pause()
       humeCurrentAudioRef.current = null
       humeAudioQueueRef.current.length = 0
-      stopDccPlayback(false)
+      stopDccPlayback()
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel()
       }
@@ -1411,6 +1414,8 @@ ${seasonBlock}
     if (dccSendingRef.current) return
     dccSendingRef.current = true
     dccStopPlaybackRef.current = false
+    const abortCtrl = new AbortController()
+    dccAbortControllerRef.current = abortCtrl
     setError('')
     const isSilenceBreak = !!opts.silenceBreakText
     const isStartTurn = !isSilenceBreak && opts.transcript === '[시작]'
@@ -1431,6 +1436,7 @@ ${seasonBlock}
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: abortCtrl.signal,
       })
       if (!res.ok && res.status === 502) {
         await new Promise((r) => setTimeout(r, DCC_RETRY_DELAY_MS))
@@ -1438,6 +1444,7 @@ ${seasonBlock}
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
+          signal: abortCtrl.signal,
         })
       }
       const contentType = res.headers.get('content-type') || ''
@@ -1553,7 +1560,7 @@ ${seasonBlock}
           ...(assistantT ? [{ role: 'assistant' as const, content: assistantT }] : []),
         ].slice(-50)
       }
-      if (audioB64 && typeof audioB64 === 'string') {
+      if (audioB64 && typeof audioB64 === 'string' && !dccStopPlaybackRef.current) {
         isAiSpeakingRef.current = true
         const list = conversationSoundsRef.current.filter(Boolean) as HTMLAudioElement[]
         const prob = bubbleProbRef.current
@@ -1590,6 +1597,9 @@ ${seasonBlock}
         if (isStartTurn) dccFirstTurnPlayingRef.current = false
         if (onPlaybackComplete) onPlaybackComplete()
       }
+    } catch (e: any) {
+      if (e?.name === 'AbortError') return
+      throw e
     } finally {
       dccSendingRef.current = false
     }
@@ -1742,6 +1752,14 @@ ${seasonBlock}
   const connect = useCallback(async () => {
     setError('')
     startSoundPlayedRef.current = false // 이번 연결에서 ready 시 종소리 1회 재생
+    // iOS: 통화(벨소리) 볼륨 대신 미디어 볼륨 사용 (Audio Session API, Safari 16.4+)
+    try {
+      if (typeof navigator !== 'undefined' && (navigator as any).audioSession?.type !== undefined) {
+        (navigator as any).audioSession.type = 'playback'
+      }
+    } catch {
+      /* 미지원 환경 무시 */
+    }
     try {
       // 중복 connect 방지: CONNECTING 상태에서도 재호출되면 소켓이 교체되어 init 누락 가능
       if (
