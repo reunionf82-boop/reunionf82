@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     const action = body?.action
 
     if (action === 'charge') {
-      const { oid, contentId, phone } = body
+      const { oid, contentId, phone, amount_wan: bodyAmountWan } = body
       if (!oid || contentId == null || !phone) {
         return NextResponse.json(
           { success: false, error: 'charge 시 oid, contentId, phone 필요' },
@@ -87,6 +87,11 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      // 부가세 제외 금액으로 잔액 누적 (클라이언트에서 amount_wan 전달 시 사용, 없으면 결제액 그대로)
+      const amountToAdd = (bodyAmountWan != null && Number.isFinite(Number(bodyAmountWan)) && Number(bodyAmountWan) > 0 && Number(bodyAmountWan) <= payAmount)
+        ? Math.floor(Number(bodyAmountWan))
+        : payAmount
+
       const phoneStr = String(phone).trim()
 
       // 멱등성: 동일 oid로 이미 충전된 적 있으면 잔액만 반환 (중복 충전 방지)
@@ -96,7 +101,7 @@ export async function POST(request: NextRequest) {
           oid: String(oid),
           content_id: cid,
           phone: phoneStr,
-          amount_wan: payAmount,
+          amount_wan: amountToAdd,
         })
 
       if (logError) {
@@ -126,7 +131,7 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
 
       const current = (row as any)?.balance_wan ?? 0
-      const nextBalance = current + payAmount
+      const nextBalance = current + amountToAdd
 
       const { error: upsertError } = await supabase
         .from('voice_balance')
@@ -280,7 +285,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, balance_wan: nextBalance })
     }
 
-    return NextResponse.json({ success: false, error: 'action: charge | deduct 필요' }, { status: 400 })
+    // 이탈 시 남은 잔액·잔여시간 전부 소진 (연장 결제 잔여가 차감 단위 미만일 때 등)
+    if (action === 'drain_balance') {
+      const { contentId, phone } = body
+      if (contentId == null || !phone) {
+        return NextResponse.json(
+          { success: false, error: 'drain_balance 시 contentId, phone 필요' },
+          { status: 400 }
+        )
+      }
+      const cid = parseInt(String(contentId), 10)
+      if (!Number.isFinite(cid)) {
+        return NextResponse.json({ success: false, error: 'contentId 숫자 필요' }, { status: 400 })
+      }
+      const supabase = getAdminSupabaseClient()
+      const { error: updateError } = await supabase
+        .from('voice_balance')
+        .update({
+          balance_wan: 0,
+          remaining_seconds: 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('content_id', cid)
+        .eq('phone', String(phone).trim())
+      if (updateError) {
+        return NextResponse.json({ success: false, error: updateError.message }, { status: 500 })
+      }
+      return NextResponse.json({ success: true, balance_wan: 0, remaining_seconds: 0 })
+    }
+
+    return NextResponse.json({ success: false, error: 'action: charge | deduct | drain_balance 필요' }, { status: 400 })
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e?.message || '서버 오류' }, { status: 500 })
   }

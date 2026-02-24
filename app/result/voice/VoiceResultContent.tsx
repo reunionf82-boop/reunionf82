@@ -387,12 +387,13 @@ export default function VoiceResultContent() {
         {(() => {
           const chargeOpt = Array.isArray(h.contentData?.voice_time_options) ? (h.contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
           if (!chargeOpt) return null
-          const rateSeconds = chargeOpt.rate_seconds ?? 12
-          const rateWon = chargeOpt.rate_won ?? 19
+          const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
+          const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
+          const rateText = rateSeconds > 0 && rateWon > 0 ? ` (차감주기 ${rateSeconds}초당 ${rateWon}원)` : ''
           return (h.balanceWan ?? 0) >= 0 ? (
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
               잔여금액 <span className="font-bold text-violet-600">{(h.balanceWan ?? 0).toLocaleString()}원</span>
-              {' '}(차감주기 {rateSeconds}초당 {rateWon}원)
+              {rateText}
             </div>
           ) : null
         })()}
@@ -612,12 +613,13 @@ export default function VoiceResultContent() {
               {/* 현재 잔액 (충전식) - 우측 상단에 시간 표시 있음. 어드민 시간상품 차감주기·차감금액 표시 */}
               {(() => {
                 const chargeOpt = Array.isArray(h.contentData?.voice_time_options) ? (h.contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
-                const rateSeconds = chargeOpt?.rate_seconds ?? 12
-                const rateWon = chargeOpt?.rate_won ?? 19
+                const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
+                const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
+                const rateText = rateSeconds > 0 && rateWon > 0 ? ` (차감주기 ${rateSeconds}초당 ${rateWon}원)` : ''
                 return (h.balanceWan ?? 0) >= 0 ? (
                   <p className="text-sm text-gray-600 mb-4">
                     잔여금액 <span className="font-bold text-violet-600">{(h.balanceWan ?? 0).toLocaleString()}원</span>
-                    {' '}(차감주기 {rateSeconds}초당 {rateWon}원)
+                    {rateText}
                   </p>
                 ) : null
               })()}
@@ -627,10 +629,10 @@ export default function VoiceResultContent() {
               const opts = Array.isArray(h.contentData?.voice_time_options) ? h.contentData.voice_time_options : []
               const extensionOpts = opts.filter((o: any) => o?.type === 'extension' || (o?.price > 0 && o?.type !== 'charge' && o?.type !== 'default'))
               const chargeOpt = opts.find((o: any) => o?.type === 'charge') as { rate_seconds?: number; rate_won?: number; price?: number; label?: string } | undefined
-              const rateSeconds = chargeOpt?.rate_seconds ?? 12
-              const rateWon = chargeOpt?.rate_won ?? 19
+              const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
+              const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
               const chargePrice = Number(chargeOpt?.price) ?? 1000
-              const chargeLabel = (chargeOpt?.label && String(chargeOpt.label).trim()) ? String(chargeOpt.label).trim() : `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)`
+              const chargeLabel = (chargeOpt?.label && String(chargeOpt.label).trim()) ? String(chargeOpt.label).trim() : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` : `${chargePrice.toLocaleString()}원 충전`)
               return (extensionOpts.length > 0 || true) ? (
               <div className="space-y-2 mb-5">
                 {extensionOpts.map((opt: { minutes: number; seconds?: number; price: number; label: string }, idx: number) => {
@@ -926,7 +928,7 @@ export default function VoiceResultContent() {
             <div className="p-6">
               <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
                 <p className="text-gray-700 text-sm leading-relaxed">
-                  소리와 텍스트를 저장하면 나중에 다시 들어서 들을 수 있습니다. 저장하고 나가시겠어요?
+                  소리와 텍스트를 저장하면 나중에 다시 들어서 들을 수 있습니다. <strong>음성 녹음(나의 이용내역 다시듣기)</strong>을 남기려면 반드시 아래 &quot;저장하고 나가기&quot;를 눌러 주세요. 저장하고 나가시겠어요?
                 </p>
               </div>
               <div className="space-y-2">

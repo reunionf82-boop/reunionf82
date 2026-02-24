@@ -23,6 +23,7 @@ import { audioContext, base64ToArrayBuffer } from '@/lib/voice-mvp/genai-live/ut
 import VolMeterWorket from '@/lib/voice-mvp/genai-live/worklets/vol-meter'
 import { Modality } from '@google/genai/web'
 import { computeManseFromFormInput } from '@/lib/manse-ryeok'
+import { generateOrderId } from '@/lib/payment-utils'
 
 /* ── 상수 ────────────────────────────────── */
 const LIVE_MODEL_FALLBACK = 'gemini-live-2.5-flash-native-audio'
@@ -37,7 +38,7 @@ const TTS_INTERRUPT_VOLUME_FACTOR = 1.2
 /** TTS 중단 디바운스(ms): 이 시간 이상 연속으로 기준 초과 시에만 중단 (순간 스파이크 무시). */
 const TTS_INTERRUPT_DEBOUNCE_MS = 120
 /** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. 낮으면 말 끊김, 높으면 반응이 느려짐. */
-const DCC_SILENCE_END_MS = 250
+const DCC_SILENCE_END_MS = 400
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
 /** 대화중 소리 연타 방지 쿨타임(ms). 이 간격 동안은 재생하지 않음 */
@@ -280,6 +281,8 @@ export function useVoiceResult() {
   const dccVadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** 볼륨이 interruptThreshold 초과한 시각. DEBOUNCE_MS 이상 유지 시에만 TTS 중단 */
   const dccInterruptAboveSinceRef = useRef<number | null>(null)
+  /** 사용자 위치 기반 날씨 블록 (세션당 1회 fetch, LLM context 주입용) */
+  const weatherBlockRef = useRef<string>('')
   const closingForSwapRef = useRef(false)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** AI 발화 종료 시각. 스피커 에코·볼륨 decay로 타이머가 무효화되는 것을 방지. 종료 직후 3초간은 볼륨으로 clear 안 함 (3초 침묵 타이머 전체 커버) */
@@ -343,7 +346,7 @@ export function useVoiceResult() {
   micSensitivityRef.current = micSensitivity
   /** 5회 이상 방문 시 걱정/잔소리 톤이므로 침묵깨기 미발동 */
   const skipSilenceBreakRef = useRef(false)
-  skipSilenceBreakRef.current = isPpoingAttributes(contentData) && visitCountToday >= 5
+  skipSilenceBreakRef.current = true // 침묵깨기 비활성화 (기존: isPpoingAttributes(contentData) && visitCountToday >= 5)
   /** 보이스 화면 시작 시점 KST(한 번 고정). 공수 시 이미 지나간 시간대는 공수하지 않도록 사용 */
   const sessionStartKstRef = useRef<Date | null>(null)
 
@@ -409,6 +412,7 @@ export function useVoiceResult() {
         } else {
           // sessionStorage에 시간 없음: 잔여금액으로 상담 진입 시 balance에서 이용시간 계산
           const phone = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
+          let usedBalancePath = false // 잔여금액으로 진입해 차감 단위 미만이면 secs=0 → 기본시간 부여하지 않음
           if (phone) {
             try {
               const balRes = await fetch(`/api/voice/balance?contentId=${encodeURIComponent(cid)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
@@ -416,19 +420,23 @@ export function useVoiceResult() {
                 const balData = await balRes.json()
                 const balanceWan = typeof (balData as any)?.balance_wan === 'number' ? (balData as any).balance_wan : 0
                 if (balanceWan > 0) {
+                  usedBalancePath = true
                   const chargeOpt = opts.find((o: any) => o?.type === 'charge')
-                  const rateSec = Math.max(1, Number(chargeOpt?.rate_seconds) || 12)
-                  const rateWon = Math.max(1, Number(chargeOpt?.rate_won) || 19)
-                  secs = Math.floor(balanceWan / rateWon) * rateSec
+                  const rateSec = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
+                  const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
+                  if (rateWon > 0 && rateSec > 0) secs = Math.floor(balanceWan / rateWon) * rateSec
                   if (secs > 0) {
                     console.log('[VoiceResult] voiceMinutes from balance:', Math.floor(secs / 60), '(balance_wan:', balanceWan, 'rate:', rateSec, 's/', rateWon, 'won)')
                     enteredWithBalanceRef.current = true
+                  } else {
+                    console.log('[VoiceResult] balance insufficient for one deduction unit (balance_wan:', balanceWan, '< rate_won:', rateWon, ') → 0 min, no default time')
                   }
                 }
               }
             } catch { /* ignore */ }
           }
-          if (secs <= 0) secs = defaultSecs
+          // 잔여금액 경로에서 차감 단위 미만으로 0분이 된 경우 기본시간 부여하지 않음
+          if (secs <= 0 && !usedBalancePath) secs = defaultSecs
         }
         const voiceMin = Math.floor(secs / 60)
         voiceMinutesRef.current = voiceMin
@@ -523,6 +531,16 @@ export function useVoiceResult() {
     })()
   }, [])
 
+  /* ── 마운트 시 날씨 정보 1회 fetch (LLM context 주입용) ── */
+  useEffect(() => {
+    fetch('/api/voice/weather')
+      .then((r) => r.json())
+      .then((d: { weatherBlock?: string }) => {
+        if (d?.weatherBlock) weatherBlockRef.current = d.weatherBlock
+      })
+      .catch(() => { /* 실패해도 무시 — 날씨 없이 기존대로 동작 */ })
+  }, [])
+
   /* ── 자동 연결 (페이지 진입 시 버튼 없이 바로 시작) ── */
   const autoConnectTriedRef = useRef(false)
   useEffect(() => {
@@ -548,8 +566,12 @@ export function useVoiceResult() {
       const password = sessionStorage.getItem('payment_password') || ''
       const contentTitle = contentData?.content_name || '음성 상담'
       const cid = contentIdRef.current ? parseInt(contentIdRef.current, 10) : null
-      // sendBeacon은 FormData 또는 Blob만 가능 → JSON Blob 사용
-      const payload = JSON.stringify({
+      // 잔여시간이 1블록(rate_seconds) 초과면 잔액 유지, 이하일 때만 이탈 시 소진 (12초보다 큰 잔여에선 0원으로 만들면 안 됨)
+      const opts = Array.isArray(contentData?.voice_time_options) ? contentData.voice_time_options : []
+      const chargeOpt = opts.find((o: any) => o?.type === 'charge')
+      const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
+      const shouldDrainBalance = (useBalanceModeRef.current || enteredWithBalanceRef.current) && cid != null && !!phone && rateSeconds > 0 && remainingSeconds <= rateSeconds
+      const payloadObj: Record<string, unknown> = {
         title: contentTitle,
         html: '', // NOT NULL 제약 대응
         result_type: 'voice',
@@ -558,12 +580,12 @@ export function useVoiceResult() {
         voice_duration_seconds: totalSeconds - remainingSeconds > 0 ? totalSeconds - remainingSeconds : null,
         content_id: cid,
         userName,
-        // 추가: credentials 정보 (서버에서 user_credentials 생성용)
         _beacon_phone: phone,
         _beacon_password: password,
-        // 이번 세션에서 안부로 물어본 항목 (서버에서 voice_summary_asked 기록용)
         _beacon_injected_summary_item_refs: injectedSummaryItemRefsRef.current || [],
-      })
+      }
+      if (shouldDrainBalance) payloadObj._beacon_drain_balance = true
+      const payload = JSON.stringify(payloadObj)
       const blob = new Blob([payload], { type: 'application/json' })
       navigator.sendBeacon('/api/saved-results/save-voice-beacon', blob)
       console.log('[VoiceResult] beacon save sent')
@@ -831,7 +853,7 @@ ${manseText && manseText.trim() ? manseText.trim() : '(만세력 정보 없음)'
     const commonContextBlock = `${getKstTimeInstructionBlock(sessionKst)}
 - 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}
 - 공수(운세 말하기) 시 이미 지나간 시간대는 공수하지 말 것. 위 현재 시각을 기준으로 그 이후 시간만 공수할 것.
-
+${weatherBlockRef.current ? `\n${weatherBlockRef.current}\n` : ''}
 `
     // 방문 빈도·사계절·환기: 뿌잉(8006) 전용 (오늘 온 횟수만 참조)
     let visitBlock = ''
@@ -1661,19 +1683,18 @@ ${seasonBlock}
     const onData = (base64: string) => { dccChunksRef.current.push(base64) }
     const onVolume = (vol: number) => {
       setInVolume(vol)
-      if (dccSendingRef.current) return
-      if (vol > threshold) {
-        // 끼어들기: AI 재생 중 볼륨이 기준 초과 250ms 유지 시 TTS 중단 (첫 인사 턴 포함)
-        if (isAiSpeakingRef.current && vol > interruptThreshold) {
-          const now = Date.now()
-          if (dccInterruptAboveSinceRef.current === null) dccInterruptAboveSinceRef.current = now
-          else if (now - dccInterruptAboveSinceRef.current >= TTS_INTERRUPT_DEBOUNCE_MS) {
-            stopDccPlayback(true)
-            dccInterruptAboveSinceRef.current = null
-          }
-        } else if (vol <= interruptThreshold) {
+      if (isAiSpeakingRef.current && vol > interruptThreshold) {
+        const now = Date.now()
+        if (dccInterruptAboveSinceRef.current === null) dccInterruptAboveSinceRef.current = now
+        else if (now - dccInterruptAboveSinceRef.current >= TTS_INTERRUPT_DEBOUNCE_MS) {
+          stopDccPlayback(true)
           dccInterruptAboveSinceRef.current = null
         }
+      } else if (vol <= interruptThreshold) {
+        dccInterruptAboveSinceRef.current = null
+      }
+      if (dccSendingRef.current) return
+      if (vol > threshold) {
         dccInSpeechRef.current = true
         dccSilenceStartRef.current = null
         if (dccVadTimerRef.current) {
@@ -1719,8 +1740,9 @@ ${seasonBlock}
     const chargeOpt = data?.voice_time_options && Array.isArray(data.voice_time_options)
       ? (data.voice_time_options as any[]).find((o: any) => o?.type === 'charge')
       : null
-    const rateSeconds = Math.max(1, chargeOpt?.rate_seconds ?? 12)
-    const rateWon = Math.max(1, chargeOpt?.rate_won ?? 19)
+    const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
+    const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
+    if (!rateSeconds || !rateWon) return
     useBalanceModeRef.current = true
     balanceDeductIntervalRef.current = setInterval(async () => {
       if (!useBalanceModeRef.current) return
@@ -2472,7 +2494,7 @@ ${seasonBlock}
   const [showFreeExtendBlockedPopup, setShowFreeExtendBlockedPopup] = useState(false)
   const [freeExtendBlockedRemainingMs, setFreeExtendBlockedRemainingMs] = useState(0)
 
-  /* ── 1000원 충전식 잔액 (12초당 19원 차감) ── */
+  /* ── 1000원 충전식 잔액: 어드민 /admin/form/voice 시간 상품섹션의 차감 주기(초)·차감 금액(원)만 사용 (하드코딩 없음) ── */
   const [balanceWan, setBalanceWan] = useState<number>(0)
   const useBalanceModeRef = useRef(false)
   const balanceDeductIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -2540,7 +2562,6 @@ ${seasonBlock}
         return
       }
 
-      const { generateOrderId } = await import('@/lib/payment-utils')
       const oid = generateOrderId()
       const cid = contentIdRef.current
       const paymentMethod = paymentMethodOverride ?? (sessionStorage.getItem('payment_method') || 'card')
@@ -2637,7 +2658,7 @@ ${seasonBlock}
               const chargeRes = await fetch('/api/voice/balance', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'charge', oid: successOid, contentId: cid, phone: phoneNumber }),
+                body: JSON.stringify({ action: 'charge', oid: successOid, contentId: cid, phone: phoneNumber, amount_wan: option.price }),
               })
               const chargeData = await chargeRes.json()
               if (chargeData?.success && typeof chargeData.balance_wan === 'number') {
@@ -2646,13 +2667,13 @@ ${seasonBlock}
             } catch (e) {
               console.error('[VoiceResult] balance charge api error:', e)
             }
-            // 충전차감: 결제 금액으로 산출한 시간만큼 타이머에 한 번에 추가 (rate_seconds당 rate_won원)
+            // 충전 시 추가 시간: 어드민 시간상품 charge의 충전시간(minutes/seconds) 사용 (부가세 포함 결제액으로 계산하지 않음)
             const chargeOpt = contentData?.voice_time_options && Array.isArray(contentData.voice_time_options)
               ? (contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge')
               : null
-            const rateSeconds = Math.max(1, chargeOpt?.rate_seconds ?? 12)
-            const rateWon = Math.max(1, chargeOpt?.rate_won ?? 19)
-            const addSec = Math.floor((Number(option.price) / rateWon) * rateSeconds)
+            const addSec = chargeOpt != null
+              ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0)
+              : 0
             if (addSec > 0) {
               setRemainingSeconds((prev) => prev + addSec)
               setTotalSeconds((prev) => prev + addSec)
@@ -2837,8 +2858,9 @@ ${seasonBlock}
     const chargeOpt = contentData?.voice_time_options && Array.isArray(contentData.voice_time_options)
       ? (contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge')
       : null
-    const rateSeconds = Math.max(1, chargeOpt?.rate_seconds ?? 12)
-    const rateWon = Math.max(1, chargeOpt?.rate_won ?? 19)
+    const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
+    const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
+    if (!rateSeconds || !rateWon) return
     try {
       const res = await fetch('/api/voice/balance', {
         method: 'POST',
@@ -2915,6 +2937,27 @@ ${seasonBlock}
     console.log('[VoiceResult] saveConversation start: msgs=', msgs.length, 'audioChunks=', audioChunksRef.current.length)
 
     try {
+      // 잔액 모드 이탈 시: 잔여시간이 1블록(rate_seconds) 초과면 잔액 유지, 이하일 때만 소진 (12초보다 큰 잔여에선 0원으로 만들면 안 됨)
+      const rem = remainingSecondsRef.current
+      const cidSave = contentIdRef.current ? parseInt(contentIdRef.current, 10) : null
+      const phoneSave = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
+      const optsSave = Array.isArray(contentData?.voice_time_options) ? contentData.voice_time_options : []
+      if ((useBalanceModeRef.current || enteredWithBalanceRef.current) && cidSave != null && phoneSave && optsSave.length > 0) {
+        const chargeOptSave = (optsSave as any[]).find((o: any) => o?.type === 'charge')
+        const rateSecondsSave = chargeOptSave != null && Number(chargeOptSave.rate_seconds) > 0 ? Number(chargeOptSave.rate_seconds) : 0
+        if (rateSecondsSave > 0 && rem <= rateSecondsSave) {
+          try {
+            await fetch('/api/voice/balance', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'drain_balance', contentId: cidSave, phone: phoneSave }),
+            })
+          } catch (e: any) {
+            console.warn('[VoiceResult] drain_balance on leave:', e?.message)
+          }
+        }
+      }
+
       let voiceAudioUrl: string | null = null
       /** 녹음 파일 실제 재생 길이(초). 없으면 세션 타이머로 대체 */
       let recordedDurationSeconds: number | null = null
@@ -3114,11 +3157,24 @@ ${seasonBlock}
     disconnect()
   }, [disconnect])
 
-  const handleLeaveWithoutSave = useCallback(() => {
+  const handleLeaveWithoutSave = useCallback(async () => {
     setShowLeaveConfirmModal(false)
     setIsNavigatingAway(true)
     stopAllTTSRef.current()
     disconnectInternalRef.current?.(true)
+    const cid = contentIdRef.current ? parseInt(contentIdRef.current, 10) : null
+    const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
+    if ((useBalanceModeRef.current || enteredWithBalanceRef.current) && cid != null && phone) {
+      try {
+        await fetch('/api/voice/balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'drain_balance', contentId: cid, phone }),
+        })
+      } catch {
+        /* 소진 실패해도 나가기 진행 */
+      }
+    }
     try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
     router.push('/form')
   }, [router])

@@ -1143,7 +1143,9 @@ export default function VoiceAdminForm() {
                             className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" placeholder="1000" />
                         </div>
                       </div>
-                      <div className="flex gap-3 items-end pt-1 border-t border-gray-700">
+                      <div className="pt-1 border-t border-gray-700">
+                        <p className="text-gray-500 text-xs mb-2">※ 차감 주기·차감 금액: 상담 화면 표시 및 잔액 차감에 사용</p>
+                        <div className="flex gap-3 items-end">
                         <div className="w-20">
                           <label className="block text-xs text-gray-400 mb-1">차감 주기(초)</label>
                           <input type="number" min={1} value={opt.rate_seconds} onChange={(e) => h.updateTimeOption(idx, 'rate_seconds', Math.max(1, parseInt(e.target.value, 10) || 12))}
@@ -1156,6 +1158,7 @@ export default function VoiceAdminForm() {
                             className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
                         </div>
                         <span className="text-gray-500 text-sm pb-1.5">원 차감</span>
+                        </div>
                       </div>
                     </div>
                   ) : null

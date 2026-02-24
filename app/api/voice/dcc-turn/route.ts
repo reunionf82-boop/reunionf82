@@ -36,8 +36,8 @@ function isRetryableClaudeError(status: number, body: string): boolean {
 
 const DEEPGRAM_RETRY_MAX = 2
 const DEEPGRAM_RETRY_DELAYS_MS = [1000, 2000]
-/** Deepgram 요청 타임아웃(ms). 너무 짧으면 408 발생 가능 → 45초로 여유 두기 */
-const DEEPGRAM_FETCH_TIMEOUT_MS = 45000
+/** Deepgram 요청 타임아웃(ms). nova-2는 빠르므로 15초면 충분 */
+const DEEPGRAM_FETCH_TIMEOUT_MS = 15000
 const CLAUDE_RETRY_MAX = 2
 const CLAUDE_RETRY_DELAYS_MS = [2000, 5000]
 /** Claude 입력 토큰 절약·rate_limit 예방: 대화 이력 최근 N턴(1턴=user+assistant 2메시지)만 사용 */
@@ -369,6 +369,7 @@ export async function POST(req: NextRequest) {
     if (userTranscript == null && audioBase64) {
       const deepgramKey = process.env.DEEPGRAM_API_KEY
       if (!deepgramKey) {
+        console.error('[dcc-turn] STT(Deepgram) 오류: DEEPGRAM_API_KEY 미설정')
         return NextResponse.json({ success: false, error: 'DEEPGRAM_API_KEY 미설정' }, { status: 500 })
       }
       const audioBuf = Buffer.from(audioBase64, 'base64')
@@ -383,7 +384,7 @@ export async function POST(req: NextRequest) {
         let res: Response
         try {
           res = await fetch(
-            `${DEEPGRAM_URL}?model=nova-3&language=ko&smart_format=true&region=ko`,
+            `${DEEPGRAM_URL}?model=nova-2&language=ko`,
             {
               method: 'POST',
               headers: {
@@ -397,7 +398,9 @@ export async function POST(req: NextRequest) {
         } catch (e) {
           clearTimeout(timeoutId)
           lastBody = (e instanceof Error && e.name === 'AbortError') ? 'Request timeout' : String(e)
+          console.error('[dcc-turn] STT(Deepgram) 요청 예외:', e instanceof Error ? e.message : String(e), 'attempt=', attempt + 1)
           if (attempt === DEEPGRAM_RETRY_MAX) {
+            console.error('[dcc-turn] STT(Deepgram) 재시도 소진 후 실패. lastBody=', lastBody?.slice(0, 200))
             return NextResponse.json(
               { success: false, error: '음성 인식이 일시적으로 지연되었습니다. 잠시 후 다시 말씀해 주세요.' },
               { status: 502 }
@@ -411,15 +414,18 @@ export async function POST(req: NextRequest) {
           try {
             const dg = JSON.parse(lastBody) as { results?: { channels?: { alternatives?: { transcript?: string }[] }[] } }
             userTranscript = dg?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? ''
-          } catch {
+          } catch (parseErr) {
+            console.error('[dcc-turn] STT(Deepgram) 응답 JSON 파싱 실패:', parseErr instanceof Error ? parseErr.message : String(parseErr), 'body=', lastBody?.slice(0, 300))
             userTranscript = ''
           }
           break
         }
+        console.warn('[dcc-turn] STT(Deepgram) 비정상 응답:', res.status, 'body=', lastBody?.slice(0, 300), 'attempt=', attempt + 1)
         if (attempt === DEEPGRAM_RETRY_MAX || !isRetryableDeepgramError(res.status, lastBody)) {
           const userMessage = isRetryableDeepgramError(res.status, lastBody)
             ? '음성 인식이 일시적으로 지연되었습니다. 잠시 후 다시 말씀해 주세요.'
             : '음성 인식을 처리하지 못했습니다. 다시 말씀해 주세요.'
+          console.error('[dcc-turn] STT(Deepgram) 최종 실패. status=', res.status, 'retryable=', isRetryableDeepgramError(res.status, lastBody), 'lastBody=', lastBody?.slice(0, 400))
           return NextResponse.json({ success: false, error: userMessage }, { status: 502 })
         }
       }
@@ -427,6 +433,9 @@ export async function POST(req: NextRequest) {
 
     if (!userTranscript || typeof userTranscript !== 'string' || !userTranscript.trim()) {
       // 무음/인식 실패 시 400 대신 no-op 반환 (클라이언트가 끊기지 않도록)
+      if (audioBase64 && !userTranscriptOverride) {
+        console.warn('[dcc-turn] STT(Deepgram) 결과 없음(무음 또는 인식 실패). userTranscript=', typeof userTranscript === 'string' ? `"${userTranscript.slice(0, 50)}"` : userTranscript)
+      }
       if (ttsMode === 'streaming') {
         const encoder = new TextEncoder()
         const stream = new ReadableStream({
@@ -446,6 +455,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, userTranscript: '', assistantText: '', audioBase64: '' })
     }
 
+    console.log('[dcc-turn] STT(딥그램) 사용자 발화:', userTranscript.trim().slice(0, 500))
     const rawHistory = clientHistory && Array.isArray(clientHistory) ? clientHistory : getOrCreateHistory(sessionId)
     const history = rawHistory.slice(-CLAUDE_HISTORY_MAX_MESSAGES)
     const persona = String((content as any).voice_persona_prompt || '').trim()
@@ -524,6 +534,7 @@ ${emotionTagRule}
         break
       }
       const errBody = await res.text()
+      console.error('[dcc-turn] LLM(Claude) API 비정상 응답:', res.status, 'body=', errBody?.slice(0, 400), 'attempt=', attempt + 1)
       if (attempt === CLAUDE_RETRY_MAX || !isRetryableClaudeError(res.status, errBody)) {
         const userMessage = isRetryableClaudeError(res.status, errBody)
           ? '상담 응답이 바쁩니다. 잠시 후 다시 말씀해 주세요.'
@@ -532,6 +543,7 @@ ${emotionTagRule}
       }
     }
     if (!claudeRes) {
+      console.error('[dcc-turn] LLM(Claude) 응답 없음 (재시도 소진)')
       return NextResponse.json({ success: false, error: '상담 응답을 처리하지 못했습니다. 다시 말씀해 주세요.' }, { status: 502 })
     }
     const cartesiaKey = process.env.CARTESIA_API_KEY
@@ -546,15 +558,14 @@ ${emotionTagRule}
     }
     // ── 스트리밍: Claude 토큰 → Cartesia WS 즉시 전송 (진짜 티키타카) ──
     if (ttsMode === 'streaming') {
-      const contextId = `dcc-${sessionId}-${Date.now()}`
       const encoder = new TextEncoder()
-      const basePayload = {
-        model_id: 'sonic-3',
+      /** 연결마다 context_id를 새로 씀(재연결 시에도) */
+      const basePayloadNoContext = {
+        model_id: 'sonic-3' as const,
         voice: { mode: 'id' as const, id: voiceId },
-        language: 'ko',
+        language: 'ko' as const,
         generation_config: { speed, volume, emotion: primaryEmotion },
         output_format: { container: 'raw' as const, encoding: 'pcm_s16le' as const, sample_rate: CARTESIA_SAMPLE_RATE },
-        context_id: contextId,
         max_buffer_delay_ms: 1500,
       }
 
@@ -625,35 +636,20 @@ ${emotionTagRule}
             finish()
           }
 
-          const ws = new WebSocket(CARTESIA_WS_URL, {
+          let currentContextId = `dcc-${sessionId}-${Date.now()}`
+          let currentWs = new WebSocket(CARTESIA_WS_URL, {
             headers: {
               'Cartesia-Version': CARTESIA_VERSION,
               Authorization: `Bearer ${cartesiaKey}`,
             },
           })
-
           let wsOpen = false
           const pendingSends: string[] = []
-          const sendCartesia = (transcript: string, isFinal: boolean) => {
-            const payload = { ...basePayload, transcript, continue: !isFinal }
-            const msg = JSON.stringify(payload)
-            if (!wsOpen) pendingSends.push(msg)
-            else ws.send(msg)
-          }
+          let sentFinalChunk = false
+          let reconnecting = false
           let fillerSentAt: number | null = null
-          // 맞장구: 주석 해제 시 본문 전 재생. 활성화 시 TTS 끊김/뚝뚝 소리 원인될 수 있어 일단 비활성화
-          // if (!isStartTurn) {
-          //   const filler = DCC_FILLER_PHRASES[Math.floor(Math.random() * DCC_FILLER_PHRASES.length)]
-          //   sendCartesia(filler, false)
-          //   // ws.on('open')에서 실제 전송 시점 기록 → 본문 TTS는 맞장구 끝 + 1초 후 시작
-          // }
-
-          ws.on('open', () => {
-            wsOpen = true
-            if (pendingSends.length > 0) fillerSentAt = Date.now()
-            for (const msg of pendingSends) ws.send(msg)
-            pendingSends.length = 0
-          })
+          let wsSentCount = 0
+          let wsDoneCount = 0
 
           let pcmBuffer = Buffer.alloc(0)
           const flushPcm = () => {
@@ -671,37 +667,103 @@ ${emotionTagRule}
               enqueueAudio(Buffer.from(toFlush))
             }
           }
-          ws.on('message', (raw: Buffer | string) => {
-            const text = typeof raw === 'string' ? raw : raw.toString('utf-8')
+
+          const isAllDone = () => sentFinalChunk && wsDoneCount >= wsSentCount
+
+          const attachWsHandlers = (ws: WebSocket, label: string) => {
+            ws.on('message', (raw: Buffer | string) => {
+              if (ws !== currentWs) return
+              const text = typeof raw === 'string' ? raw : raw.toString('utf-8')
+              try {
+                const msg = JSON.parse(text) as { type?: string; data?: string }
+                if (msg.type === 'chunk' && typeof msg.data === 'string') {
+                  const pcm = Buffer.from(msg.data, 'base64')
+                  if (pcm.length > 0) pushPcm(pcm)
+                  flushPcm()
+                  return
+                }
+                if (msg.type === 'done') {
+                  wsDoneCount++
+                  flushPcm()
+                  console.log(`[dcc-turn] Cartesia(${label}) done ${wsDoneCount}/${wsSentCount} final=${sentFinalChunk}`)
+                  if (isAllDone()) {
+                    console.log(`[dcc-turn] Cartesia(${label}) 모든 청크 완료, 스트림 종료`)
+                    ws.close()
+                    resolveOnce()
+                  }
+                  return
+                }
+              } catch {
+                if (Buffer.isBuffer(raw) && raw.length > 0) pushPcm(raw)
+              }
+            })
+            ws.on('error', (err) => {
+              if (ws !== currentWs) return
+              console.error(`❌ Cartesia(${label}) 에러:`, err)
+              resolveOnce()
+            })
+            ws.on('close', () => {
+              if (ws !== currentWs) return
+              wsOpen = false
+              if (sentFinalChunk) resolveOnce()
+            })
+          }
+
+          const flushPendingSends = (ws: WebSocket) => {
+            if (pendingSends.length === 0) return
+            fillerSentAt = Date.now()
             try {
-              const msg = JSON.parse(text) as { type?: string; data?: string; done?: boolean }
-              if (msg.type === 'chunk' && typeof msg.data === 'string') {
-                const pcm = Buffer.from(msg.data, 'base64')
-                if (pcm.length > 0) pushPcm(pcm)
-                flushPcm()
-                return
+              for (const m of pendingSends) {
+                ws.send(m)
+                wsSentCount++
               }
-              if (msg.type === 'done') {
-                flushPcm()
-                ws.close()
-                resolveOnce()
-                return
+            } catch (_) {}
+            pendingSends.length = 0
+          }
+
+          const sendCartesia = (transcript: string, isFinal: boolean) => {
+            if (isFinal) sentFinalChunk = true
+            const payload = { ...basePayloadNoContext, context_id: currentContextId, transcript, continue: !isFinal }
+            const msg = JSON.stringify(payload)
+            if (currentWs.readyState !== 1 /* OPEN */) {
+              pendingSends.push(msg)
+              if (!reconnecting) {
+                reconnecting = true
+                currentContextId = `dcc-${sessionId}-${Date.now()}`
+                wsSentCount = 0
+                wsDoneCount = 0
+                const newWs = new WebSocket(CARTESIA_WS_URL, {
+                  headers: {
+                    'Cartesia-Version': CARTESIA_VERSION,
+                    Authorization: `Bearer ${cartesiaKey}`,
+                  },
+                })
+                currentWs = newWs
+                attachWsHandlers(newWs, '재연결')
+                newWs.on('open', () => {
+                  wsOpen = true
+                  reconnecting = false
+                  flushPendingSends(newWs)
+                })
+                console.log('[dcc-turn] Cartesia 재연결(나머지 TTS)')
               }
-            } catch {
-              if (Buffer.isBuffer(raw) && raw.length > 0) pushPcm(raw)
+              return
             }
+            try {
+              currentWs.send(msg)
+              wsSentCount++
+            } catch (_) {}
+          }
+
+          const initialWs = currentWs
+          attachWsHandlers(initialWs, '초기')
+          initialWs.on('open', () => {
+            if (currentWs !== initialWs) return
+            wsOpen = true
+            flushPendingSends(initialWs)
           })
-          ws.on('error', (err) => {
-            console.error('❌ Cartesia 에러 발생!:', err)
-            resolveOnce()
-          })
-          ws.on('close', () => {
-            resolveOnce()
-          })
-          // Cartesia: "We close idle WebSocket connections after 5 minutes." (idle = no activity)
-          // 우리는 5분으로 설정해, 긴 답변 중 우리가 먼저 WS를 닫지 않도록 함. 동작 중이면 idle 아님.
           setTimeout(() => {
-            if (ws.readyState !== ws.CLOSED && ws.readyState !== ws.CLOSING) ws.close()
+            if (currentWs.readyState !== currentWs.CLOSED && currentWs.readyState !== currentWs.CLOSING) currentWs.close()
             resolveOnce()
           }, 300000)
 
@@ -725,8 +787,10 @@ ${emotionTagRule}
                   const parsed = JSON.parse(data) as { type?: string; delta?: { type?: string; text?: string } }
                   if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta' && parsed.delta?.text) {
                     const text = parsed.delta.text
+                    if (assistantText.length === 0) process.stdout.write('\n[dcc-turn] LLM(실시간) ')
                     assistantText += text
                     pendingText += text
+                    process.stdout.write(text)
                     for (;;) {
                       const { chunk, rest } = extractChunk(pendingText)
                       if (!chunk) break
@@ -753,15 +817,36 @@ ${emotionTagRule}
               const toSend = sentAny ? ` ${finalText}` : finalText
               sendCartesia(toSend, true)
             } else {
-              sendCartesia('', true)
+              sentFinalChunk = true
+              try {
+                if (currentWs.readyState === 1) {
+                  currentWs.send(JSON.stringify({ ...basePayloadNoContext, context_id: currentContextId, transcript: '', continue: false }))
+                }
+              } catch (_) {}
             }
             assistantText = assistantText.trim()
             if (assistantText) {
+              process.stdout.write('\n')
+              console.log(`[dcc-turn] LLM 출력(Claude, 스트리밍) 완료 | Cartesia sent=${wsSentCount} done=${wsDoneCount}`)
               history.push({ role: 'user', content: userTranscript })
               history.push({ role: 'assistant', content: assistantText })
               if (history.length > 50) history.splice(0, history.length - 50)
             }
-          })().catch(() => resolveOnce())
+            if (isAllDone()) {
+              resolveOnce()
+            } else {
+              setTimeout(() => {
+                if (!finished) {
+                  console.log(`[dcc-turn] Cartesia 완료 대기 타임아웃(30초) | sent=${wsSentCount} done=${wsDoneCount}`)
+                  try { if (currentWs.readyState === 1 || currentWs.readyState === 0) currentWs.close() } catch (_) {}
+                  resolveOnce()
+                }
+              }, 30000)
+            }
+          })().catch((err) => {
+            console.error('[dcc-turn] Claude→Cartesia 파이프라인 오류:', err?.message ?? err)
+            resolveOnce()
+          })
         },
       })
 
@@ -776,6 +861,7 @@ ${emotionTagRule}
     const reader = streamBody.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+    let firstDelta = true
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -789,7 +875,13 @@ ${emotionTagRule}
           try {
             const parsed = JSON.parse(data) as { type?: string; delta?: { type?: string; text?: string } }
             if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta' && parsed.delta?.text) {
-              assistantText += parsed.delta.text
+              if (firstDelta) {
+                process.stdout.write('\n[dcc-turn] LLM(실시간) ')
+                firstDelta = false
+              }
+              const t = parsed.delta.text
+              assistantText += t
+              process.stdout.write(t)
             }
           } catch {
             /* ignore */
@@ -798,8 +890,11 @@ ${emotionTagRule}
       }
     }
     assistantText = assistantText.trim()
+    process.stdout.write('\n')
+    console.log('[dcc-turn] LLM(Claude, batch) 완료')
 
     if (!assistantText) {
+      console.error('[dcc-turn] LLM(Claude) 응답 텍스트 없음 (빈 문자열)')
       return NextResponse.json({ success: false, error: 'Claude 응답이 비어 있습니다.' }, { status: 502 })
     }
 

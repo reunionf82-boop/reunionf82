@@ -70,6 +70,22 @@ export async function POST(request: NextRequest) {
       await linkCredentialsVoice(data.id, _beacon_phone, _beacon_password)
     }
 
+    // 이탈 시 잔액 모드였으면 남은 잔액·잔여시간 전부 소진 (연장 결제 잔여가 차감 단위 미만인 경우 등)
+    if (body._beacon_drain_balance && content_id != null && _beacon_phone) {
+      const { error: drainErr } = await supabase
+        .from('voice_balance')
+        .update({
+          balance_wan: 0,
+          remaining_seconds: 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('content_id', Number(content_id))
+        .eq('phone', String(_beacon_phone).trim())
+      if (drainErr) {
+        console.warn('[save-voice-beacon] drain_balance failed:', drainErr.message)
+      }
+    }
+
     // 음성형: 대화 요약 생성 후 voice_conversation_summaries에 저장 (이미 물어본 항목은 LLM이 다시 넣지 않도록 제외)
     if (data && Array.isArray(finalVoiceMessages) && finalVoiceMessages.length > 0) {
       const phoneNorm = normalizePhoneForVoice(_beacon_phone ?? '')

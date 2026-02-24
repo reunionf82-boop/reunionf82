@@ -16,6 +16,7 @@ import SocialShareButtons from '@/components/SocialShareButtons'
 import SupabaseVideo from '@/components/SupabaseVideo'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
+import { generateOrderId } from '@/lib/payment-utils'
 
 /** 바로이용하기 결제 금액. PG T103(아이템 금액 오류) 시 .env에 NEXT_PUBLIC_SKIP_WAIT_PAY_AMOUNT=1000 등으로 최소 결제 금액에 맞춰 설정 */
 const SKIP_WAIT_PAY_AMOUNT = (() => {
@@ -3116,7 +3117,15 @@ function FormContent() {
     }
 
     // 음성 + 잔여시간/잔여금액 있음 → 아래쪽 메인 버튼("잔여시간/잔여금액으로 상담") 클릭 시 여기서 처리
-    const hasVoiceResidual = content?.content_type === 'voice' && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0))
+    // 잔여금액만 있고 차감 단위 미만(상담가능 0초)이면 진입 불가 → 결제하기로 유도
+    const opts = Array.isArray(content?.voice_time_options) ? content.voice_time_options : []
+    const chargeOpt = opts.find((o: any) => o?.type === 'charge')
+    const rateWon = Math.max(1, Number(chargeOpt?.rate_won) || 19)
+    const rateSeconds = Math.max(1, Number(chargeOpt?.rate_seconds) || 12)
+    const usableSecFromBalance = voiceBalanceWan != null && voiceBalanceWan > 0 && rateWon > 0
+      ? Math.floor(voiceBalanceWan / rateWon) * rateSeconds
+      : 0
+    const hasVoiceResidual = content?.content_type === 'voice' && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0 && usableSecFromBalance > 0))
     if (hasVoiceResidual) {
       const phone = sessionStorage.getItem('payment_phone')
       if (!phone) {
@@ -3178,7 +3187,6 @@ function FormContent() {
         return
       }
       setSubmitting(true)
-      const { generateOrderId } = await import('@/lib/payment-utils')
       const oid = generateOrderId()
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
       if (typeof window !== 'undefined') {
@@ -3390,7 +3398,6 @@ function FormContent() {
         setShowPaymentPopup(false)
         setSubmitting(false)
         setPaymentProcessingMethod(null)
-        const { generateOrderId } = await import('@/lib/payment-utils')
         const oid = generateOrderId()
         const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
         if (typeof window !== 'undefined') {
@@ -3473,7 +3480,6 @@ function FormContent() {
       }
 
       // 1. 주문번호 생성 (가장 먼저 수행)
-      const { generateOrderId } = await import('@/lib/payment-utils')
       const oid = generateOrderId()
       
       // 전화번호 조합
@@ -3866,7 +3872,6 @@ function FormContent() {
     setShowSkipWaitPopup(false)
     setSubmitting(true)
     try {
-      const { generateOrderId } = await import('@/lib/payment-utils')
       const oid = generateOrderId()
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
       const skipWaitOption = { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' }
@@ -4068,7 +4073,6 @@ function FormContent() {
     }
     setSubmitting(true)
     try {
-      const { generateOrderId } = await import('@/lib/payment-utils')
       const oid = generateOrderId()
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
       const skipWaitOption = { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' }
@@ -4194,7 +4198,6 @@ function FormContent() {
 
     setSubmitting(true)
     try {
-      const { generateOrderId } = await import('@/lib/payment-utils')
       const oid = generateOrderId()
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
 
@@ -7593,7 +7596,10 @@ function FormContent() {
                 const priceStr = priceVal != null && String(priceVal).trim() !== '' ? String(priceVal).replace(/[^0-9]/g, '') : null
                 const priceNum = priceStr !== null ? parseInt(priceStr, 10) : null
                 const isExplicitlyFree = content != null && priceNum !== null && Number.isFinite(priceNum) && priceNum <= 0
-                const hasResidual = content?.content_type === 'voice' && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0))
+                const chargeOptBtn = Array.isArray(content?.voice_time_options) ? (content.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
+                const rateWonBtn = Math.max(1, Number(chargeOptBtn?.rate_won) ?? 19)
+                const secFromBalanceBtn = voiceBalanceWan != null && voiceBalanceWan > 0 && rateWonBtn > 0 ? Math.floor(voiceBalanceWan / rateWonBtn) * (Math.max(1, Number(chargeOptBtn?.rate_seconds) || 12)) : 0
+                const hasResidual = content?.content_type === 'voice' && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0 && secFromBalanceBtn > 0))
                 const mainButtonText = submitting
                   ? '처리 중...'
                   : hasResidual
