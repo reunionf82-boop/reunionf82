@@ -90,6 +90,34 @@ function isIOSDevice() {
   return isIPhoneOrIPad || isIPadOSDesktopUA
 }
 
+function isAndroidDevice() {
+  if (typeof navigator === 'undefined') return false
+  return /Android/i.test(navigator.userAgent || '')
+}
+
+/** iOS: 스피커 출력(통화 수신구 대신). audioSession.type = 'playback' 사용.
+ * Android: 시간연장 팝업 등으로 오디오가 이어피스로 바뀌는 것 완화 — AudioContext.setSinkId로 출력 재지정 시도. */
+function forceSpeakerOutput(audioContextRef: AudioContext | null) {
+  if (typeof window === 'undefined') return
+  const nav = navigator as Navigator & { audioSession?: { type: string } }
+  if (isIOSDevice() && nav.audioSession) {
+    try {
+      nav.audioSession.type = 'playback'
+    } catch { /* ignore */ }
+  }
+  if (isAndroidDevice() && audioContextRef) {
+    const ctx = audioContextRef as AudioContext & { setSinkId?: (id: string) => Promise<void> }
+    if (typeof ctx.setSinkId === 'function') {
+      ctx.setSinkId('').catch(() => {})
+    }
+  }
+}
+
+function setPlaysInlineForSpeaker(el: HTMLAudioElement) {
+  el.setAttribute('playsinline', 'true')
+  el.setAttribute('webkit-playsinline', 'true')
+}
+
 /* ── PCM16 base64 → WAV Blob 변환 ────────── */
 function pcm16Base64ToWavBlob(chunks: string[], sampleRate = DCC_PCM_SAMPLE_RATE): Blob {
   // base64 → raw PCM bytes
@@ -465,6 +493,7 @@ export function useVoiceResult() {
           : (c?.voice_bubble_sound_probability_pct ?? 0)
         if (c?.voice_start_sound_url) {
           const startAudio = new Audio()
+          setPlaysInlineForSpeaker(startAudio)
           startAudio.crossOrigin = 'anonymous'
           startAudio.src = getAudioSrc(c.voice_start_sound_url)
           startAudio.preload = 'auto'
@@ -474,6 +503,7 @@ export function useVoiceResult() {
         }
         if (c?.voice_end_sound_url) {
           const endAudio = new Audio()
+          setPlaysInlineForSpeaker(endAudio)
           endAudio.crossOrigin = 'anonymous'
           endAudio.preload = 'auto'
           endAudio.addEventListener('error', () => {})
@@ -486,6 +516,7 @@ export function useVoiceResult() {
           .filter((s: any) => s?.url)
           .map((s: any) => {
             const a = new Audio()
+            setPlaysInlineForSpeaker(a)
             a.crossOrigin = 'anonymous'
             a.src = getAudioSrc(s.url)
             a.preload = 'auto'
@@ -706,6 +737,7 @@ export function useVoiceResult() {
     if (!AudioCtx) return null
     if (!dccPcmContextRef.current) {
       dccPcmContextRef.current = new AudioCtx({ sampleRate: DCC_PCM_SAMPLE_RATE })
+      forceSpeakerOutput(dccPcmContextRef.current)
     }
     if (!dccStreamerRef.current) {
       dccStreamerRef.current = new AudioStreamer(dccPcmContextRef.current, {
@@ -925,6 +957,8 @@ ${seasonBlock}
     extendPopupOpenRef.current = showExtendPopup
     // popup이 실제로 열리거나 닫힐 때만 처리 (connected 변경 시엔 무시)
     if (showExtendPopup && !wasOpen) {
+      // Android: 팝업이 뜨면 시스템이 스피커→이어피스로 바꾸는 경우가 있음. 출력을 다시 스피커로 고정 시도.
+      forceSpeakerOutput(dccPcmContextRef.current)
       extendPopupMutedRestoreRef.current = muted
       setMuted(true)
       recorderRef.current?.stop()
@@ -942,7 +976,8 @@ ${seasonBlock}
       setOutVolume(0)
       isAiSpeakingRef.current = false
     } else if (!showExtendPopup && wasOpen) {
-      // popup이 닫힐 때만 recorder 재시작 (connected 변경엔 반응하지 않음)
+      // Android: 팝업 닫을 때도 스피커 출력 재적용
+      forceSpeakerOutput(dccPcmContextRef.current)
       setMuted(extendPopupMutedRestoreRef.current)
       if (connected) recorderRef.current?.start().catch(() => {})
     }
@@ -1614,6 +1649,7 @@ ${seasonBlock}
         if (dccOutVolumeIntervalRef.current) clearInterval(dccOutVolumeIntervalRef.current)
         dccOutVolumeIntervalRef.current = setInterval(() => setOutVolume(0.35), 80)
         const audio = new Audio(`data:audio/wav;base64,${audioB64}`)
+        setPlaysInlineForSpeaker(audio)
         dccCurrentAudioRef.current = audio
         const clearOutVol = () => {
           if (isStartTurn) dccFirstTurnPlayingRef.current = false
@@ -1846,11 +1882,14 @@ ${seasonBlock}
   const connect = useCallback(async () => {
     setError('')
     startSoundPlayedRef.current = false // 이번 연결에서 ready 시 종소리 1회 재생
-    // iOS: 사용자 제스처 직후 무음 재생으로 오디오 세션 활성화 → 스피커 모드로 들리게 (panana와 동일)
-    if (isIOSDevice() && typeof window !== 'undefined') {
-      const unlock = new Audio()
-      unlock.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
-      void unlock.play().catch(() => {})
+    // iOS: 오디오 세션을 playback으로 고정 → 스피커로 출력(통화 수신구 아님). panana 참고.
+    if (typeof window !== 'undefined') {
+      forceSpeakerOutput(null)
+      if (isIOSDevice()) {
+        const unlock = new Audio()
+        unlock.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+        void unlock.play().catch(() => {})
+      }
     }
     try {
       // 중복 connect 방지: CONNECTING 상태에서도 재호출되면 소켓이 교체되어 init 누락 가능
