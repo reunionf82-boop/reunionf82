@@ -990,7 +990,7 @@ export default function VoiceResultContent() {
             <div className="p-6">
               <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
                 <p className="text-gray-700 text-sm leading-relaxed">
-                  상담이 끝났습니다. 저장된 내용은 나중에 다시 들어서 들을 수 있습니다.
+                  상담이 끝났습니다. 저장된 내용은 나중에 다시 들을 수 있습니다.
                 </p>
               </div>
               <div className="space-y-2">
