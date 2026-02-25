@@ -95,21 +95,13 @@ function isAndroidDevice() {
   return /Android/i.test(navigator.userAgent || '')
 }
 
-/** iOS: 스피커 출력(통화 수신구 대신). audioSession.type = 'playback' 사용.
- * Android: 시간연장 팝업 등으로 오디오가 이어피스로 바뀌는 것 완화 — AudioContext.setSinkId로 출력 재지정 시도. */
+/** Android: 시간연장 팝업 등으로 오디오가 이어피스로 바뀌는 것 완화 — AudioContext.setSinkId로 출력 재지정 시도.
+ * iOS에서는 audioSession.type = 'playback'을 쓰면 소리가 안 나는 경우가 있어 적용하지 않음. */
 function forceSpeakerOutput(audioContextRef: AudioContext | null) {
-  if (typeof window === 'undefined') return
-  const nav = navigator as Navigator & { audioSession?: { type: string } }
-  if (isIOSDevice() && nav.audioSession) {
-    try {
-      nav.audioSession.type = 'playback'
-    } catch { /* ignore */ }
-  }
-  if (isAndroidDevice() && audioContextRef) {
-    const ctx = audioContextRef as AudioContext & { setSinkId?: (id: string) => Promise<void> }
-    if (typeof ctx.setSinkId === 'function') {
-      ctx.setSinkId('').catch(() => {})
-    }
+  if (typeof window === 'undefined' || !isAndroidDevice() || !audioContextRef) return
+  const ctx = audioContextRef as AudioContext & { setSinkId?: (id: string) => Promise<void> }
+  if (typeof ctx.setSinkId === 'function') {
+    ctx.setSinkId('').catch(() => {})
   }
 }
 
@@ -1882,14 +1874,11 @@ ${seasonBlock}
   const connect = useCallback(async () => {
     setError('')
     startSoundPlayedRef.current = false // 이번 연결에서 ready 시 종소리 1회 재생
-    // iOS: 오디오 세션을 playback으로 고정 → 스피커로 출력(통화 수신구 아님). panana 참고.
-    if (typeof window !== 'undefined') {
-      forceSpeakerOutput(null)
-      if (isIOSDevice()) {
-        const unlock = new Audio()
-        unlock.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
-        void unlock.play().catch(() => {})
-      }
+    // iOS: 사용자 제스처 직후 무음 재생으로 오디오 세션 활성화 (스피커/이어피스는 세션 설정 안 함 — playback 설정 시 소리 안 나는 경우 있음)
+    if (isIOSDevice() && typeof window !== 'undefined') {
+      const unlock = new Audio()
+      unlock.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+      void unlock.play().catch(() => {})
     }
     try {
       // 중복 connect 방지: CONNECTING 상태에서도 재호출되면 소켓이 교체되어 init 누락 가능
