@@ -156,16 +156,33 @@ function buildWeatherBlock(city: string, current: OWMCurrent | null, forecast: O
   return lines.join('\n')
 }
 
+/** LLM이 반드시 따를 한 줄 요약. "오늘 서울: 맑음, 14°C, 강수 없음" 형태 */
+function buildWeatherSummary(city: string, current: OWMCurrent | null): string {
+  if (!current) return ''
+  const temp = current.main?.temp != null ? Math.round(current.main.temp) : null
+  const desc = current.weather?.[0]?.description ?? '알 수 없음'
+  const rainMm: number = (current.rain as { '1h'?: number } | undefined)?.['1h'] ?? 0
+  const snowMm: number = (current.snow as { '1h'?: number } | undefined)?.['1h'] ?? 0
+  const hasPrecip = rainMm > 0 || snowMm > 0
+  const tempStr = temp != null ? `, ${temp}°C` : ''
+  return `오늘 ${city}: ${desc}${tempStr}, 강수 ${hasPrecip ? '있음' : '없음'}.`
+}
+
 export async function GET(request: NextRequest) {
   const rawKey = process.env.OPENWEATHERMAP_API_KEY ?? process.env.OPENWEATHER_API_KEY ?? ''
   const apiKey = rawKey.trim()
   if (!apiKey) {
-    return NextResponse.json({ city: '', weatherBlock: '' })
+    return NextResponse.json({ city: '', weatherBlock: '', weatherSummary: '' })
   }
+
+  const url = new URL(request.url)
+  const forceSeoul = url.searchParams.get('base') === 'seoul' || url.searchParams.get('city') === 'seoul'
 
   try {
     const ip = getClientIp(request)
-    const geo = await ipToGeo(ip)
+    const geo = forceSeoul
+      ? { lat: SEOUL_LAT, lon: SEOUL_LON, city: '서울' }
+      : await ipToGeo(ip)
 
     const base = 'https://api.openweathermap.org/data/2.5'
     const units = 'metric'
@@ -198,12 +215,15 @@ export async function GET(request: NextRequest) {
     }
 
     if (!current && !forecast) {
-      return NextResponse.json({ city: geo.city, weatherBlock: '' })
+      return NextResponse.json({ city: geo.city, weatherBlock: '', weatherSummary: '' })
     }
 
     const weatherBlock = buildWeatherBlock(geo.city, current, forecast)
-    return NextResponse.json({ city: geo.city, weatherBlock })
+    const weatherSummary = buildWeatherSummary(geo.city, current)
+    const logPreview = weatherBlock.slice(0, 220).replace(/\n/g, ' ')
+    console.log('[voice/weather] 주입:', geo.city, '|', logPreview + (weatherBlock.length > 220 ? '...' : ''))
+    return NextResponse.json({ city: geo.city, weatherBlock, weatherSummary })
   } catch {
-    return NextResponse.json({ city: '', weatherBlock: '' })
+    return NextResponse.json({ city: '', weatherBlock: '', weatherSummary: '' })
   }
 }

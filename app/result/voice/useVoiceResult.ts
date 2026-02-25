@@ -38,7 +38,7 @@ const TTS_INTERRUPT_VOLUME_FACTOR = 1.2
 /** TTS 중단 디바운스(ms): 이 시간 이상 연속으로 기준 초과 시에만 중단 (순간 스파이크 무시). */
 const TTS_INTERRUPT_DEBOUNCE_MS = 120
 /** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. 낮으면 말 끊김, 높으면 반응이 느려짐. */
-const DCC_SILENCE_END_MS = 700
+const DCC_SILENCE_END_MS = 500
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
 /** 대화중 소리 연타 방지 쿨타임(ms). 이 간격 동안은 재생하지 않음 */
@@ -231,6 +231,8 @@ export function useVoiceResult() {
   const [showExtendPopup, setShowExtendPopup] = useState(false)
   /** 연장 팝업을 '상담시간 연장하기' 버튼으로 연 경우 true → 종료 메시지 박스 숨김 */
   const [extendPopupOpenedByButton, setExtendPopupOpenedByButton] = useState(false)
+  /** 날씨 fetch 완료 시 1 증가 → systemAndContext useMemo 재계산으로 ref 반영 */
+  const [weatherLoadedAt, setWeatherLoadedAt] = useState(0)
   /** 1분 무료 연장 팝업 (무료시작/이용가능시간 1회만, 팝업 떠 있을 때 타이머 계속) */
   const [showFreeExtendPopup, setShowFreeExtendPopup] = useState(false)
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -298,6 +300,10 @@ export function useVoiceResult() {
   const dccInterruptAboveSinceRef = useRef<number | null>(null)
   /** 사용자 위치 기반 날씨 블록 (세션당 1회 fetch, LLM context 주입용) */
   const weatherBlockRef = useRef<string>('')
+  /** 상담사 측(성수동·신당) = 서울 기준 날씨. 내담자 측 = IP 기준은 weatherBlockUserRef */
+  const weatherBlockUserRef = useRef<string>('')
+  /** 상담사 측(서울) 한 줄 요약. "오늘 서울: 맑음, 14°C, 강수 없음." → 프롬프트 최상단에 사실로 명시 */
+  const weatherSummarySeoulRef = useRef<string>('')
   /** Deepgram 실시간 WebSocket STT */
   const dgWsRef = useRef<WebSocket | null>(null)
   const dgApiKeyRef = useRef<string>('')
@@ -547,12 +553,17 @@ export function useVoiceResult() {
     })()
   }, [])
 
-  /* ── 마운트 시 날씨 정보 1회 fetch (LLM context 주입용) ── */
+  /* ── 마운트 시 날씨 2종 fetch: 상담사=서울(성수동), 내담자=IP 기준 ── */
   useEffect(() => {
-    fetch('/api/voice/weather')
-      .then((r) => r.json())
-      .then((d: { weatherBlock?: string }) => {
-        if (d?.weatherBlock) weatherBlockRef.current = d.weatherBlock
+    Promise.all([
+      fetch('/api/voice/weather?base=seoul').then((r) => r.json()).then((d: { weatherBlock?: string; weatherSummary?: string }) => ({ block: d?.weatherBlock ?? '', summary: d?.weatherSummary ?? '' })),
+      fetch('/api/voice/weather').then((r) => r.json()).then((d: { weatherBlock?: string; city?: string }) => d?.weatherBlock ? `(${d.city || '접속지역'} 기준)\n${d.weatherBlock}` : ''),
+    ])
+      .then(([seoulData, userBlock]) => {
+        if (seoulData.block) weatherBlockRef.current = seoulData.block
+        if (seoulData.summary) weatherSummarySeoulRef.current = seoulData.summary
+        if (userBlock) weatherBlockUserRef.current = userBlock
+        if (seoulData.block || seoulData.summary || userBlock) setWeatherLoadedAt((n) => n + 1)
       })
       .catch(() => { /* 실패해도 무시 — 날씨 없이 기존대로 동작 */ })
   }, [])
@@ -890,7 +901,22 @@ ${manseText && manseText.trim() ? manseText.trim() : '(만세력 정보 없음)'
     const commonContextBlock = `${getKstTimeInstructionBlock(sessionKst)}
 - 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}
 - 공수(운세 말하기) 시 이미 지나간 시간대는 공수하지 말 것. 위 현재 시각을 기준으로 그 이후 시간만 공수할 것.
-${weatherBlockRef.current ? `\n- 날씨 관련 발언은 반드시 아래 [현재/예보] 날씨 정보에만 근거할 것. 위 정보에 없는 날씨(눈·추위·비·더위 등)를 임의로 짐작하거나 "밖에 눈 왔죠?", "손끝이 시리네" 식으로 말하지 말 것.\n${weatherBlockRef.current}\n` : ''}
+${((): string => {
+      const seoul = weatherBlockRef.current
+      const user = weatherBlockUserRef.current
+      const summarySeoul = weatherSummarySeoulRef.current
+      if (!seoul && !user) return ''
+      const lines: string[] = []
+      if (summarySeoul) {
+        lines.push(`\n- [상담사 측(서울) 오늘 날씨 — 반드시 따를 사실] ${summarySeoul}`)
+        lines.push('- 위 문장에 "눈"·"비"·"강수 있음"이 없으면 상담사(나·할배·신당·성수동) 입장에서 눈/비/눈치우기/손끝 시림/얼얼함/차가운 공기로 손 시리다는 등 절대 말하지 말 것. 위 한 줄에 적힌 날씨와 기온만 사용할 것.')
+      }
+      lines.push('- [상담사 측 날씨] 나·할배·신당·성수동 얘기할 때만 아래 [상담사 측 — 서울] 블록을 사용할 것. 해당 블록에 "눈"·"비"·"강수" 문구가 없으면 눈/비/눈치우기/손끝 시림 등 절대 말하지 말 것. 맑음·흐림 등 실제 기재된 내용만 사용할 것.')
+      lines.push('- [내담자 측 날씨] 그쪽·당신·내담자 지역 날씨 얘기할 때만 아래 [내담자 측 — 접속지역] 블록을 사용할 것. 블록이 없으면 내담자 지역 날씨 얘기하지 말 것.')
+      if (seoul) lines.push('\n### [상담사 측 — 서울(성수동·신당)]\n' + seoul)
+      if (user) lines.push('\n### [내담자 측 — 접속지역]\n' + user)
+      return lines.join('\n') + '\n'
+    })()}
 `
     // 방문 빈도·사계절·환기: 뿌잉(8006) 전용 (오늘 온 횟수만 참조)
     let visitBlock = ''
@@ -913,7 +939,7 @@ ${seasonBlock}
     }
     const contextText = `${commonContextBlock}${visitBlock}${userInfoBlock}`
     return { systemText, contextText }
-  }, [contentData, visitCountToday, manseText])
+  }, [contentData, visitCountToday, manseText, weatherLoadedAt])
 
   const voiceName = useMemo(() => {
     if (isGptRealtimeModel(model)) {
@@ -2569,6 +2595,8 @@ ${seasonBlock}
   const [extendPaymentMethod, setExtendPaymentMethod] = useState<'card' | 'mobile'>('card')
   const [extendPaymentProcessing, setExtendPaymentProcessing] = useState(false)
   const paymentWindowRef = useRef<Window | null>(null)
+  /** 동일 결제 성공이 handlePaymentSuccess/postMessage/storage/BroadcastChannel/폴링 등으로 중복 호출될 때 시간 중복 가산 방지 */
+  const extendSuccessTimeAddedOidsRef = useRef<Set<string>>(new Set())
   /** 무료 연장 24시간 1회 제한: 차단 시 팝업용 */
   const [showFreeExtendBlockedPopup, setShowFreeExtendBlockedPopup] = useState(false)
   const [freeExtendBlockedRemainingMs, setFreeExtendBlockedRemainingMs] = useState(0)
@@ -2744,19 +2772,22 @@ ${seasonBlock}
               }
             } catch (e) {
             }
-            // 충전 시 추가 시간: 어드민 시간상품 charge의 충전시간(minutes/seconds) 사용 (부가세 포함 결제액으로 계산하지 않음)
-            const chargeOpt = contentData?.voice_time_options && Array.isArray(contentData.voice_time_options)
-              ? (contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge')
-              : null
-            const addSec = chargeOpt != null
-              ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0)
-              : 0
-            if (addSec > 0) {
-              setRemainingSeconds((prev) => prev + addSec)
-              setTotalSeconds((prev) => prev + addSec)
-              if (!timerIntervalRef.current) startTimer()
-              disconnectedAtZeroRef.current = false
-              try { connect() } catch { /* ignore */ }
+            // 충전 시 추가 시간: 동일 oid로 중복 호출 시 1회만 가산 (handlePaymentSuccess/postMessage/storage/폴링 등 중복 방지)
+            if (!extendSuccessTimeAddedOidsRef.current.has(successOid)) {
+              extendSuccessTimeAddedOidsRef.current.add(successOid)
+              const chargeOpt = contentData?.voice_time_options && Array.isArray(contentData.voice_time_options)
+                ? (contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge')
+                : null
+              const addSec = chargeOpt != null
+                ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0)
+                : 0
+              if (addSec > 0) {
+                setRemainingSeconds((prev) => prev + addSec)
+                setTotalSeconds((prev) => prev + addSec)
+                if (!timerIntervalRef.current) startTimer()
+                disconnectedAtZeroRef.current = false
+                try { connect() } catch { /* ignore */ }
+              }
             }
             extendPopupShownRef.current = false
             setShowExtendPopup(false)
@@ -2769,11 +2800,14 @@ ${seasonBlock}
             return
           }
           const addSec = (option.minutes || 0) * 60 + (option.seconds ?? 0)
-          setRemainingSeconds((prev) => prev + addSec)
-          setTotalSeconds((prev) => prev + addSec)
-          if (!timerIntervalRef.current) startTimer()
-          disconnectedAtZeroRef.current = false
-          try { connect() } catch { /* ignore */ }
+          if (!extendSuccessTimeAddedOidsRef.current.has(successOid)) {
+            extendSuccessTimeAddedOidsRef.current.add(successOid)
+            setRemainingSeconds((prev) => prev + addSec)
+            setTotalSeconds((prev) => prev + addSec)
+            if (!timerIntervalRef.current) startTimer()
+            disconnectedAtZeroRef.current = false
+            try { connect() } catch { /* ignore */ }
+          }
           extendPopupShownRef.current = false
           setShowExtendPopup(false)
           setSelectedExtendOption(null)

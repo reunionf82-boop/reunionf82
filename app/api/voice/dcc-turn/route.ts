@@ -693,9 +693,10 @@ ${emotionTagRule}
             })
             ws.on('error', () => {
               if (ws !== currentWs) return
-              // 다음 틱에서 종료: 이미 도착한 chunk를 먼저 enqueue (TTS 끊김 방지)
+              // LLM이 아직 스트리밍 중(sentFinalChunk false)이면 스트림을 닫지 않음.
+              // 다음 sendCartesia에서 readyState !== 1이면 재연결 로직이 동작함.
               setImmediate(() => {
-                if (!finished) resolveOnce()
+                if (!finished && sentFinalChunk) resolveOnce()
               })
             })
             ws.on('close', () => {
@@ -771,6 +772,7 @@ ${emotionTagRule}
             let pendingText = ''
             let sentAny = false
             let firstDelta = true
+            try {
             for (;;) {
               const { done, value } = await reader.read()
               if (done) break
@@ -836,6 +838,7 @@ ${emotionTagRule}
                 if (!finished && isAllDone()) resolveOnce()
               })
             } else {
+              // 긴 인사·공수는 청크 수가 많아 Cartesia가 모두 처리하기까지 30초를 넘길 수 있음. 90초까지 대기.
               setTimeout(() => {
                 if (!finished) {
                   try { if (currentWs.readyState === 1 || currentWs.readyState === 0) currentWs.close() } catch (_) {}
@@ -843,10 +846,25 @@ ${emotionTagRule}
                     if (!finished) resolveOnce()
                   })
                 }
-              }, 30000)
+              }, 90000)
             }
-          })().catch(() => {
-            resolveOnce()
+            } catch (e) {
+              // Claude 스트림 read 실패(연결 끊김·클라이언트 abort 등). 즉시 닫지 말고
+              // 이미 보낸 청크에 대한 Cartesia 오디오가 나갈 시간을 주고 90초 후 종료.
+              console.error('[dcc-turn] Claude 스트림 읽기 중단:', e instanceof Error ? e.message : String(e))
+              if (!finished) {
+                setTimeout(() => {
+                  if (!finished) resolveOnce()
+                }, 90000)
+              }
+            }
+          })().catch((err) => {
+            console.error('[dcc-turn] async IIFE reject:', err instanceof Error ? err.message : String(err))
+            if (!finished) {
+              setTimeout(() => {
+                if (!finished) resolveOnce()
+              }, 90000)
+            }
           })
         },
       })
