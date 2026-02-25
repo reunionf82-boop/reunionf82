@@ -658,8 +658,6 @@ function FormContent() {
   const [voiceResidualCheckDone, setVoiceResidualCheckDone] = useState(false)
   // 바로이용하기(100원 결제) 팝업
   const [showSkipWaitPopup, setShowSkipWaitPopup] = useState(false)
-  /** iOS 음성: 바로이용하기 클릭 시 마이크 허용 전용 모달 (이 버튼 클릭이 getUserMedia 제스처가 됨) */
-  const [showIOSMicConsentForSkipWait, setShowIOSMicConsentForSkipWait] = useState(false)
   
   // 로딩 팝업 상태 (PDF 생성 등)
   const [showLoadingPopup, setShowLoadingPopup] = useState(false)
@@ -5657,42 +5655,6 @@ function FormContent() {
         </div>
       )}
 
-      {/* iOS 음성: 바로이용하기 전 마이크 허용 전용 모달 (이 버튼 클릭 시에만 getUserMedia 팝업이 뜸) */}
-      {showIOSMicConsentForSkipWait && (
-        <div
-          className="fixed top-0 left-0 right-0 bottom-0 z-[10000] flex items-center justify-center px-4"
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 }}
-        >
-          <div className="absolute inset-0 bg-black/60" aria-hidden />
-          <div
-            className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 text-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className="text-gray-700 font-medium mb-2">상담을 시작하려면</p>
-            <p className="text-gray-600 text-sm mb-6">마이크 사용을 허용해 주세요.</p>
-            <button
-              type="button"
-              onClick={async () => {
-                const p = startIOSVoicePrepare()
-                await finishIOSVoicePrepare(p)
-                setShowIOSMicConsentForSkipWait(false)
-                setShowSkipWaitPopup(true)
-              }}
-              className="w-full py-4 px-6 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-lg transition"
-            >
-              마이크 허용하고 계속
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowIOSMicConsentForSkipWait(false)}
-              className="w-full mt-3 py-2 text-gray-500 text-sm hover:text-gray-700"
-            >
-              취소
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* 바로이용하기 팝업 (결제정보 팝업과 동일 레이아웃) */}
       {showSkipWaitPopup && (
         <div
@@ -7623,6 +7585,7 @@ function FormContent() {
                   <button
                     type="button"
                     onClick={async () => {
+                      const micPromise = (content?.content_type === 'voice' && typeof window !== 'undefined' && isIOS()) ? startIOSVoicePrepare() : null
                       if (!agreeTerms) {
                         showAlertMessage('서비스 이용 약관에 동의해주세요.')
                         return
@@ -7631,10 +7594,7 @@ function FormContent() {
                         showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
                         return
                       }
-                      if (content?.content_type === 'voice' && typeof window !== 'undefined' && isIOS()) {
-                        setShowIOSMicConsentForSkipWait(true)
-                        return
-                      }
+                      await finishIOSVoicePrepare(micPromise)
                       setShowSkipWaitPopup(true)
                     }}
                     className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"

@@ -16,7 +16,7 @@ export function isIOS(): boolean {
 /** iOS 음성: 클릭과 같은 동기 콜스택에서 호출해야 팝업이 뜸. 반환된 프로미스를 나중에 finishIOSVoicePrepare에 넘겨 await */
 export function startIOSVoicePrepare(): Promise<MediaStream> | null {
   if (!isIOS() || typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) return null
-  return navigator.mediaDevices.getUserMedia({ audio: true })
+  return navigator.mediaDevices.getUserMedia({ audio: true, video: false })
 }
 
 /** startIOSVoicePrepare()로 받은 프로미스를 await한 뒤 스트림·컨텍스트를 window에 보관 */
