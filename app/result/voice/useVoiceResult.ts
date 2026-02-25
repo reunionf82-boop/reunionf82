@@ -1590,14 +1590,26 @@ ${seasonBlock}
                 assistantT = typeof parsed.assistantText === 'string' ? parsed.assistantText : ''
                 if (assistantT && !isSilenceBreak) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
                 if (receivedAudio && dccStreamerRef.current) {
-                  dccStreamerRef.current.onComplete = () => {
+                  let dccCompleteFired = false
+                  const onDone = () => {
+                    if (dccCompleteFired) return
+                    dccCompleteFired = true
                     if (isStartTurn) dccFirstTurnPlayingRef.current = false
                     stopDccPlayback(false)
                     startSilenceBreakTimerRef.current?.()
                     onPlaybackComplete?.()
                   }
+                  let safetyTimeout: ReturnType<typeof setTimeout>
+                  dccStreamerRef.current.onComplete = () => {
+                    clearTimeout(safetyTimeout)
+                    onDone()
+                  }
                   dccStreamerRef.current.flush()
                   dccStreamerRef.current.complete()
+                  // iOS 등에서 AudioBufferSourceNode.onended가 호출되지 않으면 파형이 계속 출렁임. 안전 타임아웃으로 강제 정리.
+                  safetyTimeout = setTimeout(() => {
+                    if (!dccCompleteFired) onDone()
+                  }, 4000)
                 }
               }
             } catch {
