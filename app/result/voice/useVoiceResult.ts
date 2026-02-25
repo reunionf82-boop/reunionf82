@@ -1884,21 +1884,15 @@ ${seasonBlock}
         }
         const isiOS = isIOSDevice()
         if (isiOS) {
-          // panana 검증 패턴: ① getUserMedia(await 안 함) → ② 무음 WAV 재생 → ③ AudioContext 생성+resume → ④ await mic stream → ⑤ recorder start
-          if (!iosMicStreamPromiseRef.current && navigator.mediaDevices?.getUserMedia) {
-            iosMicStreamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
-          }
-          const unlock = new Audio()
-          setPlaysInlineForSpeaker(unlock)
-          unlock.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
-          void unlock.play().catch(() => {})
           if (!iosRecorderContextRef.current) {
             try {
               iosRecorderContextRef.current = new AudioContext({ sampleRate: 16000 })
             } catch { /* ignore */ }
           }
+          if (!iosMicStreamPromiseRef.current && navigator.mediaDevices?.getUserMedia) {
+            iosMicStreamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
+          }
           initDccPcmAudio()
-          if (dccPcmContextRef.current) await dccPcmContextRef.current.resume().catch(() => {})
           const stream = await iosMicStreamPromiseRef.current?.catch(() => null)
           const ctx = iosRecorderContextRef.current
           if (stream && ctx) startDccContinuousRecording(stream, ctx)
