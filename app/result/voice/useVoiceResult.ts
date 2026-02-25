@@ -1684,10 +1684,14 @@ ${seasonBlock}
         const d = await r.json()
         if (d?.key) dgApiKeyRef.current = d.key
       } catch (e) {
+        console.error('[DG-WS] API key fetch failed:', e)
         return
       }
     }
-    if (!dgApiKeyRef.current) return
+    if (!dgApiKeyRef.current) {
+      console.error('[DG-WS] No API key')
+      return
+    }
 
     const params = new URLSearchParams({
       model: 'nova-3',
@@ -1705,6 +1709,7 @@ ${seasonBlock}
 
     ws.onopen = () => {
       dgReconnectingRef.current = false
+      console.log('[DG-WS] connected')
       if (dgKeepaliveRef.current) clearInterval(dgKeepaliveRef.current)
       dgKeepaliveRef.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -1721,8 +1726,10 @@ ${seasonBlock}
           const transcript = alt?.transcript ?? ''
           if (msg.speech_final && transcript.trim()) {
             if (isAiSpeakingRef.current || dccSendingRef.current) {
+              console.log('[DG-WS] speech_final 무시 (AI 발화중/전송중):', transcript.trim().slice(0, 30))
               return
             }
+            console.log('[DG-WS] speech_final:', transcript.trim())
             sendDccTurn({ transcript: transcript.trim() })
           }
         }
@@ -1730,13 +1737,16 @@ ${seasonBlock}
     }
 
     ws.onerror = (e) => {
+      console.error('[DG-WS] error:', e)
     }
 
     ws.onclose = (e) => {
+      console.log('[DG-WS] closed:', e.code, e.reason)
       if (dgKeepaliveRef.current) { clearInterval(dgKeepaliveRef.current); dgKeepaliveRef.current = null }
       if (dgWsRef.current === ws) dgWsRef.current = null
       if (!dgReconnectingRef.current && dccRecordingRef.current) {
         dgReconnectingRef.current = true
+        console.log('[DG-WS] reconnecting...')
         setTimeout(() => connectDeepgramWs(), 1000)
       }
     }

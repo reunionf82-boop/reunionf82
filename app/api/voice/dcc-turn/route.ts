@@ -425,6 +425,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (userTranscript?.trim()) {
+      console.log('[dcc-turn] STT(Deepgram):', userTranscript.trim().slice(0, 100) + (userTranscript.length > 100 ? '...' : ''))
+    }
     if (!userTranscript || typeof userTranscript !== 'string' || !userTranscript.trim()) {
       // 무음/인식 실패 시 400 대신 no-op 반환 (클라이언트가 끊기지 않도록)
       if (ttsMode === 'streaming') {
@@ -759,6 +762,7 @@ ${emotionTagRule}
             let buffer = ''
             let pendingText = ''
             let sentAny = false
+            let firstDelta = true
             for (;;) {
               const { done, value } = await reader.read()
               if (done) break
@@ -773,6 +777,11 @@ ${emotionTagRule}
                   const parsed = JSON.parse(data) as { type?: string; delta?: { type?: string; text?: string } }
                   if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta' && parsed.delta?.text) {
                     const text = parsed.delta.text
+                    if (firstDelta) {
+                      process.stdout.write('\n[dcc-turn] LLM(실시간) ')
+                      firstDelta = false
+                    }
+                    process.stdout.write(text)
                     assistantText += text
                     pendingText += text
                     for (;;) {
