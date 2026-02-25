@@ -38,7 +38,7 @@ const TTS_INTERRUPT_VOLUME_FACTOR = 1.2
 /** TTS 중단 디바운스(ms): 이 시간 이상 연속으로 기준 초과 시에만 중단 (순간 스파이크 무시). */
 const TTS_INTERRUPT_DEBOUNCE_MS = 120
 /** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. 낮으면 말 끊김, 높으면 반응이 느려짐. */
-const DCC_SILENCE_END_MS = 400
+const DCC_SILENCE_END_MS = 700
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
 /** 대화중 소리 연타 방지 쿨타임(ms). 이 간격 동안은 재생하지 않음 */
@@ -283,6 +283,11 @@ export function useVoiceResult() {
   const dccInterruptAboveSinceRef = useRef<number | null>(null)
   /** 사용자 위치 기반 날씨 블록 (세션당 1회 fetch, LLM context 주입용) */
   const weatherBlockRef = useRef<string>('')
+  /** Deepgram 실시간 WebSocket STT */
+  const dgWsRef = useRef<WebSocket | null>(null)
+  const dgApiKeyRef = useRef<string>('')
+  const dgReconnectingRef = useRef(false)
+  const dgKeepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const closingForSwapRef = useRef(false)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** AI 발화 종료 시각. 스피커 에코·볼륨 decay로 타이머가 무효화되는 것을 방지. 종료 직후 3초간은 볼륨으로 clear 안 함 (3초 침묵 타이머 전체 커버) */
@@ -387,7 +392,6 @@ export function useVoiceResult() {
         if (!res.ok) throw new Error('콘텐츠를 불러올 수 없습니다.')
         const data = await res.json()
         const c = data?.data || data?.content || data
-        console.log('[VoiceResult] contentId:', cid, 'voice_advisor_video_url:', c?.voice_advisor_video_url, 'content_type:', c?.content_type)
 
         // voice_time_options: JSONB가 문자열로 내려올 수 있으므로 파싱 보장
         if (c && c.voice_time_options) {
@@ -396,7 +400,6 @@ export function useVoiceResult() {
             c.voice_time_options = typeof raw === 'string' ? JSON.parse(raw) : raw
           } catch { c.voice_time_options = [] }
         }
-        console.log('[VoiceResult] voice_time_options:', c?.voice_time_options)
 
         // 시간 결정: sessionStorage → 잔여금액으로 계산(폼에서 잔여금액으로 상담 진입) → 기본시간 → fallback 5분
         const opts = Array.isArray(c?.voice_time_options) ? c.voice_time_options : []
@@ -426,10 +429,8 @@ export function useVoiceResult() {
                   const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
                   if (rateWon > 0 && rateSec > 0) secs = Math.floor(balanceWan / rateWon) * rateSec
                   if (secs > 0) {
-                    console.log('[VoiceResult] voiceMinutes from balance:', Math.floor(secs / 60), '(balance_wan:', balanceWan, 'rate:', rateSec, 's/', rateWon, 'won)')
                     enteredWithBalanceRef.current = true
                   } else {
-                    console.log('[VoiceResult] balance insufficient for one deduction unit (balance_wan:', balanceWan, '< rate_won:', rateWon, ') → 0 min, no default time')
                   }
                 }
               }
@@ -443,7 +444,6 @@ export function useVoiceResult() {
         setTotalSeconds(secs)
         const expired = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('voice_time_expired') === '1'
         setRemainingSeconds(expired ? 0 : secs)
-        console.log('[VoiceResult] voiceMinutes:', voiceMin, '(source:', storedTotalSec ? 'sessionStorage' : storedVoiceMin ? 'sessionStorage' : 'balanceOrDefault', ')', expired ? ', expired: remaining=0' : '')
 
         setContentData(c)
         isFreeStartSessionRef.current = !sessionStorage.getItem('voice_entered_by_100')
@@ -463,14 +463,12 @@ export function useVoiceResult() {
         const probPct = typeof c?.voice_conversation_sound_probability_pct === 'number'
           ? c.voice_conversation_sound_probability_pct
           : (c?.voice_bubble_sound_probability_pct ?? 0)
-        console.log('[VoiceResult] sound setup: start_url=', c?.voice_start_sound_url, 'conversation_sounds=', soundList.length, 'prob_pct=', probPct)
         if (c?.voice_start_sound_url) {
           const startAudio = new Audio()
           startAudio.crossOrigin = 'anonymous'
           startAudio.src = getAudioSrc(c.voice_start_sound_url)
           startAudio.preload = 'auto'
-          startAudio.addEventListener('canplaythrough', () => console.log('[VoiceResult] start sound loaded & ready'))
-          startAudio.addEventListener('error', (e) => console.error('[VoiceResult] start sound load error:', e))
+          startAudio.addEventListener('error', () => {})
           startSoundRef.current = startAudio
           // 시작 소리는 상담 연결(ready) 시 한 번 재생하여 녹음에 포함됨 (페이지 로드 시 재생 제거)
         }
@@ -478,7 +476,7 @@ export function useVoiceResult() {
           const endAudio = new Audio()
           endAudio.crossOrigin = 'anonymous'
           endAudio.preload = 'auto'
-          endAudio.addEventListener('error', (e) => console.error('[VoiceResult] end sound load error:', e))
+          endAudio.addEventListener('error', () => {})
           endSoundRef.current = endAudio
         } else {
           endSoundRef.current = null
@@ -491,7 +489,7 @@ export function useVoiceResult() {
             a.crossOrigin = 'anonymous'
             a.src = getAudioSrc(s.url)
             a.preload = 'auto'
-            a.addEventListener('error', (e) => console.error('[VoiceResult] conversation sound load error:', e))
+            a.addEventListener('error', () => {})
             return a
           })
         bubbleProbRef.current = probPct / 100
@@ -588,7 +586,6 @@ export function useVoiceResult() {
       const payload = JSON.stringify(payloadObj)
       const blob = new Blob([payload], { type: 'application/json' })
       navigator.sendBeacon('/api/saved-results/save-voice-beacon', blob)
-      console.log('[VoiceResult] beacon save sent')
     }
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -659,11 +656,28 @@ export function useVoiceResult() {
     isAiSpeakingRef.current = false
   }, [])
 
+  /** Deepgram WebSocket 정리 */
+  const closeDeepgramWs = useCallback(() => {
+    if (dgKeepaliveRef.current) { clearInterval(dgKeepaliveRef.current); dgKeepaliveRef.current = null }
+    const ws = dgWsRef.current
+    if (ws) {
+      try { ws.send(JSON.stringify({ type: 'CloseStream' })) } catch { /* ignore */ }
+      try { ws.close() } catch { /* ignore */ }
+      dgWsRef.current = null
+    }
+    dgReconnectingRef.current = false
+  }, [])
+
+  /** DCC 녹음 진행 중 여부 (Deepgram WS 재연결 판단용) */
+  const dccRecordingRef = useRef(false)
+
   /** 보이스 화면에서 폼으로 나갈 때(이전/팝업 확인/언마운트 등) TTS·마이크·모든 소리 즉시 중지 */
   const stopAllTTSRef = useRef<() => void>(() => {})
   useEffect(() => {
     stopAllTTSRef.current = () => {
       recorderRef.current?.stop()
+      dccRecordingRef.current = false
+      closeDeepgramWs()
       streamerRef.current?.stop()
       humeCurrentAudioRef.current?.pause()
       humeCurrentAudioRef.current = null
@@ -683,7 +697,7 @@ export function useVoiceResult() {
     return () => {
       stopAllTTSRef.current()
     }
-  }, [stopDccPlayback])
+  }, [stopDccPlayback, closeDeepgramWs])
 
   const initDccPcmAudio = useCallback(() => {
     const AudioCtx = (typeof window !== 'undefined'
@@ -722,7 +736,7 @@ export function useVoiceResult() {
       if (roll < prob) {
         const chosen = list[Math.floor(Math.random() * list.length)]
         chosen.currentTime = 0
-        chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
+        chosen.play().catch(() => {})
         conversationSoundCooldownUntilRef.current = now + CONVERSATION_SOUND_COOLDOWN_MS
       }
     }
@@ -853,7 +867,7 @@ ${manseText && manseText.trim() ? manseText.trim() : '(만세력 정보 없음)'
     const commonContextBlock = `${getKstTimeInstructionBlock(sessionKst)}
 - 요일: ${kst.weekdayKo}요일, 시간대: ${kst.timeSlotHint}
 - 공수(운세 말하기) 시 이미 지나간 시간대는 공수하지 말 것. 위 현재 시각을 기준으로 그 이후 시간만 공수할 것.
-${weatherBlockRef.current ? `\n${weatherBlockRef.current}\n` : ''}
+${weatherBlockRef.current ? `\n- 날씨 관련 발언은 반드시 아래 [현재/예보] 날씨 정보에만 근거할 것. 위 정보에 없는 날씨(눈·추위·비·더위 등)를 임의로 짐작하거나 "밖에 눈 왔죠?", "손끝이 시리네" 식으로 말하지 말 것.\n${weatherBlockRef.current}\n` : ''}
 `
     // 방문 빈도·사계절·환기: 뿌잉(8006) 전용 (오늘 온 횟수만 참조)
     let visitBlock = ''
@@ -1114,20 +1128,16 @@ ${seasonBlock}
     }
     clearSilenceTimer()
     const cid = contentIdRef.current
-    console.log('[침묵깨기] sendSilenceBreak 호출', { silenceSeconds, cid })
     if (!cid) {
-      console.log('[침묵깨기] 스킵: contentId 없음')
       return
     }
     try {
-      console.log('[침묵깨기] API 요청 시작')
       const res = await fetch('/api/voice/silence-break', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contentId: cid, silenceSeconds }),
       })
       const data = await res.json().catch(() => ({} as any))
-      console.log('[침묵깨기] API 응답', res.status, { success: data?.success, hasText: !!data?.text, error: data?.error })
       if (!data?.success || !data?.text) return
       const text = String(data.text).trim()
       setMessages((prev) => [...prev, { role: 'assistant', text }])
@@ -1173,7 +1183,6 @@ ${seasonBlock}
     const s1 = silenceBreakSecs.first * 1000
     const s2 = silenceBreakSecs.second * 1000
     const s3 = silenceBreakSecs.third * 1000
-    console.log('[침묵깨기] 타이머 설정 (AI 발화 종료 후)', { first: silenceBreakSecs.first, second: silenceBreakSecs.second, third: silenceBreakSecs.third }, '초')
     silenceTimerRef.current = setTimeout(() => {
       silenceTimerRef.current = null
       if (showConsultationEndModalRef.current) return
@@ -1598,7 +1607,7 @@ ${seasonBlock}
           if (roll < prob) {
             const chosen = list[Math.floor(Math.random() * list.length)]
             chosen.currentTime = 0
-            chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
+            chosen.play().catch(() => {})
             conversationSoundCooldownUntilRef.current = now + CONVERSATION_SOUND_COOLDOWN_MS
           }
         }
@@ -1655,32 +1664,107 @@ ${seasonBlock}
   const endDccTurn = useCallback(async () => {
     recorderRef.current?.stop()
     setDccRecording(false)
+    dccRecordingRef.current = false
     setInVolume(0)
+    closeDeepgramWs()
     const chunks = dccChunksRef.current
     dccChunksRef.current = []
     if (chunks.length > 0) {
       const wavB64 = buildWavFromPcmChunks(chunks)
       if (wavB64) await sendDccTurn({ audioBase64: wavB64 })
     }
-  }, [buildWavFromPcmChunks, sendDccTurn, stopDccPlayback])
+  }, [buildWavFromPcmChunks, sendDccTurn, stopDccPlayback, closeDeepgramWs])
 
-  /** DCC 연속 대화: 첫 인사 재생이 끝난 뒤 호출. 말하기 버튼 없이 VAD로 턴 감지 후 자동 전송.
+  /** Deepgram WebSocket 연결 생성. speech_final 시 sendDccTurn({ transcript }) 호출 */
+  const connectDeepgramWs = useCallback(async () => {
+    closeDeepgramWs()
+    if (!dgApiKeyRef.current) {
+      try {
+        const r = await fetch('/api/voice/deepgram-token')
+        const d = await r.json()
+        if (d?.key) dgApiKeyRef.current = d.key
+      } catch (e) {
+        return
+      }
+    }
+    if (!dgApiKeyRef.current) return
+
+    const params = new URLSearchParams({
+      model: 'nova-3',
+      language: 'ko',
+      encoding: 'linear16',
+      sample_rate: '16000',
+      channels: '1',
+      interim_results: 'true',
+      speech_final: 'true',
+      endpointing: String(DCC_SILENCE_END_MS),
+      vad_events: 'true',
+    })
+    const ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params.toString()}`, ['token', dgApiKeyRef.current])
+    dgWsRef.current = ws
+
+    ws.onopen = () => {
+      dgReconnectingRef.current = false
+      if (dgKeepaliveRef.current) clearInterval(dgKeepaliveRef.current)
+      dgKeepaliveRef.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          try { ws.send(JSON.stringify({ type: 'KeepAlive' })) } catch { /* ignore */ }
+        }
+      }, 8000)
+    }
+
+    ws.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '')
+        if (msg.type === 'Results') {
+          const alt = msg.channel?.alternatives?.[0]
+          const transcript = alt?.transcript ?? ''
+          if (msg.speech_final && transcript.trim()) {
+            if (isAiSpeakingRef.current || dccSendingRef.current) {
+              return
+            }
+            sendDccTurn({ transcript: transcript.trim() })
+          }
+        }
+      } catch { /* ignore non-JSON */ }
+    }
+
+    ws.onerror = (e) => {
+    }
+
+    ws.onclose = (e) => {
+      if (dgKeepaliveRef.current) { clearInterval(dgKeepaliveRef.current); dgKeepaliveRef.current = null }
+      if (dgWsRef.current === ws) dgWsRef.current = null
+      if (!dgReconnectingRef.current && dccRecordingRef.current) {
+        dgReconnectingRef.current = true
+        setTimeout(() => connectDeepgramWs(), 1000)
+      }
+    }
+  }, [closeDeepgramWs, sendDccTurn])
+
+  /** DCC 연속 대화: 첫 인사 재생이 끝난 뒤 호출. Deepgram WS로 실시간 STT, speech_final로 자동 턴 전송.
    * iOS: 사용자 제스처 직후 취득한 primedStream/primedContext 를 넘기면 수음 불가 이슈를 줄일 수 있음. */
   const startDccContinuousRecording = useCallback((primedStream?: MediaStream, primedContext?: AudioContext) => {
     if (!recorderRef.current) recorderRef.current = new AudioRecorder(16000)
     dccChunksRef.current = []
     dccLastTurnEndIndexRef.current = 0
-    dccInSpeechRef.current = false
-    dccSilenceStartRef.current = null
-    if (dccVadTimerRef.current) {
-      clearTimeout(dccVadTimerRef.current)
-      dccVadTimerRef.current = null
-    }
+
     const rec = recorderRef.current
     const sens = micSensitivityRef.current
     const threshold = SPEECH_THRESHOLD_MAX - (sens / 100) * (SPEECH_THRESHOLD_MAX - SPEECH_THRESHOLD_MIN)
     const interruptThreshold = threshold * TTS_INTERRUPT_VOLUME_FACTOR
-    const onData = (base64: string) => { dccChunksRef.current.push(base64) }
+
+    const onData = (base64: string) => {
+      dccChunksRef.current.push(base64)
+      const ws = dgWsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const bin = atob(base64)
+        const buf = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i)
+        try { ws.send(buf.buffer) } catch { /* ignore */ }
+      }
+    }
+
     const onVolume = (vol: number) => {
       setInVolume(vol)
       if (isAiSpeakingRef.current && vol > interruptThreshold) {
@@ -1693,45 +1777,17 @@ ${seasonBlock}
       } else if (vol <= interruptThreshold) {
         dccInterruptAboveSinceRef.current = null
       }
-      if (dccSendingRef.current) return
-      if (vol > threshold) {
-        dccInSpeechRef.current = true
-        dccSilenceStartRef.current = null
-        if (dccVadTimerRef.current) {
-          clearTimeout(dccVadTimerRef.current)
-          dccVadTimerRef.current = null
-        }
-      } else {
-        dccInterruptAboveSinceRef.current = null
-        if (dccInSpeechRef.current) {
-          const now = Date.now()
-          if (dccSilenceStartRef.current === null) dccSilenceStartRef.current = now
-          if (!dccVadTimerRef.current) {
-            dccVadTimerRef.current = setTimeout(() => {
-              dccVadTimerRef.current = null
-              const chunks = dccChunksRef.current
-              const startIdx = dccLastTurnEndIndexRef.current
-              const toSend = chunks.slice(startIdx)
-              const minChunks = 6
-              if (toSend.length >= minChunks) {
-                const wavB64 = buildWavFromPcmChunks(toSend)
-                if (wavB64) sendDccTurn({ audioBase64: wavB64 })
-              }
-              dccLastTurnEndIndexRef.current = 0
-              dccChunksRef.current = []
-              dccInSpeechRef.current = false
-              dccSilenceStartRef.current = null
-            }, DCC_SILENCE_END_MS)
-          }
-        }
-      }
     }
+
     rec.off('data', onData as any).off('volume', onVolume as any).on('data', onData as any).on('volume', onVolume as any)
+
+    connectDeepgramWs()
+
     const startPromise = primedStream && primedContext
       ? rec.start(primedStream, primedContext)
       : rec.start()
-    startPromise.then(() => setDccRecording(true)).catch((e: any) => setError(e?.message || '마이크를 사용할 수 없습니다.'))
-  }, [buildWavFromPcmChunks, sendDccTurn, stopDccPlayback])
+    startPromise.then(() => { setDccRecording(true); dccRecordingRef.current = true }).catch((e: any) => setError(e?.message || '마이크를 사용할 수 없습니다.'))
+  }, [sendDccTurn, stopDccPlayback, connectDeepgramWs])
 
   /** 잔여금액으로 진입한 세션: 연결 후 차감주기마다 잔액 차감·UI 갱신 (remaining/total은 타이머가 이미 카운트다운 중이므로 갱신만) */
   const startBalanceDeductIntervalIfNeeded = useCallback((data: typeof contentData) => {
@@ -1852,9 +1908,7 @@ ${seasonBlock}
             }
             mr.start(1000)
             mixedMediaRecorderRef.current = mr
-            console.log('[VoiceResult] DCC mixed audio recording started (mic + AI)')
           } catch (recErr: any) {
-            console.warn('[VoiceResult] DCC mixed recording setup failed:', recErr?.message)
           }
         })()
         const dccUserName = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_name') || '' : ''
@@ -1915,7 +1969,6 @@ ${seasonBlock}
           const s1 = silenceBreakSecs.first * 1000
           const s2 = silenceBreakSecs.second * 1000
           const s3 = silenceBreakSecs.third * 1000
-          console.log('[침묵깨기] 타이머 설정 (AI 발화 종료 후)', { first: silenceBreakSecs.first, second: silenceBreakSecs.second, third: silenceBreakSecs.third }, '초')
           silenceTimerRef.current = setTimeout(() => {
             silenceTimerRef.current = null
             if (showConsultationEndModalRef.current) return
@@ -1962,7 +2015,6 @@ ${seasonBlock}
               startSource.connect(dest)
               startSource.connect(outCtx.destination)
             } catch (e: any) {
-              console.warn('[VoiceResult] start sound to mix failed:', e?.message)
             }
           }
           conversationSoundsRef.current.forEach((audio) => {
@@ -1972,7 +2024,6 @@ ${seasonBlock}
               source.connect(dest)
               source.connect(outCtx.destination)
             } catch (e: any) {
-              console.warn('[VoiceResult] conversation sound to mix failed:', e?.message)
             }
           })
           // MediaRecorder 시작
@@ -1986,9 +2037,7 @@ ${seasonBlock}
           }
           mr.start(1000) // 1초마다 데이터 수집
           mixedMediaRecorderRef.current = mr
-          console.log('[VoiceResult] Mixed audio recording started (mic + AI)')
         } catch (recErr: any) {
-          console.warn('[VoiceResult] Mixed recording setup failed:', recErr?.message)
         }
       }
       await streamerRef.current.resume()
@@ -2009,7 +2058,6 @@ ${seasonBlock}
           sysText = `${sysText}\n\n[이전 상담 대화 내역 — 추가 결제 후 이어서 상담 중입니다. 이전 맥락을 기억하고 자연스럽게 이어가세요.]\n${savedContext}`
           isResumedSession = true
           sessionStorage.removeItem('voice_conversation_context') // 한 번 사용 후 제거
-          console.log('[VoiceResult] resumed session with saved conversation context')
         }
       } catch { /* ignore */ }
 
@@ -2110,7 +2158,7 @@ ${seasonBlock}
             if (startSoundRef.current && !startSoundPlayedRef.current) {
               startSoundPlayedRef.current = true
               startSoundRef.current.currentTime = 0
-              startSoundRef.current.play().catch((e: unknown) => console.warn('[VoiceResult] start sound play on ready:', (e as Error)?.message))
+              startSoundRef.current.play().catch(() => {})
             }
             // 타이머 시작
             startTimer()
@@ -2187,7 +2235,6 @@ ${seasonBlock}
                     ws.send(JSON.stringify({ type: 'text', text: greetTrigger }))
                   }
                 } catch (e: any) {
-                  console.warn('[VoiceResult] greet trigger failed:', e?.message)
                 }
               }
               sendGreet()
@@ -2213,7 +2260,7 @@ ${seasonBlock}
                 if (roll < prob) {
                   const chosen = list[Math.floor(Math.random() * list.length)]
                   chosen.currentTime = 0
-                  chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
+                  chosen.play().catch(() => {})
                   conversationSoundCooldownUntilRef.current = now + CONVERSATION_SOUND_COOLDOWN_MS
                 }
               }
@@ -2231,7 +2278,7 @@ ${seasonBlock}
               if (roll < prob) {
                 const chosen = list[Math.floor(Math.random() * list.length)]
                 chosen.currentTime = 0
-                chosen.play().catch((e) => { console.warn('[VoiceResult] conversation sound play failed:', e?.message) })
+                chosen.play().catch(() => {})
                 conversationSoundCooldownUntilRef.current = now + CONVERSATION_SOUND_COOLDOWN_MS
               }
             }
@@ -2622,7 +2669,6 @@ ${seasonBlock}
 
       // 3) handlePaymentSuccess 콜백 등록
       const processExtendSuccess = async (successOid: string) => {
-        console.log('[VoiceResult] extend payment success:', successOid)
         // 서버에서 결제 상태 확인
         let confirmed = false
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -2665,7 +2711,6 @@ ${seasonBlock}
                 setBalanceWan(chargeData.balance_wan)
               }
             } catch (e) {
-              console.error('[VoiceResult] balance charge api error:', e)
             }
             // 충전 시 추가 시간: 어드민 시간상품 charge의 충전시간(minutes/seconds) 사용 (부가세 포함 결제액으로 계산하지 않음)
             const chargeOpt = contentData?.voice_time_options && Array.isArray(contentData.voice_time_options)
@@ -2700,7 +2745,6 @@ ${seasonBlock}
           extendPopupShownRef.current = false
           setShowExtendPopup(false)
           setSelectedExtendOption(null)
-          console.log('[VoiceResult] time extended by', addSec, 'seconds')
         }
         extendPaymentInProgressRef.current = false
         setExtendPaymentProcessing(false)
@@ -2843,7 +2887,6 @@ ${seasonBlock}
       }
 
     } catch (e: any) {
-      console.error('[VoiceResult] extend payment error:', e)
       alert(e?.message || '결제 처리 중 오류가 발생했습니다.')
       extendPaymentInProgressRef.current = false
       setExtendPaymentProcessing(false)
@@ -2934,7 +2977,6 @@ ${seasonBlock}
     conversationSavedRef.current = true
     setSavingConversation(true)
     const msgs = messagesRef.current.filter((m) => m.role !== 'system' && m.text !== 'pong' && m.text !== 'ping')
-    console.log('[VoiceResult] saveConversation start: msgs=', msgs.length, 'audioChunks=', audioChunksRef.current.length)
 
     try {
       // 잔액 모드 이탈 시: 잔여시간이 1블록(rate_seconds) 초과면 잔액 유지, 이하일 때만 소진 (12초보다 큰 잔여에선 0원으로 만들면 안 됨)
@@ -2953,7 +2995,6 @@ ${seasonBlock}
               body: JSON.stringify({ action: 'drain_balance', contentId: cidSave, phone: phoneSave }),
             })
           } catch (e: any) {
-            console.warn('[VoiceResult] drain_balance on leave:', e?.message)
           }
         }
       }
@@ -2967,7 +3008,6 @@ ${seasonBlock}
         // 양방향 믹스 녹음이 있는 경우 (WebM/Opus)
         try {
           const mixedBlob = new Blob(mixedChunksRef.current, { type: mixedChunksRef.current[0]?.type || 'audio/webm' })
-          console.log('[VoiceResult] Mixed audio size:', (mixedBlob.size / 1024 / 1024).toFixed(2), 'MB')
           recordedDurationSeconds = await getBlobDurationSeconds(mixedBlob)
           const ext = mixedBlob.type.includes('webm') ? 'webm' : 'ogg'
           const formData = new FormData()
@@ -2976,19 +3016,15 @@ ${seasonBlock}
           if (uploadRes.ok) {
             const uploadData = await uploadRes.json()
             voiceAudioUrl = uploadData.url || null
-            console.log('[VoiceResult] mixed audio uploaded:', voiceAudioUrl)
           } else {
-            console.warn('[VoiceResult] mixed audio upload failed:', uploadRes.status)
           }
         } catch (e: any) {
-          console.warn('[VoiceResult] mixed audio upload error:', e?.message)
         }
       }
       // fallback: 양방향 녹음 실패 시 AI 전용 PCM 청크 사용
       if (!voiceAudioUrl && audioChunksRef.current.length > 0) {
         try {
           const wavBlob = pcm16Base64ToWavBlob(audioChunksRef.current)
-          console.log('[VoiceResult] WAV fallback size:', (wavBlob.size / 1024 / 1024).toFixed(2), 'MB')
           if (recordedDurationSeconds == null) recordedDurationSeconds = await getBlobDurationSeconds(wavBlob)
           const formData = new FormData()
           formData.append('file', wavBlob, `voice_${Date.now()}.wav`)
@@ -2996,12 +3032,9 @@ ${seasonBlock}
           if (uploadRes.ok) {
             const uploadData = await uploadRes.json()
             voiceAudioUrl = uploadData.url || null
-            console.log('[VoiceResult] WAV fallback uploaded:', voiceAudioUrl)
           } else {
-            console.warn('[VoiceResult] WAV upload failed:', uploadRes.status)
           }
         } catch (e: any) {
-          console.warn('[VoiceResult] WAV conversion/upload error:', e?.message)
         }
       }
 
@@ -3041,7 +3074,6 @@ ${seasonBlock}
       if (!saveRes.ok) {
         // voice 컬럼이 아직 없을 수 있음 → 기본 필드 + result_type으로 재시도 (phone, voice_messages 포함해 요약 저장 가능하도록)
         const errDetail = await saveRes.text().catch(() => '')
-        console.warn('[VoiceResult] voice save failed (status:', saveRes.status, errDetail, '), retrying with basic fields...')
         const fallbackPayload = {
           title: contentTitle,
           html: `<p>음성 상담 기록</p><p>상담시간: ${durationSeconds > 0 ? `${Math.floor(durationSeconds / 60)}분 ${durationSeconds % 60}초` : '알 수 없음'}</p>${msgs.length > 0 ? `<h3>대화 내용</h3>${msgs.map((m) => `<p><strong>${m.role === 'assistant' ? '상담사' : userName || '나'}:</strong> ${m.text}</p>`).join('')}` : ''}`,
@@ -3062,16 +3094,13 @@ ${seasonBlock}
         })
         if (!saveRes.ok) {
           const errText = await saveRes.text().catch(() => '')
-          console.error('[VoiceResult] fallback save also failed:', saveRes.status, errText)
           return
         }
       }
 
       const saveData = await saveRes.json()
       savedId = saveData?.data?.id || null
-      console.log('[VoiceResult] conversation saved, savedId:', savedId)
       if (saveData?.data?.summaryStored === false && voicePayload.voice_messages?.length) {
-        console.warn('[VoiceResult] 요약이 DB에 저장되지 않았습니다. 전화번호가 전달되었는지, 또는 대화에 일정/포인트가 포함되었는지 확인하세요.')
       }
 
       // 4) user_credentials에 voice_saved_id로 연결 (나의 이용내역에서 조회 가능하도록, saved_results_voice 전용)
@@ -3079,7 +3108,6 @@ ${seasonBlock}
         const phone = sessionStorage.getItem('payment_phone') || ''
         const password = sessionStorage.getItem('payment_password') || ''
         const requestKey = sessionStorage.getItem('result_request_key') || sessionStorage.getItem('payment_request_key') || ''
-        console.log('[VoiceResult] linking credentials: phone=', phone ? 'YES' : 'NO', 'password=', password ? 'YES' : 'NO', 'requestKey=', requestKey || '(none)')
         if (phone && password) {
           try {
             const credRes = await fetch('/api/user-credentials/save', {
@@ -3093,21 +3121,16 @@ ${seasonBlock}
               }),
             })
             if (credRes.ok) {
-              console.log('[VoiceResult] user credentials linked to savedId:', savedId)
             } else {
               const credErr = await credRes.text().catch(() => '')
-              console.error('[VoiceResult] user-credentials save failed:', credRes.status, credErr)
             }
           } catch (e: any) {
-            console.error('[VoiceResult] user-credentials save error:', e?.message)
           }
         } else {
-          console.warn('[VoiceResult] phone or password missing in sessionStorage, cannot link credentials')
         }
       }
       if (!leaveAfterSaveRef.current) setShowConsultationEndModal(true)
     } catch (e: any) {
-      console.error('[VoiceResult] saveConversation error:', e?.message)
     } finally {
       setSavingConversation(false)
     }
