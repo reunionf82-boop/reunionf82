@@ -29,6 +29,11 @@ const SKIP_WAIT_PAY_AMOUNT = (() => {
 function FormContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  /** iOS: 같은 창 유지해 폼에서 준비한 __voicePrimedContext 사용(마이크 팝업·소리). 그 외는 기존대로 전체 로드 */
+  const navigateToVoiceResult = useCallback((url: string) => {
+    if (typeof window !== 'undefined' && isIOS()) router.push(url)
+    else window.location.href = url
+  }, [router])
   const getParam = useCallback((key: string) => searchParams?.get(key) ?? null, [searchParams])
 
   const fetchContentsSafe = async () => {
@@ -2681,7 +2686,7 @@ function FormContent() {
         setShowPaymentPopup(false)
         setSubmitting(false)
         setPaymentProcessingMethod(null)
-        window.location.href = `/result/voice?oid=${encodeURIComponent(oid)}`
+        navigateToVoiceResult(`/result/voice?oid=${encodeURIComponent(oid)}`)
         return
       }
       
@@ -2911,7 +2916,7 @@ function FormContent() {
           } catch { /* ignore */ }
           setSubmitting(false)
           setTimeout(() => {
-            window.location.href = `/result/voice?oid=${encodeURIComponent(storedOid)}`
+            navigateToVoiceResult(`/result/voice?oid=${encodeURIComponent(storedOid)}`)
           }, 50)
         }
         return
@@ -3157,7 +3162,7 @@ function FormContent() {
         sessionStorage.setItem('result_content_id', String(content!.id))
         sessionStorage.setItem('payment_content_id', String(content!.id))
         try { localStorage.setItem('voice_content_id', String(content!.id)) } catch { /* ignore */ }
-        window.location.href = `/result/voice?id=${encodeURIComponent(content!.id)}`
+        navigateToVoiceResult(`/result/voice?id=${encodeURIComponent(content!.id)}`)
       } catch {
         showAlertMessage('잔여시간 사용 처리에 실패했습니다.')
       }
@@ -4019,7 +4024,7 @@ function FormContent() {
           if (paymentWindowRef.current && !paymentWindowRef.current.closed) paymentWindowRef.current.close()
         } catch { /* ignore */ }
         setTimeout(() => {
-          window.location.href = `/result/voice?oid=${encodeURIComponent(oid)}`
+          navigateToVoiceResult(`/result/voice?oid=${encodeURIComponent(oid)}`)
         }, 50)
       }
       let skipWaitCheckCount = 0
@@ -4148,7 +4153,7 @@ function FormContent() {
       }
       setShowSkipWaitPopup(false)
       setSubmitting(false)
-      window.location.href = `/result/voice?oid=${encodeURIComponent(oid)}`
+      navigateToVoiceResult(`/result/voice?oid=${encodeURIComponent(oid)}`)
     } catch (error: any) {
       setSubmitting(false)
       showAlertMessage(error?.message || '운영자 테스트 처리 중 오류가 발생했습니다.')
