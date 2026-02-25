@@ -593,18 +593,19 @@ export function useVoiceResult() {
       const password = sessionStorage.getItem('payment_password') || ''
       const contentTitle = contentData?.content_name || '음성 상담'
       const cid = contentIdRef.current ? parseInt(contentIdRef.current, 10) : null
-      // 잔여시간이 1블록(rate_seconds) 초과면 잔액 유지, 이하일 때만 이탈 시 소진 (12초보다 큰 잔여에선 0원으로 만들면 안 됨)
+      // 잔여시간이 1블록(rate_seconds) 초과면 잔액 유지, 이하일 때만 이탈 시 소진 (이탈 시점의 실제 값 사용)
       const opts = Array.isArray(contentData?.voice_time_options) ? contentData.voice_time_options : []
       const chargeOpt = opts.find((o: any) => o?.type === 'charge')
       const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
-      const shouldDrainBalance = (useBalanceModeRef.current || enteredWithBalanceRef.current) && cid != null && !!phone && rateSeconds > 0 && remainingSeconds <= rateSeconds
+      const remAtLeave = remainingSecondsRef.current
+      const shouldDrainBalance = (useBalanceModeRef.current || enteredWithBalanceRef.current) && cid != null && !!phone && rateSeconds > 0 && remAtLeave <= rateSeconds
       const payloadObj: Record<string, unknown> = {
         title: contentTitle,
         html: '', // NOT NULL 제약 대응
         result_type: 'voice',
         voice_messages: msgs.map((m) => ({ role: m.role, text: m.text })),
         voice_audio_url: null, // beacon에서는 오디오 업로드 불가
-        voice_duration_seconds: totalSeconds - remainingSeconds > 0 ? totalSeconds - remainingSeconds : null,
+        voice_duration_seconds: totalSeconds - remAtLeave > 0 ? totalSeconds - remAtLeave : null,
         content_id: cid,
         userName,
         _beacon_phone: phone,

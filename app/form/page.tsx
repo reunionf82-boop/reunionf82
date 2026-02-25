@@ -716,8 +716,22 @@ function FormContent() {
     if (!phone) return
     fetch(`/api/voice/balance?contentId=${encodeURIComponent(content.id)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
       .then((r) => r.ok ? r.json() : null)
-      .then((data: { remaining_seconds?: number; balance_wan?: number } | null) => {
+      .then(async (data: { remaining_seconds?: number; balance_wan?: number } | null) => {
         if (!data) return
+        const rem = typeof data.remaining_seconds === 'number' ? data.remaining_seconds : 0
+        const wan = typeof data.balance_wan === 'number' ? data.balance_wan : 0
+        if (wan > 0 && rem <= 0) {
+          try {
+            await fetch('/api/voice/balance', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'drain_balance', contentId: content.id, phone }),
+            })
+          } catch { /* ignore */ }
+          setVoiceBalanceWan(0)
+          setVoiceRemainingSeconds(0)
+          return
+        }
         if (typeof data.remaining_seconds === 'number') setVoiceRemainingSeconds(Math.max(0, data.remaining_seconds))
         if (typeof data.balance_wan === 'number') setVoiceBalanceWan(data.balance_wan)
       })
@@ -734,11 +748,25 @@ function FormContent() {
     let cancelled = false
     fetch(`/api/voice/balance?contentId=${encodeURIComponent(content.id)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
       .then((r) => r.ok ? r.json() : null)
-      .then((data: { remaining_seconds?: number; balance_wan?: number } | null) => {
+      .then(async (data: { remaining_seconds?: number; balance_wan?: number } | null) => {
         if (cancelled) return
         if (data) {
-          if (typeof data.remaining_seconds === 'number') setVoiceRemainingSeconds(Math.max(0, data.remaining_seconds))
-          if (typeof data.balance_wan === 'number') setVoiceBalanceWan(data.balance_wan)
+          const rem = typeof data.remaining_seconds === 'number' ? data.remaining_seconds : 0
+          const wan = typeof data.balance_wan === 'number' ? data.balance_wan : 0
+          if (wan > 0 && rem <= 0) {
+            try {
+              await fetch('/api/voice/balance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'drain_balance', contentId: content.id, phone }),
+              })
+            } catch { /* ignore */ }
+            setVoiceBalanceWan(0)
+            setVoiceRemainingSeconds(0)
+          } else {
+            if (typeof data.remaining_seconds === 'number') setVoiceRemainingSeconds(Math.max(0, data.remaining_seconds))
+            if (typeof data.balance_wan === 'number') setVoiceBalanceWan(data.balance_wan)
+          }
         }
         setVoiceResidualCheckDone(true)
       })
