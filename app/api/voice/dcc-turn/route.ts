@@ -678,7 +678,12 @@ ${emotionTagRule}
                   flushPcm()
                   if (isAllDone()) {
                     ws.close()
-                    resolveOnce()
+                    // 다음 틱으로 미룸: 같은 배치로 도착한 chunk가 아직 처리 안 됐을 수 있음.
+                    // 먼저 모든 chunk를 enqueue한 뒤 스트림을 닫아야 클라이언트 TTS가 끊기지 않음.
+                    setImmediate(() => {
+                      if (finished) return
+                      if (isAllDone()) resolveOnce()
+                    })
                   }
                   return
                 }
@@ -688,7 +693,10 @@ ${emotionTagRule}
             })
             ws.on('error', () => {
               if (ws !== currentWs) return
-              resolveOnce()
+              // 다음 틱에서 종료: 이미 도착한 chunk를 먼저 enqueue (TTS 끊김 방지)
+              setImmediate(() => {
+                if (!finished) resolveOnce()
+              })
             })
             ws.on('close', () => {
               if (ws !== currentWs) return
@@ -824,12 +832,16 @@ ${emotionTagRule}
               if (history.length > 50) history.splice(0, history.length - 50)
             }
             if (isAllDone()) {
-              resolveOnce()
+              setImmediate(() => {
+                if (!finished && isAllDone()) resolveOnce()
+              })
             } else {
               setTimeout(() => {
                 if (!finished) {
                   try { if (currentWs.readyState === 1 || currentWs.readyState === 0) currentWs.close() } catch (_) {}
-                  resolveOnce()
+                  setImmediate(() => {
+                    if (!finished) resolveOnce()
+                  })
                 }
               }, 30000)
             }
