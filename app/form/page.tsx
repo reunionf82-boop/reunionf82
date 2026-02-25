@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { getContents, getContentById, getSelectedModel, getSelectedSpeaker, getFortuneViewMode, getUseSequentialFortune } from '@/lib/supabase-admin'
 import { isPpoingAttributes } from '@/lib/voice-mvp/ppoing-rules'
+import { isIOS, prepareIOSVoiceForResult } from '@/lib/voice-mvp/ios-voice-prepare'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { calculateManseRyeok, generateManseRyeokTable, generateManseRyeokText, getDayGanji, type ManseRyeokCaptionInfo, convertSolarToLunarAccurate, convertLunarToSolarAccurate } from '@/lib/manse-ryeok'
 import TermsPopup from '@/components/TermsPopup'
@@ -3114,6 +3115,11 @@ function FormContent() {
     if (!agreePrivacy) {
       showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
       return
+    }
+
+    // iOS: 음성 결과 페이지 진입 전 사용자 제스처에서 마이크·오디오 준비 (result에서 팝업/소리 동작)
+    if (content?.content_type === 'voice' && typeof window !== 'undefined' && isIOS()) {
+      await prepareIOSVoiceForResult().catch(() => {})
     }
 
     // 음성 + 잔여시간/잔여금액 있음 → 아래쪽 메인 버튼("잔여시간/잔여금액으로 상담") 클릭 시 여기서 처리
@@ -7570,7 +7576,7 @@ function FormContent() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       if (!agreeTerms) {
                         showAlertMessage('서비스 이용 약관에 동의해주세요.')
                         return
@@ -7578,6 +7584,9 @@ function FormContent() {
                       if (!agreePrivacy) {
                         showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
                         return
+                      }
+                      if (content?.content_type === 'voice' && typeof window !== 'undefined' && isIOS()) {
+                        await prepareIOSVoiceForResult().catch(() => {})
                       }
                       setShowSkipWaitPopup(true)
                     }}

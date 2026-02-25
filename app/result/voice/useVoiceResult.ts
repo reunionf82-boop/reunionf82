@@ -718,6 +718,11 @@ export function useVoiceResult() {
   }, [stopDccPlayback, closeDeepgramWs])
 
   const initDccPcmAudio = useCallback(() => {
+    const Win = typeof window !== 'undefined' ? (window as Window & { __voicePrimedContext?: AudioContext }) : null
+    if (Win?.__voicePrimedContext) {
+      dccPcmContextRef.current = Win.__voicePrimedContext
+      delete Win.__voicePrimedContext
+    }
     const AudioCtx = (typeof window !== 'undefined'
       ? (window.AudioContext || (window as any).webkitAudioContext)
       : null)
@@ -1884,6 +1889,11 @@ ${seasonBlock}
         }
         const isiOS = isIOSDevice()
         if (isiOS) {
+          const Win = typeof window !== 'undefined' ? (window as Window & { __voicePrimedRecorderContext?: AudioContext }) : null
+          if (Win?.__voicePrimedRecorderContext) {
+            iosRecorderContextRef.current = Win.__voicePrimedRecorderContext
+            delete Win.__voicePrimedRecorderContext
+          }
           if (!iosRecorderContextRef.current) {
             try {
               iosRecorderContextRef.current = new AudioContext({ sampleRate: 16000 })
