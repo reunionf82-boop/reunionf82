@@ -943,18 +943,18 @@ ${seasonBlock}
   /** 시간연장/충전 팝업 떠 있을 때 마이크 복원용 (닫을 때 이 값으로 복원) */
   const extendPopupMutedRestoreRef = useRef(false)
   const prevExtendPopupOpenRef = useRef(false)
+  /** Android: 팝업 닫을 때 스피커 재적용 지연 호출 정리용 */
+  const extendPopupCloseTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
   useEffect(() => {
     const wasOpen = prevExtendPopupOpenRef.current
     prevExtendPopupOpenRef.current = showExtendPopup
     extendPopupOpenRef.current = showExtendPopup
     // popup이 실제로 열리거나 닫힐 때만 처리 (connected 변경 시엔 무시)
     if (showExtendPopup && !wasOpen) {
-      // Android: 팝업이 뜨면 시스템이 스피커→이어피스로 바꾸는 경우가 있음. 출력을 다시 스피커로 고정 시도.
       forceSpeakerOutput(dccPcmContextRef.current)
       extendPopupMutedRestoreRef.current = muted
       setMuted(true)
       recorderRef.current?.stop()
-      // 폼(시간연장/충전) 나오면 TTS 즉시 멈춤
       streamerRef.current?.stop()
       humeCurrentAudioRef.current?.pause()
       humeCurrentAudioRef.current = null
@@ -968,10 +968,20 @@ ${seasonBlock}
       setOutVolume(0)
       isAiSpeakingRef.current = false
     } else if (!showExtendPopup && wasOpen) {
-      // Android: 팝업 닫을 때도 스피커 출력 재적용
+      extendPopupCloseTimeoutsRef.current.forEach((t) => clearTimeout(t))
+      extendPopupCloseTimeoutsRef.current = []
       forceSpeakerOutput(dccPcmContextRef.current)
       setMuted(extendPopupMutedRestoreRef.current)
       if (connected) recorderRef.current?.start().catch(() => {})
+      if (isAndroidDevice()) {
+        const t1 = setTimeout(() => forceSpeakerOutput(dccPcmContextRef.current), 100)
+        const t2 = setTimeout(() => forceSpeakerOutput(dccPcmContextRef.current), 400)
+        extendPopupCloseTimeoutsRef.current = [t1, t2]
+      }
+    }
+    return () => {
+      extendPopupCloseTimeoutsRef.current.forEach((t) => clearTimeout(t))
+      extendPopupCloseTimeoutsRef.current = []
     }
   }, [showExtendPopup, muted, connected])
 
@@ -1903,11 +1913,7 @@ ${seasonBlock}
           startSoundRef.current.currentTime = 0
           startSoundRef.current.play().catch(() => {})
         }
-        // iOS: DCC AudioContext를 제스처 직후에 생성해야 재생 시 suspended 되지 않음. 먼저 초기화.
-        if (isIOSDevice()) {
-          initDccPcmAudio()
-        }
-        // iOS: 사용자 제스처 직후 마이크 권한/스트림을 먼저 취득해야 수음 가능 (DCC는 이 블록에서 return 하므로 여기서 준비)
+        // iOS: 마이크 팝업이 먼저 뜨도록 getUserMedia를 재생용 AudioContext 생성보다 먼저 호출. 그 다음 재생용 컨텍스트 초기화.
         const isiOS = isIOSDevice()
         if (isiOS) {
           if (!iosRecorderContextRef.current) {
@@ -1920,11 +1926,13 @@ ${seasonBlock}
           if (!iosMicStreamPromiseRef.current && navigator.mediaDevices?.getUserMedia) {
             iosMicStreamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
           }
+          initDccPcmAudio()
           const stream = await iosMicStreamPromiseRef.current?.catch(() => null)
           const ctx = iosRecorderContextRef.current
           if (stream && ctx) startDccContinuousRecording(stream, ctx)
           else startDccContinuousRecording()
         } else {
+          initDccPcmAudio()
           startDccContinuousRecording()
         }
         // DCC도 양방향 녹음(마이크+AI) → 나의 이용내역 음성듣기용 voice_audio_url 저장
