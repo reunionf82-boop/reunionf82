@@ -15,17 +15,19 @@ export function isIOS(): boolean {
 
 export async function prepareIOSVoiceForResult(): Promise<void> {
   if (!isIOS() || typeof window === 'undefined') return
-  try {
-    if (navigator.mediaDevices?.getUserMedia) {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      stream.getTracks().forEach((t) => t.stop())
-    }
-  } catch {
-    /* 권한 거부 등 무시 */
-  }
   const Win = window as Window & {
     __voicePrimedContext?: AudioContext
     __voicePrimedRecorderContext?: AudioContext
+    __voicePrimedStream?: MediaStream
+  }
+  try {
+    if (navigator.mediaDevices?.getUserMedia) {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // 트랙 끄지 않음 → result 페이지에서 그대로 사용 (거기서는 제스처 없어 팝업 안 뜸)
+      Win.__voicePrimedStream = stream
+    }
+  } catch {
+    /* 권한 거부 등 무시 */
   }
   try {
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext

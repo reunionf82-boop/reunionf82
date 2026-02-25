@@ -1889,7 +1889,7 @@ ${seasonBlock}
         }
         const isiOS = isIOSDevice()
         if (isiOS) {
-          const Win = typeof window !== 'undefined' ? (window as Window & { __voicePrimedRecorderContext?: AudioContext }) : null
+          const Win = typeof window !== 'undefined' ? (window as Window & { __voicePrimedRecorderContext?: AudioContext; __voicePrimedStream?: MediaStream }) : null
           if (Win?.__voicePrimedRecorderContext) {
             iosRecorderContextRef.current = Win.__voicePrimedRecorderContext
             delete Win.__voicePrimedRecorderContext
@@ -1899,8 +1899,13 @@ ${seasonBlock}
               iosRecorderContextRef.current = new AudioContext({ sampleRate: 16000 })
             } catch { /* ignore */ }
           }
-          if (!iosMicStreamPromiseRef.current && navigator.mediaDevices?.getUserMedia) {
-            iosMicStreamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
+          if (!iosMicStreamPromiseRef.current) {
+            if (Win?.__voicePrimedStream) {
+              iosMicStreamPromiseRef.current = Promise.resolve(Win.__voicePrimedStream)
+              delete Win.__voicePrimedStream
+            } else if (navigator.mediaDevices?.getUserMedia) {
+              iosMicStreamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
+            }
           }
           initDccPcmAudio()
           const stream = await iosMicStreamPromiseRef.current?.catch(() => null)
