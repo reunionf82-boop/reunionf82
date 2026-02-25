@@ -95,15 +95,10 @@ function isAndroidDevice() {
   return /Android/i.test(navigator.userAgent || '')
 }
 
-/** Android: 시간연장 팝업 등으로 오디오가 이어피스로 바뀌는 것 완화 — AudioContext.setSinkId로 출력 재지정 시도.
- * iOS에서는 audioSession.type = 'playback'을 쓰면 소리가 안 나는 경우가 있어 적용하지 않음. */
-function forceSpeakerOutput(audioContextRef: AudioContext | null) {
-  if (typeof window === 'undefined' || !isAndroidDevice() || !audioContextRef) return
-  const ctx = audioContextRef as AudioContext & { setSinkId?: (id: string) => Promise<void> }
-  if (typeof ctx.setSinkId === 'function') {
-    ctx.setSinkId('').catch(() => {})
-  }
-}
+/** Android/iOS 오디오 출력 라우팅 메모:
+ * - Android: setSinkId는 이어피스/스피커를 제어할 수 없음 (Chrome 공식 확인). 웹에서 해결 불가.
+ * - iOS: audioSession.type = 'playback' 설정 시 소리가 안 나는 경우 있음. 사용하지 않음.
+ * 두 문제 모두 네이티브(React Native/Flutter) 전환 없이는 완전 해결 불가. */
 
 function setPlaysInlineForSpeaker(el: HTMLAudioElement) {
   el.setAttribute('playsinline', 'true')
@@ -729,7 +724,6 @@ export function useVoiceResult() {
     if (!AudioCtx) return null
     if (!dccPcmContextRef.current) {
       dccPcmContextRef.current = new AudioCtx({ sampleRate: DCC_PCM_SAMPLE_RATE })
-      forceSpeakerOutput(dccPcmContextRef.current)
     }
     if (!dccStreamerRef.current) {
       dccStreamerRef.current = new AudioStreamer(dccPcmContextRef.current, {
@@ -943,15 +937,11 @@ ${seasonBlock}
   /** 시간연장/충전 팝업 떠 있을 때 마이크 복원용 (닫을 때 이 값으로 복원) */
   const extendPopupMutedRestoreRef = useRef(false)
   const prevExtendPopupOpenRef = useRef(false)
-  /** Android: 팝업 닫을 때 스피커 재적용 지연 호출 정리용 */
-  const extendPopupCloseTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
   useEffect(() => {
     const wasOpen = prevExtendPopupOpenRef.current
     prevExtendPopupOpenRef.current = showExtendPopup
     extendPopupOpenRef.current = showExtendPopup
-    // popup이 실제로 열리거나 닫힐 때만 처리 (connected 변경 시엔 무시)
     if (showExtendPopup && !wasOpen) {
-      forceSpeakerOutput(dccPcmContextRef.current)
       extendPopupMutedRestoreRef.current = muted
       setMuted(true)
       recorderRef.current?.stop()
@@ -968,20 +958,8 @@ ${seasonBlock}
       setOutVolume(0)
       isAiSpeakingRef.current = false
     } else if (!showExtendPopup && wasOpen) {
-      extendPopupCloseTimeoutsRef.current.forEach((t) => clearTimeout(t))
-      extendPopupCloseTimeoutsRef.current = []
-      forceSpeakerOutput(dccPcmContextRef.current)
       setMuted(extendPopupMutedRestoreRef.current)
       if (connected) recorderRef.current?.start().catch(() => {})
-      if (isAndroidDevice()) {
-        const t1 = setTimeout(() => forceSpeakerOutput(dccPcmContextRef.current), 100)
-        const t2 = setTimeout(() => forceSpeakerOutput(dccPcmContextRef.current), 400)
-        extendPopupCloseTimeoutsRef.current = [t1, t2]
-      }
-    }
-    return () => {
-      extendPopupCloseTimeoutsRef.current.forEach((t) => clearTimeout(t))
-      extendPopupCloseTimeoutsRef.current = []
     }
   }, [showExtendPopup, muted, connected])
 
@@ -1883,23 +1861,14 @@ ${seasonBlock}
 
   const connect = useCallback(async () => {
     setError('')
-    startSoundPlayedRef.current = false // 이번 연결에서 ready 시 종소리 1회 재생
-    // iOS: 사용자 제스처 직후 무음 재생으로 오디오 세션 활성화 (스피커/이어피스는 세션 설정 안 함 — playback 설정 시 소리 안 나는 경우 있음)
-    if (isIOSDevice() && typeof window !== 'undefined') {
-      const unlock = new Audio()
-      setPlaysInlineForSpeaker(unlock)
-      unlock.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
-      void unlock.play().catch(() => {})
-    }
+    startSoundPlayedRef.current = false
     try {
-      // 중복 connect 방지: CONNECTING 상태에서도 재호출되면 소켓이 교체되어 init 누락 가능
       if (
         wsRef.current &&
         (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)
       ) return
       const isDccProvider = contentData?.voice_provider === 'deepgram-claude-cartesia'
       if (isDccProvider) {
-        // DCC는 streamerRef/WS를 쓰지 않으므로 침묵깨기 타이머는 설정되지 않음 (아래 streamer.onComplete 미실행)
         const cid = contentIdRef.current
         if (!cid) return
         dccSessionIdRef.current = `dcc-${cid}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -1913,20 +1882,23 @@ ${seasonBlock}
           startSoundRef.current.currentTime = 0
           startSoundRef.current.play().catch(() => {})
         }
-        // iOS: 마이크 팝업이 먼저 뜨도록 getUserMedia를 재생용 AudioContext 생성보다 먼저 호출. 그 다음 재생용 컨텍스트 초기화.
         const isiOS = isIOSDevice()
         if (isiOS) {
-          if (!iosRecorderContextRef.current) {
-            try {
-              iosRecorderContextRef.current = new AudioContext({ sampleRate: 16000 })
-            } catch {
-              /* ignore */
-            }
-          }
+          // panana 검증 패턴: ① getUserMedia(await 안 함) → ② 무음 WAV 재생 → ③ AudioContext 생성+resume → ④ await mic stream → ⑤ recorder start
           if (!iosMicStreamPromiseRef.current && navigator.mediaDevices?.getUserMedia) {
             iosMicStreamPromiseRef.current = navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS })
           }
+          const unlock = new Audio()
+          setPlaysInlineForSpeaker(unlock)
+          unlock.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
+          void unlock.play().catch(() => {})
+          if (!iosRecorderContextRef.current) {
+            try {
+              iosRecorderContextRef.current = new AudioContext({ sampleRate: 16000 })
+            } catch { /* ignore */ }
+          }
           initDccPcmAudio()
+          if (dccPcmContextRef.current) await dccPcmContextRef.current.resume().catch(() => {})
           const stream = await iosMicStreamPromiseRef.current?.catch(() => null)
           const ctx = iosRecorderContextRef.current
           if (stream && ctx) startDccContinuousRecording(stream, ctx)
