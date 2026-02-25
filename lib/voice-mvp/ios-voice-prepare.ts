@@ -13,21 +13,25 @@ export function isIOS(): boolean {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 }
 
-export async function prepareIOSVoiceForResult(): Promise<void> {
-  if (!isIOS() || typeof window === 'undefined') return
+/** iOS 음성: 클릭과 같은 동기 콜스택에서 호출해야 팝업이 뜸. 반환된 프로미스를 나중에 finishIOSVoicePrepare에 넘겨 await */
+export function startIOSVoicePrepare(): Promise<MediaStream> | null {
+  if (!isIOS() || typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) return null
+  return navigator.mediaDevices.getUserMedia({ audio: true })
+}
+
+/** startIOSVoicePrepare()로 받은 프로미스를 await한 뒤 스트림·컨텍스트를 window에 보관 */
+export async function finishIOSVoicePrepare(micPromise: Promise<MediaStream> | null): Promise<void> {
+  if (!micPromise || typeof window === 'undefined') return
   const Win = window as Window & {
     __voicePrimedContext?: AudioContext
     __voicePrimedRecorderContext?: AudioContext
     __voicePrimedStream?: MediaStream
   }
   try {
-    if (navigator.mediaDevices?.getUserMedia) {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      // 트랙 끄지 않음 → result 페이지에서 그대로 사용 (거기서는 제스처 없어 팝업 안 뜸)
-      Win.__voicePrimedStream = stream
-    }
+    const stream = await micPromise
+    Win.__voicePrimedStream = stream
   } catch {
-    /* 권한 거부 등 무시 */
+    /* 권한 거부 등 */
   }
   try {
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
@@ -44,4 +48,10 @@ export async function prepareIOSVoiceForResult(): Promise<void> {
   } catch {
     /* ignore */
   }
+}
+
+/** 기존: 한 번에 준비 (동기 콜스택에서 start + finish 호출하는 편이 iOS에서 더 잘 뜸) */
+export async function prepareIOSVoiceForResult(): Promise<void> {
+  const p = startIOSVoicePrepare()
+  await finishIOSVoicePrepare(p)
 }

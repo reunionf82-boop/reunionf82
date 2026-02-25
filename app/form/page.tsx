@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Suspense } from 'react'
 import { getContents, getContentById, getSelectedModel, getSelectedSpeaker, getFortuneViewMode, getUseSequentialFortune } from '@/lib/supabase-admin'
 import { isPpoingAttributes } from '@/lib/voice-mvp/ppoing-rules'
-import { isIOS, prepareIOSVoiceForResult } from '@/lib/voice-mvp/ios-voice-prepare'
+import { isIOS, startIOSVoicePrepare, finishIOSVoicePrepare } from '@/lib/voice-mvp/ios-voice-prepare'
 import { callJeminaiAPIStream } from '@/lib/jeminai'
 import { calculateManseRyeok, generateManseRyeokTable, generateManseRyeokText, getDayGanji, type ManseRyeokCaptionInfo, convertSolarToLunarAccurate, convertLunarToSolarAccurate } from '@/lib/manse-ryeok'
 import TermsPopup from '@/components/TermsPopup'
@@ -3092,7 +3092,10 @@ function FormContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
+    // iOS 음성: 제스처 직후 동기 호출해야 마이크 팝업이 뜸 (나중에 finishIOSVoicePrepare로 await)
+    const micPromise = (content?.content_type === 'voice' && typeof window !== 'undefined' && isIOS()) ? startIOSVoicePrepare() : null
+
     // 로딩 중 확인
     if (loading) {
       showAlertMessage('로딩 중입니다. 잠시만 기다려주세요.')
@@ -3120,11 +3123,6 @@ function FormContent() {
     if (!agreePrivacy) {
       showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
       return
-    }
-
-    // iOS: 음성 결과 페이지 진입 전 사용자 제스처에서 마이크·오디오 준비 (result에서 팝업/소리 동작)
-    if (content?.content_type === 'voice' && typeof window !== 'undefined' && isIOS()) {
-      await prepareIOSVoiceForResult().catch(() => {})
     }
 
     // 음성 + 잔여시간/잔여금액 있음 → 아래쪽 메인 버튼("잔여시간/잔여금액으로 상담") 클릭 시 여기서 처리
@@ -3162,6 +3160,7 @@ function FormContent() {
         sessionStorage.setItem('result_content_id', String(content!.id))
         sessionStorage.setItem('payment_content_id', String(content!.id))
         try { localStorage.setItem('voice_content_id', String(content!.id)) } catch { /* ignore */ }
+        await finishIOSVoicePrepare(micPromise)
         navigateToVoiceResult(`/result/voice?id=${encodeURIComponent(content!.id)}`)
       } catch {
         showAlertMessage('잔여시간 사용 처리에 실패했습니다.')
@@ -3240,6 +3239,7 @@ function FormContent() {
           localStorage.setItem(`voice_free_start_${content.id}`, String(Date.now()))
         } catch { /* ignore */ }
       }
+      await finishIOSVoicePrepare(micPromise)
       try {
         await startFortuneTellingWithContent(
           Date.now(),
@@ -3269,6 +3269,7 @@ function FormContent() {
       return
     }
 
+    await finishIOSVoicePrepare(micPromise)
     setShowPaymentPopup(true)
   }
 
@@ -7582,6 +7583,7 @@ function FormContent() {
                   <button
                     type="button"
                     onClick={async () => {
+                      const micPromise = (content?.content_type === 'voice' && typeof window !== 'undefined' && isIOS()) ? startIOSVoicePrepare() : null
                       if (!agreeTerms) {
                         showAlertMessage('서비스 이용 약관에 동의해주세요.')
                         return
@@ -7590,9 +7592,7 @@ function FormContent() {
                         showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
                         return
                       }
-                      if (content?.content_type === 'voice' && typeof window !== 'undefined' && isIOS()) {
-                        await prepareIOSVoiceForResult().catch(() => {})
-                      }
+                      await finishIOSVoicePrepare(micPromise)
                       setShowSkipWaitPopup(true)
                     }}
                     className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"
