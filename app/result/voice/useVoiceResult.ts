@@ -1877,6 +1877,7 @@ ${seasonBlock}
     // iOS: 사용자 제스처 직후 무음 재생으로 오디오 세션 활성화 (스피커/이어피스는 세션 설정 안 함 — playback 설정 시 소리 안 나는 경우 있음)
     if (isIOSDevice() && typeof window !== 'undefined') {
       const unlock = new Audio()
+      setPlaysInlineForSpeaker(unlock)
       unlock.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA'
       void unlock.play().catch(() => {})
     }
@@ -1901,6 +1902,10 @@ ${seasonBlock}
           startSoundPlayedRef.current = true
           startSoundRef.current.currentTime = 0
           startSoundRef.current.play().catch(() => {})
+        }
+        // iOS: DCC AudioContext를 제스처 직후에 생성해야 재생 시 suspended 되지 않음. 먼저 초기화.
+        if (isIOSDevice()) {
+          initDccPcmAudio()
         }
         // iOS: 사용자 제스처 직후 마이크 권한/스트림을 먼저 취득해야 수음 가능 (DCC는 이 블록에서 return 하므로 여기서 준비)
         const isiOS = isIOSDevice()
