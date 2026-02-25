@@ -1609,7 +1609,7 @@ ${seasonBlock}
                   // iOS 등에서 AudioBufferSourceNode.onended가 호출되지 않으면 파형이 계속 출렁임. 안전 타임아웃으로 강제 정리.
                   safetyTimeout = setTimeout(() => {
                     if (!dccCompleteFired) onDone()
-                  }, 4000)
+                  }, 2000)
                 }
               }
             } catch {
@@ -1836,6 +1836,12 @@ ${seasonBlock}
 
     const onVolume = (vol: number) => {
       setInVolume(vol)
+      // iOS: TTS 끝났는데 onComplete 미호출로 파형 인터벌이 남아 있으면, 사용자 음성 감지 시 즉시 정리
+      if (dccOutVolumeIntervalRef.current && vol > 0.02) {
+        clearInterval(dccOutVolumeIntervalRef.current)
+        dccOutVolumeIntervalRef.current = null
+        setOutVolume(0)
+      }
       if (isAiSpeakingRef.current && vol > interruptThreshold) {
         const now = Date.now()
         if (dccInterruptAboveSinceRef.current === null) dccInterruptAboveSinceRef.current = now
