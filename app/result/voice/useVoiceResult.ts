@@ -39,8 +39,8 @@ const TTS_INTERRUPT_VOLUME_FACTOR = 1.2
 const TTS_INTERRUPT_DEBOUNCE_MS = 120
 /** DCC 연속 대화: 침묵 시 턴 전송. 이 청크 수 이상이면 '말함' 없이도 전송(조용한 목소리 폴백). 16kHz 기준 약 2초. */
 const DCC_MIN_CHUNKS_QUIET_FALLBACK = 8
-/** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. */
-const DCC_SILENCE_END_MS = 800
+/** DCC 연속 대화: 화자 종료 인지시간(ms). 낮을수록 턴 전송 빠름(체감 TTS 지연 감소), 너무 낮으면 말 끊김. */
+const DCC_SILENCE_END_MS = 600
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
 /** 대화중 소리 연타 방지 쿨타임(ms). 이 간격 동안은 재생하지 않음 */
@@ -1639,11 +1639,7 @@ ${seasonBlock}
                 }
                 if (receivedAudio && dccStreamerRef.current && !dccCompletionWired) {
                   dccCompletionWired = true
-                  if (dccOutVolumeIntervalRef.current) {
-                    clearInterval(dccOutVolumeIntervalRef.current)
-                    dccOutVolumeIntervalRef.current = null
-                  }
-                  setOutVolume(0)
+                  // 파형은 실제 재생이 끝날 때(onComplete)까지 유지; 여기서는 인터벌/볼륨 정리하지 않음
                   let dccCompleteFired = false
                   const onDone = () => {
                     if (dccCompleteFired) return
@@ -1675,14 +1671,9 @@ ${seasonBlock}
             }
           }
         }
-        // 스트림이 'done' 없이 끝난 경우에도 파형 정리 (연결 끊김 등)
+        // 스트림이 'done' 없이 끝난 경우에도 파형은 재생이 끝날 때까지 유지; onComplete에서 정리
         if (receivedAudio && dccStreamerRef.current && !dccCompletionWired) {
           dccCompletionWired = true
-          if (dccOutVolumeIntervalRef.current) {
-            clearInterval(dccOutVolumeIntervalRef.current)
-            dccOutVolumeIntervalRef.current = null
-          }
-          setOutVolume(0)
           let dccCompleteFired = false
           const onDone = () => {
             if (dccCompleteFired) return

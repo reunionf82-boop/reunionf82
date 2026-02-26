@@ -21,7 +21,7 @@ const VITO_PCM_CHUNK_BYTES = 4096
 /** 네이버 클로바 (VITO 미설정 시 fallback). */
 const NAVER_CLOVA_STT_URL_DEFAULT = 'https://clovaspeech-gw.ncloud.com/recog/v1/stt'
 const NAVER_OPENAPI_STT_URL = 'https://naveropenapi.apigw.ntruss.com/recog/v1/stt'
-const STT_LEADING_SILENCE_MS = 500
+const STT_LEADING_SILENCE_MS = 300
 const STT_WAV_SAMPLE_RATE = 16000
 const STT_WAV_BYTES_PER_SAMPLE = 2
 const CARTESIA_URL = 'https://api.cartesia.ai/tts/bytes'
@@ -270,8 +270,8 @@ function pcmBase64ToWavBase64(pcmBase64: string, sampleRate = CARTESIA_SAMPLE_RA
   return pcmBufferToWavBase64(Buffer.from(pcmBase64, 'base64'), sampleRate, numChannels, bitsPerSample)
 }
 
-/** 스트리밍 시 이 바이트 이상 모아서 한 PCM 청크 전송. 자주 보낼수록 끊김 감소 (0.08초) */
-const STREAMING_PCM_FLUSH_BYTES = Math.floor((CARTESIA_SAMPLE_RATE * (CARTESIA_BITS / 8) * CARTESIA_NUM_CHANNELS) * 0.08)
+/** 스트리밍 시 이 바이트 이상 모아서 한 PCM 청크 전송. 작을수록 첫 오디오 빨리 전달 (0.05초) */
+const STREAMING_PCM_FLUSH_BYTES = Math.floor((CARTESIA_SAMPLE_RATE * (CARTESIA_BITS / 8) * CARTESIA_NUM_CHANNELS) * 0.05)
 
 /** 공수 시 LLM이 말할 오늘의 토큰 — 사용자별 24시간 동일 유지 */
 const FORTUNE_COLORS = ['빨간색', '주황색', '노란색', '초록색', '파란색', '남색', '보라색', '분홍색', '하늘색', '민트색', '흰색', '검정색', '회색'] as const
@@ -786,8 +786,12 @@ ${emotionTagRule}
 [중요] 이 세션에서 이미 공수(오늘의 운세)를 전달했다. 사용자가 새 질문을 할 때는 이미 내린 공수를 반복하지 말 것. 사용자가 "공수 다시 말해줘", "공수 다시 말해달라", "아까 공수 다시 들려줘" 등으로 분명히 다시 말해달라고 요청할 때만 공수 내용을 다시 말할 것.` : ''}`
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY
+    const cartesiaKey = process.env.CARTESIA_API_KEY
     if (!anthropicKey) {
       return NextResponse.json({ success: false, error: 'ANTHROPIC_API_KEY 미설정' }, { status: 500 })
+    }
+    if (ttsMode === 'streaming' && !cartesiaKey) {
+      return NextResponse.json({ success: false, error: 'CARTESIA_API_KEY 미설정' }, { status: 500 })
     }
 
     // [시작] = 상담 입장 시 AI가 먼저 인사하도록 지시 (페르소나 + 초대 인사 지침 준수, 분량은 지침대로)
@@ -809,6 +813,21 @@ ${emotionTagRule}
       system: systemPrompt,
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
       cache_control: { type: 'ephemeral' as const, ttl: '5m' as const },
+    }
+
+    /** Claude fetch와 동시에 Cartesia WS 연결해 첫 토큰 도착 시 이미 열려 있게 함 */
+    let cartesiaWsPromise: Promise<WebSocket> | null = null
+    if (ttsMode === 'streaming' && cartesiaKey) {
+      cartesiaWsPromise = new Promise<WebSocket>((resolve, reject) => {
+        const w = new WebSocket(CARTESIA_WS_URL, {
+          headers: {
+            'Cartesia-Version': CARTESIA_VERSION,
+            Authorization: `Bearer ${cartesiaKey}`,
+          },
+        })
+        w.on('open', () => resolve(w))
+        w.on('error', (err) => reject(err))
+      })
     }
 
     let claudeRes: Response | null = null
@@ -858,8 +877,7 @@ ${emotionTagRule}
       console.error('[dcc-turn] 502 Claude: no response after retries')
       return NextResponse.json({ success: false, error: '상담 응답을 처리하지 못했습니다. 다시 말씀해 주세요.' }, { status: 502 })
     }
-    const cartesiaKey = process.env.CARTESIA_API_KEY
-    if (!cartesiaKey) {
+    if (!cartesiaKey && ttsMode !== 'streaming') {
       return NextResponse.json({ success: false, error: 'CARTESIA_API_KEY 미설정' }, { status: 500 })
     }
 
@@ -871,6 +889,7 @@ ${emotionTagRule}
     }
     // ── 스트리밍: Claude 토큰 → Cartesia WS 즉시 전송 (진짜 티키타카) ──
     if (ttsMode === 'streaming') {
+      const preOpenedWs = cartesiaWsPromise ? await cartesiaWsPromise : null
       const encoder = new TextEncoder()
       /** 연결마다 context_id를 새로 씀(재연결 시에도) */
       const basePayloadNoContext = {
@@ -950,13 +969,20 @@ ${emotionTagRule}
           }
 
           let currentContextId = `dcc-${sessionId}-${Date.now()}`
-          let currentWs = new WebSocket(CARTESIA_WS_URL, {
-            headers: {
-              'Cartesia-Version': CARTESIA_VERSION,
-              Authorization: `Bearer ${cartesiaKey}`,
-            },
-          })
-          let wsOpen = false
+          let currentWs: WebSocket
+          let wsOpen: boolean
+          if (preOpenedWs != null) {
+            currentWs = preOpenedWs
+            wsOpen = true
+          } else {
+            currentWs = new WebSocket(CARTESIA_WS_URL, {
+              headers: {
+                'Cartesia-Version': CARTESIA_VERSION,
+                Authorization: `Bearer ${cartesiaKey}`,
+              },
+            })
+            wsOpen = false
+          }
           const pendingSends: string[] = []
           let sentFinalChunk = false
           let reconnecting = false
@@ -1077,11 +1103,13 @@ ${emotionTagRule}
 
           const initialWs = currentWs
           attachWsHandlers(initialWs, '초기')
-          initialWs.on('open', () => {
-            if (currentWs !== initialWs) return
-            wsOpen = true
-            flushPendingSends(initialWs)
-          })
+          if (preOpenedWs == null) {
+            initialWs.on('open', () => {
+              if (currentWs !== initialWs) return
+              wsOpen = true
+              flushPendingSends(initialWs)
+            })
+          }
           setTimeout(() => {
             if (currentWs.readyState !== currentWs.CLOSED && currentWs.readyState !== currentWs.CLOSING) currentWs.close()
             resolveOnce()

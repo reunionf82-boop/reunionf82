@@ -383,19 +383,21 @@ export default function VoiceResultContent() {
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm">{h.error}</div>
         ) : null}
 
-        {/* 잔여금액 (메인 화면 상시 표시, 우측 상단에 시간 표시 있음. 차감주기/차감금액은 어드민 시간상품 설정에서 로드) */}
+        {/* 잔여금액 (0원일 때는 표시하지 않음. 메인 화면 상시 표시) */}
         {(() => {
           const chargeOpt = Array.isArray(h.contentData?.voice_time_options) ? (h.contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
           if (!chargeOpt) return null
+          const bal = h.balanceWan ?? 0
+          if (bal <= 0) return null
           const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
           const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
           const rateText = rateSeconds > 0 && rateWon > 0 ? ` (차감주기 ${rateSeconds}초당 ${rateWon}원)` : ''
-          return (h.balanceWan ?? 0) >= 0 ? (
+          return (
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
-              잔여금액 <span className="font-bold text-violet-600">{(h.balanceWan ?? 0).toLocaleString()}원</span>
+              잔여금액 <span className="font-bold text-violet-600">{bal.toLocaleString()}원</span>
               {rateText}
             </div>
-          ) : null
+          )
         })()}
 
         {/* 상담사 영상: 복수 시 세션당 하나 랜덤 선택 후 해당 동영상만 반복 재생. DCC 음성과 동시 재생 시 메인 스레드/GPU 경쟁 완화 위해 레이어 분리 */}
@@ -610,18 +612,20 @@ export default function VoiceResultContent() {
                 </div>
               )}
 
-              {/* 현재 잔액 (충전식) - 우측 상단에 시간 표시 있음. 어드민 시간상품 차감주기·차감금액 표시 */}
+              {/* 현재 잔액 (충전식, 0원일 때는 표시하지 않음) */}
               {(() => {
                 const chargeOpt = Array.isArray(h.contentData?.voice_time_options) ? (h.contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
+                const bal = h.balanceWan ?? 0
+                if (bal <= 0) return null
                 const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
                 const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
                 const rateText = rateSeconds > 0 && rateWon > 0 ? ` (차감주기 ${rateSeconds}초당 ${rateWon}원)` : ''
-                return (h.balanceWan ?? 0) >= 0 ? (
+                return (
                   <p className="text-sm text-gray-600 mb-4">
-                    잔여금액 <span className="font-bold text-violet-600">{(h.balanceWan ?? 0).toLocaleString()}원</span>
+                    잔여금액 <span className="font-bold text-violet-600">{bal.toLocaleString()}원</span>
                     {rateText}
                   </p>
-                ) : null
+                )
               })()}
 
             {/* 시간연장 옵션(extension) + 1000원 충전(charge) */}
