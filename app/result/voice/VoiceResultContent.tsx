@@ -226,11 +226,11 @@ function AudioEqualizer({
         } else {
           bars[i] = bars[i] * DECAY
         }
-        if (bars[i] < 2) bars[i] = pct > 0.01 ? 2 + Math.random() * 4 : 2
+        if (bars[i] < 2) bars[i] = pct > 0.01 ? 2 + Math.random() * 4 : 0
       }
       for (let i = 0; i < HALF_BARS; i++) {
         const x = startX + i * (barW + gap)
-        const barH = Math.max(2, bars[i])
+        const barH = Math.max(0, bars[i])
         const y = maxH - barH
         const grad = ctx.createLinearGradient(x, y, x, maxH)
         if (isLeft) {
@@ -422,11 +422,11 @@ export default function VoiceResultContent() {
             type="range"
             min={0}
             max={100}
-            value={h.micSensitivity ?? 50}
+            value={h.micSensitivity ?? 85}
             onChange={(e) => h.setMicSensitivity?.(Number(e.target.value))}
             className="flex-1 min-w-0 h-2 rounded-full appearance-none bg-gray-200 accent-violet-500"
           />
-          <span className="text-gray-400 text-xs shrink-0 tabular-nums">{h.micSensitivity ?? 50}%</span>
+          <span className="text-gray-400 text-xs shrink-0 tabular-nums">{h.micSensitivity ?? 85}%</span>
         </div>
 
         {/* 사주 만세력 (접기/펼치기) — 마이크 민감도 아래, 8006/무료속성이 아닐 때만 표시 */}

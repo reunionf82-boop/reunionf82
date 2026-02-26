@@ -24,6 +24,15 @@ interface VoiceResult {
   voice_counselor_name?: string | null
 }
 
+/** 나의 이용내역 다시보기: 내담자 이름은 실제 입력 여부와 관계없이 "나"로만 표시 */
+const REPLAY_USER_LABEL = '나'
+
+/** 상담사(성수올령 등) 메시지에서 [laughter], [sigh] 등 감정/동작 태그 제거 */
+function stripEmotionTags(text: string): string {
+  if (!text || typeof text !== 'string') return text
+  return text.replace(/\s*\[[^\]]*\]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim()
+}
+
 function isIOS(): boolean {
   if (typeof navigator === 'undefined') return false
   return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
@@ -341,7 +350,15 @@ function VoiceReplayContent() {
           </div>
         ) : (
           <div className="space-y-4">
-            {result.voice_messages.map((msg, idx) => {
+            {(() => {
+              // 나의 이용내역 다시보기: 첫 번째 "나" 메시지가 [시작]이면 표시하지 않음
+              const filtered = result.voice_messages.slice()
+              const firstUserIdx = filtered.findIndex((m) => m.role === 'user')
+              if (firstUserIdx >= 0 && String(filtered[firstUserIdx].text).trim() === '[시작]') {
+                filtered.splice(firstUserIdx, 1)
+              }
+              return filtered
+            })().map((msg, idx) => {
               const isAssistant = msg.role === 'assistant'
               return (
                 <div key={idx} className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}>
@@ -351,9 +368,11 @@ function VoiceReplayContent() {
                       : 'bg-violet-600/80 text-white rounded-tr-md'
                   }`}>
                     <p className="text-xs font-semibold mb-1 opacity-60">
-                      {isAssistant ? (result.voice_counselor_name || '상담사') : (result.user_name || '나')}
+                      {isAssistant ? (result.voice_counselor_name || '상담사') : REPLAY_USER_LABEL}
                     </p>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                      {isAssistant ? stripEmotionTags(msg.text) : msg.text}
+                    </p>
                   </div>
                 </div>
               )

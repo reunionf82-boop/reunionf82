@@ -31,14 +31,16 @@ const LIVE_MODEL_FALLBACK = 'gemini-live-2.5-flash-native-audio'
 const AUTO_RECONNECT_MAX = 3
 const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
 /** 정적 깨기: 이 볼륨 이상이면 사용자가 말하는 것으로 간주. micSensitivity(0-100)로 조정. */
-const SPEECH_THRESHOLD_MIN = 0.01
-const SPEECH_THRESHOLD_MAX = 0.05
+const SPEECH_THRESHOLD_MIN = 0.005
+const SPEECH_THRESHOLD_MAX = 0.035
 /** TTS 중단용: 볼륨이 (threshold * 이 값) 이상일 때 TTS 멈춤. 1.0=말 시작 감지와 동일, 높이면 에코 방지. */
 const TTS_INTERRUPT_VOLUME_FACTOR = 1.2
 /** TTS 중단 디바운스(ms): 이 시간 이상 연속으로 기준 초과 시에만 중단 (순간 스파이크 무시). */
 const TTS_INTERRUPT_DEBOUNCE_MS = 120
-/** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. 낮으면 말 끊김, 높으면 반응이 느려짐. */
-const DCC_SILENCE_END_MS = 500
+/** DCC 연속 대화: 침묵 시 턴 전송. 이 청크 수 이상이면 '말함' 없이도 전송(조용한 목소리 폴백). 16kHz 기준 약 2초. */
+const DCC_MIN_CHUNKS_QUIET_FALLBACK = 8
+/** DCC 연속 대화: 화자 종료 인지시간(ms). 이 침묵 길이 지나면 한 턴으로 전송. */
+const DCC_SILENCE_END_MS = 800
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
 /** 대화중 소리 연타 방지 쿨타임(ms). 이 간격 동안은 재생하지 않음 */
@@ -218,7 +220,7 @@ export function useVoiceResult() {
   const [muted, setMuted] = useState(false)
   const [inVolume, setInVolume] = useState(0)
   const [outVolume, setOutVolume] = useState(0)
-  const [micSensitivity, setMicSensitivity] = useState(50) // 0=낮음, 100=높음
+  const [micSensitivity, setMicSensitivity] = useState(85) // 0=낮음, 100=높음 (기본 85로 목소리 감지 쉽게)
   const [messages, setMessages] = useState<Msg[]>([])
 
   /* ── 타이머 ────────────────────────────── */
@@ -228,11 +230,17 @@ export function useVoiceResult() {
   useEffect(() => {
     remainingSecondsRef.current = remainingSeconds
   }, [remainingSeconds])
+  useEffect(() => {
+    connectedRef.current = connected
+  }, [connected])
   const [showExtendPopup, setShowExtendPopup] = useState(false)
   /** 연장 팝업을 '상담시간 연장하기' 버튼으로 연 경우 true → 종료 메시지 박스 숨김 */
   const [extendPopupOpenedByButton, setExtendPopupOpenedByButton] = useState(false)
   /** 날씨 fetch 완료 시 1 증가 → systemAndContext useMemo 재계산으로 ref 반영 */
   const [weatherLoadedAt, setWeatherLoadedAt] = useState(0)
+  /** [시작] 턴 전송 전 날씨 주입을 위해 대기할 때 사용. fetch 완료 시 resolve */
+  const weatherReadyPromiseRef = useRef<Promise<void>>(Promise.resolve())
+  const weatherReadyResolveRef = useRef<(() => void) | null>(null)
   /** 1분 무료 연장 팝업 (무료시작/이용가능시간 1회만, 팝업 떠 있을 때 타이머 계속) */
   const [showFreeExtendPopup, setShowFreeExtendPopup] = useState(false)
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -246,6 +254,8 @@ export function useVoiceResult() {
   const timeHitZeroNoExtendPopupRef = useRef(false)
   /** 시간 0 전환 시 세션 1회만 끊었는지 (오디오 즉시 정지용) */
   const disconnectedAtZeroRef = useRef(false)
+  /** 연장 결제 후 이미 연결 중이면 connect() 호출하지 않기 위해 (connect() 호출 시 DCC는 새 세션+[시작] 전송됨) */
+  const connectedRef = useRef(false)
   /* ── WS / 오디오 refs ──────────────────── */
   const wsRef = useRef<WebSocket | null>(null)
   const recorderRef = useRef<AudioRecorder | null>(null)
@@ -304,11 +314,13 @@ export function useVoiceResult() {
   const weatherBlockUserRef = useRef<string>('')
   /** 상담사 측(서울) 한 줄 요약. "오늘 서울: 맑음, 14°C, 강수 없음." → 프롬프트 최상단에 사실로 명시 */
   const weatherSummarySeoulRef = useRef<string>('')
-  /** Deepgram 실시간 WebSocket STT */
-  const dgWsRef = useRef<WebSocket | null>(null)
-  const dgApiKeyRef = useRef<string>('')
-  const dgReconnectingRef = useRef(false)
-  const dgKeepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  /** systemAndContext useMemo가 계산한 contextText. [시작] 턴 전송 시 클로저가 아닌 최신 값 사용용 */
+  const contextTextRef = useRef<string>('')
+  /** 네이버 클로바 스피치(STT) 사용: 침묵 구간 감지 후 WAV로 턴 전송. Secret Key는 백엔드 전용. */
+  const dccLastLoudAtRef = useRef(0)
+  /** DCC: 이번 버퍼에서 볼륨이 threshold를 넘은 적이 있을 때만 턴 전송 (연결 직후/침묵만 있는 WAV 전송 방지 → STT 빈 결과 방지) */
+  const dccHadLoudSinceSendRef = useRef(false)
+  const dccSilenceCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const closingForSwapRef = useRef(false)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** AI 발화 종료 시각. 스피커 에코·볼륨 decay로 타이머가 무효화되는 것을 방지. 종료 직후 3초간은 볼륨으로 clear 안 함 (3초 침묵 타이머 전체 커버) */
@@ -555,6 +567,10 @@ export function useVoiceResult() {
 
   /* ── 마운트 시 날씨 2종 fetch: 상담사=서울(성수동), 내담자=IP 기준 ── */
   useEffect(() => {
+    let resolved = false
+    weatherReadyPromiseRef.current = new Promise<void>((r) => {
+      weatherReadyResolveRef.current = () => { if (!resolved) { resolved = true; r() } }
+    })
     Promise.all([
       fetch('/api/voice/weather?base=seoul').then((r) => r.json()).then((d: { weatherBlock?: string; weatherSummary?: string }) => ({ block: d?.weatherBlock ?? '', summary: d?.weatherSummary ?? '' })),
       fetch('/api/voice/weather').then((r) => r.json()).then((d: { weatherBlock?: string; city?: string }) => d?.weatherBlock ? `(${d.city || '접속지역'} 기준)\n${d.weatherBlock}` : ''),
@@ -566,6 +582,10 @@ export function useVoiceResult() {
         if (seoulData.block || seoulData.summary || userBlock) setWeatherLoadedAt((n) => n + 1)
       })
       .catch(() => { /* 실패해도 무시 — 날씨 없이 기존대로 동작 */ })
+      .finally(() => {
+        setWeatherLoadedAt((n) => n + 1)
+        weatherReadyResolveRef.current?.()
+      })
   }, [])
 
   /* ── 자동 연결 (페이지 진입 시 버튼 없이 바로 시작) ── */
@@ -686,19 +706,10 @@ export function useVoiceResult() {
     isAiSpeakingRef.current = false
   }, [])
 
-  /** Deepgram WebSocket 정리 */
-  const closeDeepgramWs = useCallback(() => {
-    if (dgKeepaliveRef.current) { clearInterval(dgKeepaliveRef.current); dgKeepaliveRef.current = null }
-    const ws = dgWsRef.current
-    if (ws) {
-      try { ws.send(JSON.stringify({ type: 'CloseStream' })) } catch { /* ignore */ }
-      try { ws.close() } catch { /* ignore */ }
-      dgWsRef.current = null
-    }
-    dgReconnectingRef.current = false
-  }, [])
+  /** (Groq 사용 시 불필요) 이전 Deepgram WS 정리용 no-op */
+  const closeDeepgramWs = useCallback(() => {}, [])
 
-  /** DCC 녹음 진행 중 여부 (Deepgram WS 재연결 판단용) */
+  /** DCC 녹음 진행 중 여부 */
   const dccRecordingRef = useRef(false)
 
   /** 보이스 화면에서 폼으로 나갈 때(이전/팝업 확인/언마운트 등) TTS·마이크·모든 소리 즉시 중지 */
@@ -707,6 +718,10 @@ export function useVoiceResult() {
     stopAllTTSRef.current = () => {
       recorderRef.current?.stop()
       dccRecordingRef.current = false
+      if (dccSilenceCheckIntervalRef.current) {
+        clearInterval(dccSilenceCheckIntervalRef.current)
+        dccSilenceCheckIntervalRef.current = null
+      }
       closeDeepgramWs()
       streamerRef.current?.stop()
       humeCurrentAudioRef.current?.pause()
@@ -939,6 +954,7 @@ ${seasonBlock}
 `
     }
     const contextText = `${commonContextBlock}${visitBlock}${userInfoBlock}`
+    contextTextRef.current = contextText
     return { systemText, contextText }
   }, [contentData, visitCountToday, manseText, weatherLoadedAt])
 
@@ -1446,7 +1462,9 @@ ${seasonBlock}
   disconnectInternalRef.current = disconnectInternal
 
   /* ── connect ───────────────────────────── */
-  /** Deepgram+Claude+Cartesia: PCM base64 청크들을 WAV로 합쳐 base64 반환 (16kHz mono 16bit) */
+  /** 앞쪽 무음(ms). 첫 문장 잘림 방지를 위해 WAV 앞에 붙임. 서버에서도 추가 무음을 붙임. */
+  const DCC_LEADING_SILENCE_MS = 450
+  /** Deepgram+Claude+Cartesia: PCM base64 청크들을 WAV로 합쳐 base64 반환 (16kHz mono 16bit). 앞에 짧은 무음 추가로 첫 단어 인식률 향상. */
   const buildWavFromPcmChunks = useCallback((chunks: string[], sampleRate = 16000): string => {
     if (chunks.length === 0) return ''
     let totalLen = 0
@@ -1458,11 +1476,12 @@ ${seasonBlock}
       totalLen += buf.length
       buffers.push(buf.buffer)
     }
+    const leadingSilenceBytes = Math.floor((sampleRate * DCC_LEADING_SILENCE_MS / 1000) * 2)
+    const dataSize = leadingSilenceBytes + totalLen
     const numChannels = 1
     const bitsPerSample = 16
     const byteRate = sampleRate * numChannels * (bitsPerSample / 8)
     const blockAlign = numChannels * (bitsPerSample / 8)
-    const dataSize = totalLen
     const header = new ArrayBuffer(44)
     const view = new DataView(header)
     const writeStr = (off: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)) }
@@ -1482,6 +1501,8 @@ ${seasonBlock}
     const combined = new Uint8Array(44 + dataSize)
     combined.set(new Uint8Array(header), 0)
     let offset = 44
+    combined.fill(0, offset, offset + leadingSilenceBytes)
+    offset += leadingSilenceBytes
     for (const buf of buffers) {
       combined.set(new Uint8Array(buf), offset)
       offset += buf.byteLength
@@ -1495,7 +1516,12 @@ ${seasonBlock}
     const cid = contentIdRef.current
     const sid = dccSessionIdRef.current
     if (!cid || !sid) return
-    if (dccSendingRef.current) return
+    // 이전 턴 전송 중이면 중단하고 새 턴으로 덮어씀 → TTS 말하는 도중에도 사용자 말이 실시간으로 LLM에 주입
+    if (dccAbortControllerRef.current) {
+      dccAbortControllerRef.current.abort()
+      dccAbortControllerRef.current = null
+    }
+    if (isAiSpeakingRef.current) stopDccPlayback(true)
     dccSendingRef.current = true
     dccStopPlaybackRef.current = false
     const abortCtrl = new AbortController()
@@ -1508,13 +1534,16 @@ ${seasonBlock}
       const body: Record<string, unknown> = {
         contentId: parseInt(cid, 10),
         sessionId: sid,
-        conversationHistory: isSilenceBreak ? [] : dccHistoryRef.current,
+        conversationHistory: isSilenceBreak ? [] : [...dccHistoryRef.current],
       }
       if (opts.silenceBreakText != null) body.silenceBreakText = opts.silenceBreakText
       if (opts.transcript != null) body.transcript = opts.transcript
       if (opts.audioBase64 != null) body.audioBase64 = opts.audioBase64
       if (opts.userName != null) body.userName = opts.userName
-      if (systemAndContext.contextText) body.contextText = systemAndContext.contextText
+      const latestContext = contextTextRef.current || systemAndContext.contextText
+      if (latestContext) body.contextText = latestContext
+      const phoneForFortune = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') || '' : ''
+      if (phoneForFortune) body.phone = phoneForFortune
       const DCC_RETRY_DELAY_MS = 2000
       let res: Response = await fetch('/api/voice/dcc-turn', {
         method: 'POST',
@@ -1537,6 +1566,11 @@ ${seasonBlock}
       if (isStream && res.body) {
         if (!res.ok) {
           if (isStartTurn) dccFirstTurnPlayingRef.current = false
+          if (dccOutVolumeIntervalRef.current) {
+            clearInterval(dccOutVolumeIntervalRef.current)
+            dccOutVolumeIntervalRef.current = null
+          }
+          setOutVolume(0)
           const errText = await res.text().catch(() => '')
           let userMsg = '일시적인 오류입니다. 다시 말씀해 주세요.'
           try {
@@ -1553,7 +1587,9 @@ ${seasonBlock}
         }
         let userT = ''
         let assistantT = ''
+        let dccTurnTextAdded = false // assistantText 이벤트로 이미 추가했으면 true (다시보기 텍스트 누락 방지)
         let receivedAudio = false
+        let dccCompletionWired = false // 'done' 또는 스트림 종료 시 onComplete 한 번만 연결
         const base64ToArrayBuffer = (b64: string) => {
           const binary = atob(b64)
           const bytes = new Uint8Array(binary.length)
@@ -1583,18 +1619,40 @@ ${seasonBlock}
                 }
               } else if (parsed.type === 'audio' && typeof parsed.base64 === 'string') {
                 if (parsed.format === 'pcm_s16le') {
+                  if (!dccOutVolumeIntervalRef.current) {
+                    dccOutVolumeIntervalRef.current = setInterval(() => setOutVolume(0.35), 80)
+                  }
                   const ab = base64ToArrayBuffer(parsed.base64)
                   playDccPcmChunk(ab)
                   receivedAudio = true
                 }
+              } else if (parsed.type === 'assistantText' && typeof parsed.text === 'string') {
+                assistantT = parsed.text.trim()
+                if (assistantT && !isSilenceBreak && !dccTurnTextAdded) {
+                  dccTurnTextAdded = true
+                  setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
+                }
               } else if (parsed.type === 'done') {
-                assistantT = typeof parsed.assistantText === 'string' ? parsed.assistantText : ''
-                if (assistantT && !isSilenceBreak) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
-                if (receivedAudio && dccStreamerRef.current) {
+                if (!dccTurnTextAdded) {
+                  assistantT = typeof parsed.assistantText === 'string' ? parsed.assistantText : ''
+                  if (assistantT && !isSilenceBreak) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
+                }
+                if (receivedAudio && dccStreamerRef.current && !dccCompletionWired) {
+                  dccCompletionWired = true
+                  if (dccOutVolumeIntervalRef.current) {
+                    clearInterval(dccOutVolumeIntervalRef.current)
+                    dccOutVolumeIntervalRef.current = null
+                  }
+                  setOutVolume(0)
                   let dccCompleteFired = false
                   const onDone = () => {
                     if (dccCompleteFired) return
                     dccCompleteFired = true
+                    if (dccOutVolumeIntervalRef.current) {
+                      clearInterval(dccOutVolumeIntervalRef.current)
+                      dccOutVolumeIntervalRef.current = null
+                    }
+                    setOutVolume(0)
                     if (isStartTurn) dccFirstTurnPlayingRef.current = false
                     stopDccPlayback(false)
                     startSilenceBreakTimerRef.current?.()
@@ -1607,7 +1665,6 @@ ${seasonBlock}
                   }
                   dccStreamerRef.current.flush()
                   dccStreamerRef.current.complete()
-                  // iOS 등에서 AudioBufferSourceNode.onended가 호출되지 않으면 파형이 계속 출렁임. 안전 타임아웃으로 강제 정리.
                   safetyTimeout = setTimeout(() => {
                     if (!dccCompleteFired) onDone()
                   }, 2000)
@@ -1618,17 +1675,52 @@ ${seasonBlock}
             }
           }
         }
+        // 스트림이 'done' 없이 끝난 경우에도 파형 정리 (연결 끊김 등)
+        if (receivedAudio && dccStreamerRef.current && !dccCompletionWired) {
+          dccCompletionWired = true
+          if (dccOutVolumeIntervalRef.current) {
+            clearInterval(dccOutVolumeIntervalRef.current)
+            dccOutVolumeIntervalRef.current = null
+          }
+          setOutVolume(0)
+          let dccCompleteFired = false
+          const onDone = () => {
+            if (dccCompleteFired) return
+            dccCompleteFired = true
+            if (dccOutVolumeIntervalRef.current) {
+              clearInterval(dccOutVolumeIntervalRef.current)
+              dccOutVolumeIntervalRef.current = null
+            }
+            setOutVolume(0)
+            if (isStartTurn) dccFirstTurnPlayingRef.current = false
+            stopDccPlayback(false)
+            startSilenceBreakTimerRef.current?.()
+            onPlaybackComplete?.()
+          }
+          let safetyTimeout: ReturnType<typeof setTimeout>
+          dccStreamerRef.current.onComplete = () => {
+            clearTimeout(safetyTimeout)
+            onDone()
+          }
+          dccStreamerRef.current.flush()
+          dccStreamerRef.current.complete()
+          safetyTimeout = setTimeout(() => {
+            if (!dccCompleteFired) onDone()
+          }, 2000)
+        }
         if (!receivedAudio) {
           if (isStartTurn) dccFirstTurnPlayingRef.current = false
           startSilenceBreakTimerRef.current?.()
           onPlaybackComplete?.()
         }
         if (!isSilenceBreak) {
-          dccHistoryRef.current = [
-            ...dccHistoryRef.current,
-            ...(userT ? [{ role: 'user' as const, content: userT }] : []),
-            ...(assistantT ? [{ role: 'assistant' as const, content: assistantT }] : []),
-          ].slice(-50)
+          const userContent = (userT && userT.trim()) || (opts.transcript && opts.transcript !== '[시작]' ? opts.transcript.trim() : '')
+          const toPush: { role: 'user' | 'assistant'; content: string }[] = []
+          if (userContent) toPush.push({ role: 'user', content: userContent })
+          if (assistantT && assistantT.trim()) toPush.push({ role: 'assistant', content: assistantT.trim() })
+          if (toPush.length === 2) {
+            dccHistoryRef.current = [...dccHistoryRef.current, ...toPush].slice(-50)
+          }
         }
         return
       }
@@ -1650,11 +1742,13 @@ ${seasonBlock}
       }
       if (assistantT && !isSilenceBreak) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
       if (!isSilenceBreak) {
-        dccHistoryRef.current = [
-          ...dccHistoryRef.current,
-          ...(userT ? [{ role: 'user' as const, content: userT }] : []),
-          ...(assistantT ? [{ role: 'assistant' as const, content: assistantT }] : []),
-        ].slice(-50)
+        const userContent = (userT && String(userT).trim()) || (opts.transcript && opts.transcript !== '[시작]' ? String(opts.transcript).trim() : '')
+        const toPush: { role: 'user' | 'assistant'; content: string }[] = []
+        if (userContent) toPush.push({ role: 'user', content: userContent })
+        if (assistantT && String(assistantT).trim()) toPush.push({ role: 'assistant', content: String(assistantT).trim() })
+        if (toPush.length === 2) {
+          dccHistoryRef.current = [...dccHistoryRef.current, ...toPush].slice(-50)
+        }
       }
       if (audioB64 && typeof audioB64 === 'string' && !dccStopPlaybackRef.current) {
         isAiSpeakingRef.current = true
@@ -1700,7 +1794,7 @@ ${seasonBlock}
     } finally {
       dccSendingRef.current = false
     }
-  }, [systemAndContext])
+  }, [systemAndContext, stopDccPlayback])
   sendDccTurnRef.current = sendDccTurn
 
   const isDccProvider = contentData?.voice_provider === 'deepgram-claude-cartesia'
@@ -1725,6 +1819,10 @@ ${seasonBlock}
     recorderRef.current?.stop()
     setDccRecording(false)
     dccRecordingRef.current = false
+    if (dccSilenceCheckIntervalRef.current) {
+      clearInterval(dccSilenceCheckIntervalRef.current)
+      dccSilenceCheckIntervalRef.current = null
+    }
     setInVolume(0)
     closeDeepgramWs()
     const chunks = dccChunksRef.current
@@ -1735,89 +1833,13 @@ ${seasonBlock}
     }
   }, [buildWavFromPcmChunks, sendDccTurn, stopDccPlayback, closeDeepgramWs])
 
-  /** Deepgram WebSocket 연결 생성. speech_final 시 sendDccTurn({ transcript }) 호출 */
-  const connectDeepgramWs = useCallback(async () => {
-    closeDeepgramWs()
-    if (!dgApiKeyRef.current) {
-      try {
-        const r = await fetch('/api/voice/deepgram-token')
-        const d = await r.json()
-        if (d?.key) dgApiKeyRef.current = d.key
-      } catch (e) {
-        console.error('[DG-WS] API key fetch failed:', e)
-        return
-      }
-    }
-    if (!dgApiKeyRef.current) {
-      console.error('[DG-WS] No API key')
-      return
-    }
-
-    const params = new URLSearchParams({
-      model: 'nova-3',
-      language: 'ko',
-      encoding: 'linear16',
-      sample_rate: '16000',
-      channels: '1',
-      interim_results: 'true',
-      speech_final: 'true',
-      endpointing: String(DCC_SILENCE_END_MS),
-      vad_events: 'true',
-    })
-    const ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params.toString()}`, ['token', dgApiKeyRef.current])
-    dgWsRef.current = ws
-
-    ws.onopen = () => {
-      dgReconnectingRef.current = false
-      console.log('[DG-WS] connected')
-      if (dgKeepaliveRef.current) clearInterval(dgKeepaliveRef.current)
-      dgKeepaliveRef.current = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          try { ws.send(JSON.stringify({ type: 'KeepAlive' })) } catch { /* ignore */ }
-        }
-      }, 8000)
-    }
-
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '')
-        if (msg.type === 'Results') {
-          const alt = msg.channel?.alternatives?.[0]
-          const transcript = alt?.transcript ?? ''
-          if (msg.speech_final && transcript.trim()) {
-            if (isAiSpeakingRef.current || dccSendingRef.current) {
-              console.log('[DG-WS] speech_final 무시 (AI 발화중/전송중):', transcript.trim().slice(0, 30))
-              return
-            }
-            console.log('[DG-WS] speech_final:', transcript.trim())
-            sendDccTurn({ transcript: transcript.trim() })
-          }
-        }
-      } catch { /* ignore non-JSON */ }
-    }
-
-    ws.onerror = (e) => {
-      console.error('[DG-WS] error:', e)
-    }
-
-    ws.onclose = (e) => {
-      console.log('[DG-WS] closed:', e.code, e.reason)
-      if (dgKeepaliveRef.current) { clearInterval(dgKeepaliveRef.current); dgKeepaliveRef.current = null }
-      if (dgWsRef.current === ws) dgWsRef.current = null
-      if (!dgReconnectingRef.current && dccRecordingRef.current) {
-        dgReconnectingRef.current = true
-        console.log('[DG-WS] reconnecting...')
-        setTimeout(() => connectDeepgramWs(), 1000)
-      }
-    }
-  }, [closeDeepgramWs, sendDccTurn])
-
-  /** DCC 연속 대화: 첫 인사 재생이 끝난 뒤 호출. Deepgram WS로 실시간 STT, speech_final로 자동 턴 전송.
-   * iOS: 사용자 제스처 직후 취득한 primedStream/primedContext 를 넘기면 수음 불가 이슈를 줄일 수 있음. */
-  const startDccContinuousRecording = useCallback((primedStream?: MediaStream, primedContext?: AudioContext) => {
+  /** DCC 연속 대화: 네이버 클로바 스피치(STT). 침묵 DCC_SILENCE_END_MS 지나면 버퍼를 WAV로 보내 턴 전송. (참고: 제미나이 샘플은 AudioContext+ScriptProcessor로 실시간 WS 중계 시 첫 단어 보정) */
+  const startDccContinuousRecording = useCallback(async (primedStream?: MediaStream, primedContext?: AudioContext) => {
     if (!recorderRef.current) recorderRef.current = new AudioRecorder(16000)
     dccChunksRef.current = []
     dccLastTurnEndIndexRef.current = 0
+    dccLastLoudAtRef.current = Date.now()
+    dccHadLoudSinceSendRef.current = false
 
     const rec = recorderRef.current
     const sens = micSensitivityRef.current
@@ -1826,18 +1848,14 @@ ${seasonBlock}
 
     const onData = (base64: string) => {
       dccChunksRef.current.push(base64)
-      const ws = dgWsRef.current
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        const bin = atob(base64)
-        const buf = new Uint8Array(bin.length)
-        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i)
-        try { ws.send(buf.buffer) } catch { /* ignore */ }
-      }
     }
 
     const onVolume = (vol: number) => {
       setInVolume(vol)
-      // iOS: TTS 끝났는데 onComplete 미호출로 파형 인터벌이 남아 있으면, 사용자 음성 감지 시 즉시 정리
+      if (vol > threshold) {
+        dccLastLoudAtRef.current = Date.now()
+        dccHadLoudSinceSendRef.current = true
+      }
       if (dccOutVolumeIntervalRef.current && vol > 0.02) {
         clearInterval(dccOutVolumeIntervalRef.current)
         dccOutVolumeIntervalRef.current = null
@@ -1857,13 +1875,32 @@ ${seasonBlock}
 
     rec.off('data', onData as any).off('volume', onVolume as any).on('data', onData as any).on('volume', onVolume as any)
 
-    connectDeepgramWs()
+    if (dccSilenceCheckIntervalRef.current) clearInterval(dccSilenceCheckIntervalRef.current)
+    dccSilenceCheckIntervalRef.current = setInterval(() => {
+      if (!dccRecordingRef.current) return
+      if (dccSendingRef.current) return
+      const chunks = dccChunksRef.current
+      const hasLoud = dccHadLoudSinceSendRef.current
+      const hasEnoughQuiet = chunks.length >= DCC_MIN_CHUNKS_QUIET_FALLBACK
+      if (!hasLoud && !hasEnoughQuiet) return
+      const now = Date.now()
+      if (now - dccLastLoudAtRef.current < DCC_SILENCE_END_MS) return
+      if (chunks.length === 0) return
+      dccChunksRef.current = []
+      dccLastLoudAtRef.current = now
+      dccHadLoudSinceSendRef.current = false
+      const wavB64 = buildWavFromPcmChunks(chunks)
+      if (wavB64) sendDccTurn({ audioBase64: wavB64 })
+    }, 400)
 
     const startPromise = primedStream && primedContext
       ? rec.start(primedStream, primedContext)
       : rec.start()
-    startPromise.then(() => { setDccRecording(true); dccRecordingRef.current = true }).catch((e: any) => setError(e?.message || '마이크를 사용할 수 없습니다.'))
-  }, [sendDccTurn, stopDccPlayback, connectDeepgramWs])
+    startPromise.then(() => {
+      setDccRecording(true)
+      dccRecordingRef.current = true
+    }).catch((e: any) => setError(e?.message || '마이크를 사용할 수 없습니다.'))
+  }, [sendDccTurn, stopDccPlayback, buildWavFromPcmChunks])
 
   /** 잔여금액으로 진입한 세션: 연결 후 차감주기마다 잔액 차감·UI 갱신 (remaining/total은 타이머가 이미 카운트다운 중이므로 갱신만) */
   const startBalanceDeductIntervalIfNeeded = useCallback((data: typeof contentData) => {
@@ -1989,6 +2026,11 @@ ${seasonBlock}
           }
         })()
         const dccUserName = typeof window !== 'undefined' ? sessionStorage.getItem('payment_user_name') || '' : ''
+        await Promise.race([
+          weatherReadyPromiseRef.current,
+          new Promise<void>((r) => setTimeout(r, 2500)),
+        ])
+        await new Promise<void>((r) => setTimeout(r, 0))
         sendDccTurn({ transcript: '[시작]', userName: dccUserName }, () => {
           dccLastTurnEndIndexRef.current = dccChunksRef.current.length
         })
@@ -2679,7 +2721,9 @@ ${seasonBlock}
         setTotalSeconds((prev) => prev + addSec)
         if (!timerIntervalRef.current) startTimer()
         disconnectedAtZeroRef.current = false
-        try { connect() } catch { /* ignore */ }
+        if (!connectedRef.current) {
+          try { connect() } catch { /* ignore */ }
+        }
         extendPopupShownRef.current = false
         setShowExtendPopup(false)
         setSelectedExtendOption(null)
@@ -2805,7 +2849,9 @@ ${seasonBlock}
                 setTotalSeconds((prev) => prev + addSec)
                 if (!timerIntervalRef.current) startTimer()
                 disconnectedAtZeroRef.current = false
-                try { connect() } catch { /* ignore */ }
+                if (!connectedRef.current) {
+                  try { connect() } catch { /* ignore */ }
+                }
               }
             }
             extendPopupShownRef.current = false
@@ -2825,7 +2871,9 @@ ${seasonBlock}
             setTotalSeconds((prev) => prev + addSec)
             if (!timerIntervalRef.current) startTimer()
             disconnectedAtZeroRef.current = false
-            try { connect() } catch { /* ignore */ }
+            if (!connectedRef.current) {
+              try { connect() } catch { /* ignore */ }
+            }
           }
           extendPopupShownRef.current = false
           setShowExtendPopup(false)
