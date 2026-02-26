@@ -23,6 +23,8 @@ export class AudioStreamer {
   private isStreamComplete = false
   private checkInterval: number | null = null
   private scheduledTime = 0
+  /** complete() 후 마지막 버퍼 onended가 안 불릴 때(백그라운드 등) 파형 정리 보장 */
+  private completeFallbackTimeout: ReturnType<typeof setTimeout> | null = null
 
   public gainNode: GainNode
   public source: AudioBufferSourceNode
@@ -156,6 +158,10 @@ export class AudioStreamer {
         if (this.endOfQueueAudioSource) this.endOfQueueAudioSource.onended = null
         this.endOfQueueAudioSource = source
         source.onended = () => {
+          if (this.completeFallbackTimeout) {
+            clearTimeout(this.completeFallbackTimeout)
+            this.completeFallbackTimeout = null
+          }
           if (!this.audioQueue.length && this.endOfQueueAudioSource === source) {
             this.endOfQueueAudioSource = null
             this.onComplete()
@@ -211,6 +217,14 @@ export class AudioStreamer {
     this.isStreamComplete = true
     this.audioQueue = []
     this.scheduledTime = this.context.currentTime
+    if (this.completeFallbackTimeout) {
+      clearTimeout(this.completeFallbackTimeout)
+      this.completeFallbackTimeout = null
+    }
+    if (this.endOfQueueAudioSource) {
+      this.endOfQueueAudioSource.onended = null
+      this.endOfQueueAudioSource = null
+    }
 
     if (this.checkInterval) {
       clearInterval(this.checkInterval)
@@ -218,6 +232,7 @@ export class AudioStreamer {
     }
 
     this.gainNode.gain.setValueAtTime(0, this.context.currentTime)
+    this.onComplete()
     setTimeout(() => {
       this.gainNode.disconnect()
       this.gainNode = this.context.createGain()
@@ -238,12 +253,24 @@ export class AudioStreamer {
     }
   }
 
-  /** 스트림 종료 신호: 큐가 비면 onComplete 호출 */
+  /** 스트림 종료 신호: 큐가 비면 onComplete 호출. 마지막 버퍼 재생 중이면 onended 또는 2.5초 폴백으로 호출 보장 */
   complete() {
     this.isStreamComplete = true
     if (!this.audioQueue.length && !this.endOfQueueAudioSource) {
       this.isPlaying = false
       this.onComplete()
+      return
+    }
+    if (this.endOfQueueAudioSource && typeof window !== 'undefined') {
+      this.completeFallbackTimeout = setTimeout(() => {
+        this.completeFallbackTimeout = null
+        if (this.endOfQueueAudioSource) {
+          this.endOfQueueAudioSource.onended = null
+          this.endOfQueueAudioSource = null
+        }
+        this.isPlaying = false
+        this.onComplete()
+      }, 2500)
     }
   }
 

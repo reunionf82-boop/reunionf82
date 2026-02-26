@@ -1599,6 +1599,7 @@ ${seasonBlock}
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
+        try {
         for (;;) {
           const { done, value } = await reader.read()
           if (done) break
@@ -1669,6 +1670,13 @@ ${seasonBlock}
             } catch {
               /* ignore */
             }
+          }
+        }
+        } catch (_e) {
+          if (receivedAudio && dccOutVolumeIntervalRef.current) {
+            clearInterval(dccOutVolumeIntervalRef.current)
+            dccOutVolumeIntervalRef.current = null
+            setOutVolume(0)
           }
         }
         // 스트림이 'done' 없이 끝난 경우에도 파형은 재생이 끝날 때까지 유지; onComplete에서 정리
