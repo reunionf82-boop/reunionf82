@@ -29,7 +29,7 @@ const VOICE_PROVIDERS = [
   { id: 'gemini', label: 'Google Gemini (분당 약 20원)' },
   { id: 'openai', label: 'OpenAI GPT (분당 약 270원)' },
   { id: 'xai', label: 'xAI Grok (분당 약 70원)' },
-  { id: 'deepgram-claude-cartesia', label: 'Deepgram+Claude+Cartesia (분당 약 69원)' },
+  { id: 'deepgram-claude-cartesia', label: '리턴제로+Claude4.6+Cartesia (분당 약 60원)' },
 ]
 
 /** OpenAI Realtime API 음성 (GPT 전용) */
@@ -486,7 +486,7 @@ export default function VoiceAdminForm() {
                   </div>
                 )}
 
-                {/* Deepgram+Claude+Cartesia: 성별 + 보이스 목록(추가/삭제) + 속도/볼륨/감정 */}
+                {/* 리턴제로+Claude+Cartesia (voice_provider=deepgram-claude-cartesia): 성별 + 보이스 목록(추가/삭제) + 속도/볼륨/감정 */}
                 {h.form.voice_provider === 'deepgram-claude-cartesia' && (
                   <div className="space-y-4 p-3 bg-gray-900/50 rounded-lg border border-gray-600">
                     <div className="flex flex-wrap items-end gap-4">

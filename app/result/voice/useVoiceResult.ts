@@ -1629,14 +1629,14 @@ ${seasonBlock}
                 }
               } else if (parsed.type === 'assistantText' && typeof parsed.text === 'string') {
                 assistantT = parsed.text.trim()
-                if (assistantT && !isSilenceBreak && !dccTurnTextAdded) {
+                if (assistantT && !dccTurnTextAdded) {
                   dccTurnTextAdded = true
                   setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
                 }
               } else if (parsed.type === 'done') {
                 if (!dccTurnTextAdded) {
                   assistantT = typeof parsed.assistantText === 'string' ? parsed.assistantText : ''
-                  if (assistantT && !isSilenceBreak) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
+                  if (assistantT) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
                 }
                 if (receivedAudio && dccStreamerRef.current && !dccCompletionWired) {
                   dccCompletionWired = true
@@ -1739,7 +1739,7 @@ ${seasonBlock}
         lastUserTranscriptAtRef.current = Date.now()
         clearSilenceTimer()
       }
-      if (assistantT && !isSilenceBreak) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
+      if (assistantT) setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
       if (!isSilenceBreak) {
         const userContent = (userT && String(userT).trim()) || (opts.transcript && opts.transcript !== '[시작]' ? String(opts.transcript).trim() : '')
         const toPush: { role: 'user' | 'assistant'; content: string }[] = []
