@@ -350,6 +350,21 @@ export function useVoiceResult() {
   const [savingConversation, setSavingConversation] = useState(false)
   const conversationSavedRef = useRef(false) // 중복 저장 방지
   const leaveAfterSaveRef = useRef(false) // 저장 후 /form 이동용
+  /** 종료 시 잔여시간 저장(save_remaining) 완료 Promise — 폼 이동 전에 await */
+  const saveRemainingPromiseRef = useRef<Promise<void> | null>(null)
+  /** 충전형(잔여 저장) 진입 여부 — 음성 종료 팝업 문구 분기용. true: 버튼만, false: 소멸형 문구 표시 */
+  const [isVoiceSessionChargeType, setIsVoiceSessionChargeType] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const by100 = sessionStorage.getItem('voice_entered_by_100')
+    const opt = sessionStorage.getItem('payment_voice_time_option')
+    let charge = false
+    try {
+      if (opt) charge = (JSON.parse(opt) as { charge?: boolean })?.charge === true
+    } catch { /* ignore */ }
+    const fromRemaining = sessionStorage.getItem('voice_session_charge_type') === '1'
+    setIsVoiceSessionChargeType(!!(by100 || charge || fromRemaining))
+  }, [])
   /** 이번 세션에서 안부로 물어본 항목 ref (저장 시 injected_summary_item_refs로 전달해 재질문 방지) */
   const injectedSummaryItemRefsRef = useRef<string[]>([])
 
@@ -451,6 +466,19 @@ export function useVoiceResult() {
             const raw = (c as any).multi_time_options
             ;(c as any).multi_time_options = typeof raw === 'string' ? JSON.parse(raw) : raw
           } catch { (c as any).multi_time_options = [] }
+        }
+        // 다자형: 세그먼트(페르소나)별 동영상 URL 배열 — API가 문자열로 내려올 수 있으므로 파싱 보장
+        const parseVideoUrls = (raw: unknown): string[] => {
+          if (raw == null) return []
+          try {
+            const arr = typeof raw === 'string' ? JSON.parse(raw) : raw
+            return Array.isArray(arr) ? arr.filter((u: unknown) => typeof u === 'string' && (u as string).trim()) : []
+          } catch { return [] }
+        }
+        if (c) {
+          ;(c as any).multi_advisor_video_urls_1 = parseVideoUrls((c as any).multi_advisor_video_urls_1)
+          ;(c as any).multi_advisor_video_urls_2 = parseVideoUrls((c as any).multi_advisor_video_urls_2)
+          ;(c as any).multi_advisor_video_urls_3 = parseVideoUrls((c as any).multi_advisor_video_urls_3)
         }
 
         // 시간 결정: sessionStorage → 잔여금액으로 계산(폼에서 잔여금액으로 상담 진입) → 기본시간 → fallback 5분
@@ -772,7 +800,13 @@ export function useVoiceResult() {
       stopAllTTSRef.current()
       setIsNavigatingAway(true)
       try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
-      router.push(getFormUrl())
+      const p = saveRemainingPromiseRef.current
+      saveRemainingPromiseRef.current = null
+      if (p) {
+        p.then(() => { router.push(getFormUrl()) })
+      } else {
+        router.push(getFormUrl())
+      }
     }
   }, [savingConversation, router, getFormUrl])
 
@@ -1537,11 +1571,13 @@ ${seasonBlock}
     const cid = contentIdRef.current
     const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
     if (!skipSave && sec > 0 && cid && phone) {
-      fetch('/api/voice/balance', {
+      saveRemainingPromiseRef.current = fetch('/api/voice/balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'save_remaining', contentId: cid, phone, remainingSeconds: sec }),
-      }).catch(() => {})
+      }).then(() => {}).catch(() => {})
+    } else {
+      saveRemainingPromiseRef.current = null
     }
     iosMicStreamPromiseRef.current = null
     iosContextWorkaroundDoneRef.current = false
@@ -3541,6 +3577,7 @@ ${seasonBlock}
     onExitClick,
     handleExitConfirmContinue,
     handleExitConfirmExit,
+    isVoiceSessionChargeType,
     // Deepgram+Claude+Cartesia 턴 기반
     isDccProvider,
     dccRecording,

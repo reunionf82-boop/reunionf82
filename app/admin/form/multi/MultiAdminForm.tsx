@@ -295,19 +295,6 @@ export default function MultiAdminForm() {
               </div>
             </section>
 
-            {/* 2.5 시스템 프롬프트 (다자형 전체 시나리오: 3인 빙의·경쟁 상담) */}
-            <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
-              <h2 className="font-bold mb-4">시스템 프롬프트</h2>
-              <p className="text-gray-400 text-sm mb-3">LLM이 3인의 페르소나(신점·타로·사주·역술가 등)로 빙의해, 유저에 대한 경쟁 상담을 하도록 하는 전체 지시문입니다. 아래 3인 페르소나 설정보다 위에 적용됩니다.</p>
-              <textarea
-                value={h.form.multi_system_prompt}
-                onChange={(e) => h.setForm((f) => ({ ...f, multi_system_prompt: e.target.value }))}
-                rows={10}
-                className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white min-h-[200px] font-mono text-sm"
-                placeholder="예: 당신은 한 명의 AI이지만, 이 상담에서는 세 역술가(신점·타로·사주)로 빙의해..."
-              />
-            </section>
-
             {/* 3. 3인 페르소나 + 음성 공통(속도/볼륨/감정/특수태그) + 시작·종료소리 + MP4 여러 개 */}
             <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
               <h2 className="font-bold mb-4">3인 페르소나 &middot; 음성대화 설정</h2>

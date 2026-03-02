@@ -621,9 +621,12 @@ export default function VoiceResultContent() {
         {h.contentData?.content_type === 'multi' ? (
           <MultiAdvisorVideoBlock
             videoUrlsByPersona={[
-              Array.isArray(h.contentData?.multi_advisor_video_urls_1) ? h.contentData.multi_advisor_video_urls_1 : [],
-              Array.isArray(h.contentData?.multi_advisor_video_urls_2) ? h.contentData.multi_advisor_video_urls_2 : [],
-              Array.isArray(h.contentData?.multi_advisor_video_urls_3) ? h.contentData.multi_advisor_video_urls_3 : [],
+              /* 세그먼트1(페르소나1) = admin 상담사 동영상 1번 → 왼쪽 칸 */
+              Array.isArray(h.contentData?.multi_advisor_video_urls_1) ? [...h.contentData.multi_advisor_video_urls_1] : [],
+              /* 세그먼트2(페르소나2) = admin 상담사 동영상 2번 → 가운데 칸 */
+              Array.isArray(h.contentData?.multi_advisor_video_urls_2) ? [...h.contentData.multi_advisor_video_urls_2] : [],
+              /* 세그먼트3(페르소나3) = admin 상담사 동영상 3번 → 오른쪽 칸 */
+              Array.isArray(h.contentData?.multi_advisor_video_urls_3) ? [...h.contentData.multi_advisor_video_urls_3] : [],
             ]}
             currentSpeakerIndex={h.currentSpeakerIndex ?? 0}
           />
@@ -1046,9 +1049,11 @@ export default function VoiceResultContent() {
             </div>
 
             <div className="p-6">
-              <p className="text-gray-700 text-base mb-5">
-                음성 시간이 남아 있어요. 정말로 종료 하시겠어요?
-              </p>
+              {!h.isVoiceSessionChargeType && (
+                <p className="text-gray-700 text-base mb-5">
+                  잔여시간은 종료 후 소멸됩니다.
+                </p>
+              )}
               <div className="flex flex-row flex-nowrap items-center gap-3">
                 <button
                   type="button"

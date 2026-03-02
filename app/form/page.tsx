@@ -3216,6 +3216,7 @@ function FormContent() {
           sessionStorage.removeItem('payment_voice_minutes')
           sessionStorage.removeItem('voice_time_expired')
         }
+        sessionStorage.setItem('voice_session_charge_type', '1')
         sessionStorage.setItem('result_content_id', String(content!.id))
         sessionStorage.setItem('payment_content_id', String(content!.id))
         try { localStorage.setItem('voice_content_id', String(content!.id)) } catch { /* ignore */ }
@@ -3227,13 +3228,19 @@ function FormContent() {
       return
     }
 
-    // 0원(무료) 음성 + 무료속성(8006)일 때만: 전화번호/비번 없으면 스샷 알림 후 무료시작. 무료속성이 아니면 결제정보 팝업으로 진행.
-    const isVoiceContent = content?.content_type === 'voice' || !!(content?.voice_model ?? content?.voice_persona_prompt ?? (Array.isArray(content?.voice_time_options) && content.voice_time_options.length > 0)) || (typeof content?.content_name === 'string' && content.content_name.includes('음성'))
-    const voiceTimeOptions = isVoiceContent ? (content?.voice_time_options || []) : []
-    const selectedVoiceOption = isVoiceContent && voiceTimeOptions.length > 0 ? voiceTimeOptions[0] : null
-    const priceNum = selectedVoiceOption ? selectedVoiceOption.price : parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
-    if (isVoiceContent && Number.isFinite(priceNum) && priceNum <= 0 && isPpoingAttributes(content)) {
-      // 무료속성(8006) 0원 음성만: 24시간 제한 검사 → 휴대폰/비번 없으면 스샷 알림; 있으면 무료시작
+    // 0원(무료) 음성/다자형: 무료시작 시 결제 팝업 없이 음성형과 동일한 UI/UX(전화번호·비번 검증 후 바로 상담). 점사형 결제정보 팝업 사용 안 함.
+    const isVoiceContent = content?.content_type === 'voice' || content?.content_type === 'multi' || !!(content?.voice_model ?? content?.voice_persona_prompt ?? (Array.isArray(content?.voice_time_options) && content.voice_time_options.length > 0)) || (typeof content?.content_name === 'string' && content.content_name.includes('음성'))
+    const voiceTimeOptions = isVoiceContent
+      ? (content?.content_type === 'multi'
+          ? (Array.isArray((content as any)?.multi_time_options) ? (content as any).multi_time_options : [])
+          : (content?.voice_time_options || []))
+      : []
+    const selectedVoiceOption = isVoiceContent && voiceTimeOptions.length > 0
+      ? (voiceTimeOptions.find((o: any) => o?.type === 'default' || Number(o?.price) === 0) || voiceTimeOptions[0])
+      : null
+    const priceNum = selectedVoiceOption ? (selectedVoiceOption as any).price : parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
+    if (isVoiceContent && Number.isFinite(priceNum) && priceNum <= 0 && (isPpoingAttributes(content) || content?.content_type === 'multi')) {
+      // 무료속성(8006) 0원 음성 또는 다자형 0원: 24시간 제한 검사 → 휴대폰/비번 없으면 스샷 알림; 있으면 무료시작
       const contentId = content?.id != null ? String(content.id) : ''
       const FREE_VOICE_COOLDOWN_MS = 24 * 60 * 60 * 1000
       if (typeof window !== 'undefined' && contentId) {
@@ -3345,8 +3352,10 @@ function FormContent() {
       return
     }
 
-    // 0원+무료 음성: 24시간 제한 먼저 검사 → 차단 시 전화번호/비밀번호 입력 없이 바로 안내 팝업
-    const rawOptsEarly = content?.voice_time_options
+    // 0원+무료 음성/다자형: 24시간 제한 먼저 검사 → 차단 시 전화번호/비밀번호 입력 없이 바로 안내 팝업
+    const rawOptsEarly = content?.content_type === 'multi'
+      ? (content as any)?.multi_time_options
+      : content?.voice_time_options
     let voiceTimeOptionsEarly: Array<{ minutes: number; price: number; label: string }> = []
     if (Array.isArray(rawOptsEarly)) voiceTimeOptionsEarly = rawOptsEarly
     else if (typeof rawOptsEarly === 'string' && rawOptsEarly.trim()) {
@@ -3354,6 +3363,7 @@ function FormContent() {
     }
     const isVoiceContentEarly =
       content?.content_type === 'voice' ||
+      content?.content_type === 'multi' ||
       !!content?.voice_model ||
       !!content?.voice_persona_prompt ||
       (Array.isArray(voiceTimeOptionsEarly) && voiceTimeOptionsEarly.length > 0) ||
@@ -3419,8 +3429,10 @@ function FormContent() {
     setPaymentProcessingMethod(paymentMethod)
 
     try {
-      // 음성형: 팝업과 동일한 판별 + voice_time_options 파싱 (문자열 JSON 지원)
-      const rawOpts = content?.voice_time_options
+      // 음성형/다자형: 팝업과 동일한 판별 + time_options 파싱 (다자형은 multi_time_options 사용)
+      const rawOpts = content?.content_type === 'multi'
+        ? (content as any)?.multi_time_options
+        : content?.voice_time_options
       let voiceTimeOptions: Array<{ minutes: number; price: number; label: string }> = []
       if (Array.isArray(rawOpts)) voiceTimeOptions = rawOpts
       else if (typeof rawOpts === 'string' && rawOpts.trim()) {
@@ -3428,6 +3440,7 @@ function FormContent() {
       }
       const isVoiceContent =
         content?.content_type === 'voice' ||
+        content?.content_type === 'multi' ||
         !!content?.voice_model ||
         !!content?.voice_persona_prompt ||
         (Array.isArray(voiceTimeOptions) && voiceTimeOptions.length > 0) ||
@@ -7105,13 +7118,15 @@ function FormContent() {
 
           {/* 본인 정보 및 이성 정보 입력 폼 */}
           <div className="pt-6 mt-6">
-          {/* 음성상담: 금액 위 전화번호·비밀번호는 무료(0원)+무료속성 체크일 때만. 유료결제·무료속성미체크+0원은 결제팝업에서 입력 */}
-          {content?.content_type === 'voice' && (() => {
+          {/* 음성/다자형: 금액 위 전화번호·비밀번호(이용내역 확인 정보)는 무료(0원)일 때 표시. 음성은 무료속성(8006) 체크 시, 다자형은 0원이면 표시. */}
+          {((content?.content_type === 'voice' && (() => {
             const formPriceNum = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
             const isZeroWon = Number.isFinite(formPriceNum) && formPriceNum <= 0
-            if (!isPpoingAttributes(content) || !isZeroWon) return false
-            return true
-          })() && (
+            return isPpoingAttributes(content) && isZeroWon
+          })()) || (content?.content_type === 'multi' && (() => {
+            const formPriceNum = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
+            return Number.isFinite(formPriceNum) && formPriceNum <= 0
+          })())) && (
             <div className="mb-6 pb-6 border-b border-gray-200">
               <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">이용내역 확인 정보</h2>
               <p className="text-sm text-gray-600 mb-4">나의 이용내역에서 다시보기·다시듣기를 보려면 아래 정보를 입력해 주세요.</p>

@@ -816,14 +816,19 @@ export async function POST(req: NextRequest) {
     /** 다자형 기본 시스템 프롬프트(DB에 없을 때 사용). 순차 세그먼트(한 턴에 3번 호출·한 번에 한 페르소나) 로직에 맞춤 */
     const DEFAULT_MULTI_SYSTEM_PROMPT = `당신은 한 명의 AI이지만, 이 상담에서는 서로 다른 관점의 세 역술가(예: 신점·타로·사주/역술가)로 빙의해 행동합니다.
 
+[필수 규칙]
 - 맨 처음 턴([시작])에서는 세 역술가 중 한 명이 랜덤으로 인사한 뒤, 자신의 페르소나(신점·타로·사주)에 맞게 오늘의 신점, 오늘의 타로, 오늘의 사주/운세를 약 15초 분량으로 이어서 말합니다. [1], [2], [3] 중 선택한 한 명만 사용해 해당 대사를 쭉 이어가세요.
-- 그 다음 턴부터는 사용자 말에 대해 세 명이 차례로 한 번씩 말합니다. 한 턴마다 당신은 세 번에 나눠 호출됩니다: 1번째 발화, 2번째 발화, 3번째 발화. 각 호출에서는 지시된 순서에 맞는 한 역술가만 골라 그 사람의 대사만 한 문단으로 출력하세요. "아니 그게 아니고", "그건 맞는데 내가 볼 때는", "그래서 결국"처럼 서로 받아주며 자연스럽게 이어지게 하세요.
-- 세 명은 같은 사용자에 대해 각자 페르소나(신점, 타로, 사주·역술 등)에 맞춰 해석하며, 서로 다른 관점을 내놓되 대화는 자연스럽게 이어지게 하세요. 사용자는 세 명의 대화에 끼어드는 손님이며, 사용자가 말하면 세 명이 그 말을 받아 차례로 의견을 나누며 답합니다.
-- [1]=첫 번째 페르소나, [2]=두 번째, [3]=세 번째. 이 태그는 음성·영상 전환에 사용되므로, 매 응답 맨 앞에 반드시 [1]\\n 또는 [2]\\n 또는 [3]\\n 중 하나만 쓴 뒤 해당 페르소나의 대사만 작성하세요.`
+- 그 다음 턴부터는 사용자 말에 대해 세 명이 차례로 한 번씩 말합니다. 한 턴마다 당신은 세 번에 나눠 호출됩니다: 1번째 발화, 2번째 발화, 3번째 발화. 각 호출에서는 지시된 순서에 맞는 한 역술가만 골라 그 사람의 대사만 한 문단으로 출력하세요.
+- [1]=첫 번째 페르소나, [2]=두 번째, [3]=세 번째. 이 태그는 음성·영상 전환에 사용되므로, 매 응답 맨 앞에 반드시 [1]\\n 또는 [2]\\n 또는 [3]\\n 중 하나만 쓴 뒤 해당 페르소나의 대사만 작성하세요.
+
+[자기주장·의견 차이 - 반드시 준수]
+- 세 역술가는 같은 질문에 대해 각자만의 해석(신점, 타로, 사주·역술)을 제시해야 합니다. 앞사람 말에 "맞아요", "그렇죠", "저도 그래요"만 반복하지 마세요.
+- 각 페르소나는 자신의 방식으로 보는 관점을 분명히 말하세요. 예: "제가 타로로 보면 그건 조금 다르게 나와요.", "사주상으로는 그렇게만 말할 수는 없어요.", "신점에서는 오히려 이렇게 읽혀요."
+- 의견이 겹치거나 반대될 수 있습니다. 부드럽게 반론·보완("그런데 한 가지 더 보면", "그 부분은 제가 보기엔")을 넣어 단조롭지 않게 하세요. 사용자는 세 명의 대화에 끼어드는 손님이며, 사용자가 말하면 세 명이 그 말을 받아 각자 자기 방식으로 해석·의견을 내며 답합니다.`
     /** 다자형 순차 세그먼트: 한 번의 응답 = 한 페르소나의 한 문단. 내부 지시로 1/2/3번째 발화를 구분함 */
     const multiSpeakerTagRule = `
 - [화자 태그 - 필수] 이번 응답에는 한 역술가의 대사만 출력하세요. 반드시 "[1]\\n", "[2]\\n", "[3]\\n" 중 하나로 시작한 뒤 줄바꿈하고, 그 다음에 해당 페르소나의 대사만 한 문단으로 작성하세요. [1]=첫 번째, [2]=두 번째, [3]=세 번째. 이 태그는 음성·영상 전환에 사용됩니다.
-- 이전 발화(들)의 맥락을 이어받아, 이번에 말할 한 명이 자연스럽게 받아서 말하세요. 사용자는 세 명의 대화에 끼어드는 손님이며, 사용자가 말하면 세 명이 그 말을 받아 차례로 의견을 나눕니다.`
+- 이번에 말할 한 명은 자신의 방식(신점/타로/사주)으로만 해석하고, 앞사람과 다른 관점이나 보완·반론을 부드럽게 넣어도 됩니다. 단순 동의("맞아요"만) 반복 금지. 이전 발화 맥락을 이어받되, 자기주장을 분명히 하세요.`
     const systemPrompt = isMulti
       ? `${(String((content as any).multi_system_prompt || '').trim() || DEFAULT_MULTI_SYSTEM_PROMPT)}
 
@@ -1010,8 +1015,16 @@ ${emotionTagRule}
         start(controller) {
           controller.enqueue(encoder.encode(JSON.stringify({ type: 'userTranscript', text: userTranscript.trim() }) + '\n'))
           /** 스트리밍: 클라이언트 AudioStreamer가 raw PCM만 받으므로 base64는 PCM 그대로, format 명시 */
+          /** 다자형: 동영상 전환 시점을 LLM 세그먼트가 아닌 TTS 발화 종료 시점으로 맞추기 위해, speakerIndex는 해당 세그먼트의 첫 오디오 직전에만 전송 */
+          let pendingSpeakerIndexForClient: number | null = null
           const enqueueAudio = (pcmBuffer: Buffer) => {
             if (!pcmBuffer || pcmBuffer.length === 0) return
+            if (isMulti && pendingSpeakerIndexForClient !== null) {
+              try {
+                controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: pendingSpeakerIndexForClient }) + '\n'))
+                pendingSpeakerIndexForClient = null
+              } catch (_) {}
+            }
             try {
               controller.enqueue(encoder.encode(JSON.stringify({
                 type: 'audio' as const,
@@ -1260,7 +1273,13 @@ ${emotionTagRule}
                         const msg = JSON.parse(text) as { type?: string; data?: string }
                         if (msg.type === 'chunk' && typeof msg.data === 'string') {
                           const pcm = Buffer.from(msg.data, 'base64')
-                          if (pcm.length > 0) pushPcm(pcm)
+                          if (pcm.length > 0) {
+                            if (segSpeakerIndex !== null && !segSpeakerIndexSent) {
+                              try { controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: segSpeakerIndex }) + '\n')) } catch (_) {}
+                              segSpeakerIndexSent = true
+                            }
+                            pushPcm(pcm)
+                          }
                           flushPcm()
                           return
                         }
@@ -1282,6 +1301,7 @@ ${emotionTagRule}
                   }
                   let segContextId = `dcc-${sessionId}-${Date.now()}-seg${seg}`
                   let segVoiceId = multiVoiceIds[0]
+                  let segSpeakerIndexSent = false
                   const sendSegCartesia = (transcript: string, isFinal: boolean) => {
                     const payload = { ...basePayloadNoContext, voice: { mode: 'id' as const, id: segVoiceId }, context_id: segContextId, transcript, continue: !isFinal }
                     if (segWs.readyState === 1) {
@@ -1335,13 +1355,11 @@ ${emotionTagRule}
                               segSpeakerIndex = parseInt(tagMatch[1], 10) - 1
                               segVoiceId = multiVoiceIds[segSpeakerIndex]
                               segContextId = `dcc-${sessionId}-${Date.now()}-seg${seg}`
-                              try { controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: segSpeakerIndex }) + '\n')) } catch (_) {}
                               pendingText = pendingText.slice(tagMatch[0].length)
                             } else if (pendingText.trim().length > 2) {
                               segSpeakerIndex = 0
                               segVoiceId = multiVoiceIds[0]
                               segContextId = `dcc-${sessionId}-${Date.now()}-seg${seg}`
-                              try { controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: 0 }) + '\n')) } catch (_) {}
                             }
                           }
                           if (segSpeakerIndex !== null) {
@@ -1432,9 +1450,7 @@ ${emotionTagRule}
                           multiSpeakerIndex = parseInt(tagMatch[1], 10) - 1
                           currentVoiceId = multiVoiceIds[multiSpeakerIndex]
                           currentContextId = `dcc-${sessionId}-${Date.now()}-${++multiContextCounter}`
-                          try {
-                            controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: multiSpeakerIndex }) + '\n'))
-                          } catch (_) {}
+                          pendingSpeakerIndexForClient = multiSpeakerIndex
                           pendingText = pendingText.slice(tagMatch[0].length)
                           continue
                         }
@@ -1453,9 +1469,7 @@ ${emotionTagRule}
                             if (multiSpeakerIndex === null) {
                               multiSpeakerIndex = 0
                               currentVoiceId = multiVoiceIds[0]
-                              try {
-                                controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: 0 }) + '\n'))
-                              } catch (_) {}
+                              pendingSpeakerIndexForClient = 0
                             }
                             if (fillerSentAt !== null) {
                               const wait = fillerSentAt + DCC_FILLER_DURATION_MS + 1000 - Date.now()
@@ -1484,9 +1498,7 @@ ${emotionTagRule}
                           multiSpeakerIndex = parseInt(nextTag[1], 10) - 1
                           currentVoiceId = multiVoiceIds[multiSpeakerIndex]
                           currentContextId = `dcc-${sessionId}-${Date.now()}-${++multiContextCounter}`
-                          try {
-                            controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: multiSpeakerIndex }) + '\n'))
-                          } catch (_) {}
+                          pendingSpeakerIndexForClient = multiSpeakerIndex
                           continue
                         }
                         break
@@ -1502,9 +1514,7 @@ ${emotionTagRule}
                         multiSpeakerIndex = 0
                         currentVoiceId = multiVoiceIds[0]
                         currentContextId = `dcc-${sessionId}-${Date.now()}-${++multiContextCounter}`
-                        try {
-                          controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: 0 }) + '\n'))
-                        } catch (_) {}
+                        pendingSpeakerIndexForClient = 0
                       }
                       if (fillerSentAt !== null) {
                         const wait = fillerSentAt + DCC_FILLER_DURATION_MS + 1000 - Date.now()
