@@ -241,6 +241,10 @@ const DCC_FILLER_PHRASES = [
 
 /** 맞장구 재생 예상 길이(ms). 이 시간 + 1초 후에 본문 TTS 시작 */
 const DCC_FILLER_DURATION_MS = 2500
+/** 다자형 화자 전환 시: 이전 context 종료 후 다음 화자 전송 전 대기(ms). done 미수신 시 fallback. 음성 겹침·끊김 방지 */
+const DCC_MULTI_CONTEXT_SWITCH_DELAY_MS = 1500
+/** done 수신 후 추가 대기(ms). Cartesia가 done을 먼저 보내고 청크가 늦게 도착하는 경우 겹침 완화 */
+const DCC_MULTI_POST_DONE_BUFFER_MS = 280
 
 /** PCM 버퍼 → WAV base64 (청크마다 헤더 붙이면 틱틱 소리 나서, 버퍼 모아서 한 번만 씀) */
 function pcmBufferToWavBase64(pcm: Buffer, sampleRate = CARTESIA_SAMPLE_RATE, numChannels = CARTESIA_NUM_CHANNELS, bitsPerSample = CARTESIA_BITS): string {
@@ -406,13 +410,32 @@ export async function POST(req: NextRequest) {
     const supabase = getAdminSupabaseClient()
     const { data: content, error: contentError } = await supabase
       .from('contents')
-      .select('voice_cartesia_config, voice_persona_prompt, voice_counselor_name, voice_initial_greet_prompt')
+      .select(`
+        content_type,
+        voice_cartesia_config,
+        voice_persona_prompt,
+        voice_counselor_name,
+        voice_initial_greet_prompt,
+        multi_system_prompt,
+        multi_persona_1_prompt,
+        multi_persona_2_prompt,
+        multi_persona_3_prompt,
+        multi_cartesia_voice_id_1,
+        multi_cartesia_voice_id_2,
+        multi_cartesia_voice_id_3,
+        multi_cartesia_speed,
+        multi_cartesia_volume,
+        multi_cartesia_emotion,
+        multi_cartesia_emotions
+      `)
       .eq('id', contentId)
       .single()
 
     if (contentError || !content) {
       return NextResponse.json({ success: false, error: '콘텐츠를 찾을 수 없습니다.' }, { status: 404 })
     }
+
+    const isMulti = (content as any).content_type === 'multi'
 
     let cartesiaConfig: {
       voice_id?: string
@@ -432,15 +455,33 @@ export async function POST(req: NextRequest) {
       /* ignore */
     }
 
-    const voiceId = cartesiaConfig.voice_id || '304fdbd8-65e6-40d6-ab78-f9d18b9efdf9'
-    /** Speed: 어드민 voice_cartesia_config.speed 슬라이더와 연결. 미설정 시 1 */
-    const speed = Math.max(0.6, Math.min(1.5, cartesiaConfig.speed ?? 1))
-    const volume = Math.max(0.5, Math.min(2, cartesiaConfig.volume ?? 1))
-    const emotions = Array.isArray(cartesiaConfig.emotions) && cartesiaConfig.emotions.length > 0
-      ? cartesiaConfig.emotions
-      : ['calm', 'content', 'sympathetic']
-    const primaryEmotion = (cartesiaConfig.emotion && cartesiaConfig.emotion.trim()) || emotions[0] || 'calm'
-    const ttsMode = cartesiaConfig.tts_mode === 'streaming' ? 'streaming' : 'batch'
+    const DEFAULT_VOICE_IDS = ['304fdbd8-65e6-40d6-ab78-f9d18b9efdf9', '15628352-2ede-4f1b-89e6-ceda0c983fbc', '29e5f8b4-b953-4160-848f-40fae182235b'] as const
+    const multiVoiceIds: [string, string, string] = isMulti
+      ? [
+          (content as any).multi_cartesia_voice_id_1 || DEFAULT_VOICE_IDS[0],
+          (content as any).multi_cartesia_voice_id_2 || DEFAULT_VOICE_IDS[1],
+          (content as any).multi_cartesia_voice_id_3 || DEFAULT_VOICE_IDS[2],
+        ]
+      : [DEFAULT_VOICE_IDS[0], DEFAULT_VOICE_IDS[0], DEFAULT_VOICE_IDS[0]]
+
+    const voiceId = isMulti
+      ? multiVoiceIds[0]
+      : (cartesiaConfig.voice_id || DEFAULT_VOICE_IDS[0])
+    /** Speed: 어드민 voice_cartesia_config 또는 multi_cartesia_speed */
+    const speed = Math.max(0.6, Math.min(1.5, isMulti ? ((content as any).multi_cartesia_speed ?? 1) : (cartesiaConfig.speed ?? 1)))
+    const volume = Math.max(0.5, Math.min(2, isMulti ? ((content as any).multi_cartesia_volume ?? 1) : (cartesiaConfig.volume ?? 1)))
+    const emotions = (isMulti
+      ? (Array.isArray((content as any).multi_cartesia_emotions) && (content as any).multi_cartesia_emotions.length > 0
+          ? (content as any).multi_cartesia_emotions
+          : ['calm', 'content', 'sympathetic'])
+      : Array.isArray(cartesiaConfig.emotions) && cartesiaConfig.emotions.length > 0
+        ? cartesiaConfig.emotions
+        : ['calm', 'content', 'sympathetic']) as string[]
+    const primaryEmotion = (isMulti
+      ? ((content as any).multi_cartesia_emotion && String((content as any).multi_cartesia_emotion).trim()) || emotions[0] || 'calm'
+      : (cartesiaConfig.emotion && cartesiaConfig.emotion.trim()) || emotions[0] || 'calm') as string
+    // 다자형은 항상 스트리밍(3인 페르소나 음성·티키타카). 음성형은 설정 따름
+    const ttsMode = isMulti ? 'streaming' : (cartesiaConfig.tts_mode === 'streaming' ? 'streaming' : 'batch')
 
     /** 침묵깨기: 클라이언트가 지정한 문장만 캐릭터 목소리로 TTS (STT/Claude 생략) */
     const silenceBreakText = (body as { silenceBreakText?: string }).silenceBreakText
@@ -770,7 +811,37 @@ export async function POST(req: NextRequest) {
     const fullContext = (truncatedContext + fortuneBlock).trim()
     const contextBlock = fullContext ? `\n\n${fullContext}` : ''
     const isStartTurn = userTranscript.trim() === '[시작]'
-    const systemPrompt = `당신은 한국어로 대답하는 음성 상담사입니다.
+    /** 다자형 기본 시스템 프롬프트(DB에 없을 때 사용). 순차 세그먼트(한 턴에 3번 호출·한 번에 한 페르소나) 로직에 맞춤 */
+    const DEFAULT_MULTI_SYSTEM_PROMPT = `당신은 한 명의 AI이지만, 이 상담에서는 서로 다른 관점의 세 역술가(예: 신점·타로·사주/역술가)로 빙의해 행동합니다.
+
+- 맨 처음 턴([시작])에서는 세 역술가 중 한 명이 랜덤으로 인사한 뒤, 자신의 페르소나(신점·타로·사주)에 맞게 오늘의 신점, 오늘의 타로, 오늘의 사주/운세를 약 15초 분량으로 이어서 말합니다. [1], [2], [3] 중 선택한 한 명만 사용해 해당 대사를 쭉 이어가세요.
+- 그 다음 턴부터는 사용자 말에 대해 세 명이 차례로 한 번씩 말합니다. 한 턴마다 당신은 세 번에 나눠 호출됩니다: 1번째 발화, 2번째 발화, 3번째 발화. 각 호출에서는 지시된 순서에 맞는 한 역술가만 골라 그 사람의 대사만 한 문단으로 출력하세요. "아니 그게 아니고", "그건 맞는데 내가 볼 때는", "그래서 결국"처럼 서로 받아주며 자연스럽게 이어지게 하세요.
+- 세 명은 같은 사용자에 대해 각자 페르소나(신점, 타로, 사주·역술 등)에 맞춰 해석하며, 서로 다른 관점을 내놓되 대화는 자연스럽게 이어지게 하세요. 사용자는 세 명의 대화에 끼어드는 손님이며, 사용자가 말하면 세 명이 그 말을 받아 차례로 의견을 나누며 답합니다.
+- [1]=첫 번째 페르소나, [2]=두 번째, [3]=세 번째. 이 태그는 음성·영상 전환에 사용되므로, 매 응답 맨 앞에 반드시 [1]\\n 또는 [2]\\n 또는 [3]\\n 중 하나만 쓴 뒤 해당 페르소나의 대사만 작성하세요.`
+    /** 다자형 순차 세그먼트: 한 번의 응답 = 한 페르소나의 한 문단. 내부 지시로 1/2/3번째 발화를 구분함 */
+    const multiSpeakerTagRule = `
+- [화자 태그 - 필수] 이번 응답에는 한 역술가의 대사만 출력하세요. 반드시 "[1]\\n", "[2]\\n", "[3]\\n" 중 하나로 시작한 뒤 줄바꿈하고, 그 다음에 해당 페르소나의 대사만 한 문단으로 작성하세요. [1]=첫 번째, [2]=두 번째, [3]=세 번째. 이 태그는 음성·영상 전환에 사용됩니다.
+- 이전 발화(들)의 맥락을 이어받아, 이번에 말할 한 명이 자연스럽게 받아서 말하세요. 사용자는 세 명의 대화에 끼어드는 손님이며, 사용자가 말하면 세 명이 그 말을 받아 차례로 의견을 나눕니다.`
+    const systemPrompt = isMulti
+      ? `${(String((content as any).multi_system_prompt || '').trim() || DEFAULT_MULTI_SYSTEM_PROMPT)}
+
+[페르소나 1]
+${String((content as any).multi_persona_1_prompt || '').trim()}
+
+[페르소나 2]
+${String((content as any).multi_persona_2_prompt || '').trim()}
+
+[페르소나 3]
+${String((content as any).multi_persona_3_prompt || '').trim()}
+${multiSpeakerTagRule}
+${lengthRule}
+${firstWordRule}
+${emotionTagRule}
+- 답변은 음성으로 읽기 좋게, 자연스러운 구어체로 작성하세요.
+- [맥락 유지 - 필수] 대화 이력을 이어받아 응답하세요.${emotionHint}${contextBlock}${!isStartTurn && sessionsWithFortuneDelivered.has(sessionId) ? `
+
+[중요] 이 세션에서 이미 공수(오늘의 운세)를 전달했다. 사용자가 새 질문을 할 때는 이미 내린 공수를 반복하지 말 것. 사용자가 "공수 다시 말해줘" 등으로 다시 말해달라고 요청할 때만 공수 내용을 다시 말할 것.` : ''}`
+      : `당신은 한국어로 대답하는 음성 상담사입니다.
 ${persona ? `[페르소나]\n${persona}\n` : ''}
 ${counselorName ? `상담사 이름: ${counselorName}. 자신을 이 이름으로 소개하고 대화하세요.\n` : ''}
 ${lengthRule}
@@ -796,9 +867,11 @@ ${emotionTagRule}
 
     // [시작] = 상담 입장 시 AI가 먼저 인사하도록 지시 (페르소나 + 초대 인사 지침 준수, 분량은 지침대로)
     const userMessage = isStartTurn
-      ? (initialGreetPrompt
-          ? `[상담 시작] 사용자가 방금 입장했습니다. 아래 [초대 인사 지침]을 반드시 따르세요. 지침에 분량(예: 약 20초)이나 첫방문/재방문 구분이 있으면 그에 맞춰 말하세요. 분량이 적혀 있으면 그 길이를 넘지 말고 그 안에서 마무리하세요.\n[초대 인사 지침]\n${initialGreetPrompt}`
-          : '[상담 시작] 사용자가 방금 입장했습니다. 짧고 친절하게 한 문장으로만 먼저 인사해 주세요.')
+      ? (isMulti
+          ? `[상담 시작] 사용자가 방금 입장했습니다. [시스템 프롬프트]의 맨 처음 턴 지침을 반드시 따르세요: 세 역술가 중 한 명을 랜덤으로 골라 그 페르소나로 인사한 뒤, 자신의 방식(신점/타로/사주)에 맞게 오늘의 신점·오늘의 타로·오늘의 사주/운세를 약 15초 분량으로 이어서 말하세요. [1], [2], [3] 태그는 선택한 한 명만 사용해 해당 대사를 쭉 이어가세요.`
+          : (initialGreetPrompt
+              ? `[상담 시작] 사용자가 방금 입장했습니다. 아래 [초대 인사 지침]을 반드시 따르세요. 지침에 분량(예: 약 20초)이나 첫방문/재방문 구분이 있으면 그에 맞춰 말하세요. 분량이 적혀 있으면 그 길이를 넘지 말고 그 안에서 마무리하세요.\n[초대 인사 지침]\n${initialGreetPrompt}`
+              : '[상담 시작] 사용자가 방금 입장했습니다. 짧고 친절하게 한 문장으로만 먼저 인사해 주세요.'))
       : userTranscript
 
     const messages: { role: 'user' | 'assistant'; content: string }[] = [
@@ -831,49 +904,51 @@ ${emotionTagRule}
     }
 
     let claudeRes: Response | null = null
-    for (let attempt = 0; attempt <= CLAUDE_RETRY_MAX; attempt++) {
-      if (attempt > 0) {
-        const delay = CLAUDE_RETRY_DELAYS_MS[attempt - 1] ?? 2000
-        await new Promise((r) => setTimeout(r, delay))
-      }
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify(claudeBody),
-      })
-      if (res.ok) {
-        claudeRes = res
-        break
-      }
-      const errBody = await res.text()
-      if (attempt === CLAUDE_RETRY_MAX || !isRetryableClaudeError(res.status, errBody)) {
-        let userMessage: string
-        if (res.status === 400) {
-          try {
-            const errJson = JSON.parse(errBody) as { error?: { message?: string } }
-            const msg = errJson?.error?.message ?? ''
-            if (/credit balance is too low|insufficient credit|billing/i.test(msg)) {
-              userMessage = '상담 서비스 크레딧이 부족합니다. 관리자에게 문의하거나 결제·플랜을 확인해 주세요.'
-            } else {
+    if (!isMulti) {
+      for (let attempt = 0; attempt <= CLAUDE_RETRY_MAX; attempt++) {
+        if (attempt > 0) {
+          const delay = CLAUDE_RETRY_DELAYS_MS[attempt - 1] ?? 2000
+          await new Promise((r) => setTimeout(r, delay))
+        }
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify(claudeBody),
+        })
+        if (res.ok) {
+          claudeRes = res
+          break
+        }
+        const errBody = await res.text()
+        if (attempt === CLAUDE_RETRY_MAX || !isRetryableClaudeError(res.status, errBody)) {
+          let userMessage: string
+          if (res.status === 400) {
+            try {
+              const errJson = JSON.parse(errBody) as { error?: { message?: string } }
+              const msg = errJson?.error?.message ?? ''
+              if (/credit balance is too low|insufficient credit|billing/i.test(msg)) {
+                userMessage = '상담 서비스 크레딧이 부족합니다. 관리자에게 문의하거나 결제·플랜을 확인해 주세요.'
+              } else {
+                userMessage = '상담 응답을 처리하지 못했습니다. 다시 말씀해 주세요.'
+              }
+            } catch {
               userMessage = '상담 응답을 처리하지 못했습니다. 다시 말씀해 주세요.'
             }
-          } catch {
-            userMessage = '상담 응답을 처리하지 못했습니다. 다시 말씀해 주세요.'
+          } else {
+            userMessage = isRetryableClaudeError(res.status, errBody)
+              ? '상담 응답이 바쁩니다. 잠시 후 다시 말씀해 주세요.'
+              : '상담 응답을 처리하지 못했습니다. 다시 말씀해 주세요.'
           }
-        } else {
-          userMessage = isRetryableClaudeError(res.status, errBody)
-            ? '상담 응답이 바쁩니다. 잠시 후 다시 말씀해 주세요.'
-            : '상담 응답을 처리하지 못했습니다. 다시 말씀해 주세요.'
+          console.error('[dcc-turn] 502 Claude:', res.status, errBody?.slice(0, 500))
+          return NextResponse.json({ success: false, error: userMessage }, { status: 502 })
         }
-        console.error('[dcc-turn] 502 Claude:', res.status, errBody?.slice(0, 500))
-        return NextResponse.json({ success: false, error: userMessage }, { status: 502 })
       }
     }
-    if (!claudeRes) {
+    if (!isMulti && !claudeRes) {
       console.error('[dcc-turn] 502 Claude: no response after retries')
       return NextResponse.json({ success: false, error: '상담 응답을 처리하지 못했습니다. 다시 말씀해 주세요.' }, { status: 502 })
     }
@@ -882,8 +957,8 @@ ${emotionTagRule}
     }
 
     let assistantText = ''
-    const streamBody = claudeRes.body
-    if (!streamBody) {
+    const streamBody = !isMulti && claudeRes ? claudeRes.body : null
+    if (!isMulti && !streamBody) {
       console.error('[dcc-turn] 502 Claude: no stream body')
       return NextResponse.json({ success: false, error: 'Claude 스트림 없음' }, { status: 502 })
     }
@@ -891,10 +966,11 @@ ${emotionTagRule}
     if (ttsMode === 'streaming') {
       const preOpenedWs = cartesiaWsPromise ? await cartesiaWsPromise : null
       const encoder = new TextEncoder()
-      /** 연결마다 context_id를 새로 씀(재연결 시에도) */
+      /** multi 시 화자 태그 [1][2][3] 감지 후 사용할 보이스. 스트림 중 갱신됨 */
+      let currentVoiceId = voiceId
       const basePayloadNoContext = {
         model_id: 'sonic-3' as const,
-        voice: { mode: 'id' as const, id: voiceId },
+        voice: { mode: 'id' as const, id: '' }, // sendCartesia에서 currentVoiceId로 덮어씀
         language: 'ko' as const,
         generation_config: { speed, volume, emotion: primaryEmotion },
         output_format: { container: 'raw' as const, encoding: 'pcm_s16le' as const, sample_rate: CARTESIA_SAMPLE_RATE },
@@ -1009,12 +1085,17 @@ ${emotionTagRule}
 
           const isAllDone = () => sentFinalChunk && wsDoneCount >= wsSentCount
 
+          /** 다자형: context_id별 done 수신 시 resolve. 화자 전환 시 해당 context의 음성 종료 시점까지 대기용 */
+          const contextDoneResolvers = new Map<string, () => void>()
+          /** 다자형: 다음 done 1회 수신 시 resolve (context_id 없을 때 대비). 한 번만 사용 후 null로 초기화 */
+          let nextDoneResolver: (() => void) | null = null
+
           const attachWsHandlers = (ws: WebSocket, label: string) => {
             ws.on('message', (raw: Buffer | string) => {
               if (ws !== currentWs) return
               const text = typeof raw === 'string' ? raw : raw.toString('utf-8')
               try {
-                const msg = JSON.parse(text) as { type?: string; data?: string }
+                const msg = JSON.parse(text) as { type?: string; data?: string; context_id?: string }
                 if (msg.type === 'chunk' && typeof msg.data === 'string') {
                   const pcm = Buffer.from(msg.data, 'base64')
                   if (pcm.length > 0) pushPcm(pcm)
@@ -1024,10 +1105,18 @@ ${emotionTagRule}
                 if (msg.type === 'done') {
                   wsDoneCount++
                   flushPcm()
-                  if (isAllDone()) {
+                  const ctxId = typeof msg.context_id === 'string' ? msg.context_id : undefined
+                  if (ctxId && contextDoneResolvers.has(ctxId)) {
+                    contextDoneResolvers.get(ctxId)!()
+                    contextDoneResolvers.delete(ctxId)
+                    nextDoneResolver = null
+                  } else if (nextDoneResolver) {
+                    nextDoneResolver()
+                    nextDoneResolver = null
+                  }
+                  // 다자형: 스트림 종료는 세그먼트 루프 완료 시에만. done마다 isAllDone()으로 닫으면 세그먼트 2·3 오디오가 끊김
+                  if (!isMulti && isAllDone()) {
                     ws.close()
-                    // 다음 틱으로 미룸: 같은 배치로 도착한 chunk가 아직 처리 안 됐을 수 있음.
-                    // 먼저 모든 chunk를 enqueue한 뒤 스트림을 닫아야 클라이언트 TTS가 끊기지 않음.
                     setImmediate(() => {
                       if (finished) return
                       if (isAllDone()) resolveOnce()
@@ -1070,7 +1159,7 @@ ${emotionTagRule}
 
           const sendCartesia = (transcript: string, isFinal: boolean) => {
             if (isFinal) sentFinalChunk = true
-            const payload = { ...basePayloadNoContext, context_id: currentContextId, transcript, continue: !isFinal }
+            const payload = { ...basePayloadNoContext, voice: { mode: 'id' as const, id: currentVoiceId }, context_id: currentContextId, transcript, continue: !isFinal }
             const msg = JSON.stringify(payload)
             if (currentWs.readyState !== 1 /* OPEN */) {
               pendingSends.push(msg)
@@ -1101,6 +1190,20 @@ ${emotionTagRule}
             } catch (_) {}
           }
 
+          /** 다자형: 이전 화자 context를 Cartesia에서 종료(continue:false). 다음 화자 전송 전 호출해 음성 겹침 방지 */
+          const sendCartesiaClose = (ctxId: string, vId: string) => {
+            const payload = { ...basePayloadNoContext, voice: { mode: 'id' as const, id: vId }, context_id: ctxId, transcript: '', continue: false }
+            const msg = JSON.stringify(payload)
+            if (currentWs.readyState !== 1) {
+              pendingSends.push(msg)
+              return
+            }
+            try {
+              currentWs.send(msg)
+              wsSentCount++
+            } catch (_) {}
+          }
+
           const initialWs = currentWs
           attachWsHandlers(initialWs, '초기')
           if (preOpenedWs == null) {
@@ -1115,8 +1218,183 @@ ${emotionTagRule}
             resolveOnce()
           }, 300000)
 
+          /** 다자형: [1][2][3] 태그 감지 시 화자 인덱스(0/1/2). null이면 아직 미감지 */
+          let multiSpeakerIndex: number | null = isMulti ? null : 0
+          /** 다자형: Cartesia는 같은 context_id 내에서 voice 변경 불가 → 화자 바꿀 때마다 새 context_id 사용 */
+          let multiContextCounter = 0
+
           ;(async () => {
-            const reader = streamBody.getReader()
+            if (isMulti) {
+              /** 다자형 순차 방식: 한 턴에 한 페르소나만 생성·TTS 후 done 대기 → 다음 페르소나. 음성 겹침·끊김 제거 */
+              const SEGMENT_INSTRUCTIONS = [
+                '이번 턴의 1번째 발화입니다. 세 역술가(1,2,3) 중 먼저 말할 한 명을 골라, 반드시 "[1]\\n" 또는 "[2]\\n" 또는 "[3]\\n"으로 시작한 뒤 그 사람의 대사만 한 문단 분량으로 출력하세요. 다른 화자는 출력하지 마세요.',
+                '이번 턴의 2번째 발화입니다. 아직 말하지 않은 역술가 중 이어서 말할 한 명을 골라 [1] 또는 [2] 또는 [3] 태그와 대사만 한 문단으로 출력하세요.',
+                '이번 턴의 3번째 발화입니다. 마지막 남은 역술가가 말하세요. [1] 또는 [2] 또는 [3] 태그와 대사만 한 문단으로 출력하세요.',
+              ]
+              const baseMessages: { role: 'user' | 'assistant'; content: string }[] = [
+                ...history.map((m) => ({ role: m.role, content: m.content })),
+                { role: 'user', content: userMessage },
+              ]
+              const segmentTexts: string[] = []
+              let fullAssistantText = ''
+              try {
+                // Cartesia WS가 열릴 때까지 대기(다자형은 초기 fetch 없이 세그먼트 루프만 하므로)
+                for (let wait = 0; wait < 50 && !wsOpen; wait++) {
+                  await new Promise((r) => setTimeout(r, 100))
+                }
+                if (!wsOpen) console.warn('[dcc-turn] multi: Cartesia WS 아직 미개방, 전송 대기 중')
+                for (let seg = 0; seg < 3; seg++) {
+                  /** 세그먼트마다 전용 WebSocket 사용 → 같은 연결에서 context 전환 시 Cartesia가 이전 세그먼트 남은 청크를 끊는 문제 회피 */
+                  const segWs = new WebSocket(CARTESIA_WS_URL, {
+                    headers: {
+                      'Cartesia-Version': CARTESIA_VERSION,
+                      Authorization: `Bearer ${cartesiaKey}`,
+                    },
+                  })
+                  const segDonePromise = new Promise<void>((resolveSegDone) => {
+                    segWs.on('message', (raw: Buffer | string) => {
+                      const text = typeof raw === 'string' ? raw : raw.toString('utf-8')
+                      try {
+                        const msg = JSON.parse(text) as { type?: string; data?: string }
+                        if (msg.type === 'chunk' && typeof msg.data === 'string') {
+                          const pcm = Buffer.from(msg.data, 'base64')
+                          if (pcm.length > 0) pushPcm(pcm)
+                          flushPcm()
+                          return
+                        }
+                        if (msg.type === 'done') {
+                          flushPcm()
+                          resolveSegDone()
+                        }
+                      } catch {
+                        if (Buffer.isBuffer(raw) && raw.length > 0) pushPcm(raw)
+                      }
+                    })
+                  })
+                  await new Promise<void>((res) => { segWs.on('open', () => res()) })
+
+                  const segMsg: { role: 'user' | 'assistant'; content: string }[] = [...baseMessages]
+                  for (let i = 0; i <= seg; i++) {
+                    if (i > 0) segMsg.push({ role: 'assistant', content: segmentTexts[i - 1] })
+                    segMsg.push({ role: 'user', content: SEGMENT_INSTRUCTIONS[i] })
+                  }
+                  let segContextId = `dcc-${sessionId}-${Date.now()}-seg${seg}`
+                  let segVoiceId = multiVoiceIds[0]
+                  const sendSegCartesia = (transcript: string, isFinal: boolean) => {
+                    const payload = { ...basePayloadNoContext, voice: { mode: 'id' as const, id: segVoiceId }, context_id: segContextId, transcript, continue: !isFinal }
+                    if (segWs.readyState === 1) {
+                      try { segWs.send(JSON.stringify(payload)) } catch (_) {}
+                    }
+                  }
+                  const res = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey!, 'anthropic-version': '2023-06-01' },
+                    body: JSON.stringify({ ...claudeBody, messages: segMsg }),
+                  })
+                  if (!res.ok) {
+                    const errBody = await res.text()
+                    console.error('[dcc-turn] multi segment Claude:', res.status, errBody?.slice(0, 300))
+                    try { segWs.close() } catch (_) {}
+                    break
+                  }
+                  const segStreamBody = res.body
+                  if (!segStreamBody) {
+                    try { segWs.close() } catch (_) {}
+                    break
+                  }
+                  const reader = segStreamBody.getReader()
+                  const decoder = new TextDecoder()
+                  let buffer = ''
+                  let pendingText = ''
+                  let segFullText = ''
+                  let segSpeakerIndex: number | null = null
+                  let sentAnySeg = false
+                  process.stdout.write(`\n[dcc-turn] LLM(실시간) [세그먼트 ${seg + 1}/3] `)
+                  while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) break
+                    buffer += decoder.decode(value, { stream: true })
+                    const lines = buffer.split('\n')
+                    buffer = lines.pop() ?? ''
+                    for (const line of lines) {
+                      if (!line.startsWith('data: ')) continue
+                      const data = line.slice(6).trim()
+                      if (data === '[DONE]') continue
+                      try {
+                        const parsed = JSON.parse(data) as { type?: string; delta?: { type?: string; text?: string } }
+                        if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta' && parsed.delta?.text) {
+                          const text = parsed.delta.text
+                          process.stdout.write(text)
+                          segFullText += text
+                          pendingText += text
+                          if (segSpeakerIndex === null) {
+                            const tagMatch = pendingText.match(/^\[([123])\]\r?\n?/)
+                            if (tagMatch) {
+                              segSpeakerIndex = parseInt(tagMatch[1], 10) - 1
+                              segVoiceId = multiVoiceIds[segSpeakerIndex]
+                              segContextId = `dcc-${sessionId}-${Date.now()}-seg${seg}`
+                              try { controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: segSpeakerIndex }) + '\n')) } catch (_) {}
+                              pendingText = pendingText.slice(tagMatch[0].length)
+                            } else if (pendingText.trim().length > 2) {
+                              segSpeakerIndex = 0
+                              segVoiceId = multiVoiceIds[0]
+                              segContextId = `dcc-${sessionId}-${Date.now()}-seg${seg}`
+                              try { controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: 0 }) + '\n')) } catch (_) {}
+                            }
+                          }
+                          if (segSpeakerIndex !== null) {
+                            for (;;) {
+                              const { chunk, rest } = extractChunk(pendingText)
+                              if (!chunk) break
+                              pendingText = rest
+                              const trimmed = chunk.trim()
+                              if (!trimmed) continue
+                              const toSend = sentAnySeg ? ` ${trimmed}` : trimmed
+                              sentAnySeg = true
+                              sendSegCartesia(toSend, false)
+                            }
+                          }
+                        }
+                      } catch { /* ignore */ }
+                    }
+                  }
+                  const finalTrimmed = pendingText.trim()
+                  if (finalTrimmed) {
+                    sendSegCartesia(sentAnySeg ? ` ${finalTrimmed}` : finalTrimmed, true)
+                  } else {
+                    sendSegCartesia('', true)
+                  }
+                  // 마지막 청크 전송 후 Cartesia가 오디오 생성·전송할 시간을 주고, 전용 WS에서 done 대기 후 연결 종료
+                  await new Promise<void>((r) => setTimeout(r, 200))
+                  const segText = segFullText.trim()
+                  segmentTexts.push(segText)
+                  fullAssistantText += (fullAssistantText ? '\n\n' : '') + segText
+                  const timeout = new Promise<void>((r) => setTimeout(r, DCC_MULTI_CONTEXT_SWITCH_DELAY_MS))
+                  await Promise.race([segDonePromise, timeout])
+                  try { segWs.close() } catch (_) {}
+                  await new Promise<void>((r) => setTimeout(r, DCC_MULTI_POST_DONE_BUFFER_MS))
+                }
+                assistantText = fullAssistantText.trim()
+                if (assistantText) {
+                  if (isStartTurn) sessionsWithFortuneDelivered.add(sessionId)
+                  history.push({ role: 'user', content: userTranscript })
+                  history.push({ role: 'assistant', content: assistantText })
+                  if (history.length > 50) history.splice(0, history.length - 50)
+                  const sessionArr = getOrCreateHistory(sessionId)
+                  sessionArr.push({ role: 'user', content: userTranscript })
+                  sessionArr.push({ role: 'assistant', content: assistantText })
+                  if (sessionArr.length > 50) sessionArr.splice(0, sessionArr.length - 50)
+                  try { controller.enqueue(encoder.encode(JSON.stringify({ type: 'assistantText', text: assistantText }) + '\n')) } catch (_) {}
+                }
+              } catch (e) {
+                console.error('[dcc-turn] multi sequential:', e instanceof Error ? e.message : String(e))
+              }
+              if (currentWs.readyState === 1 || currentWs.readyState === 0) try { currentWs.close() } catch (_) {}
+              resolveOnce()
+              return
+            }
+
+            const reader = streamBody!.getReader()
             const decoder = new TextDecoder()
             let buffer = ''
             let pendingText = ''
@@ -1144,12 +1422,88 @@ ${emotionTagRule}
                     process.stdout.write(text)
                     assistantText += text
                     pendingText += text
+                    // 다자형: 화자 태그 처리 — 맨 앞 또는 중간(\n[2]\n 등)에 있는 태그까지 처리
+                    if (isMulti) {
+                      for (;;) {
+                        const tagMatch = pendingText.match(/^\[([123])\]\r?\n?/)
+                        if (tagMatch) {
+                          multiSpeakerIndex = parseInt(tagMatch[1], 10) - 1
+                          currentVoiceId = multiVoiceIds[multiSpeakerIndex]
+                          currentContextId = `dcc-${sessionId}-${Date.now()}-${++multiContextCounter}`
+                          try {
+                            controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: multiSpeakerIndex }) + '\n'))
+                          } catch (_) {}
+                          pendingText = pendingText.slice(tagMatch[0].length)
+                          continue
+                        }
+                        // 중간에 있는 화자 태그(줄바꿈 뒤 [1][2][3]) 찾기 — 해당 구간까지 현재 화자로 TTS 후 전환
+                        const nextTag = pendingText.match(/\n\[([123])\]\r?\n?/)
+                        if (nextTag) {
+                          const idx = pendingText.indexOf(nextTag[0])
+                          const beforeTag = pendingText.slice(0, idx)
+                          let remaining = beforeTag
+                          while (remaining) {
+                            const { chunk, rest } = extractChunk(remaining)
+                            if (!chunk) break
+                            remaining = rest
+                            const trimmed = chunk.trim()
+                            if (!trimmed) continue
+                            if (multiSpeakerIndex === null) {
+                              multiSpeakerIndex = 0
+                              currentVoiceId = multiVoiceIds[0]
+                              try {
+                                controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: 0 }) + '\n'))
+                              } catch (_) {}
+                            }
+                            if (fillerSentAt !== null) {
+                              const wait = fillerSentAt + DCC_FILLER_DURATION_MS + 1000 - Date.now()
+                              if (wait > 0) await new Promise<void>(r => setTimeout(r, wait))
+                              fillerSentAt = null
+                            }
+                            const toSend = sentAny ? ` ${trimmed}` : trimmed
+                            sentAny = true
+                            sendCartesia(toSend, false)
+                          }
+                          pendingText = pendingText.slice(idx + nextTag[0].length)
+                          // 이전 화자 context 종료 후, 해당 context의 done 수신 시점까지 대기(또는 타임아웃) → 음성 겹침·끊김 방지
+                          if (multiSpeakerIndex !== null) {
+                            sendCartesiaClose(currentContextId, currentVoiceId)
+                            const ctxToWait = currentContextId
+                            const waitForDone = new Promise<void>((resolve) => {
+                              contextDoneResolvers.set(ctxToWait, resolve)
+                              nextDoneResolver = resolve
+                            })
+                            const timeout = new Promise<void>((r) => setTimeout(r, DCC_MULTI_CONTEXT_SWITCH_DELAY_MS))
+                            await Promise.race([waitForDone, timeout])
+                            contextDoneResolvers.delete(ctxToWait)
+                            nextDoneResolver = null
+                            await new Promise<void>(r => setTimeout(r, DCC_MULTI_POST_DONE_BUFFER_MS))
+                          }
+                          multiSpeakerIndex = parseInt(nextTag[1], 10) - 1
+                          currentVoiceId = multiVoiceIds[multiSpeakerIndex]
+                          currentContextId = `dcc-${sessionId}-${Date.now()}-${++multiContextCounter}`
+                          try {
+                            controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: multiSpeakerIndex }) + '\n'))
+                          } catch (_) {}
+                          continue
+                        }
+                        break
+                      }
+                    }
                     for (;;) {
                       const { chunk, rest } = extractChunk(pendingText)
                       if (!chunk) break
                       pendingText = rest
                       const trimmed = chunk.trim()
                       if (!trimmed) continue
+                      if (isMulti && multiSpeakerIndex === null) {
+                        multiSpeakerIndex = 0
+                        currentVoiceId = multiVoiceIds[0]
+                        currentContextId = `dcc-${sessionId}-${Date.now()}-${++multiContextCounter}`
+                        try {
+                          controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: 0 }) + '\n'))
+                        } catch (_) {}
+                      }
                       if (fillerSentAt !== null) {
                         const wait = fillerSentAt + DCC_FILLER_DURATION_MS + 1000 - Date.now()
                         if (wait > 0) await new Promise<void>(r => setTimeout(r, wait))
@@ -1173,7 +1527,7 @@ ${emotionTagRule}
               sentFinalChunk = true
               try {
                 if (currentWs.readyState === 1) {
-                  currentWs.send(JSON.stringify({ ...basePayloadNoContext, context_id: currentContextId, transcript: '', continue: false }))
+                  currentWs.send(JSON.stringify({ ...basePayloadNoContext, voice: { mode: 'id' as const, id: currentVoiceId }, context_id: currentContextId, transcript: '', continue: false }))
                 }
               } catch (_) {}
             }
@@ -1236,7 +1590,7 @@ ${emotionTagRule}
       })
     }
 
-    const reader = streamBody.getReader()
+    const reader = streamBody!.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
     let firstDelta = true

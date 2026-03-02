@@ -25,6 +25,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { id, menu_items, preview_thumbnails, ...restData } = body
 
+    // DB 컬럼은 is_exposed. 폼 필드 show_exposed가 오면 is_exposed로만 저장하고 show_exposed 제거
+    if ('show_exposed' in restData) {
+      restData.is_exposed = !!restData.show_exposed
+      delete restData.show_exposed
+    }
+
     const dataToSave = {
       ...restData,
       menu_items: menu_items ? JSON.stringify(menu_items) : null,
@@ -233,9 +239,10 @@ export async function POST(req: NextRequest) {
           })
         }
         
-        // content_type이 voice이면 8001~, 아니면 1001~ 시작
+        // content_type이 voice이면 8001~, multi이면 7001~, 아니면 1001~ 시작
         const isVoice = dataWithoutId.content_type === 'voice'
-        const rangeStart = isVoice ? 8001 : 1001
+        const isMulti = dataWithoutId.content_type === 'multi'
+        const rangeStart = isVoice ? 8001 : isMulti ? 7001 : 1001
         let nextCode = rangeStart
         while (nextCode <= 9999) {
           const codeStr = String(nextCode).padStart(4, '0')

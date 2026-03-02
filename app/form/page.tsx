@@ -713,7 +713,8 @@ function FormContent() {
 
   // 음성 상담 잔여시간·잔여금액 조회 (콘텐츠 로드 후 전화번호 있으면 1회 + 폼 복귀 시 재조회로 최신 반영)
   const refetchVoiceBalance = useCallback(() => {
-    if (typeof window === 'undefined' || !content?.id || content?.content_type !== 'voice') return
+    const isVoiceForm = content?.content_type === 'voice' || content?.content_type === 'multi'
+    if (typeof window === 'undefined' || !content?.id || !isVoiceForm) return
     const phone = sessionStorage.getItem('payment_phone')
     if (!phone) return
     fetch(`/api/voice/balance?contentId=${encodeURIComponent(content.id)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
@@ -740,7 +741,8 @@ function FormContent() {
       .catch(() => {})
   }, [content?.id, content?.content_type])
   useEffect(() => {
-    if (typeof window === 'undefined' || !content?.id || content?.content_type !== 'voice') return
+    const isVoiceForm = content?.content_type === 'voice' || content?.content_type === 'multi'
+    if (typeof window === 'undefined' || !content?.id || !isVoiceForm) return
     const phone = sessionStorage.getItem('payment_phone')
     if (!phone) {
       setVoiceResidualCheckDone(true)
@@ -2533,10 +2535,10 @@ function FormContent() {
           }
         })()
 
-        // 완료 건수 로드 (이용 인원 표시용). 음성형은 saved_results_voice, 점사형은 saved_results 집계
+        // 완료 건수 로드 (이용 인원 표시용). 음성형·다자형은 saved_results_voice, 점사형은 saved_results 집계
         void (async () => {
           try {
-            const countType = foundContent.content_type === 'voice' ? 'voice' : 'fortune'
+            const countType = (foundContent.content_type === 'voice' || foundContent.content_type === 'multi') ? 'voice' : 'fortune'
             const res = await fetch(`/api/stats/completed-count?type=${countType}`)
             if (res.ok) {
               const data = await res.json()
@@ -3157,14 +3159,16 @@ function FormContent() {
 
     // 음성 + 잔여시간/잔여금액 있음 → 아래쪽 메인 버튼("잔여시간/잔여금액으로 상담") 클릭 시 여기서 처리
     // 잔여금액만 있고 차감 단위 미만(상담가능 0초)이면 진입 불가 → 결제하기로 유도
-    const opts = Array.isArray(content?.voice_time_options) ? content.voice_time_options : []
-    const chargeOpt = opts.find((o: any) => o?.type === 'charge')
+    const timeOpts = content?.content_type === 'multi'
+      ? (Array.isArray((content as any).multi_time_options) ? (content as any).multi_time_options : [])
+      : (Array.isArray(content?.voice_time_options) ? content.voice_time_options : [])
+    const chargeOpt = timeOpts.find((o: any) => o?.type === 'charge')
     const rateWon = Math.max(1, Number(chargeOpt?.rate_won) || 19)
     const rateSeconds = Math.max(1, Number(chargeOpt?.rate_seconds) || 12)
     const usableSecFromBalance = voiceBalanceWan != null && voiceBalanceWan > 0 && rateWon > 0
       ? Math.floor(voiceBalanceWan / rateWon) * rateSeconds
       : 0
-    const hasVoiceResidual = content?.content_type === 'voice' && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0 && usableSecFromBalance > 0))
+    const hasVoiceResidual = (content?.content_type === 'voice' || content?.content_type === 'multi') && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0 && usableSecFromBalance > 0))
     if (hasVoiceResidual) {
       const phone = sessionStorage.getItem('payment_phone')
       if (!phone) {
@@ -3487,6 +3491,100 @@ function FormContent() {
           {
             name,
             gender: gender as 'male' | 'female' | '' || '',
+            calendarType: (calendarType as 'solar' | 'lunar' | 'lunar-leap') || 'solar',
+            year: year || '',
+            month: month || '',
+            day: day || '',
+            birthHour: birthHour || '',
+            partnerName: partnerName || '',
+            partnerGender: (partnerGender as 'male' | 'female' | '') || '',
+            partnerCalendarType: (partnerCalendarType as 'solar' | 'lunar' | 'lunar-leap') || 'solar',
+            partnerYear: partnerYear || '',
+            partnerMonth: partnerMonth || '',
+            partnerDay: partnerDay || '',
+            partnerBirthHour: partnerBirthHour || ''
+          },
+          true,
+          oid
+        )
+        return
+      }
+
+      // 0원: PG 없이 즉시 성공 처리 (다자형·기타, 음성형 0원은 위 isFreeVoice에서 이미 처리됨)
+      if (Number.isFinite(displayedPriceNum) && displayedPriceNum <= 0) {
+        const paymentCodeStrForZero = String(content?.payment_code || '').trim()
+        if (!paymentCodeStrForZero || paymentCodeStrForZero.length < 4) {
+          setSubmitting(false)
+          setPaymentProcessingMethod(null)
+          showAlertMessage('결제 코드가 설정되지 않았습니다. 관리자에게 문의해 주세요.')
+          return
+        }
+        setShowPaymentPopup(false)
+        setSubmitting(false)
+        setPaymentProcessingMethod(null)
+        const oid = generateOrderId()
+        const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+
+        const saveRes = await fetch('/api/payment/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            oid,
+            contentId: content.id,
+            paymentCode: content.payment_code,
+            name: content.content_name || '',
+            pay: 0,
+            paymentType: paymentMethod,
+            userName: name,
+            phoneNumber,
+            gender: (gender as 'male' | 'female' | '') || null,
+            password: password || null,
+            status: 'success',
+            calendarType: calendarType || undefined,
+            birthYear: year ? parseInt(year, 10) : undefined,
+            birthMonth: month ? parseInt(month, 10) : undefined,
+            birthDay: day ? parseInt(day, 10) : undefined,
+            birthHour: birthHour || undefined,
+          }),
+        })
+        if (!saveRes.ok) {
+          const errData = await saveRes.json().catch(() => ({}))
+          showAlertMessage((errData as any)?.error || '저장에 실패했습니다.')
+          return
+        }
+
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('payment_oid', oid)
+          sessionStorage.setItem('payment_method', paymentMethod)
+          sessionStorage.setItem('payment_content_id', String(content.id))
+          sessionStorage.setItem('result_content_id', String(content.id))
+          sessionStorage.setItem('payment_user_name', name)
+          sessionStorage.setItem('payment_phone', phoneNumber)
+          sessionStorage.setItem('payment_password', password || '')
+          sessionStorage.setItem('payment_user_gender', gender || '')
+          sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
+          sessionStorage.setItem('payment_user_year', year || '')
+          sessionStorage.setItem('payment_user_month', month || '')
+          sessionStorage.setItem('payment_user_day', day || '')
+          sessionStorage.setItem('payment_user_birth_hour', birthHour || '')
+          if (content?.content_type === 'voice' || content?.content_type === 'multi') {
+            sessionStorage.removeItem('voice_entered_by_100')
+            try { localStorage.setItem('voice_payment_oid', oid); localStorage.setItem('voice_content_id', String(content.id)) } catch { /* ignore */ }
+            const opts = Array.isArray(content?.multi_time_options) ? content.multi_time_options : (Array.isArray(content?.voice_time_options) ? content.voice_time_options : [])
+            const defaultOpt = (opts as any[]).find((o: any) => o?.type === 'default' || Number(o?.price) === 0)
+            const totalSec = defaultOpt ? (Number(defaultOpt.minutes || 0) * 60 + Number(defaultOpt.seconds ?? 0)) || 300 : 300
+            sessionStorage.setItem('payment_voice_minutes', String(defaultOpt?.minutes ?? 5))
+            sessionStorage.setItem('payment_voice_total_seconds', String(totalSec))
+            sessionStorage.removeItem('voice_time_expired')
+          }
+        }
+
+        await startFortuneTellingWithContent(
+          Date.now(),
+          content,
+          {
+            name,
+            gender: (gender as 'male' | 'female' | '') || '',
             calendarType: (calendarType as 'solar' | 'lunar' | 'lunar-leap') || 'solar',
             year: year || '',
             month: month || '',
@@ -4402,8 +4500,8 @@ function FormContent() {
       const userPartnerDay = userInfo?.partnerDay || partnerDay
       const userPartnerBirthHour = userInfo?.partnerBirthHour || partnerBirthHour
       
-      // 음성형 컨텐츠는 점사 로직이 필요 없으므로 바로 result/voice로 이동
-      if (contentData.content_type === 'voice' || content?.content_type === 'voice') {
+      // 음성형·다자형 컨텐츠는 점사 로직이 필요 없으므로 바로 result/voice로 이동
+      if (contentData.content_type === 'voice' || contentData.content_type === 'multi' || content?.content_type === 'voice' || content?.content_type === 'multi') {
         // 음성형에 필요한 sessionStorage 데이터 저장
         if (typeof window !== 'undefined') {
           const voiceContentId = String(contentData.id || content?.id || '')
@@ -5730,11 +5828,14 @@ function FormContent() {
                 const raw = (content as any)?.voice_time_options
                 const opts = Array.isArray(raw) ? raw : (typeof raw === 'string' ? (() => { try { const a = JSON.parse(raw); return Array.isArray(a) ? a : [] } catch { return [] } })() : [])
                 const extensionOpts = opts.filter((o: any) => o?.type === 'extension' || (o?.price > 0 && o?.type !== 'charge' && o?.type !== 'default'))
-                const chargeOpt = opts.find((o: any) => o?.type === 'charge') as { rate_seconds?: number; rate_won?: number; price?: number; label?: string } | undefined
+                const chargeOpt = opts.find((o: any) => o?.type === 'charge') as { rate_seconds?: number; rate_won?: number; price?: number; label?: string; minutes?: number; seconds?: number } | undefined
                 const chargePrice = Number(chargeOpt?.price) ?? 1000
                 const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
                 const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
-                const chargeLabel = (chargeOpt?.label && String(chargeOpt.label).trim()) ? String(chargeOpt.label).trim() : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` : `${chargePrice.toLocaleString()}원 충전`)
+                const chargeMin = chargeOpt != null ? (Number(chargeOpt.minutes) || 0) : 0
+                const chargeSec = chargeOpt != null ? (Number(chargeOpt.seconds) ?? 0) : 0
+                const chargeTimeLabel = chargeMin > 0 || chargeSec > 0 ? (chargeSec > 0 ? `${chargeMin}분 ${chargeSec}초` : `${chargeMin}분`) : ''
+                const chargeLabel = (chargeOpt?.label && String(chargeOpt.label).trim()) ? String(chargeOpt.label).trim() + (chargeTimeLabel ? ` (${chargeTimeLabel})` : '') : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` + (chargeTimeLabel ? ` · ${chargeTimeLabel}` : '') : `${chargePrice.toLocaleString()}원 충전` + (chargeTimeLabel ? ` (${chargeTimeLabel})` : ''))
                 const hasOptions = extensionOpts.length > 0 || chargeOpt != null
 
                 if (hasOptions) {
@@ -7577,9 +7678,12 @@ function FormContent() {
             </div>
 
             {/* 음성: 잔여금액 + 상담가능 잔여 시간(차감단위 기준), 진입은 아래 메인 버튼으로 */}
-            {content?.content_type === 'voice' && content != null && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0)) && (() => {
+            {(content?.content_type === 'voice' || content?.content_type === 'multi') && content != null && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0)) && (() => {
               const showBalance = voiceBalanceWan != null && voiceBalanceWan > 0
-              const chargeOpt = Array.isArray(content?.voice_time_options) ? (content.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
+              const timeOptsUi = content?.content_type === 'multi'
+                ? (Array.isArray((content as any).multi_time_options) ? (content as any).multi_time_options : [])
+                : (Array.isArray(content?.voice_time_options) ? content.voice_time_options : [])
+              const chargeOpt = timeOptsUi.find((o: any) => o?.type === 'charge')
               const rateSeconds = chargeOpt?.rate_seconds ?? 12
               const rateWon = chargeOpt?.rate_won ?? 19
               const secFromBalance = showBalance && rateWon > 0 ? Math.floor(voiceBalanceWan! / rateWon) * rateSeconds : 0
@@ -7673,10 +7777,13 @@ function FormContent() {
                 const priceStr = priceVal != null && String(priceVal).trim() !== '' ? String(priceVal).replace(/[^0-9]/g, '') : null
                 const priceNum = priceStr !== null ? parseInt(priceStr, 10) : null
                 const isExplicitlyFree = content != null && priceNum !== null && Number.isFinite(priceNum) && priceNum <= 0
-                const chargeOptBtn = Array.isArray(content?.voice_time_options) ? (content.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
+                const timeOptsBtn = content?.content_type === 'multi'
+                  ? (Array.isArray((content as any).multi_time_options) ? (content as any).multi_time_options : [])
+                  : (Array.isArray(content?.voice_time_options) ? content.voice_time_options : [])
+                const chargeOptBtn = timeOptsBtn.find((o: any) => o?.type === 'charge')
                 const rateWonBtn = Math.max(1, Number(chargeOptBtn?.rate_won) ?? 19)
                 const secFromBalanceBtn = voiceBalanceWan != null && voiceBalanceWan > 0 && rateWonBtn > 0 ? Math.floor(voiceBalanceWan / rateWonBtn) * (Math.max(1, Number(chargeOptBtn?.rate_seconds) || 12)) : 0
-                const hasResidual = content?.content_type === 'voice' && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0 && secFromBalanceBtn > 0))
+                const hasResidual = (content?.content_type === 'voice' || content?.content_type === 'multi') && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0 && secFromBalanceBtn > 0))
                 const mainButtonText = submitting
                   ? '처리 중...'
                   : hasResidual
@@ -7716,12 +7823,12 @@ function FormContent() {
           </div>
         </div>
 
-        {/* 이용 인원 표시: 음성형은 saved_results_voice 건수만, 점사형은 40 + saved_results 건수 */}
+        {/* 이용 인원 표시: 음성형·다자형은 saved_results_voice 건수만, 점사형은 40 + saved_results 건수 */}
         {content?.id && (
           <div className="mb-4 text-center">
             <p className="text-sm text-gray-600">
               <span className="font-semibold text-pink-600">
-                {content?.content_type === 'voice'
+                {content?.content_type === 'voice' || content?.content_type === 'multi'
                   ? completedCount.toLocaleString()
                   : (40 + completedCount).toLocaleString()}
               </span>명이 이용하셨습니다.

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   getKstTimeInstructionBlock,
   getKoreaContextVars,
@@ -205,6 +205,7 @@ export type Msg = { role: 'user' | 'assistant' | 'system'; text: string }
 
 export function useVoiceResult() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   /* ── 기본 상태 ─────────────────────────── */
   const [loading, setLoading] = useState(true)
@@ -222,6 +223,9 @@ export function useVoiceResult() {
   const [outVolume, setOutVolume] = useState(0)
   const [micSensitivity, setMicSensitivity] = useState(85) // 0=낮음, 100=높음 (기본 85로 목소리 감지 쉽게)
   const [messages, setMessages] = useState<Msg[]>([])
+
+  /** 다자형: 현재 말하는 화자 인덱스 0|1|2. DCC/API에서 화자 전환 시 setCurrentSpeakerIndex 호출 예정 */
+  const [currentSpeakerIndex, setCurrentSpeakerIndex] = useState<0 | 1 | 2>(0)
 
   /* ── 타이머 ────────────────────────────── */
   const [totalSeconds, setTotalSeconds] = useState(0) // 구매한 총 초
@@ -446,6 +450,12 @@ export function useVoiceResult() {
         } else if (storedVoiceMin) {
           secs = parseInt(storedVoiceMin, 10) * 60
         } else {
+          // 바로이용하기(충전) 결제 후 oid로 진입한 경우: 초기 시간은 0, 별도 effect에서 충전 적용
+          const urlOid = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oid') : null
+          const skipWaitWithOid = sessionStorage.getItem('voice_entered_by_100') && urlOid
+          if (skipWaitWithOid) {
+            secs = 0
+          } else {
           // sessionStorage에 시간 없음: 잔여금액으로 상담 진입 시 balance에서 이용시간 계산
           const phone = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
           let usedBalancePath = false // 잔여금액으로 진입해 차감 단위 미만이면 secs=0 → 기본시간 부여하지 않음
@@ -471,6 +481,7 @@ export function useVoiceResult() {
           }
           // 잔여금액 경로에서 차감 단위 미만으로 0분이 된 경우 기본시간 부여하지 않음
           if (secs <= 0 && !usedBalancePath) secs = defaultSecs
+          }
         }
         const voiceMin = Math.floor(secs / 60)
         voiceMinutesRef.current = voiceMin
@@ -587,6 +598,56 @@ export function useVoiceResult() {
         weatherReadyResolveRef.current?.()
       })
   }, [])
+
+  /* ── 바로이용하기(충전) 결제 후 result 진입: URL oid로 충전 1회 적용 후 콘텐츠 charge 옵션 분만큼 시간 부여 ── */
+  useEffect(() => {
+    if (!contentData?.id) return
+    const oid = searchParams?.get('oid')
+    if (!oid || typeof window === 'undefined') return
+    if (!sessionStorage.getItem('voice_entered_by_100')) return
+    if (skipWaitChargeAppliedRef.current) return
+    // 연장(분) 결제 건은 초기 로드에서 payment_voice_total_seconds로 이미 적용됨. 충전 건만 여기서 처리
+    const storedTotal = sessionStorage.getItem('payment_voice_total_seconds')
+    if (storedTotal != null && storedTotal !== '' && parseInt(storedTotal, 10) > 0) return
+
+    ;(async () => {
+      try {
+        const statusRes = await fetch(`/api/payment/status?oid=${encodeURIComponent(oid)}`, { cache: 'no-store' })
+        if (!statusRes.ok) return
+        const statusData = await statusRes.json()
+        if (!statusData?.success || statusData?.status !== 'success') return
+
+        const cid = contentIdRef.current
+        const phone = sessionStorage.getItem('payment_phone')
+        if (!cid || !phone) return
+
+        const chargeRes = await fetch('/api/voice/balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+        })
+        const chargeData = await chargeRes.json()
+        if (chargeData?.success && typeof chargeData.balance_wan === 'number') {
+          setBalanceWan(chargeData.balance_wan)
+        }
+
+        const opts = contentData?.voice_time_options && Array.isArray(contentData.voice_time_options) ? contentData.voice_time_options : []
+        const chargeOpt = (opts as any[]).find((o: any) => o?.type === 'charge')
+        const addSec = chargeOpt != null ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0) : 0
+        if (addSec > 0) {
+          extendSuccessTimeAddedOidsRef.current.add(oid)
+          setRemainingSeconds(addSec)
+          setTotalSeconds(addSec)
+          if (!timerIntervalRef.current) startTimer()
+          disconnectedAtZeroRef.current = false
+          if (!connectedRef.current) {
+            try { connect() } catch { /* ignore */ }
+          }
+        }
+        skipWaitChargeAppliedRef.current = true
+      } catch { /* ignore */ }
+    })()
+  }, [contentData?.id, contentData?.voice_time_options, searchParams])
 
   /* ── 자동 연결 (페이지 진입 시 버튼 없이 바로 시작) ── */
   const autoConnectTriedRef = useRef(false)
@@ -766,6 +827,8 @@ export function useVoiceResult() {
     }
     const ctx = dccPcmContextRef.current
     if (ctx.state === 'suspended') ctx.resume().catch(() => {})
+    // 재생 시작을 위해 스트리머 resume (브라우저 오디오 정책 대응)
+    void dccStreamerRef.current.resume()
     return ctx
   }, [])
 
@@ -1613,7 +1676,7 @@ ${seasonBlock}
             const trimmed = line.trim()
             if (!trimmed) continue
             try {
-              const parsed = JSON.parse(trimmed) as { type?: string; text?: string; assistantText?: string; base64?: string; format?: string; sampleRate?: number }
+              const parsed = JSON.parse(trimmed) as { type?: string; text?: string; assistantText?: string; base64?: string; format?: string; sampleRate?: number; speakerIndex?: number }
               if (parsed.type === 'userTranscript' && typeof parsed.text === 'string') {
                 userT = parsed.text
                 if (!isSilenceBreak) {
@@ -1627,6 +1690,10 @@ ${seasonBlock}
                     dccOutVolumeIntervalRef.current = setInterval(() => setOutVolume(0.35), 80)
                   }
                   const ab = base64ToArrayBuffer(parsed.base64)
+                  // 재생 직전 스트리머·컨텍스트 resume (브라우저 정책으로 소리 나도록)
+                  if (dccStreamerRef.current?.resume) {
+                    void dccStreamerRef.current.resume()
+                  }
                   playDccPcmChunk(ab)
                   receivedAudio = true
                 }
@@ -1636,6 +1703,8 @@ ${seasonBlock}
                   dccTurnTextAdded = true
                   setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
                 }
+              } else if (parsed.type === 'speakerIndex' && typeof parsed.speakerIndex === 'number' && parsed.speakerIndex >= 0 && parsed.speakerIndex <= 2) {
+                setCurrentSpeakerIndex(parsed.speakerIndex as 0 | 1 | 2)
               } else if (parsed.type === 'done') {
                 if (!dccTurnTextAdded) {
                   assistantT = typeof parsed.assistantText === 'string' ? parsed.assistantText : ''
@@ -1962,7 +2031,8 @@ ${seasonBlock}
         wsRef.current &&
         (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)
       ) return
-      const isDccProvider = contentData?.voice_provider === 'deepgram-claude-cartesia'
+      // 다자형(multi)은 항상 DCC. 음성형은 voice_provider가 deepgram-claude-cartesia일 때만 DCC
+      const isDccProvider = contentData?.content_type === 'multi' || contentData?.voice_provider === 'deepgram-claude-cartesia'
       if (isDccProvider) {
         const cid = contentIdRef.current
         if (!cid) return
@@ -2666,6 +2736,8 @@ ${seasonBlock}
   const paymentWindowRef = useRef<Window | null>(null)
   /** 동일 결제 성공이 handlePaymentSuccess/postMessage/storage/BroadcastChannel/폴링 등으로 중복 호출될 때 시간 중복 가산 방지 */
   const extendSuccessTimeAddedOidsRef = useRef<Set<string>>(new Set())
+  /** 바로이용하기(충전) 결제 후 result 진입 시 URL oid로 충전 적용 1회만 수행 */
+  const skipWaitChargeAppliedRef = useRef(false)
   /** 무료 연장 24시간 1회 제한: 차단 시 팝업용 */
   const [showFreeExtendBlockedPopup, setShowFreeExtendBlockedPopup] = useState(false)
   const [freeExtendBlockedRemainingMs, setFreeExtendBlockedRemainingMs] = useState(0)
@@ -3437,6 +3509,9 @@ ${seasonBlock}
     dccRecording,
     startDccRecording,
     endDccTurn,
+    // 다자형: 현재 화자 인덱스 (0|1|2), API에서 화자 전환 시 setCurrentSpeakerIndex 호출
+    currentSpeakerIndex,
+    setCurrentSpeakerIndex,
     // 점사 진행 중 나가기 방지 팝업
     showInProgressBlockModal,
     handleInProgressBlockClose: () => setShowInProgressBlockModal(false),

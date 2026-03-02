@@ -109,6 +109,124 @@ function VoiceAdvisorVideoBlock({ rawVideoUrl }: { rawVideoUrl?: string }) {
   )
 }
 
+/** 다자형: 1:1 비율 3분할. 페르소나별 동영상, 말할 때만 해당 칸 재생·나머지 일시정지 */
+function MultiAdvisorVideoBlock({
+  videoUrlsByPersona,
+  currentSpeakerIndex,
+}: {
+  videoUrlsByPersona: [string[], string[], string[]]
+  currentSpeakerIndex: 0 | 1 | 2
+}) {
+  const getUrls = (i: 0 | 1 | 2) =>
+    (videoUrlsByPersona[i] ?? []).filter((u) => typeof u === 'string' && (u as string).trim()) as string[]
+  const urls0 = useMemo(() => getUrls(0), [videoUrlsByPersona[0]?.join('|')])
+  const urls1 = useMemo(() => getUrls(1), [videoUrlsByPersona[1]?.join('|')])
+  const urls2 = useMemo(() => getUrls(2), [videoUrlsByPersona[2]?.join('|')])
+  const shuffled0 = useMemo(() => (urls0.length <= 1 ? urls0 : shuffle(urls0)), [urls0.join('|')])
+  const shuffled1 = useMemo(() => (urls1.length <= 1 ? urls1 : shuffle(urls1)), [urls1.join('|')])
+  const shuffled2 = useMemo(() => (urls2.length <= 1 ? urls2 : shuffle(urls2)), [urls2.join('|')])
+
+  const ref0 = useRef<HTMLVideoElement>(null)
+  const ref1 = useRef<HTMLVideoElement>(null)
+  const ref2 = useRef<HTMLVideoElement>(null)
+  const [idx0, setIdx0] = useState(0)
+  const [idx1, setIdx1] = useState(0)
+  const [idx2, setIdx2] = useState(0)
+  const idxRef = useRef({ 0: 0, 1: 0, 2: 0 })
+  idxRef.current = { 0: idx0, 1: idx1, 2: idx2 }
+  const [loaded0, setLoaded0] = useState(false)
+  const [loaded1, setLoaded1] = useState(false)
+  const [loaded2, setLoaded2] = useState(false)
+
+  const refs = [ref0, ref1, ref2] as const
+  const shuffled = [shuffled0, shuffled1, shuffled2] as const
+  const setIdx = [setIdx0, setIdx1, setIdx2] as const
+  const loaded = [loaded0, loaded1, loaded2] as const
+  const setLoaded = [setLoaded0, setLoaded1, setLoaded2] as const
+
+  // 말하는 화자만 재생, 나머지 일시정지 (인덱스 변경 시에도 현재 화자 재생 유지)
+  useEffect(() => {
+    refs.forEach((ref, i) => {
+      const el = ref.current
+      if (!el) return
+      if (i === currentSpeakerIndex) {
+        if (shuffled[i].length > 0) el.play().catch(() => {})
+      } else {
+        el.pause()
+      }
+    })
+  }, [currentSpeakerIndex, loaded0, loaded1, loaded2, idx0, idx1, idx2])
+
+  const goNext = useCallback((personaIndex: 0 | 1 | 2) => {
+    const list = shuffled[personaIndex]
+    if (list.length <= 1) return
+    const cur = idxRef.current[personaIndex]
+    const next = (cur + 1) % list.length
+    setIdx[personaIndex](next)
+    const el = refs[personaIndex].current
+    if (el) {
+      el.src = list[next]
+      el.currentTime = 0
+      if (personaIndex === currentSpeakerIndex) el.play().catch(() => {})
+    }
+  }, [currentSpeakerIndex, shuffled0, shuffled1, shuffled2])
+
+  useEffect(() => {
+    refs.forEach((ref, i) => {
+      const el = ref.current
+      const list = shuffled[i]
+      if (!el || list.length <= 1) return
+      const onEnded = () => goNext(i as 0 | 1 | 2)
+      el.addEventListener('ended', onEnded)
+      return () => el.removeEventListener('ended', onEnded)
+    })
+  }, [goNext])
+
+  // 초기 loaded 플래그(비디오 마운트 시 재생/일시정지 적용용)
+  useEffect(() => {
+    ;([0, 1, 2] as const).forEach((i) => {
+      if (shuffled[i].length > 0) setLoaded[i](true)
+    })
+  }, [shuffled0.join('|'), shuffled1.join('|'), shuffled2.join('|')])
+
+  const hasAny = videoUrlsByPersona.some((arr) => Array.isArray(arr) && arr.filter((u) => typeof u === 'string' && (u as string).trim()).length > 0)
+  const idxs = [idx0, idx1, idx2] as const
+  if (!hasAny) {
+    return (
+      <div className="w-full rounded-2xl bg-gray-100 border border-gray-200 flex items-center justify-center py-12 aspect-square max-w-md mx-auto">
+        <p className="text-gray-400 text-sm">영상이 등록되지 않았습니다.</p>
+      </div>
+    )
+  }
+
+  const cellClass = 'relative w-full overflow-hidden bg-black'
+  const videoClass = 'absolute inset-0 w-full h-full object-cover'
+  return (
+    <div className="w-full grid grid-cols-3 gap-0 aspect-square [contain:layout_paint]">
+      {([0, 1, 2] as const).map((i) => (
+        <div key={i} className={cellClass}>
+          {(shuffled[i].length > 0 && (
+            <video
+              ref={refs[i]}
+              src={shuffled[i][idxs[i]] ?? ''}
+              muted
+              playsInline
+              preload="auto"
+              loop={shuffled[i].length <= 1}
+              className={videoClass}
+              style={{ objectFit: 'cover' }}
+            />
+          )) || (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+              <span className="text-gray-500 text-xs">영상 없음</span>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /* 만세력 스타일 (voice-mvp에서 가져옴). 모바일: 가로 스크롤 없이 폰트/패딩 축소로 맞춤 */
 const MANSE_STYLES = `
 .voice-result-manse .manse-ryeok-container { overflow-x: hidden !important; max-width: 100% !important; }
@@ -447,7 +565,18 @@ export default function VoiceResultContent() {
         })()}
 
         {/* 상담사 영상: 복수 시 세션당 하나 랜덤 선택 후 해당 동영상만 반복 재생. DCC 음성과 동시 재생 시 메인 스레드/GPU 경쟁 완화 위해 레이어 분리 */}
-        <VoiceAdvisorVideoBlock rawVideoUrl={h.contentData?.voice_advisor_video_url} />
+        {h.contentData?.content_type === 'multi' ? (
+          <MultiAdvisorVideoBlock
+            videoUrlsByPersona={[
+              Array.isArray(h.contentData?.multi_advisor_video_urls_1) ? h.contentData.multi_advisor_video_urls_1 : [],
+              Array.isArray(h.contentData?.multi_advisor_video_urls_2) ? h.contentData.multi_advisor_video_urls_2 : [],
+              Array.isArray(h.contentData?.multi_advisor_video_urls_3) ? h.contentData.multi_advisor_video_urls_3 : [],
+            ]}
+            currentSpeakerIndex={h.currentSpeakerIndex ?? 0}
+          />
+        ) : (
+          <VoiceAdvisorVideoBlock rawVideoUrl={h.contentData?.voice_advisor_video_url} />
+        )}
 
         {/* 모바일 볼륨 안내 */}
         <p className="text-gray-500 text-xs text-center md:hidden">
@@ -459,7 +588,11 @@ export default function VoiceResultContent() {
             inVolume={h.inVolume}
             outVolume={h.outVolume}
             inLabel="내 목소리"
-            outLabel={h.contentData?.voice_counselor_name || 'AI 상담사'}
+            outLabel={
+              h.contentData?.content_type === 'multi'
+                ? (([h.contentData?.multi_persona_1_name, h.contentData?.multi_persona_2_name, h.contentData?.multi_persona_3_name][h.currentSpeakerIndex ?? 0] ?? '')?.trim() || `상담사 ${(h.currentSpeakerIndex ?? 0) + 1}`)
+                : (h.contentData?.voice_counselor_name || 'AI 상담사')
+            }
           />
         </div>
 
@@ -681,11 +814,14 @@ export default function VoiceResultContent() {
             {(() => {
               const opts = Array.isArray(h.contentData?.voice_time_options) ? h.contentData.voice_time_options : []
               const extensionOpts = opts.filter((o: any) => o?.type === 'extension' || (o?.price > 0 && o?.type !== 'charge' && o?.type !== 'default'))
-              const chargeOpt = opts.find((o: any) => o?.type === 'charge') as { rate_seconds?: number; rate_won?: number; price?: number; label?: string } | undefined
+              const chargeOpt = opts.find((o: any) => o?.type === 'charge') as { rate_seconds?: number; rate_won?: number; price?: number; label?: string; minutes?: number; seconds?: number } | undefined
               const rateSeconds = chargeOpt != null && Number(chargeOpt?.rate_seconds) > 0 ? Number(chargeOpt?.rate_seconds) : 0
               const rateWon = chargeOpt != null && Number(chargeOpt?.rate_won) > 0 ? Number(chargeOpt?.rate_won) : 0
               const chargePrice = Number(chargeOpt?.price) ?? 1000
-              const chargeLabel = (chargeOpt != null && (chargeOpt?.label ?? '').trim() !== '') ? String(chargeOpt?.label ?? '').trim() : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` : `${chargePrice.toLocaleString()}원 충전`)
+              const chargeMin = chargeOpt != null ? (Number(chargeOpt?.minutes) || 0) : 0
+              const chargeSec = chargeOpt != null ? (Number(chargeOpt?.seconds) ?? 0) : 0
+              const chargeTimeLabel = chargeMin > 0 || chargeSec > 0 ? (chargeSec > 0 ? `${chargeMin}분 ${chargeSec}초` : `${chargeMin}분`) : ''
+              const chargeLabel = (chargeOpt != null && (chargeOpt?.label ?? '').trim() !== '') ? String(chargeOpt?.label ?? '').trim() + (chargeTimeLabel ? ` (${chargeTimeLabel})` : '') : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` + (chargeTimeLabel ? ` · ${chargeTimeLabel}` : '') : `${chargePrice.toLocaleString()}원 충전` + (chargeTimeLabel ? ` (${chargeTimeLabel})` : ''))
               return (extensionOpts.length > 0 || true) ? (
               <div className="space-y-2 mb-5">
                 {extensionOpts.map((opt: { minutes: number; seconds?: number; price: number; label: string }, idx: number) => {

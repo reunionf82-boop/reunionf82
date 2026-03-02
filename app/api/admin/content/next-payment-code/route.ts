@@ -55,10 +55,11 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // type 쿼리 파라미터: voice이면 8000~, 그 외(점사형)이면 1001~
+    // type 쿼리 파라미터: voice이면 8001~, multi이면 7001~, 그 외(점사형)이면 1001~
     const contentType = request.nextUrl.searchParams.get('type')
     const isVoice = contentType === 'voice'
-    const rangeStart = isVoice ? 8001 : 1001
+    const isMulti = contentType === 'multi'
+    const rangeStart = isVoice ? 8001 : isMulti ? 7001 : 1001
     const rangeEnd = 9999
 
     // 존재하는 payment_code를 Set으로 변환 (빠른 조회를 위해)

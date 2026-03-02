@@ -118,6 +118,62 @@ export async function POST(req: NextRequest) {
     } else {
       data.preview_thumbnails = []
     }
+
+    // 다자형: multi_time_options, multi_advisor_video_urls, multi_cartesia_emotions 파싱
+    if (data.multi_time_options != null) {
+      try {
+        const raw = data.multi_time_options
+        data.multi_time_options = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (!Array.isArray(data.multi_time_options)) data.multi_time_options = []
+      } catch {
+        data.multi_time_options = []
+      }
+    }
+    if (data.multi_advisor_video_urls != null) {
+      try {
+        const raw = data.multi_advisor_video_urls
+        data.multi_advisor_video_urls = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (!Array.isArray(data.multi_advisor_video_urls)) data.multi_advisor_video_urls = []
+      } catch {
+        data.multi_advisor_video_urls = []
+      }
+    }
+    if (data.multi_advisor_video_urls_1 != null) {
+      try {
+        const raw = data.multi_advisor_video_urls_1
+        data.multi_advisor_video_urls_1 = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (!Array.isArray(data.multi_advisor_video_urls_1)) data.multi_advisor_video_urls_1 = []
+      } catch {
+        data.multi_advisor_video_urls_1 = []
+      }
+    }
+    if (data.multi_advisor_video_urls_2 != null) {
+      try {
+        const raw = data.multi_advisor_video_urls_2
+        data.multi_advisor_video_urls_2 = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (!Array.isArray(data.multi_advisor_video_urls_2)) data.multi_advisor_video_urls_2 = []
+      } catch {
+        data.multi_advisor_video_urls_2 = []
+      }
+    }
+    if (data.multi_advisor_video_urls_3 != null) {
+      try {
+        const raw = data.multi_advisor_video_urls_3
+        data.multi_advisor_video_urls_3 = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (!Array.isArray(data.multi_advisor_video_urls_3)) data.multi_advisor_video_urls_3 = []
+      } catch {
+        data.multi_advisor_video_urls_3 = []
+      }
+    }
+    if (data.multi_cartesia_emotions != null) {
+      try {
+        const raw = data.multi_cartesia_emotions
+        data.multi_cartesia_emotions = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (!Array.isArray(data.multi_cartesia_emotions)) data.multi_cartesia_emotions = []
+      } catch {
+        data.multi_cartesia_emotions = []
+      }
+    }
     
     return NextResponse.json(
       { success: true, data },

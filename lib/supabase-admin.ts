@@ -25,7 +25,7 @@ export interface ContentData {
   id?: number
   role_prompt?: string
   restrictions?: string
-  content_type?: 'saju' | 'gonghap' | 'fortune' | 'voice'
+  content_type?: 'saju' | 'gonghap' | 'fortune' | 'voice' | 'multi'
   content_name?: string
   thumbnail_url?: string
   thumbnail_video_url?: string // 컨텐츠명 동영상 썸네일 (WebM 파일명, 확장자 제외)
@@ -122,6 +122,33 @@ export interface ContentData {
   voice_cartesia_config?: string | Record<string, unknown>
   /** 무료속성(8006 동일): 본인정보 숨김, 만세력 비표시, 음성모델 유저정보 미전달 등 */
   apply_ppoing_attributes?: boolean
+  // 다자형(multi) 전용 필드
+  multi_persona_1_gender?: 'female' | 'male'
+  multi_persona_2_gender?: 'female' | 'male'
+  multi_persona_3_gender?: 'female' | 'male'
+  multi_cartesia_speed?: number
+  multi_cartesia_volume?: number
+  multi_cartesia_emotion?: string
+  multi_cartesia_emotions?: string[]
+  multi_start_sound_url?: string
+  multi_end_sound_url?: string
+  multi_time_options?: Array<{ type?: string; minutes: number; seconds?: number; price: number; label?: string; rate_seconds?: number; rate_won?: number }>
+  multi_advisor_video_urls?: string[]
+  multi_advisor_video_urls_1?: string[]
+  multi_advisor_video_urls_2?: string[]
+  multi_advisor_video_urls_3?: string[]
+  /** 다자형: 전체 시나리오 시스템 프롬프트 (3인 빙의·경쟁 상담 등) */
+  multi_system_prompt?: string
+  multi_persona_1_prompt?: string
+  multi_persona_2_prompt?: string
+  multi_persona_3_prompt?: string
+  multi_cartesia_voice_id_1?: string
+  multi_cartesia_voice_id_2?: string
+  multi_cartesia_voice_id_3?: string
+  /** 다자형: 페르소나별 표시 이름 (이퀄라이저 좌측하단 등) */
+  multi_persona_1_name?: string
+  multi_persona_2_name?: string
+  multi_persona_3_name?: string
   created_at?: string
   updated_at?: string
 }
@@ -218,6 +245,52 @@ export async function getContentById(id: number) {
         if (!Array.isArray(data.voice_time_options)) data.voice_time_options = []
       } catch {
         data.voice_time_options = []
+      }
+    }
+    // 다자형: multi_time_options, multi_advisor_video_urls 파싱
+    if (data.multi_time_options != null) {
+      try {
+        const raw = data.multi_time_options
+        data.multi_time_options = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (!Array.isArray(data.multi_time_options)) data.multi_time_options = []
+      } catch {
+        data.multi_time_options = []
+      }
+    }
+    if (data.multi_advisor_video_urls != null) {
+      try {
+        const raw = data.multi_advisor_video_urls
+        data.multi_advisor_video_urls = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (!Array.isArray(data.multi_advisor_video_urls)) data.multi_advisor_video_urls = []
+      } catch {
+        data.multi_advisor_video_urls = []
+      }
+    }
+    if (data.multi_advisor_video_urls_1 != null) {
+      try {
+        const raw = data.multi_advisor_video_urls_1
+        data.multi_advisor_video_urls_1 = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (!Array.isArray(data.multi_advisor_video_urls_1)) data.multi_advisor_video_urls_1 = []
+      } catch {
+        data.multi_advisor_video_urls_1 = []
+      }
+    }
+    if (data.multi_advisor_video_urls_2 != null) {
+      try {
+        const raw = data.multi_advisor_video_urls_2
+        data.multi_advisor_video_urls_2 = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (!Array.isArray(data.multi_advisor_video_urls_2)) data.multi_advisor_video_urls_2 = []
+      } catch {
+        data.multi_advisor_video_urls_2 = []
+      }
+    }
+    if (data.multi_advisor_video_urls_3 != null) {
+      try {
+        const raw = data.multi_advisor_video_urls_3
+        data.multi_advisor_video_urls_3 = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (!Array.isArray(data.multi_advisor_video_urls_3)) data.multi_advisor_video_urls_3 = []
+      } catch {
+        data.multi_advisor_video_urls_3 = []
       }
     }
   }

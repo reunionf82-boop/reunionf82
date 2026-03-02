@@ -271,9 +271,19 @@ export default function Home() {
             const v = content?.is_exposed
             return v === true || v === 'true' || v === 1
           })
-      
+
+      // 메뉴 카드 표시 순서: 점사형 → 음성형 → 다자형 (어드민 리스트와 동일)
+      const isVoiceContent = (c: any) => c?.content_type === 'voice' || !!c?.voice_model || !!c?.voice_persona_prompt
+      const isMultiContent = (c: any) => c?.content_type === 'multi'
+      const typeOrder = (c: any) => {
+        if (isMultiContent(c)) return 2
+        if (isVoiceContent(c)) return 1
+        return 0
+      }
+      const sorted = [...(exposedOnly || [])].sort((a, b) => typeOrder(a) - typeOrder(b))
+
       // Supabase 데이터를 ServiceCard 형식으로 변환
-      const convertedServices = (exposedOnly || []).map((content: any) => {
+      const convertedServices = (sorted || []).map((content: any) => {
         const isExposed = content?.is_exposed === true || content?.is_exposed === 'true' || content?.is_exposed === 1
         return {
           id: content.id,
