@@ -307,7 +307,8 @@ export function useVoiceResult() {
   const dccFirstTurnPlayingRef = useRef(false)
   /** 다자형(multi) 콘텐츠 여부. 3명 순차 발화 동안 스피커→마이크 에코로 인한 TTS 인터럽트 방지 */
   const isMultiContentRef = useRef(false)
-  /** DCC 연속 대화: 턴 경계(마지막 전송 시점의 청크 인덱스), VAD 침묵 시작 시각, 말하는 중 여부 */
+  /** 다자형: TTS 발화 종료 기준 화면 전환용. speakerIndex 수신 시 대기했다가 해당 세그먼트의 첫 오디오 청크 재생 직전에 적용 */
+  const pendingSpeakerIndexRef = useRef<number | null>(null)
   const dccLastTurnEndIndexRef = useRef(0)
   const dccSilenceStartRef = useRef<number | null>(null)
   const dccInSpeechRef = useRef(false)
@@ -399,6 +400,12 @@ export function useVoiceResult() {
   /* ── 결제/콘텐츠 정보 로드 ─────────────── */
   const contentIdRef = useRef<string | null>(null)
   const voiceMinutesRef = useRef(0)
+
+  /** 보이스에서 폼으로 돌아갈 때 같은 콘텐츠의 잔여시간/잔여금액을 표시하려면 content id 필요 */
+  const getFormUrl = useCallback(() => {
+    const cid = contentIdRef.current
+    return cid ? `/form?id=${encodeURIComponent(cid)}` : '/form'
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -748,7 +755,7 @@ export function useVoiceResult() {
       if (conversationSavedRef.current) {
         stopAllTTSRef.current()
         try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
-        router.replace('/form')
+        router.replace(getFormUrl())
         return
       }
       history.pushState({ [key]: true }, '', window.location.href)
@@ -756,7 +763,7 @@ export function useVoiceResult() {
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [router])
+  }, [router, getFormUrl])
 
   /* ── 저장 완료 후 나가기 처리 ───────────── */
   useEffect(() => {
@@ -765,9 +772,9 @@ export function useVoiceResult() {
       stopAllTTSRef.current()
       setIsNavigatingAway(true)
       try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
-      router.push('/form')
+      router.push(getFormUrl())
     }
-  }, [savingConversation, router])
+  }, [savingConversation, router, getFormUrl])
 
   /** DCC 재생 즉시 중단 (barge-in 포함). 컨텍스트/스트리머는 null·close 하지 않음 → 믹스 녹음(나의 이용내역)이 세션 끝까지 계속 쌓이도록 */
   const stopDccPlayback = useCallback((markStop = true) => {
@@ -1704,6 +1711,10 @@ ${seasonBlock}
                 }
               } else if (parsed.type === 'audio' && typeof parsed.base64 === 'string') {
                 if (parsed.format === 'pcm_s16le') {
+                  if (isMultiContentRef.current && pendingSpeakerIndexRef.current !== null) {
+                    setCurrentSpeakerIndex(pendingSpeakerIndexRef.current as 0 | 1 | 2)
+                    pendingSpeakerIndexRef.current = null
+                  }
                   if (!dccOutVolumeIntervalRef.current) {
                     dccOutVolumeIntervalRef.current = setInterval(() => setOutVolume(0.35), 80)
                   }
@@ -1722,7 +1733,8 @@ ${seasonBlock}
                   setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
                 }
               } else if (parsed.type === 'speakerIndex' && typeof parsed.speakerIndex === 'number' && parsed.speakerIndex >= 0 && parsed.speakerIndex <= 2) {
-                setCurrentSpeakerIndex(parsed.speakerIndex as 0 | 1 | 2)
+                if (!receivedAudio) setCurrentSpeakerIndex(parsed.speakerIndex as 0 | 1 | 2)
+                else pendingSpeakerIndexRef.current = parsed.speakerIndex
               } else if (parsed.type === 'done') {
                 if (!dccTurnTextAdded) {
                   assistantT = typeof parsed.assistantText === 'string' ? parsed.assistantText : ''
@@ -3380,16 +3392,16 @@ ${seasonBlock}
   /* ── 시간 종료 후 폼 이동 (점사형 전용 — 음성형은 미사용) ── */
   const goBackToForm = useCallback(() => {
     stopAllTTSRef.current()
-    router.push('/form')
-  }, [router])
+    router.push(getFormUrl())
+  }, [router, getFormUrl])
 
   /* ── 상담 끝남 팝업 확인 → 폼으로 이동 (폼에서 뒤로가기 시 /home으로) ── */
   const handleConsultationEndConfirm = useCallback(() => {
     setShowConsultationEndModal(false)
     stopAllTTSRef.current()
     try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
-    router.push('/form')
-  }, [router])
+    router.push(getFormUrl())
+  }, [router, getFormUrl])
 
   /* ── 나가기 전 저장 확인: 이전/홈 시 모달 표시 (브라우저/모바일 뒤로가기와 동일) */
   const requestLeave = useCallback(() => {
@@ -3397,7 +3409,7 @@ ${seasonBlock}
       stopAllTTSRef.current()
       setIsNavigatingAway(true)
       try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
-      router.push('/form')
+      router.push(getFormUrl())
       return
     }
     if (sessionStartedRef.current) {
@@ -3407,8 +3419,8 @@ ${seasonBlock}
     stopAllTTSRef.current()
     setIsNavigatingAway(true)
     try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
-    router.push('/form')
-  }, [router])
+    router.push(getFormUrl())
+  }, [router, getFormUrl])
 
   const handleLeaveWithSave = useCallback(() => {
     setShowLeaveConfirmModal(false)
@@ -3437,8 +3449,8 @@ ${seasonBlock}
       }
     }
     try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
-    router.push('/form')
-  }, [router])
+    router.push(getFormUrl())
+  }, [router, getFormUrl])
 
   const handleLeaveCancel = useCallback(() => {
     setShowLeaveConfirmModal(false)
@@ -3459,8 +3471,8 @@ ${seasonBlock}
     stopAllTTSRef.current()
     await disconnect()
     try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
-    router.push('/form')
-  }, [disconnect, router])
+    router.push(getFormUrl())
+  }, [disconnect, router, getFormUrl])
 
   /* ── 시간 포맷 ──────────────────────────── */
   const formatTime = useCallback((sec: number) => {
@@ -3549,7 +3561,7 @@ ${seasonBlock}
       setMannerWarningMessage(null)
       stopAllTTSRef.current()
       try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
-      router.push('/form')
+      router.push(getFormUrl())
     },
   }
 }

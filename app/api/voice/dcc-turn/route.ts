@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
+import { getTodayDateFactBlockForVoice } from '@/lib/manse-ryeok'
 import WebSocket from 'ws'
 
 export const maxDuration = 300
@@ -241,10 +242,10 @@ const DCC_FILLER_PHRASES = [
 
 /** 맞장구 재생 예상 길이(ms). 이 시간 + 1초 후에 본문 TTS 시작 */
 const DCC_FILLER_DURATION_MS = 2500
-/** 다자형 화자 전환 시: 이전 context 종료 후 다음 화자 전송 전 대기(ms). done 미수신 시 fallback. 끝문장 잘림 방지를 위해 충분히 긴 값 사용 */
-const DCC_MULTI_CONTEXT_SWITCH_DELAY_MS = 5500
-/** done 수신 후 추가 대기(ms). Cartesia가 done을 먼저 보내고 청크가 늦게 도착하는 경우 겹침 완화 */
-const DCC_MULTI_POST_DONE_BUFFER_MS = 400
+/** 다자형 화자 전환 시: 이전 context 종료 후 다음 화자 전송 전 대기(ms). done 미수신 시 fallback. 끝문장 잘림 방지 위해 segDonePromise 우선 대기, 타임아웃은 안전용으로만 */
+const DCC_MULTI_CONTEXT_SWITCH_DELAY_MS = 18000
+/** done 수신 후 추가 대기(ms). Cartesia가 done 먼저 보내고 청크가 늦게 도착하는 경우 겹침 완화 */
+const DCC_MULTI_POST_DONE_BUFFER_MS = 600
 
 /** PCM 버퍼 → WAV base64 (청크마다 헤더 붙이면 틱틱 소리 나서, 버퍼 모아서 한 번만 씀) */
 function pcmBufferToWavBase64(pcm: Buffer, sampleRate = CARTESIA_SAMPLE_RATE, numChannels = CARTESIA_NUM_CHANNELS, bitsPerSample = CARTESIA_BITS): string {
@@ -806,9 +807,10 @@ export async function POST(req: NextRequest) {
 - 오늘의 오브제: ${fortuneTokens.object}
 `
       : ''
-    const maxContextChars = CONTEXT_BLOCK_MAX_CHARS - fortuneBlock.length - 20 // 여유로 앞쪽만 자름
+    const todayDateFactBlock = getTodayDateFactBlockForVoice()
+    const maxContextChars = Math.max(0, CONTEXT_BLOCK_MAX_CHARS - fortuneBlock.length - todayDateFactBlock.length - 30) // 여유로 앞쪽만 자름
     const truncatedContext = rawContext.length <= maxContextChars ? rawContext : rawContext.slice(0, maxContextChars) + '\n(이하 생략)'
-    const fullContext = (truncatedContext + fortuneBlock).trim()
+    const fullContext = (todayDateFactBlock + '\n' + truncatedContext + fortuneBlock).trim()
     const contextBlock = fullContext ? `\n\n${fullContext}` : ''
     const isStartTurn = userTranscript.trim() === '[시작]'
     /** 다자형 기본 시스템 프롬프트(DB에 없을 때 사용). 순차 세그먼트(한 턴에 3번 호출·한 번에 한 페르소나) 로직에 맞춤 */
@@ -1365,7 +1367,7 @@ ${emotionTagRule}
                     sendSegCartesia('', true)
                   }
                   // 마지막 청크 전송 후 Cartesia가 오디오 생성·전송할 시간을 주고, 전용 WS에서 done 대기 후 연결 종료
-                  await new Promise<void>((r) => setTimeout(r, 600))
+                  await new Promise<void>((r) => setTimeout(r, 1200))
                   const segText = segFullText.trim()
                   segmentTexts.push(segText)
                   fullAssistantText += (fullAssistantText ? '\n\n' : '') + segText

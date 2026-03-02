@@ -699,6 +699,49 @@ export function convertSolarToLunarAccurate(year: number, month: number, day: nu
   }
 }
 
+const KST = 'Asia/Seoul'
+
+/** 보이스 상담용: 오늘(KST)의 양력·음력 날짜와 그믐/초하루 여부를 한 줄로 반환. LLM이 "오늘 그믐" 등 잘못 말하지 않도록 컨텍스트에 넣을 블록 */
+export function getTodayDateFactBlockForVoice(now?: Date): string {
+  const t = now ?? new Date()
+  const parts = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: KST,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(t)
+  const getPart = (type: string) => parts.find((p) => p.type === type)?.value ?? '0'
+  const sy = parseInt(getPart('year'), 10) || 1
+  const sm = parseInt(getPart('month'), 10) || 1
+  const sd = parseInt(getPart('day'), 10) || 1
+
+  const lunar = convertSolarToLunarAccurate(sy, sm, sd)
+  if (!lunar) return `- [오늘 날짜 — 반드시 따를 사실] 오늘은 양력 ${sy}년 ${sm}월 ${sd}일입니다. 음력 변환 실패로 음력/그믐/초하루는 말하지 마세요.`
+
+  const tomorrow = new Date(t.getTime() + 24 * 60 * 60 * 1000)
+  const partsTomorrow = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: KST,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(tomorrow)
+  const getPartT = (type: string) => partsTomorrow.find((p) => p.type === type)?.value ?? '0'
+  const ty = parseInt(getPartT('year'), 10) || 1
+  const tm = parseInt(getPartT('month'), 10) || 1
+  const td = parseInt(getPartT('day'), 10) || 1
+  const lunarTomorrow = convertSolarToLunarAccurate(ty, tm, td)
+
+  const isChoharu = lunar.day === 1
+  const isGeumum = lunarTomorrow != null && lunarTomorrow.day === 1
+
+  let fact = `- [오늘 날짜 — 반드시 따를 사실] 오늘은 양력 ${sy}년 ${sm}월 ${sd}일, 음력 ${lunar.year}년 ${lunar.month}월 ${lunar.day}일입니다. `
+  if (isChoharu) fact += `오늘은 음력 ${lunar.month}월 초하루입니다.`
+  else if (isGeumum) fact += `오늘은 그믐입니다.`
+  else fact += `오늘은 그믐이 아니며, 음력 ${lunar.month}월 초하루도 아닙니다. 위 사실만 사용하고 그믐/초하루를 다른 날로 추측해 말하지 마세요.`
+
+  return fact
+}
+
 export function generateManseRyeokTable(
   data: ManseRyeokData, 
   userName?: string,

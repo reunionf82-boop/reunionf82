@@ -127,9 +127,10 @@ function FormContent() {
         hasTitle = true
       }
 
-      // 2-0. URL id 파라미터 (포털 배너 등 직접 링크: /form?id=2)
+      // 2-0. URL id 파라미터 (포털 배너, 보이스 이전 버튼 복귀: /form?id=2)
+      // 보이스에서 중간 이탈 후 폼 복귀 시 같은 content_id로 잔여시간/잔여금액을 보여주려면 id 우선 적용
       const urlId = getParam('id')
-      if (!hasTitle && urlId) {
+      if (urlId) {
         const id = parseInt(urlId, 10)
         if (!Number.isNaN(id)) {
           try {
@@ -146,7 +147,7 @@ function FormContent() {
               }
             }
           } catch (e) {
-            // id에 해당하는 컨텐츠 없으면 아래 기본 선택으로 폴백
+            // id에 해당하는 컨텐츠 없으면 아래 폴백
           }
         }
       }

@@ -57,10 +57,17 @@ function VoiceAdvisorVideoBlock({ rawVideoUrl }: { rawVideoUrl?: string }) {
     if (el) {
       el.src = shuffledUrls[nextIdx]
       el.currentTime = 0
-      el.play().catch(() => {})
+      const onReady = () => {
+        el.removeEventListener('canplay', onReady)
+        el.removeEventListener('error', onReady)
+        setActiveSlot(inactive)
+        setCurrentIdx(nextIdx)
+        el.play().catch(() => {})
+      }
+      el.addEventListener('canplay', onReady, { once: true })
+      el.addEventListener('error', onReady, { once: true })
+      el.load()
     }
-    setActiveSlot(inactive)
-    setCurrentIdx(nextIdx)
   }, [shuffledUrls, currentIdx, activeSlot])
 
   useEffect(() => {
@@ -109,7 +116,7 @@ function VoiceAdvisorVideoBlock({ rawVideoUrl }: { rawVideoUrl?: string }) {
   )
 }
 
-/** 다자형: 1:1 비율 3분할. 페르소나별 동영상, 말할 때만 해당 칸 재생·나머지 일시정지 */
+/** 다자형: 1:1 비율 3분할. 페르소나별 동영상, 말할 때만 해당 칸 재생·나머지 일시정지. 전환 시 크로스페이드로 블랙 방지 */
 function MultiAdvisorVideoBlock({
   videoUrlsByPersona,
   currentSpeakerIndex,
@@ -126,63 +133,90 @@ function MultiAdvisorVideoBlock({
   const shuffled1 = useMemo(() => (urls1.length <= 1 ? urls1 : shuffle(urls1)), [urls1.join('|')])
   const shuffled2 = useMemo(() => (urls2.length <= 1 ? urls2 : shuffle(urls2)), [urls2.join('|')])
 
-  const ref0 = useRef<HTMLVideoElement>(null)
-  const ref1 = useRef<HTMLVideoElement>(null)
-  const ref2 = useRef<HTMLVideoElement>(null)
+  const ref0a = useRef<HTMLVideoElement>(null)
+  const ref0b = useRef<HTMLVideoElement>(null)
+  const ref1a = useRef<HTMLVideoElement>(null)
+  const ref1b = useRef<HTMLVideoElement>(null)
+  const ref2a = useRef<HTMLVideoElement>(null)
+  const ref2b = useRef<HTMLVideoElement>(null)
   const [idx0, setIdx0] = useState(0)
   const [idx1, setIdx1] = useState(0)
   const [idx2, setIdx2] = useState(0)
+  const [activeSlot0, setActiveSlot0] = useState<0 | 1>(0)
+  const [activeSlot1, setActiveSlot1] = useState<0 | 1>(0)
+  const [activeSlot2, setActiveSlot2] = useState<0 | 1>(0)
   const idxRef = useRef({ 0: 0, 1: 0, 2: 0 })
   idxRef.current = { 0: idx0, 1: idx1, 2: idx2 }
   const [loaded0, setLoaded0] = useState(false)
   const [loaded1, setLoaded1] = useState(false)
   const [loaded2, setLoaded2] = useState(false)
 
-  const refs = [ref0, ref1, ref2] as const
+  const refsA = [ref0a, ref1a, ref2a] as const
+  const refsB = [ref0b, ref1b, ref2b] as const
   const shuffled = [shuffled0, shuffled1, shuffled2] as const
   const setIdx = [setIdx0, setIdx1, setIdx2] as const
-  const loaded = [loaded0, loaded1, loaded2] as const
+  const activeSlots = [activeSlot0, activeSlot1, activeSlot2] as const
+  const setActiveSlot = [setActiveSlot0, setActiveSlot1, setActiveSlot2] as const
   const setLoaded = [setLoaded0, setLoaded1, setLoaded2] as const
 
-  // 말하는 화자만 재생, 나머지 일시정지 (인덱스 변경 시에도 현재 화자 재생 유지)
+  // 말하는 화자만 재생, 나머지 일시정지
   useEffect(() => {
-    refs.forEach((ref, i) => {
-      const el = ref.current
+    ;([0, 1, 2] as const).forEach((i) => {
+      const refA = refsA[i].current
+      const refB = refsB[i].current
+      const active = activeSlots[i]
+      const el = active === 0 ? refA : refB
       if (!el) return
-      if (i === currentSpeakerIndex) {
-        if (shuffled[i].length > 0) el.play().catch(() => {})
-      } else {
-        el.pause()
+      if (i === currentSpeakerIndex && shuffled[i].length > 0) el.play().catch(() => {})
+      else {
+        refA?.pause()
+        refB?.pause()
       }
     })
-  }, [currentSpeakerIndex, loaded0, loaded1, loaded2, idx0, idx1, idx2])
+  }, [currentSpeakerIndex, activeSlot0, activeSlot1, activeSlot2, idx0, idx1, idx2])
 
   const goNext = useCallback((personaIndex: 0 | 1 | 2) => {
     const list = shuffled[personaIndex]
     if (list.length <= 1) return
     const cur = idxRef.current[personaIndex]
     const next = (cur + 1) % list.length
-    setIdx[personaIndex](next)
-    const el = refs[personaIndex].current
+    const inactive = activeSlots[personaIndex] === 0 ? 1 : 0
+    const refInactive = inactive === 0 ? refsA[personaIndex] : refsB[personaIndex]
+    const el = refInactive.current
     if (el) {
       el.src = list[next]
       el.currentTime = 0
-      if (personaIndex === currentSpeakerIndex) el.play().catch(() => {})
+      const onReady = () => {
+        el.removeEventListener('canplay', onReady)
+        el.removeEventListener('error', onReady)
+        setIdx[personaIndex](next)
+        setActiveSlot[personaIndex](inactive)
+        if (personaIndex === currentSpeakerIndex) el.play().catch(() => {})
+      }
+      el.addEventListener('canplay', onReady, { once: true })
+      el.addEventListener('error', onReady, { once: true })
+      el.load()
     }
-  }, [currentSpeakerIndex, shuffled0, shuffled1, shuffled2])
+  }, [currentSpeakerIndex, shuffled0, shuffled1, shuffled2, activeSlot0, activeSlot1, activeSlot2])
 
   useEffect(() => {
-    refs.forEach((ref, i) => {
-      const el = ref.current
+    const cleanups: (() => void)[] = []
+    ;([0, 1, 2] as const).forEach((i) => {
+      const refA = refsA[i].current
+      const refB = refsB[i].current
       const list = shuffled[i]
-      if (!el || list.length <= 1) return
+      if (!refA || !refB || list.length <= 1) return
       const onEnded = () => goNext(i as 0 | 1 | 2)
-      el.addEventListener('ended', onEnded)
-      return () => el.removeEventListener('ended', onEnded)
+      refA.addEventListener('ended', onEnded)
+      refB.addEventListener('ended', onEnded)
+      cleanups.push(() => {
+        refA.removeEventListener('ended', onEnded)
+        refB.removeEventListener('ended', onEnded)
+      })
     })
+    return () => cleanups.forEach((c) => c())
   }, [goNext])
 
-  // 초기 loaded 플래그(비디오 마운트 시 재생/일시정지 적용용)
   useEffect(() => {
     ;([0, 1, 2] as const).forEach((i) => {
       if (shuffled[i].length > 0) setLoaded[i](true)
@@ -190,7 +224,7 @@ function MultiAdvisorVideoBlock({
   }, [shuffled0.join('|'), shuffled1.join('|'), shuffled2.join('|')])
 
   const hasAny = videoUrlsByPersona.some((arr) => Array.isArray(arr) && arr.filter((u) => typeof u === 'string' && (u as string).trim()).length > 0)
-  const idxs = [idx0, idx1, idx2] as const
+  const videoTransitionClass = 'absolute inset-0 w-full h-full object-cover transition-opacity duration-[480ms] ease-out'
   if (!hasAny) {
     return (
       <div className="w-full rounded-2xl bg-gray-100 border border-gray-200 flex items-center justify-center py-12 aspect-square max-w-md mx-auto">
@@ -200,29 +234,48 @@ function MultiAdvisorVideoBlock({
   }
 
   const cellClass = 'relative w-full overflow-hidden bg-black'
-  const videoClass = 'absolute inset-0 w-full h-full object-cover'
   return (
     <div className="w-full grid grid-cols-3 gap-0 aspect-square [contain:layout_paint]">
-      {([0, 1, 2] as const).map((i) => (
-        <div key={i} className={cellClass}>
-          {(shuffled[i].length > 0 && (
-            <video
-              ref={refs[i]}
-              src={shuffled[i][idxs[i]] ?? ''}
-              muted
-              playsInline
-              preload="auto"
-              loop={shuffled[i].length <= 1}
-              className={videoClass}
-              style={{ objectFit: 'cover' }}
-            />
-          )) || (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
-              <span className="text-gray-500 text-xs">영상 없음</span>
-            </div>
-          )}
-        </div>
-      ))}
+      {([0, 1, 2] as const).map((i) => {
+        const list = shuffled[i]
+        const idx = [idx0, idx1, idx2][i]
+        const active = activeSlots[i]
+        const len = Math.max(1, list.length)
+        const srcA = active === 0 ? (list[idx] ?? '') : (list[(idx + 1) % len] ?? '')
+        const srcB = active === 1 ? (list[idx] ?? '') : (list[(idx + 1) % len] ?? '')
+        return (
+          <div key={i} className={cellClass}>
+            {list.length > 0 ? (
+              <>
+                <video
+                  ref={refsA[i]}
+                  src={srcA}
+                  muted
+                  playsInline
+                  preload="auto"
+                  loop={list.length <= 1}
+                  className={videoTransitionClass}
+                  style={{ opacity: active === 0 ? 1 : 0, zIndex: active === 0 ? 1 : 0, objectFit: 'cover' }}
+                />
+                <video
+                  ref={refsB[i]}
+                  src={srcB}
+                  muted
+                  playsInline
+                  preload="auto"
+                  loop={list.length <= 1}
+                  className={videoTransitionClass}
+                  style={{ opacity: active === 1 ? 1 : 0, zIndex: active === 1 ? 1 : 0, objectFit: 'cover' }}
+                />
+              </>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                <span className="text-gray-500 text-xs">영상 없음</span>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
