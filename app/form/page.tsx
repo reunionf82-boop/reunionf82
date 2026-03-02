@@ -3900,11 +3900,11 @@ function FormContent() {
   // 바로이용하기: 즉시 이용 금액 결제 후 음성 시작 (전화번호·비밀번호 필수, 옵션 선택 후 카드/휴대폰)
   const handleSkipWaitPay100 = async (paymentMethod: 'card' | 'mobile') => {
     if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
-      showAlertMessage('전화번호를 입력해 주세요. (이용내역 확인용)')
+      showAlertMessage('휴대폰 번호를 입력하세요.')
       return
     }
     if (!password || password.length < 4) {
-      showAlertMessage('비밀번호를 4자리 이상 입력해 주세요.')
+      showAlertMessage('비밀번호를 입력하세요.')
       return
     }
     if (!content || !content.id || !content.payment_code) {
@@ -4114,11 +4114,11 @@ function FormContent() {
   const handleSkipWaitOperatorTest = async () => {
     const micPromise = (content?.content_type === 'voice' && typeof window !== 'undefined' && isIOS()) ? startIOSVoicePrepare() : null
     if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
-      showAlertMessage('전화번호를 입력해 주세요. (이용내역 확인용)')
+      showAlertMessage('휴대폰 번호를 입력하세요.')
       return
     }
     if (!password || password.length < 4) {
-      showAlertMessage('비밀번호를 4자리 이상 입력해 주세요.')
+      showAlertMessage('비밀번호를 입력하세요.')
       return
     }
     if (!content || !content.id || !content.payment_code) {
@@ -5800,59 +5800,7 @@ function FormContent() {
                   </div>
                 )
               })()}
-              {/* 휴대폰 번호 - 결제정보와 동일 */}
-              <div className="mb-4">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">휴대폰 번호</label>
-                <input
-                  type="text"
-                  value={
-                    !phoneNumber2
-                      ? `${phoneNumber1}-`
-                      : `${phoneNumber1}-${phoneNumber2}${phoneNumber3 ? '-' + phoneNumber3 : ''}`
-                  }
-                  onChange={(e) => {
-                    let value = e.target.value.replace(/[^0-9]/g, '')
-                    if (!value.startsWith('010')) {
-                      value = value.length < 3 ? '010' : '010' + value
-                    }
-                    if (value.length > 11) value = value.slice(0, 11)
-                    setPhoneNumber1('010')
-                    if (value.length <= 3) {
-                      setPhoneNumber2('')
-                      setPhoneNumber3('')
-                    } else if (value.length <= 7) {
-                      setPhoneNumber2(value.slice(3))
-                      setPhoneNumber3('')
-                    } else {
-                      setPhoneNumber2(value.slice(3, 7))
-                      setPhoneNumber3(value.slice(7))
-                    }
-                  }}
-                  className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
-                  placeholder="010-0000-0000"
-                  maxLength={13}
-                />
-              </div>
-
-              {/* 비밀번호 - 결제정보와 동일 */}
-              <div className="mb-4">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">비밀번호</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-white border-2 border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all"
-                  placeholder="비밀번호를 입력하세요 (4자리 이상)"
-                />
-              </div>
-
-              {/* 안내 메시지 - 결제정보와 동일 */}
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-6">
-                <p className="text-xs text-red-600 flex items-start">
-                  <span className="font-bold mr-1">*</span>
-                  <span>다시보기 시, 입력한 휴대폰/비밀번호가 필요합니다.(유료에 한함)</span>
-                </p>
-              </div>
+              {/* 바로이용하기: 휴대폰/비밀번호는 메인 폼에 입력. 결제 버튼 클릭 시 미입력이면 알림 팝업으로 안내 */}
 
               {/* 버튼 - 1행: 기다리기(크게) / 2행: 카드결제, 휴대폰 결제 */}
               <div className="flex flex-col gap-3">
@@ -7697,6 +7645,14 @@ function FormContent() {
                       }
                       if (!agreePrivacy) {
                         showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
+                        return
+                      }
+                      if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
+                        showAlertMessage('휴대폰 번호를 입력하세요.')
+                        return
+                      }
+                      if (!password || password.length < 4) {
+                        showAlertMessage('비밀번호를 입력하세요.')
                         return
                       }
                       await finishIOSVoicePrepare(micPromise)
