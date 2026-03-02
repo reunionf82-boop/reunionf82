@@ -213,20 +213,34 @@ export default function VoiceAdminForm() {
           <div className="mb-6 p-4 bg-amber-900/30 border border-amber-700 rounded-xl">
             <p className="text-amber-200 text-sm font-medium mb-2">보이스 테스트 데이터 리셋</p>
             <p className="text-gray-400 text-xs mb-3">
-              이 컨텐츠(ID: {h.id})에 대한 무료시작·무료연장·방문횟수·만료 플래그를 브라우저 저장소에서 삭제합니다. 동일 브라우저에서 다시 무료시작/1분 무료 연장/시간연장 팝업 동작을 확인할 때 사용하세요.
+              이 컨텐츠(ID: {h.id})에 대한 무료시작·무료연장·방문횟수·만료 플래그·잔여시간/잔여금액 관련 데이터를 브라우저 저장소에서 삭제합니다. 테스트용 전화번호를 입력하면 DB 잔액/잔여시간도 초기화됩니다.
             </p>
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
                 try {
                   const cid = String(h.id)
+                  const phone = window.prompt('테스트용 전화번호(예: 010-1234-5678)를 입력하면 DB 잔액/잔여시간도 초기화됩니다. 건너뛰려면 취소를 누르세요.')
                   if (typeof sessionStorage !== 'undefined') {
                     sessionStorage.removeItem('voice_entered_by_100')
                     sessionStorage.removeItem('voice_time_expired')
+                    sessionStorage.removeItem('payment_voice_time_option')
+                    sessionStorage.removeItem('payment_voice_total_seconds')
+                    sessionStorage.removeItem('payment_voice_minutes')
+                    sessionStorage.removeItem('voice_session_charge_type')
+                    sessionStorage.removeItem('voice_came_to_form')
+                    sessionStorage.removeItem('voice_pay_amount')
+                    sessionStorage.removeItem('payment_phone')
+                    sessionStorage.removeItem('payment_oid')
+                    if (sessionStorage.getItem('payment_content_id') === cid) sessionStorage.removeItem('payment_content_id')
+                    if (sessionStorage.getItem('result_content_id') === cid) sessionStorage.removeItem('result_content_id')
                   }
                   if (typeof localStorage !== 'undefined') {
                     localStorage.removeItem(`voice_free_extend_${cid}`)
                     localStorage.removeItem(`voice_free_start_${cid}`)
+                    if (localStorage.getItem('voice_content_id') === cid) localStorage.removeItem('voice_content_id')
+                    localStorage.removeItem('voice_payment_oid')
+                    localStorage.removeItem('voice_last_phone')
                     const prefix = `voice:visits:${cid}:`
                     const toRemove: string[] = []
                     for (let i = 0; i < localStorage.length; i++) {
@@ -235,7 +249,16 @@ export default function VoiceAdminForm() {
                     }
                     toRemove.forEach((k) => localStorage.removeItem(k))
                   }
-                  alert('보이스 테스트 데이터가 리셋되었습니다.\n\n• 1분 무료 연장 확인: 폼에서 「무료시작」 버튼으로 진입하세요. (바로이용하기 → 운영자 테스트가 아님)\n• 이미 보이스 탭이 열려 있으면, 그 탭에서 30초/0초가 될 때 1분 무료 연장 팝업이 뜹니다.')
+                  if (phone && phone.trim()) {
+                    try {
+                      await fetch('/api/voice/balance', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'drain_balance', contentId: parseInt(cid, 10), phone: phone.trim() }),
+                      })
+                    } catch { /* ignore */ }
+                  }
+                  alert('보이스 테스트 데이터가 완전 초기화되었습니다.\n\n• 1분 무료 연장 확인: 폼에서 「무료시작」 버튼으로 진입하세요.\n• 잔여시간/잔여금액 표시가 초기화되었습니다.')
                 } catch (e) {
                   alert('리셋 중 오류: ' + (e as Error)?.message)
                 }

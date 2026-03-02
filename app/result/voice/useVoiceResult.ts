@@ -354,18 +354,28 @@ export function useVoiceResult() {
   const leaveAfterSaveRef = useRef(false) // 저장 후 /form 이동용
   /** 종료 시 잔여시간 저장(save_remaining) 완료 Promise — 폼 이동 전에 await */
   const saveRemainingPromiseRef = useRef<Promise<void> | null>(null)
-  /** 충전형(잔여 저장) 진입 여부 — 음성 종료 팝업 문구 분기용. true: 버튼만, false: 소멸형 문구 표시 */
+  /** 충전형(잔여 저장) 진입 여부 — 음성 종료 팝업 문구 분기용 + disconnectInternal에서 save_remaining 여부 판단 */
   const [isVoiceSessionChargeType, setIsVoiceSessionChargeType] = useState(false)
+  const isChargeSessionRef = useRef(false)
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const by100 = sessionStorage.getItem('voice_entered_by_100')
     const opt = sessionStorage.getItem('payment_voice_time_option')
-    let charge = false
+    let isCharge = false
     try {
-      if (opt) charge = (JSON.parse(opt) as { charge?: boolean })?.charge === true
+      if (opt) {
+        const parsed = JSON.parse(opt) as { charge?: boolean; type?: string }
+        const t = parsed?.type
+        if (t === 'default' || t === 'extension') {
+          isCharge = false
+        } else {
+          isCharge = parsed?.charge === true || t === 'charge'
+        }
+      }
     } catch { /* ignore */ }
     const fromRemaining = sessionStorage.getItem('voice_session_charge_type') === '1'
-    setIsVoiceSessionChargeType(!!(by100 || charge || fromRemaining))
+    const shouldSave = !!(isCharge || fromRemaining)
+    isChargeSessionRef.current = shouldSave
+    setIsVoiceSessionChargeType(shouldSave)
   }, [])
   /** 이번 세션에서 안부로 물어본 항목 ref (저장 시 injected_summary_item_refs로 전달해 재질문 방지) */
   const injectedSummaryItemRefsRef = useRef<string[]>([])
@@ -1572,11 +1582,12 @@ ${seasonBlock}
     if (!skipSave && !conversationSavedRef.current) {
       setTimeout(() => { saveConversationRef.current?.() }, 100)
     }
-    // 시간이 남은 채로 종료한 경우 잔여시간 저장 (skipSave와 무관하게 항상 실행 — 폼에서 잔여시간/잔여금액 표시에 필요)
+    // 충전형만 잔여시간 DB 저장 (기본시간/시간연장은 소멸형이므로 저장하지 않음)
     const sec = remainingSecondsRef.current
     const cid = contentIdRef.current
     const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
-    if (sec > 0 && cid && phone) {
+    const shouldSaveRemaining = isChargeSessionRef.current || enteredWithBalanceRef.current || useBalanceModeRef.current
+    if (sec > 0 && cid && phone && shouldSaveRemaining) {
       saveRemainingPromiseRef.current = fetch('/api/voice/balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

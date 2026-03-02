@@ -717,7 +717,7 @@ function FormContent() {
   const refetchVoiceBalance = useCallback(() => {
     const isVoiceForm = content?.content_type === 'voice' || content?.content_type === 'multi'
     if (typeof window === 'undefined' || !content?.id || !isVoiceForm) return
-    const phone = sessionStorage.getItem('payment_phone')
+    const phone = sessionStorage.getItem('payment_phone') || localStorage.getItem('voice_last_phone')
     if (!phone) return
     fetch(`/api/voice/balance?contentId=${encodeURIComponent(content.id)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
       .then((r) => r.ok ? r.json() : null)
@@ -757,7 +757,11 @@ function FormContent() {
   useEffect(() => {
     const isVoiceForm = content?.content_type === 'voice' || content?.content_type === 'multi'
     if (typeof window === 'undefined' || !content?.id || !isVoiceForm) return
-    const phone = sessionStorage.getItem('payment_phone')
+    let phone = sessionStorage.getItem('payment_phone')
+    if (!phone) {
+      phone = localStorage.getItem('voice_last_phone')
+      if (phone) try { sessionStorage.setItem('payment_phone', phone) } catch { /* ignore */ }
+    }
     if (!phone) {
       setVoiceResidualCheckDone(true)
       return
@@ -812,7 +816,19 @@ function FormContent() {
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [refetchVoiceBalance])
-  
+
+  // 전화번호 입력 완료 시 잔여금액/잔여시간 자동 조회 (브라우저 종료 후 재진입 대응)
+  useEffect(() => {
+    const isVoiceForm = content?.content_type === 'voice' || content?.content_type === 'multi'
+    if (typeof window === 'undefined' || !content?.id || !isVoiceForm) return
+    if (!phoneNumber2 || phoneNumber2.length < 3 || !phoneNumber3 || phoneNumber3.length < 4) return
+    const phone = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
+    if (sessionStorage.getItem('payment_phone') === phone) return
+    sessionStorage.setItem('payment_phone', phone)
+    try { localStorage.setItem('voice_last_phone', phone) } catch { /* ignore */ }
+    refetchVoiceBalance()
+  }, [content?.id, content?.content_type, phoneNumber1, phoneNumber2, phoneNumber3, refetchVoiceBalance])
+
   // 개인정보 수집 및 이용 팝업 상태
   const [showPrivacyPopup, setShowPrivacyPopup] = useState(false)
   
@@ -3273,6 +3289,7 @@ function FormContent() {
         sessionStorage.setItem('payment_content_id', String(content.id))
         sessionStorage.setItem('payment_user_name', name)
         sessionStorage.setItem('payment_phone', phoneNumber)
+        try { localStorage.setItem('voice_last_phone', phoneNumber) } catch { /* ignore */ }
         sessionStorage.setItem('payment_password', password || '')
         sessionStorage.setItem('voice_pay_amount', '0')
         sessionStorage.setItem('payment_user_gender', gender || '')
@@ -3492,6 +3509,7 @@ function FormContent() {
           sessionStorage.setItem('payment_content_id', String(content.id))
           sessionStorage.setItem('payment_user_name', name)
           sessionStorage.setItem('payment_phone', phoneNumber)
+          try { localStorage.setItem('voice_last_phone', phoneNumber) } catch { /* ignore */ }
           sessionStorage.setItem('payment_password', password || '')
           sessionStorage.setItem('payment_user_gender', gender || '')
           sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
@@ -3599,6 +3617,7 @@ function FormContent() {
           sessionStorage.setItem('result_content_id', String(content.id))
           sessionStorage.setItem('payment_user_name', name)
           sessionStorage.setItem('payment_phone', phoneNumber)
+          try { localStorage.setItem('voice_last_phone', phoneNumber) } catch { /* ignore */ }
           sessionStorage.setItem('payment_password', password || '')
           sessionStorage.setItem('payment_user_gender', gender || '')
           sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
@@ -3742,6 +3761,7 @@ function FormContent() {
           sessionStorage.setItem('payment_content_id', String(content.id))
           sessionStorage.setItem('payment_user_name', name)
           sessionStorage.setItem('payment_phone', `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`)
+          try { localStorage.setItem('voice_last_phone', `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`) } catch { /* ignore */ }
           sessionStorage.setItem('payment_password', password) // 비밀번호도 저장
           // 음성형: oid와 content_id를 localStorage에도 저장 (모바일에서 sessionStorage 유실 대비)
           if (content?.content_type === 'voice') {
@@ -4071,6 +4091,7 @@ function FormContent() {
         sessionStorage.setItem('payment_content_id', String(content.id))
         sessionStorage.setItem('payment_user_name', name)
         sessionStorage.setItem('payment_phone', phoneNumber)
+        try { localStorage.setItem('voice_last_phone', phoneNumber) } catch { /* ignore */ }
         sessionStorage.setItem('payment_password', password)
         sessionStorage.setItem('voice_pay_amount', String(optionToUse.price))
         sessionStorage.setItem('voice_entered_by_100', '1')
@@ -4312,6 +4333,7 @@ function FormContent() {
         sessionStorage.setItem('payment_content_id', String(content.id))
         sessionStorage.setItem('payment_user_name', name)
         sessionStorage.setItem('payment_phone', phoneNumber)
+        try { localStorage.setItem('voice_last_phone', phoneNumber) } catch { /* ignore */ }
         sessionStorage.setItem('payment_password', password)
         sessionStorage.setItem('voice_entered_by_100', '1')
         sessionStorage.setItem('payment_voice_minutes', String(skipWaitOption.minutes))
@@ -4441,6 +4463,7 @@ function FormContent() {
         sessionStorage.setItem('payment_content_id', String(content.id))
         sessionStorage.setItem('payment_user_name', name || '')
         sessionStorage.setItem('payment_phone', phoneNumber)
+        try { localStorage.setItem('voice_last_phone', phoneNumber) } catch { /* ignore */ }
         sessionStorage.setItem('payment_password', password || '')
         sessionStorage.setItem('payment_user_gender', gender || '')
         sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
@@ -7757,16 +7780,16 @@ function FormContent() {
                       <span className="font-semibold text-gray-900 tabular-nums">{voiceBalanceWan!.toLocaleString()}원</span>
                     </div>
                   )}
-                  {showBalance && (
+                  {voiceRemainingSeconds > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-600">잔여시간</span>
+                      <span className="font-semibold text-gray-900 tabular-nums">{timeStrSaved}</span>
+                    </div>
+                  )}
+                  {showBalance && secFromBalance > 0 && !voiceRemainingSeconds && (
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-gray-600">상담가능 잔여 시간</span>
                       <span className="font-semibold text-gray-900 tabular-nums">{timeStrFromBalance}</span>
-                    </div>
-                  )}
-                  {!showBalance && voiceRemainingSeconds > 0 && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">상담 가능한 시간</span>
-                      <span className="font-semibold text-gray-900 tabular-nums">{timeStrSaved}</span>
                     </div>
                   )}
                 </div>
@@ -7840,7 +7863,7 @@ function FormContent() {
                 const mainButtonText = submitting
                   ? '처리 중...'
                   : hasResidual
-                    ? (voiceRemainingSeconds > 0 ? '잔여시간으로 상담' : '잔여금액으로 상담')
+                    ? (voiceRemainingSeconds > 0 ? '잔여시간으로 음성 서비스' : '잔여금액으로 음성 서비스')
                     : (isExplicitlyFree ? '무료시작' : '결제하기')
                 return (
                   <button
