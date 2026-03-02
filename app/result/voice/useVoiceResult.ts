@@ -34,9 +34,9 @@ const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
 const SPEECH_THRESHOLD_MIN = 0.005
 const SPEECH_THRESHOLD_MAX = 0.035
 /** TTS 중단용: 볼륨이 (threshold * 이 값) 이상일 때 TTS 멈춤. 1.0=말 시작 감지와 동일, 높이면 에코 방지. */
-const TTS_INTERRUPT_VOLUME_FACTOR = 1.2
+const TTS_INTERRUPT_VOLUME_FACTOR = 0.8
 /** TTS 중단 디바운스(ms): 이 시간 이상 연속으로 기준 초과 시에만 중단 (순간 스파이크 무시). */
-const TTS_INTERRUPT_DEBOUNCE_MS = 120
+const TTS_INTERRUPT_DEBOUNCE_MS = 60
 /** DCC 연속 대화: 침묵 시 턴 전송. 이 청크 수 이상이면 '말함' 없이도 전송(조용한 목소리 폴백). 16kHz 기준 약 2초. */
 const DCC_MIN_CHUNKS_QUIET_FALLBACK = 8
 /** DCC 연속 대화: 화자 종료 인지시간(ms). 낮을수록 턴 전송 빠름(체감 TTS 지연 감소), 너무 낮으면 말 끊김. */
@@ -309,8 +309,8 @@ export function useVoiceResult() {
   const isMultiContentRef = useRef(false)
   /** 다자형: TTS 발화 종료 기준 화면 전환용. speakerIndex 수신 시 대기했다가 해당 세그먼트의 첫 오디오 청크 재생 직전에 적용 */
   const pendingSpeakerIndexRef = useRef<number | null>(null)
-  /** 다자형: 동영상 전환 지연 타이머. AudioStreamer 버퍼 소진 후 전환하기 위해 사용 */
-  const multiVideoSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 다자형: 동영상 전환 지연 타이머 목록. 세그먼트별 순차 전환을 보장하기 위해 배열로 관리 */
+  const multiVideoSwitchTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const dccLastTurnEndIndexRef = useRef(0)
   const dccSilenceStartRef = useRef<number | null>(null)
   const dccInSpeechRef = useRef(false)
@@ -820,6 +820,8 @@ export function useVoiceResult() {
     dccCurrentAudioRef.current?.pause()
     dccCurrentAudioRef.current = null
     dccStreamerRef.current?.stop()
+    multiVideoSwitchTimersRef.current.forEach((t) => clearTimeout(t))
+    multiVideoSwitchTimersRef.current = []
     if (dccOutVolumeIntervalRef.current) {
       clearInterval(dccOutVolumeIntervalRef.current)
       dccOutVolumeIntervalRef.current = null
@@ -1528,10 +1530,8 @@ ${seasonBlock}
     stopAllTTSRef.current()
     manualDisconnectRef.current = true
     clearSilenceTimer()
-    if (multiVideoSwitchTimerRef.current) {
-      clearTimeout(multiVideoSwitchTimerRef.current)
-      multiVideoSwitchTimerRef.current = null
-    }
+    multiVideoSwitchTimersRef.current.forEach((t) => clearTimeout(t))
+    multiVideoSwitchTimersRef.current = []
     if (dccVadTimerRef.current) {
       clearTimeout(dccVadTimerRef.current)
       dccVadTimerRef.current = null
@@ -1756,16 +1756,13 @@ ${seasonBlock}
                   if (isMultiContentRef.current && pendingSpeakerIndexRef.current !== null) {
                     const newIdx = pendingSpeakerIndexRef.current as 0 | 1 | 2
                     pendingSpeakerIndexRef.current = null
-                    if (multiVideoSwitchTimerRef.current) {
-                      clearTimeout(multiVideoSwitchTimerRef.current)
-                      multiVideoSwitchTimerRef.current = null
-                    }
                     const bufferedSec = dccStreamerRef.current?.getBufferedDuration?.() ?? 0
                     if (bufferedSec > 0.08) {
-                      multiVideoSwitchTimerRef.current = setTimeout(() => {
-                        multiVideoSwitchTimerRef.current = null
+                      const tid = setTimeout(() => {
+                        multiVideoSwitchTimersRef.current = multiVideoSwitchTimersRef.current.filter((t) => t !== tid)
                         setCurrentSpeakerIndex(newIdx)
                       }, bufferedSec * 1000)
+                      multiVideoSwitchTimersRef.current.push(tid)
                     } else {
                       setCurrentSpeakerIndex(newIdx)
                     }
@@ -2029,7 +2026,7 @@ ${seasonBlock}
         dccOutVolumeIntervalRef.current = null
         setOutVolume(0)
       }
-      if (isAiSpeakingRef.current && vol > interruptThreshold && !isMultiContentRef.current && !dccFirstTurnPlayingRef.current) {
+      if (isAiSpeakingRef.current && vol > interruptThreshold) {
         const now = Date.now()
         if (dccInterruptAboveSinceRef.current === null) dccInterruptAboveSinceRef.current = now
         else if (now - dccInterruptAboveSinceRef.current >= TTS_INTERRUPT_DEBOUNCE_MS) {
