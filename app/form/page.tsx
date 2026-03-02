@@ -697,7 +697,8 @@ function FormContent() {
 
   // 0원 음성 폼: 이용 가능 시간 역카운트 (1초마다)
   useEffect(() => {
-    if (typeof window === 'undefined' || !content?.id || content?.content_type !== 'voice') return
+    const isVoiceForm = content?.content_type === 'voice' || content?.content_type === 'multi'
+    if (typeof window === 'undefined' || !content?.id || !isVoiceForm) return
     const p = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
     if (!Number.isFinite(p) || p > 0) return
     const contentId = String(content.id)
@@ -4047,7 +4048,9 @@ function FormContent() {
       showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
       return
     }
-    const raw = (content as any)?.voice_time_options
+    const raw = content.content_type === 'multi'
+      ? (content as any)?.multi_time_options
+      : (content as any)?.voice_time_options
     const opts = Array.isArray(raw) ? raw : (typeof raw === 'string' ? (() => { try { const a = JSON.parse(raw); return Array.isArray(a) ? a : [] } catch { return [] } })() : [])
     const hasVoiceOptions = opts.some((o: any) => o?.type === 'extension' || o?.type === 'charge' || (o?.price > 0 && o?.type !== 'default'))
     const optionToUse = selectedSkipWaitOption ?? (hasVoiceOptions ? null : { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' })
@@ -4250,7 +4253,7 @@ function FormContent() {
 
   // 바로이용하기: 관리자 언락 시 결제 없이 보이스 화면 진입 (운영자 테스트)
   const handleSkipWaitOperatorTest = async () => {
-    const micPromise = (content?.content_type === 'voice' && typeof window !== 'undefined' && isIOS()) ? startIOSVoicePrepare() : null
+    const micPromise = (content?.content_type === 'voice' || content?.content_type === 'multi') && typeof window !== 'undefined' && isIOS() ? startIOSVoicePrepare() : null
     if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
       showAlertMessage('휴대폰 번호를 입력하세요.')
       return
@@ -5867,9 +5870,11 @@ function FormContent() {
             </div>
 
             <div className="p-6">
-              {/* 이용 시간 옵션: content.voice_time_options 있으면 연장 팝업처럼 라디오 선택 + 안내 문구 */}
+              {/* 이용 시간 옵션: 음성형 voice_time_options / 다자형 multi_time_options 동일하게 연장·충전 선택 + 안내 문구 */}
               {(() => {
-                const raw = (content as any)?.voice_time_options
+                const raw = content?.content_type === 'multi'
+                  ? (content as any)?.multi_time_options
+                  : (content as any)?.voice_time_options
                 const opts = Array.isArray(raw) ? raw : (typeof raw === 'string' ? (() => { try { const a = JSON.parse(raw); return Array.isArray(a) ? a : [] } catch { return [] } })() : [])
                 const extensionOpts = opts.filter((o: any) => o?.type === 'extension' || (o?.price > 0 && o?.type !== 'charge' && o?.type !== 'default'))
                 const chargeOpt = opts.find((o: any) => o?.type === 'charge') as { rate_seconds?: number; rate_won?: number; price?: number; label?: string; minutes?: number; seconds?: number } | undefined
@@ -5879,7 +5884,9 @@ function FormContent() {
                 const chargeMin = chargeOpt != null ? (Number(chargeOpt.minutes) || 0) : 0
                 const chargeSec = chargeOpt != null ? (Number(chargeOpt.seconds) ?? 0) : 0
                 const chargeTimeLabel = chargeMin > 0 || chargeSec > 0 ? (chargeSec > 0 ? `${chargeMin}분 ${chargeSec}초` : `${chargeMin}분`) : ''
-                const chargeLabel = (chargeOpt?.label && String(chargeOpt.label).trim()) ? String(chargeOpt.label).trim() + (chargeTimeLabel ? ` (${chargeTimeLabel})` : '') : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` + (chargeTimeLabel ? ` · ${chargeTimeLabel}` : '') : `${chargePrice.toLocaleString()}원 충전` + (chargeTimeLabel ? ` (${chargeTimeLabel})` : ''))
+                const chargeLabel = (chargeOpt?.label && String(chargeOpt.label).trim())
+                  ? String(chargeOpt.label).trim()
+                  : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` + (chargeTimeLabel ? ` · ${chargeTimeLabel}` : '') : `${chargePrice.toLocaleString()}원 충전` + (chargeTimeLabel ? ` (${chargeTimeLabel})` : ''))
                 const hasOptions = extensionOpts.length > 0 || chargeOpt != null
 
                 if (hasOptions) {
@@ -7766,8 +7773,8 @@ function FormContent() {
               )
             })()}
 
-            {/* 0원 음성: 이용 가능 시간(24h 역카운트) + 바로이용하기. 잔여 조회 완료 후 잔여 없을 때만 표시(스샷 깜빡임 방지) */}
-            {content?.content_type === 'voice' && content != null && voiceResidualCheckDone && (() => {
+            {/* 0원 음성/다자형: 이용 가능 시간(24h 역카운트) + 바로이용하기. 잔여 조회 완료 후 잔여 없을 때만 표시(스샷 깜빡임 방지) */}
+            {(content?.content_type === 'voice' || content?.content_type === 'multi') && content != null && voiceResidualCheckDone && (() => {
               const p = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
               if (!Number.isFinite(p) || p > 0) return null
               if (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0)) return null
@@ -7788,7 +7795,7 @@ function FormContent() {
                   <button
                     type="button"
                     onClick={async () => {
-                      const micPromise = (content?.content_type === 'voice' && typeof window !== 'undefined' && isIOS()) ? startIOSVoicePrepare() : null
+                      const micPromise = (content?.content_type === 'voice' || content?.content_type === 'multi') && typeof window !== 'undefined' && isIOS() ? startIOSVoicePrepare() : null
                       if (!agreeTerms) {
                         showAlertMessage('서비스 이용 약관에 동의해주세요.')
                         return

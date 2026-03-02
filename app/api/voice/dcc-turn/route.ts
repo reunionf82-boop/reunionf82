@@ -1015,7 +1015,7 @@ ${emotionTagRule}
         start(controller) {
           controller.enqueue(encoder.encode(JSON.stringify({ type: 'userTranscript', text: userTranscript.trim() }) + '\n'))
           /** 스트리밍: 클라이언트 AudioStreamer가 raw PCM만 받으므로 base64는 PCM 그대로, format 명시 */
-          /** 다자형: 동영상 전환 시점을 LLM 세그먼트가 아닌 TTS 발화 종료 시점으로 맞추기 위해, speakerIndex는 해당 세그먼트의 첫 오디오 직전에만 전송 */
+          /** 다자형: 동영상은 TTS 발화종료·다음 세그먼트 발화시작에 맞춰 전환. speakerIndex는 반드시 해당 세그먼트의 첫 오디오 청크 직전에만 전송(LLM 세그먼트 생성 시점 X) */
           let pendingSpeakerIndexForClient: number | null = null
           const enqueueAudio = (pcmBuffer: Buffer) => {
             if (!pcmBuffer || pcmBuffer.length === 0) return
@@ -1274,6 +1274,7 @@ ${emotionTagRule}
                         if (msg.type === 'chunk' && typeof msg.data === 'string') {
                           const pcm = Buffer.from(msg.data, 'base64')
                           if (pcm.length > 0) {
+                            // TTS 발화 시작 시점에만 화자 전환: 첫 오디오 청크 직전에 speakerIndex 1회만 전송
                             if (segSpeakerIndex !== null && !segSpeakerIndexSent) {
                               try { controller.enqueue(encoder.encode(JSON.stringify({ type: 'speakerIndex', speakerIndex: segSpeakerIndex }) + '\n')) } catch (_) {}
                               segSpeakerIndexSent = true

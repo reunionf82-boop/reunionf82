@@ -309,6 +309,8 @@ export function useVoiceResult() {
   const isMultiContentRef = useRef(false)
   /** 다자형: TTS 발화 종료 기준 화면 전환용. speakerIndex 수신 시 대기했다가 해당 세그먼트의 첫 오디오 청크 재생 직전에 적용 */
   const pendingSpeakerIndexRef = useRef<number | null>(null)
+  /** 다자형: 동영상 전환 지연 타이머. AudioStreamer 버퍼 소진 후 전환하기 위해 사용 */
+  const multiVideoSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dccLastTurnEndIndexRef = useRef(0)
   const dccSilenceStartRef = useRef<number | null>(null)
   const dccInSpeechRef = useRef(false)
@@ -1526,6 +1528,10 @@ ${seasonBlock}
     stopAllTTSRef.current()
     manualDisconnectRef.current = true
     clearSilenceTimer()
+    if (multiVideoSwitchTimerRef.current) {
+      clearTimeout(multiVideoSwitchTimerRef.current)
+      multiVideoSwitchTimerRef.current = null
+    }
     if (dccVadTimerRef.current) {
       clearTimeout(dccVadTimerRef.current)
       dccVadTimerRef.current = null
@@ -1566,11 +1572,11 @@ ${seasonBlock}
     if (!skipSave && !conversationSavedRef.current) {
       setTimeout(() => { saveConversationRef.current?.() }, 100)
     }
-    // 시간이 남은 채로 종료한 경우 잔여시간 저장 (폼에서 상담잔여시간으로 재상담 가능)
+    // 시간이 남은 채로 종료한 경우 잔여시간 저장 (skipSave와 무관하게 항상 실행 — 폼에서 잔여시간/잔여금액 표시에 필요)
     const sec = remainingSecondsRef.current
     const cid = contentIdRef.current
     const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
-    if (!skipSave && sec > 0 && cid && phone) {
+    if (sec > 0 && cid && phone) {
       saveRemainingPromiseRef.current = fetch('/api/voice/balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1748,8 +1754,21 @@ ${seasonBlock}
               } else if (parsed.type === 'audio' && typeof parsed.base64 === 'string') {
                 if (parsed.format === 'pcm_s16le') {
                   if (isMultiContentRef.current && pendingSpeakerIndexRef.current !== null) {
-                    setCurrentSpeakerIndex(pendingSpeakerIndexRef.current as 0 | 1 | 2)
+                    const newIdx = pendingSpeakerIndexRef.current as 0 | 1 | 2
                     pendingSpeakerIndexRef.current = null
+                    if (multiVideoSwitchTimerRef.current) {
+                      clearTimeout(multiVideoSwitchTimerRef.current)
+                      multiVideoSwitchTimerRef.current = null
+                    }
+                    const bufferedSec = dccStreamerRef.current?.getBufferedDuration?.() ?? 0
+                    if (bufferedSec > 0.08) {
+                      multiVideoSwitchTimerRef.current = setTimeout(() => {
+                        multiVideoSwitchTimerRef.current = null
+                        setCurrentSpeakerIndex(newIdx)
+                      }, bufferedSec * 1000)
+                    } else {
+                      setCurrentSpeakerIndex(newIdx)
+                    }
                   }
                   if (!dccOutVolumeIntervalRef.current) {
                     dccOutVolumeIntervalRef.current = setInterval(() => setOutVolume(0.35), 80)
@@ -1769,8 +1788,8 @@ ${seasonBlock}
                   setMessages((prev) => [...prev, { role: 'assistant', text: assistantT }])
                 }
               } else if (parsed.type === 'speakerIndex' && typeof parsed.speakerIndex === 'number' && parsed.speakerIndex >= 0 && parsed.speakerIndex <= 2) {
-                if (!receivedAudio) setCurrentSpeakerIndex(parsed.speakerIndex as 0 | 1 | 2)
-                else pendingSpeakerIndexRef.current = parsed.speakerIndex
+                // TTS 발화 시점에 맞추기 위해: speakerIndex만으로는 전환하지 않고, 다음 오디오 청크 재생 직전에 전환
+                pendingSpeakerIndexRef.current = parsed.speakerIndex as 0 | 1 | 2
               } else if (parsed.type === 'done') {
                 if (!dccTurnTextAdded) {
                   assistantT = typeof parsed.assistantText === 'string' ? parsed.assistantText : ''
@@ -3471,6 +3490,9 @@ ${seasonBlock}
     setIsNavigatingAway(true)
     stopAllTTSRef.current()
     disconnectInternalRef.current?.(true)
+    const srp = saveRemainingPromiseRef.current
+    saveRemainingPromiseRef.current = null
+    if (srp) { try { await srp } catch { /* ignore */ } }
     const cid = contentIdRef.current ? parseInt(contentIdRef.current, 10) : null
     const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
     if ((useBalanceModeRef.current || enteredWithBalanceRef.current) && cid != null && phone) {
@@ -3507,6 +3529,11 @@ ${seasonBlock}
     stopAllTTSRef.current()
     await disconnect()
     try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
+    const p = saveRemainingPromiseRef.current
+    saveRemainingPromiseRef.current = null
+    if (p) {
+      await p
+    }
     router.push(getFormUrl())
   }, [disconnect, router, getFormUrl])
 

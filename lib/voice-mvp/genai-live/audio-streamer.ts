@@ -279,6 +279,14 @@ export class AudioStreamer {
     }
   }
 
+  /** 아직 재생되지 않고 스케줄된(버퍼링된) 오디오의 남은 길이(초). 다자형 동영상 전환 지연에 사용 */
+  getBufferedDuration(): number {
+    const scheduledRemaining = Math.max(0, this.scheduledTime - this.context.currentTime)
+    const queuedSamples = this.audioQueue.reduce((acc, chunk) => acc + chunk.length, 0)
+    const queuedDuration = queuedSamples / this.sampleRate
+    return scheduledRemaining + queuedDuration
+  }
+
   /**
    * 남은 큐 강제 재생(Flush). EOS 시 minBufferDuration 미만으로 남은 찌꺼기가 재생 안 되는 무한 대기 방지(제미나이 제안).
    * 목표치 무시하고 큐에 있는 오디오를 바로 재생 시작.

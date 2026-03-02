@@ -243,8 +243,18 @@ function MultiAdvisorVideoBlock({
         const len = Math.max(1, list.length)
         const srcA = active === 0 ? (list[idx] ?? '') : (list[(idx + 1) % len] ?? '')
         const srcB = active === 1 ? (list[idx] ?? '') : (list[(idx + 1) % len] ?? '')
+        const isSpeaking = i === currentSpeakerIndex
         return (
-          <div key={i} className={cellClass}>
+          <div
+            key={i}
+            className={cellClass}
+            style={{
+              transform: isSpeaking ? 'scale(1.08)' : 'scale(0.96)',
+              transition: 'transform 0.4s cubic-bezier(0.4,0,0.2,1)',
+              zIndex: isSpeaking ? 2 : 1,
+              borderRadius: isSpeaking ? '8px' : '0px',
+            }}
+          >
             {list.length > 0 ? (
               <>
                 <video
@@ -877,7 +887,7 @@ export default function VoiceResultContent() {
               const chargeMin = chargeOpt != null ? (Number(chargeOpt?.minutes) || 0) : 0
               const chargeSec = chargeOpt != null ? (Number(chargeOpt?.seconds) ?? 0) : 0
               const chargeTimeLabel = chargeMin > 0 || chargeSec > 0 ? (chargeSec > 0 ? `${chargeMin}분 ${chargeSec}초` : `${chargeMin}분`) : ''
-              const chargeLabel = (chargeOpt != null && (chargeOpt?.label ?? '').trim() !== '') ? String(chargeOpt?.label ?? '').trim() + (chargeTimeLabel ? ` (${chargeTimeLabel})` : '') : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` + (chargeTimeLabel ? ` · ${chargeTimeLabel}` : '') : `${chargePrice.toLocaleString()}원 충전` + (chargeTimeLabel ? ` (${chargeTimeLabel})` : ''))
+              const chargeLabel = (chargeOpt != null && (chargeOpt?.label ?? '').trim() !== '') ? String(chargeOpt?.label ?? '').trim() : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` + (chargeTimeLabel ? ` · ${chargeTimeLabel}` : '') : `${chargePrice.toLocaleString()}원 충전` + (chargeTimeLabel ? ` (${chargeTimeLabel})` : ''))
               return (extensionOpts.length > 0 || true) ? (
               <div className="space-y-2 mb-5">
                 {extensionOpts.map((opt: { minutes: number; seconds?: number; price: number; label: string }, idx: number) => {
