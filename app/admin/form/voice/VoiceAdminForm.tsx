@@ -1167,7 +1167,7 @@ export default function VoiceAdminForm() {
                         </div>
                       </div>
                       <div className="pt-1 border-t border-gray-700">
-                        <p className="text-gray-500 text-xs mb-2">※ 차감 주기·차감 금액: 상담 화면 표시 및 잔액 차감에 사용</p>
+                        <p className="text-gray-500 text-xs mb-2">※ 차감 주기·차감 금액: 선차감(연결 시 즉시 1블록 차감 후, 주기마다 차감)</p>
                         <div className="flex gap-3 items-end">
                         <div className="w-20">
                           <label className="block text-xs text-gray-400 mb-1">차감 주기(초)</label>

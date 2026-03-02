@@ -7753,7 +7753,7 @@ function FormContent() {
               </div>
             </div>
 
-            {/* 음성: 잔여금액 + 상담가능 잔여 시간(차감단위 기준), 진입은 아래 메인 버튼으로 */}
+            {/* 음성: 잔여시간만 표시 (잔여금액은 표시하지 않음), 진입은 아래 메인 버튼으로 */}
             {(content?.content_type === 'voice' || content?.content_type === 'multi') && content != null && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0)) && (() => {
               const showBalance = voiceBalanceWan != null && voiceBalanceWan > 0
               const timeOptsUi = content?.content_type === 'multi'
@@ -7774,12 +7774,6 @@ function FormContent() {
               const timeStrSaved = [hSaved, mSaved, sSaved].map((v) => String(v).padStart(2, '0')).join(':')
               return (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                  {showBalance && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">잔여금액</span>
-                      <span className="font-semibold text-gray-900 tabular-nums">{voiceBalanceWan!.toLocaleString()}원</span>
-                    </div>
-                  )}
                   {voiceRemainingSeconds > 0 && (
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-gray-600">잔여시간</span>
@@ -7788,7 +7782,7 @@ function FormContent() {
                   )}
                   {showBalance && secFromBalance > 0 && !voiceRemainingSeconds && (
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">상담가능 잔여 시간</span>
+                      <span className="text-sm text-gray-600">잔여시간</span>
                       <span className="font-semibold text-gray-900 tabular-nums">{timeStrFromBalance}</span>
                     </div>
                   )}

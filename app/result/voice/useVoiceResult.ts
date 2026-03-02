@@ -2079,7 +2079,7 @@ ${seasonBlock}
     }).catch((e: any) => setError(e?.message || '마이크를 사용할 수 없습니다.'))
   }, [sendDccTurn, stopDccPlayback, buildWavFromPcmChunks])
 
-  /** 잔여금액으로 진입한 세션: 연결 후 차감주기마다 잔액 차감·UI 갱신 (remaining/total은 타이머가 이미 카운트다운 중이므로 갱신만) */
+  /** 잔여금액으로 진입한 세션: 선차감(연결 시 즉시 1블록 차감 후, 차감주기마다 차감)·UI 갱신 */
   const startBalanceDeductIntervalIfNeeded = useCallback((data: typeof contentData) => {
     if (!enteredWithBalanceRef.current) return
     if (balanceDeductIntervalRef.current) return
@@ -2090,7 +2090,7 @@ ${seasonBlock}
     const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
     if (!rateSeconds || !rateWon) return
     useBalanceModeRef.current = true
-    balanceDeductIntervalRef.current = setInterval(async () => {
+    const doDeduct = async () => {
       if (!useBalanceModeRef.current) return
       const cid2 = contentIdRef.current
       const phone2 = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
@@ -2120,7 +2120,9 @@ ${seasonBlock}
           balanceDeductIntervalRef.current = null
         }
       }
-    }, rateSeconds * 1000)
+    }
+    doDeduct()
+    balanceDeductIntervalRef.current = setInterval(doDeduct, rateSeconds * 1000)
   }, [])
 
   const connect = useCallback(async () => {
