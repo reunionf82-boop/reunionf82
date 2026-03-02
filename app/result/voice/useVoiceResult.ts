@@ -1054,18 +1054,19 @@ ${seasonBlock}
         if (extendPopupOpenRef.current && !isAiSpeakingRef.current) return prev
         const next = prev - 1
         // 30초 전: 무료시작 1회 → 1분 무료 연장 팝업 / 유료진입·이미 무료팝업 봤음 → 시간연장·충전 팝업
-        if (next === 30 && !extendPopupShownRef.current) {
-          extendPopupShownRef.current = true
-          const isFreeStartNow = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
-          if (isFreeStartNow && !freeExtendPopupShownThisSessionRef.current) {
-            freeExtendPopupShownThisSessionRef.current = true
-            setExtendPopupOpenedByButton(false)
-            setShowFreeExtendPopup(true)
-          } else {
-            setExtendPopupOpenedByButton(false)
-            setShowExtendPopup(true)
-          }
-        }
+        // 상담시간 연장 기능 비활성화: 연장 팝업 자동 오픈 주석처리
+        // if (next === 30 && !extendPopupShownRef.current) {
+        //   extendPopupShownRef.current = true
+        //   const isFreeStartNow = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
+        //   if (isFreeStartNow && !freeExtendPopupShownThisSessionRef.current) {
+        //     freeExtendPopupShownThisSessionRef.current = true
+        //     setExtendPopupOpenedByButton(false)
+        //     setShowFreeExtendPopup(true)
+        //   } else {
+        //     setExtendPopupOpenedByButton(false)
+        //     setShowExtendPopup(true)
+        //   }
+        // }
         // 시간 종료
         if (next <= 0) {
           if (timerIntervalRef.current) {
@@ -1079,16 +1080,18 @@ ${seasonBlock}
             timeHitZeroNoExtendPopupRef.current = true
             return 0
           }
+          // 상담시간 연장 기능 비활성화: 시간 종료 시 연장 팝업 자동 오픈 주석처리
+          // extendPopupShownRef.current = true
+          // const isFreeStartAtZero = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
+          // if (isFreeStartAtZero && !freeExtendPopupShownThisSessionRef.current) {
+          //   freeExtendPopupShownThisSessionRef.current = true
+          //   setExtendPopupOpenedByButton(false)
+          //   setShowFreeExtendPopup(true)
+          // } else {
+          //   setExtendPopupOpenedByButton(false)
+          //   setShowExtendPopup(true)
+          // }
           extendPopupShownRef.current = true
-          const isFreeStartAtZero = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
-          if (isFreeStartAtZero && !freeExtendPopupShownThisSessionRef.current) {
-            freeExtendPopupShownThisSessionRef.current = true
-            setExtendPopupOpenedByButton(false)
-            setShowFreeExtendPopup(true)
-          } else {
-            setExtendPopupOpenedByButton(false)
-            setShowExtendPopup(true)
-          }
           return 0
         }
         return next
@@ -1706,6 +1709,12 @@ ${seasonBlock}
           safetyTimeout = setTimeout(() => {
             if (!dccCompleteFired) onDone()
           }, 2000)
+        }
+        // 스트리머 없이 오디오만 받은 경우(또는 onComplete 미연결) 파형 반드시 정리
+        if (receivedAudio && dccOutVolumeIntervalRef.current && !dccCompletionWired) {
+          clearInterval(dccOutVolumeIntervalRef.current)
+          dccOutVolumeIntervalRef.current = null
+          setOutVolume(0)
         }
         if (!receivedAudio) {
           if (isStartTurn) dccFirstTurnPlayingRef.current = false

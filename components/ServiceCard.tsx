@@ -60,7 +60,7 @@ export default function ServiceCard({ service, showExposedBadge }: ServiceCardPr
         }
         // content_type 저장 (voice 분기용)
         sessionStorage.setItem('form_content_type', service.contentType || 'fortune')
-        // 재회보기 클릭 시 폼 자동복구를 1회 스킵
+        // 상세보기 클릭 시 폼 자동복구를 1회 스킵
         sessionStorage.setItem('skip_resume_once', '1')
         // ✅ 썸네일 캐시는 "컨텐츠별(title별)"로 분리해서 저장 (다른 폼에서 섞이는 버그 방지)
         const imageKey = `form_thumbnail_image_url:${service.title}`
@@ -86,7 +86,7 @@ export default function ServiceCard({ service, showExposedBadge }: ServiceCardPr
         }
         // content_type 저장 (voice 분기용)
         sessionStorage.setItem('form_content_type', service.contentType || 'fortune')
-        // 재회보기 클릭 시 폼 자동복구를 1회 스킵
+        // 상세보기 클릭 시 폼 자동복구를 1회 스킵
         sessionStorage.setItem('skip_resume_once', '1')
         // ✅ 썸네일 캐시는 "컨텐츠별(title별)"로 분리해서 저장 (다른 폼에서 섞이는 버그 방지)
         const imageKey = `form_thumbnail_image_url:${service.title}`
@@ -219,7 +219,7 @@ export default function ServiceCard({ service, showExposedBadge }: ServiceCardPr
             </span>
           )}
           <span className="bg-pink-500 text-white font-semibold py-2.5 px-6 rounded-lg shadow-sm whitespace-nowrap">
-            재회보기
+            상세보기
           </span>
         </div>
       </div>

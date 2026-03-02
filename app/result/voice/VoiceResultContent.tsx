@@ -19,45 +19,91 @@ function parseVideoUrls(raw: string | undefined): string[] {
   return [s]
 }
 
-/** 복수일 때 세션당 한 번 랜덤 선택된 URL 하나만 반환. 세션 끊기 전까지 동일 URL 반복 재생용 */
-function pickOneSessionVideoUrl(rawVideoUrl: string | undefined): string {
-  const list = parseVideoUrls(rawVideoUrl)
-  if (list.length === 0) return ''
-  if (list.length === 1) return list[0]
-  return list[Math.floor(Math.random() * list.length)]
+/** Fisher–Yates 셔플. 세션당 한 번만 호출해 랜덤 순차 재생 목록 생성 */
+function shuffle<T>(arr: T[]): T[] {
+  const out = [...arr]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
 }
 
+/** 복수 동영상: 세션당 한 번 셔플 후 순차 재생, 전환 시 크로스페이드로 깜빡임 방지 */
 function VoiceAdvisorVideoBlock({ rawVideoUrl }: { rawVideoUrl?: string }) {
   const urls = useMemo(() => parseVideoUrls(rawVideoUrl), [rawVideoUrl])
-  const sessionVideoUrl = useMemo(() => pickOneSessionVideoUrl(rawVideoUrl), [rawVideoUrl])
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const shuffledUrls = useMemo(() => (urls.length <= 1 ? urls : shuffle(urls)), [urls])
+  const [activeSlot, setActiveSlot] = useState<0 | 1>(0)
+  const [currentIdx, setCurrentIdx] = useState(0)
+  const videoRef0 = useRef<HTMLVideoElement>(null)
+  const videoRef1 = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
-    if (urls.length === 0 || !sessionVideoUrl) return
-    const v = videoRef.current
+    if (shuffledUrls.length === 0) return
+    const v = videoRef0.current
     if (!v) return
-    v.src = sessionVideoUrl
+    v.src = shuffledUrls[0]
     v.play().catch(() => {})
-  }, [sessionVideoUrl, urls.length])
+    setActiveSlot(0)
+    setCurrentIdx(0)
+  }, [shuffledUrls])
+
+  const goNext = useCallback(() => {
+    if (shuffledUrls.length === 0) return
+    const nextIdx = (currentIdx + 1) % shuffledUrls.length
+    const inactive: 0 | 1 = activeSlot === 0 ? 1 : 0
+    const ref = inactive === 0 ? videoRef0 : videoRef1
+    const el = ref.current
+    if (el) {
+      el.src = shuffledUrls[nextIdx]
+      el.currentTime = 0
+      el.play().catch(() => {})
+    }
+    setActiveSlot(inactive)
+    setCurrentIdx(nextIdx)
+  }, [shuffledUrls, currentIdx, activeSlot])
+
+  useEffect(() => {
+    if (shuffledUrls.length <= 1) return
+    const ref = activeSlot === 0 ? videoRef0 : videoRef1
+    const el = ref.current
+    if (!el) return
+    const onEnded = () => goNext()
+    el.addEventListener('ended', onEnded)
+    return () => el.removeEventListener('ended', onEnded)
+  }, [activeSlot, goNext, shuffledUrls.length])
 
   if (urls.length === 0) {
     return (
       <div className="w-full rounded-2xl bg-gray-100 border border-gray-200 flex items-center justify-center py-12">
-        <p className="text-gray-400 text-sm">상담사 영상이 등록되지 않았습니다.</p>
+        <p className="text-gray-400 text-sm">영상이 등록되지 않았습니다.</p>
       </div>
     )
   }
 
+  const wrapperClass = 'w-full overflow-hidden rounded-none [contain:layout_paint] [will-change:transform] relative'
+  const videoClass = 'absolute inset-0 w-full h-full object-cover transition-opacity duration-[480ms] ease-out'
+  const singleVideo = shuffledUrls.length <= 1
   return (
-    <div className="w-full overflow-hidden rounded-2xl [contain:layout_paint] [will-change:transform]">
+    <div className={wrapperClass} style={{ aspectRatio: '16/10' }}>
       <video
-        ref={videoRef}
+        ref={videoRef0}
         autoPlay
-        loop
+        loop={singleVideo}
         muted
         playsInline
-        className="w-full object-cover"
+        className={videoClass}
         preload="auto"
+        style={{ opacity: activeSlot === 0 ? 1 : 0, zIndex: activeSlot === 0 ? 1 : 0 }}
+      />
+      <video
+        ref={videoRef1}
+        loop={singleVideo}
+        muted
+        playsInline
+        className={videoClass}
+        preload="auto"
+        style={{ opacity: activeSlot === 1 ? 1 : 0, zIndex: activeSlot === 1 ? 1 : 0 }}
       />
     </div>
   )
@@ -312,7 +358,7 @@ export default function VoiceResultContent() {
       <div className="min-h-screen bg-white text-gray-900 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500 mx-auto mb-3" />
-          <p className="text-gray-500">상담 준비 중...</p>
+          <p className="text-gray-500">음성 준비 중...</p>
         </div>
       </div>
     )
@@ -460,7 +506,7 @@ export default function VoiceResultContent() {
         </div>
         )}
 
-        {/* 종료 / 상담시간 연장하기 — 만세력과 소셜 버튼 사이 영역에서 비율로 가운데 */}
+        {/* 종료 / 상담시간 연장하기 — 만세력과 소셜 버튼 사이 영역 (상담시간 연장 버튼은 비활성화) */}
         <div className="flex-1 flex flex-col justify-center items-center min-h-0 py-4">
           <div className="flex flex-wrap items-center justify-center gap-3">
           {(h.savingConversation || h.isNavigatingAway) ? (
@@ -469,7 +515,7 @@ export default function VoiceResultContent() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              <span className="text-gray-600 font-semibold text-base">상담 내용 저장 중...</span>
+              <span className="text-gray-600 font-semibold text-base">음성 내용 저장 중...</span>
             </div>
           ) : (
             <>
@@ -496,7 +542,8 @@ export default function VoiceResultContent() {
                   </span>
                 </div>
               </button>
-              {h.connected && (
+              {/* 상담시간 연장 기능 비활성화: 버튼 숨김 */}
+              {false && h.connected && (
                 <button
                   type="button"
                   onClick={h.openExtendPopupByButton}
@@ -505,7 +552,7 @@ export default function VoiceResultContent() {
                 >
                   <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-pink-600 group-hover:from-pink-600 group-hover:to-pink-700 transition-all duration-300" />
                   <div className="relative flex items-center justify-center gap-1.5 py-2.5 px-4">
-                    <span className="text-white font-semibold text-[13px]">상담시간 연장하기</span>
+                    <span className="text-white font-semibold text-[13px]">음성시간 연장하기</span>
                   </div>
                 </button>
               )}
@@ -514,7 +561,8 @@ export default function VoiceResultContent() {
           </div>
         </div>
 
-        {/* 스크린 하단: 소셜 공유 버튼 (종료 버튼 아래, 클릭 보장을 위해 relative z-10) */}
+        {/* 스크린 하단: 소셜 공유 버튼 비활성화 */}
+        {false && (
         <div className="relative z-10 mt-auto pt-4 pb-4 flex flex-col items-center w-full min-w-0">
           <SocialShareButtons
             url={shareUrl || undefined}
@@ -523,10 +571,11 @@ export default function VoiceResultContent() {
             className="w-full justify-center"
           />
         </div>
+        )}
       </main>
 
-      {/* 1분 무료 연장 팝업 (무료시작 1회만, 팝업 떠 있어도 타이머 계속) */}
-      {h.showFreeExtendPopup ? (
+      {/* 상담시간 연장 기능 비활성화: 1분 무료 연장 팝업 주석처리 */}
+      {false && h.showFreeExtendPopup ? (
         <div
           className="fixed top-0 left-0 right-0 bottom-0 z-[9998] flex items-center justify-center px-4"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998 }}
@@ -550,7 +599,7 @@ export default function VoiceResultContent() {
             </div>
             <div className="p-6">
               <p className="text-gray-700 text-sm mb-6">
-                상담 시간이 곧 끝납니다. 1분 무료 연장을 사용할 수 있습니다. (이번 상담 중 1회)
+                음성 시간이 곧 끝납니다. 1분 무료 연장을 사용할 수 있습니다. (이번 이용 중 1회)
               </p>
               <div className="flex gap-3">
                 <button
@@ -573,8 +622,8 @@ export default function VoiceResultContent() {
         </div>
       ) : null}
 
-      {/* 시간연장/충전 팝업 — 폼 결제정보와 동일 레이아웃: 헤더 + 본문 */}
-      {h.showExtendPopup ? (
+      {/* 상담시간 연장 기능 비활성화: 시간연장/충전 팝업 주석처리 */}
+      {false && h.showExtendPopup ? (
         <div
           className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
@@ -586,7 +635,7 @@ export default function VoiceResultContent() {
           >
             {/* 헤더 - 폼 결제정보와 동일 */}
             <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
-              <h2 className="text-xl font-bold text-white cursor-default">상담 시간 연장</h2>
+              <h2 className="text-xl font-bold text-white cursor-default">음성 시간 연장</h2>
               <button
                 type="button"
                 onClick={h.dismissExtendPopup}
@@ -605,8 +654,8 @@ export default function VoiceResultContent() {
                 <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
                   <p className="text-gray-700 text-sm">
                     {h.remainingSeconds > 0
-                      ? `${h.remainingSeconds}초 후 상담이 종료됩니다.`
-                      : '상담 시간이 종료되었습니다.'}
+                      ? `${h.remainingSeconds}초 후 음성이 종료됩니다.`
+                      : '음성 시간이 종료되었습니다.'}
                     {' '}원하는 시간을 선택해 주세요.
                   </p>
                 </div>
@@ -633,10 +682,10 @@ export default function VoiceResultContent() {
               const opts = Array.isArray(h.contentData?.voice_time_options) ? h.contentData.voice_time_options : []
               const extensionOpts = opts.filter((o: any) => o?.type === 'extension' || (o?.price > 0 && o?.type !== 'charge' && o?.type !== 'default'))
               const chargeOpt = opts.find((o: any) => o?.type === 'charge') as { rate_seconds?: number; rate_won?: number; price?: number; label?: string } | undefined
-              const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
-              const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
+              const rateSeconds = chargeOpt != null && Number(chargeOpt?.rate_seconds) > 0 ? Number(chargeOpt?.rate_seconds) : 0
+              const rateWon = chargeOpt != null && Number(chargeOpt?.rate_won) > 0 ? Number(chargeOpt?.rate_won) : 0
               const chargePrice = Number(chargeOpt?.price) ?? 1000
-              const chargeLabel = (chargeOpt?.label && String(chargeOpt.label).trim()) ? String(chargeOpt.label).trim() : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` : `${chargePrice.toLocaleString()}원 충전`)
+              const chargeLabel = (chargeOpt != null && (chargeOpt?.label ?? '').trim() !== '') ? String(chargeOpt?.label ?? '').trim() : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` : `${chargePrice.toLocaleString()}원 충전`)
               return (extensionOpts.length > 0 || true) ? (
               <div className="space-y-2 mb-5">
                 {extensionOpts.map((opt: { minutes: number; seconds?: number; price: number; label: string }, idx: number) => {
@@ -780,6 +829,7 @@ export default function VoiceResultContent() {
           </div>
         </div>
       ) : null}
+      {/* 상담시간 연장 팝업 블록 끝 */}
 
       {/* 종료 버튼 확인 팝업 (폼 결제정보 팝업과 동일 스타일) */}
       {h.showExitConfirmPopup ? (
@@ -794,7 +844,7 @@ export default function VoiceResultContent() {
           >
             {/* 헤더 - 폼 결제 팝업과 동일 */}
             <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
-              <h2 className="text-xl font-bold text-white cursor-default">상담 종료</h2>
+              <h2 className="text-xl font-bold text-white cursor-default">음성 종료</h2>
               <button
                 type="button"
                 onClick={h.handleExitConfirmContinue}
@@ -808,7 +858,7 @@ export default function VoiceResultContent() {
 
             <div className="p-6">
               <p className="text-gray-700 text-base mb-5">
-                상담시간이 남아 있어요. 정말로 그만 하시겠어요?
+                음성 시간이 남아 있어요. 정말로 종료 하시겠어요?
               </p>
               <div className="flex flex-row flex-nowrap items-center gap-3">
                 <button
@@ -885,7 +935,7 @@ export default function VoiceResultContent() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="relative bg-gradient-to-r from-amber-600 to-amber-700 px-6 py-4">
-              <h2 className="text-xl font-bold text-white cursor-default">상담 종료 안내</h2>
+              <h2 className="text-xl font-bold text-white cursor-default">음성 종료 안내</h2>
             </div>
             <div className="p-6">
               <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 mb-6">
@@ -916,7 +966,7 @@ export default function VoiceResultContent() {
           >
             {/* 헤더 - 폼 결제 팝업과 동일 */}
             <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
-              <h2 className="text-xl font-bold text-white cursor-default">상담 내용 저장</h2>
+              <h2 className="text-xl font-bold text-white cursor-default">음성 내용 저장</h2>
               <button
                 type="button"
                 onClick={h.handleLeaveCancel}
@@ -932,7 +982,7 @@ export default function VoiceResultContent() {
             <div className="p-6">
               <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
                 <p className="text-gray-700 text-sm leading-relaxed">
-                  소리와 텍스트를 저장하면 나중에 다시 들어서 들을 수 있습니다. <strong>음성 녹음(나의 이용내역 다시듣기)</strong>을 남기려면 반드시 아래 &quot;저장하고 나가기&quot;를 눌러 주세요. 저장하고 나가시겠어요?
+                  음성을 저장하면 다시듣기가 가능합니다. 다시듣기를 하시려면 반드시 저장하세요.
                 </p>
               </div>
               <div className="space-y-2">
@@ -979,7 +1029,7 @@ export default function VoiceResultContent() {
           >
             {/* 헤더 - 폼 결제 팝업과 동일 */}
             <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
-              <h2 className="text-xl font-bold text-white cursor-default">상담 종료</h2>
+              <h2 className="text-xl font-bold text-white cursor-default">음성 종료</h2>
               <button
                 type="button"
                 onClick={h.handleConsultationEndConfirm}
@@ -994,7 +1044,7 @@ export default function VoiceResultContent() {
             <div className="p-6">
               <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
                 <p className="text-gray-700 text-sm leading-relaxed">
-                  상담이 끝났습니다. 저장된 내용은 나중에 다시 들을 수 있습니다.
+                  음성 서비스가 종료되었습니다. 저장된 내용은 나중에 다시 들을 수 있습니다.(유료에 한함)
                 </p>
               </div>
               <div className="space-y-2">

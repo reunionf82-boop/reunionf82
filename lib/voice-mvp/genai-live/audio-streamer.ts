@@ -261,7 +261,12 @@ export class AudioStreamer {
       this.onComplete()
       return
     }
-    if (this.endOfQueueAudioSource && typeof window !== 'undefined') {
+    // endOfQueueAudioSource가 아직 없어도(아직 마지막 버퍼 스케줄 전) 폴백으로 onComplete 보장 (파형/이퀄 정리)
+    if (typeof window !== 'undefined') {
+      if (this.completeFallbackTimeout) {
+        clearTimeout(this.completeFallbackTimeout)
+        this.completeFallbackTimeout = null
+      }
       this.completeFallbackTimeout = setTimeout(() => {
         this.completeFallbackTimeout = null
         if (this.endOfQueueAudioSource) {

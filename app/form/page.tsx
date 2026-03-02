@@ -658,6 +658,8 @@ function FormContent() {
   const [voiceResidualCheckDone, setVoiceResidualCheckDone] = useState(false)
   // 바로이용하기(100원 결제) 팝업
   const [showSkipWaitPopup, setShowSkipWaitPopup] = useState(false)
+  /** 바로이용하기 팝업에서 선택한 시간 옵션 (보이스 연장과 동일: extension 또는 charge) */
+  const [selectedSkipWaitOption, setSelectedSkipWaitOption] = useState<{ minutes: number; seconds?: number; price: number; label: string; charge?: boolean } | null>(null)
   
   // 로딩 팝업 상태 (PDF 생성 등)
   const [showLoadingPopup, setShowLoadingPopup] = useState(false)
@@ -3895,7 +3897,7 @@ function FormContent() {
     }
   }
 
-  // 바로이용하기: 즉시 이용 금액 결제 후 음성 시작 (전화번호·비밀번호 필수, 카드/휴대폰 선택)
+  // 바로이용하기: 즉시 이용 금액 결제 후 음성 시작 (전화번호·비밀번호 필수, 옵션 선택 후 카드/휴대폰)
   const handleSkipWaitPay100 = async (paymentMethod: 'card' | 'mobile') => {
     if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
       showAlertMessage('전화번호를 입력해 주세요. (이용내역 확인용)')
@@ -3909,12 +3911,23 @@ function FormContent() {
       showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
       return
     }
+    const raw = (content as any)?.voice_time_options
+    const opts = Array.isArray(raw) ? raw : (typeof raw === 'string' ? (() => { try { const a = JSON.parse(raw); return Array.isArray(a) ? a : [] } catch { return [] } })() : [])
+    const hasVoiceOptions = opts.some((o: any) => o?.type === 'extension' || o?.type === 'charge' || (o?.price > 0 && o?.type !== 'default'))
+    const optionToUse = selectedSkipWaitOption ?? (hasVoiceOptions ? null : { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' })
+    if (!optionToUse) {
+      showAlertMessage('이용 시간을 선택해 주세요.')
+      return
+    }
     setShowSkipWaitPopup(false)
     setSubmitting(true)
     try {
       const oid = generateOrderId()
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
-      const skipWaitOption = { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' }
+      const totalSeconds = optionToUse.charge ? 0 : (optionToUse.minutes * 60 + (optionToUse.seconds ?? 0))
+      const skipWaitOption = optionToUse.charge
+        ? { ...optionToUse, minutes: 0, seconds: 0 }
+        : { minutes: optionToUse.minutes, seconds: optionToUse.seconds ?? 0, price: optionToUse.price, label: optionToUse.label }
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('payment_oid', oid)
         sessionStorage.setItem('payment_method', paymentMethod)
@@ -3922,10 +3935,10 @@ function FormContent() {
         sessionStorage.setItem('payment_user_name', name)
         sessionStorage.setItem('payment_phone', phoneNumber)
         sessionStorage.setItem('payment_password', password)
-        sessionStorage.setItem('voice_pay_amount', String(SKIP_WAIT_PAY_AMOUNT))
+        sessionStorage.setItem('voice_pay_amount', String(optionToUse.price))
         sessionStorage.setItem('voice_entered_by_100', '1')
-        sessionStorage.setItem('payment_voice_minutes', '1')
-        sessionStorage.setItem('payment_voice_total_seconds', '60')
+        sessionStorage.setItem('payment_voice_minutes', String(skipWaitOption.minutes))
+        sessionStorage.setItem('payment_voice_total_seconds', String(totalSeconds))
         sessionStorage.setItem('payment_voice_time_option', JSON.stringify(skipWaitOption))
         sessionStorage.removeItem('voice_time_expired')
         sessionStorage.setItem('payment_user_gender', gender || '')
@@ -3957,7 +3970,7 @@ function FormContent() {
           contentId: content.id,
           paymentCode: content.payment_code,
           name: content.content_name || '',
-          pay: SKIP_WAIT_PAY_AMOUNT,
+          pay: optionToUse.price,
           paymentType: paymentMethod,
           userName: name,
           phoneNumber,
@@ -3969,7 +3982,7 @@ function FormContent() {
           birthMonth: month ? parseInt(String(month), 10) : undefined,
           birthDay: day ? parseInt(String(day), 10) : undefined,
           birthHour: birthHour || undefined,
-          voice_minutes: 1,
+          voice_minutes: skipWaitOption.minutes,
           voice_time_option: JSON.stringify(skipWaitOption),
         }),
       })
@@ -3989,7 +4002,7 @@ function FormContent() {
           contentId: content.id,
           paymentCode: content.payment_code,
           name: content.content_name || '',
-          pay: SKIP_WAIT_PAY_AMOUNT,
+          pay: optionToUse.price,
           userName: name,
           phoneNumber,
           oid,
@@ -4112,11 +4125,13 @@ function FormContent() {
       showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
       return
     }
+    const effectiveOption = selectedSkipWaitOption ?? { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' }
     setSubmitting(true)
     try {
       const oid = generateOrderId()
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
-      const skipWaitOption = { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' }
+      const totalSeconds = effectiveOption.charge ? 0 : (effectiveOption.minutes * 60 + (effectiveOption.seconds ?? 0))
+      const skipWaitOption = effectiveOption.charge ? { ...effectiveOption, minutes: 0, seconds: 0 } : { minutes: effectiveOption.minutes, seconds: effectiveOption.seconds ?? 0, price: effectiveOption.price, label: effectiveOption.label }
       const saveRes = await fetch('/api/payment/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4125,7 +4140,7 @@ function FormContent() {
           contentId: content.id,
           paymentCode: content.payment_code,
           name: content.content_name || '',
-          pay: SKIP_WAIT_PAY_AMOUNT,
+          pay: effectiveOption.price,
           paymentType: 'card',
           userName: name,
           phoneNumber,
@@ -4137,7 +4152,7 @@ function FormContent() {
           birthMonth: month ? parseInt(String(month), 10) : undefined,
           birthDay: day ? parseInt(String(day), 10) : undefined,
           birthHour: birthHour || undefined,
-          voice_minutes: 1,
+          voice_minutes: skipWaitOption.minutes,
           voice_time_option: JSON.stringify(skipWaitOption),
         }),
       })
@@ -4158,8 +4173,8 @@ function FormContent() {
         sessionStorage.setItem('payment_phone', phoneNumber)
         sessionStorage.setItem('payment_password', password)
         sessionStorage.setItem('voice_entered_by_100', '1')
-        sessionStorage.setItem('payment_voice_minutes', '1')
-        sessionStorage.setItem('payment_voice_total_seconds', '60')
+        sessionStorage.setItem('payment_voice_minutes', String(skipWaitOption.minutes))
+        sessionStorage.setItem('payment_voice_total_seconds', String(totalSeconds))
         sessionStorage.setItem('payment_voice_time_option', JSON.stringify(skipWaitOption))
         sessionStorage.setItem('payment_user_gender', gender || '')
         sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')
@@ -5654,15 +5669,15 @@ function FormContent() {
         onClose={() => setShowAlert(false)} 
       />
 
-      {/* 무료 음성상담 24시간 1회 제한 안내 팝업 */}
+      {/* 무료 음성 서비스 24시간 1회 제한 안내 팝업 */}
       {showFreeVoiceOnceModal && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4 bg-black/60" onClick={() => setShowFreeVoiceOnceModal(false)}>
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">무료 음성상담 이용 안내</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">무료 음성 서비스 이용 안내</h3>
             <p className="text-gray-600 text-sm mb-3">
-              무료 음성상담은 하루에 한 번만 이용할 수 있습니다.
+              무료 음성 서비스는 1회 이용 후 24시간 이후 재이용 가능합니다.
             </p>
-            <p className="text-gray-700 text-sm font-medium mb-1">상담 가능까지 남은 시간</p>
+            <p className="text-gray-700 text-sm font-medium mb-1">이용 가능까지 남은 시간</p>
             <p className="text-xl font-bold text-pink-600 mb-5 font-mono">
               {(() => {
                 const totalSec = Math.max(0, Math.floor(freeVoiceOnceRemainingMs / 1000))
@@ -5699,7 +5714,7 @@ function FormContent() {
               <h2 className="text-xl font-bold text-white cursor-default">바로이용하기</h2>
               <button
                 type="button"
-                onClick={() => setShowSkipWaitPopup(false)}
+                onClick={() => { setShowSkipWaitPopup(false); setSelectedSkipWaitOption(null) }}
                 className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
                 disabled={submitting}
               >
@@ -5710,19 +5725,81 @@ function FormContent() {
             </div>
 
             <div className="p-6">
-              {/* 안내/금액 박스 - 결제정보와 동일 스타일 */}
-              <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-700">
-                    기다리면 무료로 이용할 수 있습니다. {SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원 결제하고 즉시 시작할까요?
-                  </p>
-                  <div className="flex justify-between items-center pt-2 border-t border-pink-300">
-                    <span className="text-sm font-medium text-gray-700">즉시 이용 금액</span>
-                    <span className="text-xl font-bold text-pink-500">{SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원</span>
-                  </div>
-                </div>
-              </div>
+              {/* 이용 시간 옵션: content.voice_time_options 있으면 연장 팝업처럼 라디오 선택 + 안내 문구 */}
+              {(() => {
+                const raw = (content as any)?.voice_time_options
+                const opts = Array.isArray(raw) ? raw : (typeof raw === 'string' ? (() => { try { const a = JSON.parse(raw); return Array.isArray(a) ? a : [] } catch { return [] } })() : [])
+                const extensionOpts = opts.filter((o: any) => o?.type === 'extension' || (o?.price > 0 && o?.type !== 'charge' && o?.type !== 'default'))
+                const chargeOpt = opts.find((o: any) => o?.type === 'charge') as { rate_seconds?: number; rate_won?: number; price?: number; label?: string } | undefined
+                const chargePrice = Number(chargeOpt?.price) ?? 1000
+                const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
+                const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
+                const chargeLabel = (chargeOpt?.label && String(chargeOpt.label).trim()) ? String(chargeOpt.label).trim() : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` : `${chargePrice.toLocaleString()}원 충전`)
+                const hasOptions = extensionOpts.length > 0 || chargeOpt != null
 
+                if (hasOptions) {
+                  return (
+                    <>
+                      <p className="text-sm text-gray-700 mb-3">기다리면 무료로 이용할 수 있습니다. 아래에서 이용 시간을 선택한 뒤 결제해 주세요.</p>
+                      <div className="space-y-2 mb-4">
+                        {extensionOpts.map((opt: { minutes: number; seconds?: number; price: number; label: string }, idx: number) => {
+                          const isSelected = !(opt as any).charge && selectedSkipWaitOption?.minutes === opt.minutes && (selectedSkipWaitOption?.seconds ?? 0) === (opt.seconds ?? 0) && selectedSkipWaitOption?.price === opt.price
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => setSelectedSkipWaitOption(opt)}
+                              disabled={submitting}
+                              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${isSelected ? 'border-violet-500 bg-violet-50' : 'border-gray-200 bg-white hover:border-gray-300'} ${submitting ? 'opacity-50 pointer-events-none' : ''}`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-violet-500' : 'border-gray-300'}`}>
+                                  {isSelected ? <div className="w-2.5 h-2.5 rounded-full bg-violet-500" /> : null}
+                                </div>
+                                <span className={`font-semibold text-[15px] ${isSelected ? 'text-violet-700' : 'text-gray-800'}`}>{opt.label}</span>
+                              </div>
+                              <span className={`font-bold text-[15px] ${isSelected ? 'text-violet-600' : 'text-gray-600'}`}>{opt.price.toLocaleString()}원</span>
+                            </button>
+                          )
+                        })}
+                        {chargeOpt != null && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSkipWaitOption({ minutes: 0, seconds: 0, price: chargePrice, label: chargeLabel, charge: true })}
+                            disabled={submitting}
+                            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${selectedSkipWaitOption?.charge ? 'border-violet-500 bg-violet-50' : 'border-gray-200 bg-white hover:border-gray-300'} ${submitting ? 'opacity-50 pointer-events-none' : ''}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedSkipWaitOption?.charge ? 'border-violet-500' : 'border-gray-300'}`}>
+                                {selectedSkipWaitOption?.charge ? <div className="w-2.5 h-2.5 rounded-full bg-violet-500" /> : null}
+                              </div>
+                              <span className={`font-semibold text-[15px] ${selectedSkipWaitOption?.charge ? 'text-violet-700' : 'text-gray-800'}`}>{chargeLabel}</span>
+                            </div>
+                            <span className={`font-bold text-[15px] ${selectedSkipWaitOption?.charge ? 'text-violet-600' : 'text-gray-600'}`}>{chargePrice.toLocaleString()}원</span>
+                          </button>
+                        )}
+                      </div>
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-6 text-xs text-gray-600 space-y-1">
+                        <p>* 잔여시간 소멸형: 남은 음성 시간은 종료 시 소멸됩니다.</p>
+                        <p>* 충전 후 차감형: 사용 시간 분만 차감되고 잔여시간은 유지됩니다.</p>
+                      </div>
+                    </>
+                  )
+                }
+                return (
+                  <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
+                    <div className="space-y-2">
+                      <p className="text-sm text-gray-700">
+                        기다리면 무료로 이용할 수 있습니다. {SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원 결제하고 즉시 시작할까요?
+                      </p>
+                      <div className="flex justify-between items-center pt-2 border-t border-pink-300">
+                        <span className="text-sm font-medium text-gray-700">즉시 이용 금액</span>
+                        <span className="text-xl font-bold text-pink-500">{SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
               {/* 휴대폰 번호 - 결제정보와 동일 */}
               <div className="mb-4">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">휴대폰 번호</label>
@@ -5773,7 +5850,7 @@ function FormContent() {
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-6">
                 <p className="text-xs text-red-600 flex items-start">
                   <span className="font-bold mr-1">*</span>
-                  <span>다시보기 시, 입력한 휴대폰/비밀번호가 필요합니다.</span>
+                  <span>다시보기 시, 입력한 휴대폰/비밀번호가 필요합니다.(유료에 한함)</span>
                 </p>
               </div>
 
@@ -5781,7 +5858,7 @@ function FormContent() {
               <div className="flex flex-col gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowSkipWaitPopup(false)}
+                  onClick={() => { setShowSkipWaitPopup(false); setSelectedSkipWaitOption(null) }}
                   className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-5 px-4 rounded-xl transition-colors text-lg"
                 >
                   기다리기
@@ -5962,7 +6039,7 @@ function FormContent() {
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-6">
                 <p className="text-xs text-red-600 flex items-start">
                   <span className="font-bold mr-1">*</span>
-                  <span>다시보기 시, 입력한 휴대폰/비밀번호가 필요합니다.</span>
+                  <span>다시보기 시, 입력한 휴대폰/비밀번호가 필요합니다.(유료에 한함)</span>
                 </p>
               </div>
 
@@ -7003,7 +7080,7 @@ function FormContent() {
                   />
                 </div>
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <p className="text-xs text-amber-800">* 다시보기 시 입력한 휴대폰/비밀번호가 필요합니다.</p>
+                  <p className="text-xs text-amber-800">* 다시보기 시, 입력한 휴대폰/비밀번호가 필요합니다.(유료에 한함)</p>
                 </div>
               </div>
             </div>
@@ -7670,8 +7747,8 @@ function FormContent() {
                 이전으로
               </button>
             </div>
-            {/* 음성 0원일 때 무료시작 버튼 아래 소셜 공유 */}
-            {content?.content_type === 'voice' && content != null && (() => {
+            {/* 음성형: 소셜 공유 버튼 비활성화 */}
+            {content?.content_type === 'voice' && false && content != null && (() => {
               const p = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
               if (!Number.isFinite(p) || p > 0) return null
               return (
