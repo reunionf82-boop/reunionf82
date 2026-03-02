@@ -4046,10 +4046,8 @@ function FormContent() {
     try {
       const oid = generateOrderId()
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
-      const totalSeconds = optionToUse.charge ? 0 : (optionToUse.minutes * 60 + (optionToUse.seconds ?? 0))
-      const skipWaitOption = optionToUse.charge
-        ? { ...optionToUse, minutes: 0, seconds: 0 }
-        : { minutes: optionToUse.minutes, seconds: optionToUse.seconds ?? 0, price: optionToUse.price, label: optionToUse.label }
+      const totalSeconds = (optionToUse.minutes || 0) * 60 + (optionToUse.seconds ?? 0)
+      const skipWaitOption = { minutes: optionToUse.minutes, seconds: optionToUse.seconds ?? 0, price: optionToUse.price, label: optionToUse.label, ...(optionToUse.charge ? { charge: true, rate_won: (optionToUse as any).rate_won, rate_seconds: (optionToUse as any).rate_seconds } : {}) }
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('payment_oid', oid)
         sessionStorage.setItem('payment_method', paymentMethod)
@@ -4256,8 +4254,8 @@ function FormContent() {
     try {
       const oid = generateOrderId()
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
-      const totalSeconds = effectiveOption.charge ? 0 : (effectiveOption.minutes * 60 + (effectiveOption.seconds ?? 0))
-      const skipWaitOption = effectiveOption.charge ? { ...effectiveOption, minutes: 0, seconds: 0 } : { minutes: effectiveOption.minutes, seconds: effectiveOption.seconds ?? 0, price: effectiveOption.price, label: effectiveOption.label }
+      const totalSeconds = (effectiveOption.minutes || 0) * 60 + (effectiveOption.seconds ?? 0)
+      const skipWaitOption = { minutes: effectiveOption.minutes, seconds: effectiveOption.seconds ?? 0, price: effectiveOption.price, label: effectiveOption.label, ...(effectiveOption.charge ? { charge: true, rate_won: (effectiveOption as any).rate_won, rate_seconds: (effectiveOption as any).rate_seconds } : {}) }
       const saveRes = await fetch('/api/payment/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

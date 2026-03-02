@@ -305,6 +305,8 @@ export function useVoiceResult() {
   const dccAbortControllerRef = useRef<AbortController | null>(null)
   /** DCC 최초 인사 턴 재생 중 여부. 이 구간에는 스피커 에코로 TTS 중단하지 않음(20초 전 일관 끊김 방지) */
   const dccFirstTurnPlayingRef = useRef(false)
+  /** 다자형(multi) 콘텐츠 여부. 3명 순차 발화 동안 스피커→마이크 에코로 인한 TTS 인터럽트 방지 */
+  const isMultiContentRef = useRef(false)
   /** DCC 연속 대화: 턴 경계(마지막 전송 시점의 청크 인덱스), VAD 침묵 시작 시각, 말하는 중 여부 */
   const dccLastTurnEndIndexRef = useRef(0)
   const dccSilenceStartRef = useRef<number | null>(null)
@@ -490,6 +492,7 @@ export function useVoiceResult() {
         setRemainingSeconds(expired ? 0 : secs)
 
         setContentData(c)
+        isMultiContentRef.current = c?.content_type === 'multi'
         isFreeStartSessionRef.current = !sessionStorage.getItem('voice_entered_by_100')
 
         // 방문 빈도 (당일 localStorage, 상품별 개별 카운트)
@@ -606,9 +609,11 @@ export function useVoiceResult() {
     if (!oid || typeof window === 'undefined') return
     if (!sessionStorage.getItem('voice_entered_by_100')) return
     if (skipWaitChargeAppliedRef.current) return
-    // 연장(분) 결제 건은 초기 로드에서 payment_voice_total_seconds로 이미 적용됨. 충전 건만 여기서 처리
-    const storedTotal = sessionStorage.getItem('payment_voice_total_seconds')
-    if (storedTotal != null && storedTotal !== '' && parseInt(storedTotal, 10) > 0) return
+    // 충전 결제만 여기서 잔액 충전 처리. 연장(분) 결제는 초기 로드에서 이미 적용됨
+    const storedOption = sessionStorage.getItem('payment_voice_time_option')
+    let isChargePayment = false
+    try { isChargePayment = storedOption ? (JSON.parse(storedOption) as { charge?: boolean })?.charge === true : false } catch {}
+    if (!isChargePayment) { skipWaitChargeAppliedRef.current = true; return }
 
     ;(async () => {
       try {
@@ -1724,6 +1729,9 @@ ${seasonBlock}
                     setOutVolume(0)
                     if (isStartTurn) dccFirstTurnPlayingRef.current = false
                     stopDccPlayback(false)
+                    dccChunksRef.current = []
+                    dccLastLoudAtRef.current = Date.now()
+                    dccHadLoudSinceSendRef.current = false
                     startSilenceBreakTimerRef.current?.()
                     onPlaybackComplete?.()
                   }
@@ -1765,6 +1773,9 @@ ${seasonBlock}
             setOutVolume(0)
             if (isStartTurn) dccFirstTurnPlayingRef.current = false
             stopDccPlayback(false)
+            dccChunksRef.current = []
+            dccLastLoudAtRef.current = Date.now()
+            dccHadLoudSinceSendRef.current = false
             startSilenceBreakTimerRef.current?.()
             onPlaybackComplete?.()
           }
@@ -1938,7 +1949,7 @@ ${seasonBlock}
         dccOutVolumeIntervalRef.current = null
         setOutVolume(0)
       }
-      if (isAiSpeakingRef.current && vol > interruptThreshold) {
+      if (isAiSpeakingRef.current && vol > interruptThreshold && !isMultiContentRef.current && !dccFirstTurnPlayingRef.current) {
         const now = Date.now()
         if (dccInterruptAboveSinceRef.current === null) dccInterruptAboveSinceRef.current = now
         else if (now - dccInterruptAboveSinceRef.current >= TTS_INTERRUPT_DEBOUNCE_MS) {
@@ -1956,6 +1967,7 @@ ${seasonBlock}
     dccSilenceCheckIntervalRef.current = setInterval(() => {
       if (!dccRecordingRef.current) return
       if (dccSendingRef.current) return
+      if (isAiSpeakingRef.current) return
       const chunks = dccChunksRef.current
       const hasLoud = dccHadLoudSinceSendRef.current
       const hasEnoughQuiet = chunks.length >= DCC_MIN_CHUNKS_QUIET_FALLBACK
