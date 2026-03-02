@@ -241,10 +241,10 @@ const DCC_FILLER_PHRASES = [
 
 /** 맞장구 재생 예상 길이(ms). 이 시간 + 1초 후에 본문 TTS 시작 */
 const DCC_FILLER_DURATION_MS = 2500
-/** 다자형 화자 전환 시: 이전 context 종료 후 다음 화자 전송 전 대기(ms). done 미수신 시 fallback. 음성 겹침·끊김 방지 */
-const DCC_MULTI_CONTEXT_SWITCH_DELAY_MS = 1500
+/** 다자형 화자 전환 시: 이전 context 종료 후 다음 화자 전송 전 대기(ms). done 미수신 시 fallback. 끝문장 잘림 방지를 위해 충분히 긴 값 사용 */
+const DCC_MULTI_CONTEXT_SWITCH_DELAY_MS = 5500
 /** done 수신 후 추가 대기(ms). Cartesia가 done을 먼저 보내고 청크가 늦게 도착하는 경우 겹침 완화 */
-const DCC_MULTI_POST_DONE_BUFFER_MS = 280
+const DCC_MULTI_POST_DONE_BUFFER_MS = 400
 
 /** PCM 버퍼 → WAV base64 (청크마다 헤더 붙이면 틱틱 소리 나서, 버퍼 모아서 한 번만 씀) */
 function pcmBufferToWavBase64(pcm: Buffer, sampleRate = CARTESIA_SAMPLE_RATE, numChannels = CARTESIA_NUM_CHANNELS, bitsPerSample = CARTESIA_BITS): string {
@@ -1365,7 +1365,7 @@ ${emotionTagRule}
                     sendSegCartesia('', true)
                   }
                   // 마지막 청크 전송 후 Cartesia가 오디오 생성·전송할 시간을 주고, 전용 WS에서 done 대기 후 연결 종료
-                  await new Promise<void>((r) => setTimeout(r, 200))
+                  await new Promise<void>((r) => setTimeout(r, 600))
                   const segText = segFullText.trim()
                   segmentTexts.push(segText)
                   fullAssistantText += (fullAssistantText ? '\n\n' : '') + segText

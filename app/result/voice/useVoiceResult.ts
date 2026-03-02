@@ -439,9 +439,17 @@ export function useVoiceResult() {
             c.voice_time_options = typeof raw === 'string' ? JSON.parse(raw) : raw
           } catch { c.voice_time_options = [] }
         }
+        if (c && (c as any).multi_time_options) {
+          try {
+            const raw = (c as any).multi_time_options
+            ;(c as any).multi_time_options = typeof raw === 'string' ? JSON.parse(raw) : raw
+          } catch { (c as any).multi_time_options = [] }
+        }
 
         // 시간 결정: sessionStorage → 잔여금액으로 계산(폼에서 잔여금액으로 상담 진입) → 기본시간 → fallback 5분
-        const opts = Array.isArray(c?.voice_time_options) ? c.voice_time_options : []
+        const opts = (c?.content_type === 'multi' && Array.isArray((c as any)?.multi_time_options))
+          ? (c as any).multi_time_options
+          : (Array.isArray(c?.voice_time_options) ? c.voice_time_options : [])
         const defaultOpt = opts.find((o: any) => o?.type === 'default' || (o && Number(o?.price) === 0))
         const defaultSecs = defaultOpt ? (Number(defaultOpt.minutes || 0) * 60 + Number(defaultOpt.seconds ?? 0)) || 300 : 300
         const storedTotalSec = sessionStorage.getItem('payment_voice_total_seconds')
@@ -452,11 +460,14 @@ export function useVoiceResult() {
         } else if (storedVoiceMin && parseInt(storedVoiceMin, 10) > 0) {
           secs = parseInt(storedVoiceMin, 10) * 60
         } else {
-          // 바로이용하기(충전) 결제 후 oid로 진입한 경우: 초기 시간은 0, 별도 effect에서 충전 적용
+          // [원인] 바로이용하기(충전) 결제 후 oid로 진입 시, 기존에는 무조건 secs=0으로 두어 우측 상단 0:00 표시 + remainingSeconds<=0 으로 자동연결/재생 불가.
+          // [결과] 충전 진입(voice_entered_by_100 + oid)이면 반드시 (1) 콘텐츠 charge 옵션 분:초 사용, (2) 없거나 0이면 폼에서 저장한 payment_voice_minutes로 보정.
           const urlOid = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oid') : null
           const skipWaitWithOid = sessionStorage.getItem('voice_entered_by_100') && urlOid
           if (skipWaitWithOid) {
-            secs = 0
+            const chargeOpt = opts.find((o: any) => o?.type === 'charge')
+            secs = chargeOpt != null ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0) : 0
+            if (secs <= 0 && storedVoiceMin && parseInt(storedVoiceMin, 10) > 0) secs = parseInt(storedVoiceMin, 10) * 60
           } else {
           // sessionStorage에 시간 없음: 잔여금액으로 상담 진입 시 balance에서 이용시간 계산
           const phone = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
@@ -636,7 +647,9 @@ export function useVoiceResult() {
           setBalanceWan(chargeData.balance_wan)
         }
 
-        const opts = contentData?.voice_time_options && Array.isArray(contentData.voice_time_options) ? contentData.voice_time_options : []
+        const opts = (contentData?.content_type === 'multi' && Array.isArray((contentData as any)?.multi_time_options))
+          ? (contentData as any).multi_time_options
+          : (contentData?.voice_time_options && Array.isArray(contentData.voice_time_options) ? contentData.voice_time_options : [])
         const chargeOpt = (opts as any[]).find((o: any) => o?.type === 'charge')
         const addSec = chargeOpt != null ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0) : 0
         if (addSec > 0) {
