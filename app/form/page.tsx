@@ -724,6 +724,18 @@ function FormContent() {
         const rem = typeof data.remaining_seconds === 'number' ? data.remaining_seconds : 0
         const wan = typeof data.balance_wan === 'number' ? data.balance_wan : 0
         if (wan > 0 && rem <= 0) {
+          const tOpts = content?.content_type === 'multi'
+            ? (Array.isArray((content as any).multi_time_options) ? (content as any).multi_time_options : [])
+            : (Array.isArray(content?.voice_time_options) ? content.voice_time_options : [])
+          const cOpt = tOpts.find((o: any) => o?.type === 'charge')
+          const rW = cOpt != null ? Math.max(1, Number(cOpt.rate_won) || 0) : 0
+          const rS = cOpt != null ? Math.max(1, Number(cOpt.rate_seconds) || 0) : 0
+          const usableSec = rW > 0 && rS > 0 ? Math.floor(wan / rW) * rS : 0
+          if (usableSec > 0) {
+            setVoiceBalanceWan(wan)
+            setVoiceRemainingSeconds(0)
+            return
+          }
           try {
             await fetch('/api/voice/balance', {
               method: 'POST',
@@ -758,15 +770,27 @@ function FormContent() {
           const rem = typeof data.remaining_seconds === 'number' ? data.remaining_seconds : 0
           const wan = typeof data.balance_wan === 'number' ? data.balance_wan : 0
           if (wan > 0 && rem <= 0) {
-            try {
-              await fetch('/api/voice/balance', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'drain_balance', contentId: content.id, phone }),
-              })
-            } catch { /* ignore */ }
-            setVoiceBalanceWan(0)
-            setVoiceRemainingSeconds(0)
+            const tOpts = content?.content_type === 'multi'
+              ? (Array.isArray((content as any).multi_time_options) ? (content as any).multi_time_options : [])
+              : (Array.isArray(content?.voice_time_options) ? content.voice_time_options : [])
+            const cOpt = tOpts.find((o: any) => o?.type === 'charge')
+            const rW = cOpt != null ? Math.max(1, Number(cOpt.rate_won) || 0) : 0
+            const rS = cOpt != null ? Math.max(1, Number(cOpt.rate_seconds) || 0) : 0
+            const usableSec = rW > 0 && rS > 0 ? Math.floor(wan / rW) * rS : 0
+            if (usableSec > 0) {
+              setVoiceBalanceWan(wan)
+              setVoiceRemainingSeconds(0)
+            } else {
+              try {
+                await fetch('/api/voice/balance', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'drain_balance', contentId: content.id, phone }),
+                })
+              } catch { /* ignore */ }
+              setVoiceBalanceWan(0)
+              setVoiceRemainingSeconds(0)
+            }
           } else {
             if (typeof data.remaining_seconds === 'number') setVoiceRemainingSeconds(Math.max(0, data.remaining_seconds))
             if (typeof data.balance_wan === 'number') setVoiceBalanceWan(data.balance_wan)
@@ -4036,7 +4060,11 @@ function FormContent() {
         sessionStorage.setItem('voice_pay_amount', String(optionToUse.price))
         sessionStorage.setItem('voice_entered_by_100', '1')
         sessionStorage.setItem('payment_voice_minutes', String(skipWaitOption.minutes))
-        sessionStorage.setItem('payment_voice_total_seconds', String(totalSeconds))
+        if (totalSeconds > 0) {
+          sessionStorage.setItem('payment_voice_total_seconds', String(totalSeconds))
+        } else {
+          sessionStorage.removeItem('payment_voice_total_seconds')
+        }
         sessionStorage.setItem('payment_voice_time_option', JSON.stringify(skipWaitOption))
         sessionStorage.removeItem('voice_time_expired')
         sessionStorage.setItem('payment_user_gender', gender || '')
@@ -4272,7 +4300,11 @@ function FormContent() {
         sessionStorage.setItem('payment_password', password)
         sessionStorage.setItem('voice_entered_by_100', '1')
         sessionStorage.setItem('payment_voice_minutes', String(skipWaitOption.minutes))
-        sessionStorage.setItem('payment_voice_total_seconds', String(totalSeconds))
+        if (totalSeconds > 0) {
+          sessionStorage.setItem('payment_voice_total_seconds', String(totalSeconds))
+        } else {
+          sessionStorage.removeItem('payment_voice_total_seconds')
+        }
         sessionStorage.setItem('payment_voice_time_option', JSON.stringify(skipWaitOption))
         sessionStorage.setItem('payment_user_gender', gender || '')
         sessionStorage.setItem('payment_user_calendar_type', calendarType || 'solar')

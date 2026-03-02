@@ -275,7 +275,7 @@ export class AudioStreamer {
         }
         this.isPlaying = false
         this.onComplete()
-      }, 2500)
+      }, 120_000)
     }
   }
 

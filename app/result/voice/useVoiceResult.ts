@@ -443,11 +443,11 @@ export function useVoiceResult() {
         const defaultOpt = opts.find((o: any) => o?.type === 'default' || (o && Number(o?.price) === 0))
         const defaultSecs = defaultOpt ? (Number(defaultOpt.minutes || 0) * 60 + Number(defaultOpt.seconds ?? 0)) || 300 : 300
         const storedTotalSec = sessionStorage.getItem('payment_voice_total_seconds')
+        const storedTotalSecNum = storedTotalSec != null ? parseInt(storedTotalSec, 10) : NaN
         let secs = 300
-        if (storedTotalSec) {
-          const n = parseInt(storedTotalSec, 10)
-          if (Number.isFinite(n) && n > 0) secs = n
-        } else if (storedVoiceMin) {
+        if (Number.isFinite(storedTotalSecNum) && storedTotalSecNum > 0) {
+          secs = storedTotalSecNum
+        } else if (storedVoiceMin && parseInt(storedVoiceMin, 10) > 0) {
           secs = parseInt(storedVoiceMin, 10) * 60
         } else {
           // 바로이용하기(충전) 결제 후 oid로 진입한 경우: 초기 시간은 0, 별도 effect에서 충전 적용
@@ -1736,7 +1736,7 @@ ${seasonBlock}
                   dccStreamerRef.current.complete()
                   safetyTimeout = setTimeout(() => {
                     if (!dccCompleteFired) onDone()
-                  }, 2000)
+                  }, 120_000)
                 }
               }
             } catch {
@@ -1777,7 +1777,7 @@ ${seasonBlock}
           dccStreamerRef.current.complete()
           safetyTimeout = setTimeout(() => {
             if (!dccCompleteFired) onDone()
-          }, 2000)
+          }, 120_000)
         }
         // 스트리머 없이 오디오만 받은 경우(또는 onComplete 미연결) 파형 반드시 정리
         if (receivedAudio && dccOutVolumeIntervalRef.current && !dccCompletionWired) {
