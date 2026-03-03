@@ -221,7 +221,7 @@ export function useVoiceResult() {
   const [muted, setMuted] = useState(false)
   const [inVolume, setInVolume] = useState(0)
   const [outVolume, setOutVolume] = useState(0)
-  const [micSensitivity, setMicSensitivity] = useState(85) // 0=낮음, 100=높음 (기본 85로 목소리 감지 쉽게)
+  const [micSensitivity, setMicSensitivity] = useState(50) // 0=낮음, 100=높음 (기본 50)
   const [messages, setMessages] = useState<Msg[]>([])
 
   /** 다자형: 현재 말하는 화자 인덱스 0|1|2. DCC/API에서 화자 전환 시 setCurrentSpeakerIndex 호출 예정 */
@@ -3554,6 +3554,12 @@ ${seasonBlock}
     return `${m}:${String(s).padStart(2, '0')}`
   }, [])
 
+  /** 마지막 사용자 발화(STT) 텍스트 — 마이크 민감도 아래 라운드 박스 표시용 */
+  const lastUserSttText = useMemo(() => {
+    const userMsgs = messages.filter((m) => m.role === 'user')
+    return userMsgs.length > 0 ? userMsgs[userMsgs.length - 1].text : ''
+  }, [messages])
+
   return {
     loading,
     error,
@@ -3568,6 +3574,7 @@ ${seasonBlock}
     micSensitivity,
     setMicSensitivity,
     messages,
+    lastUserSttText,
     totalSeconds,
     remainingSeconds,
     showExtendPopup,

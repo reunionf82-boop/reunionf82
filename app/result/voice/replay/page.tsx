@@ -27,7 +27,7 @@ interface VoiceResult {
 /** 나의 이용내역 다시보기: 내담자 이름은 실제 입력 여부와 관계없이 "나"로만 표시 */
 const REPLAY_USER_LABEL = '나'
 
-/** 상담사(성수올령 등) 메시지에서 [laughter], [sigh] 등 감정/동작 태그 제거 */
+/** TTS 연출 특수 태그 [laughter], [hmm], [sigh] 등 제거 — 나/상담사 모두 표시 시 제외 */
 function stripEmotionTags(text: string): string {
   if (!text || typeof text !== 'string') return text
   return text.replace(/\s*\[[^\]]*\]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim()
@@ -360,6 +360,7 @@ function VoiceReplayContent() {
               return filtered
             })().map((msg, idx) => {
               const isAssistant = msg.role === 'assistant'
+              const displayText = stripEmotionTags(msg.text)
               return (
                 <div key={idx} className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}>
                   <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${
@@ -371,7 +372,7 @@ function VoiceReplayContent() {
                       {isAssistant ? (result.voice_counselor_name || '상담사') : REPLAY_USER_LABEL}
                     </p>
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {isAssistant ? stripEmotionTags(msg.text) : msg.text}
+                      {displayText}
                     </p>
                   </div>
                 </div>

@@ -669,12 +669,19 @@ export default function VoiceResultContent() {
             type="range"
             min={0}
             max={100}
-            value={h.micSensitivity ?? 85}
+            value={h.micSensitivity ?? 50}
             onChange={(e) => h.setMicSensitivity?.(Number(e.target.value))}
             className="flex-1 min-w-0 h-2 rounded-full appearance-none bg-gray-200 accent-violet-500"
           />
-          <span className="text-gray-400 text-xs shrink-0 tabular-nums">{h.micSensitivity ?? 85}%</span>
+          <span className="text-gray-400 text-xs shrink-0 tabular-nums">{h.micSensitivity ?? 50}%</span>
         </div>
+
+        {/* 내가 말한 STT 텍스트 */}
+        {(h.lastUserSttText ?? '').trim() ? (
+          <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 min-w-0">
+            <p className="text-gray-700 text-sm break-words">{h.lastUserSttText}</p>
+          </div>
+        ) : null}
 
         {/* 사주 만세력 (접기/펼치기) — 마이크 민감도 아래, 8006/무료속성이 아닐 때만 표시 */}
         {!isPpoingAttributes(h.contentData) && (
