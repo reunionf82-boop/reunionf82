@@ -13,15 +13,7 @@ export interface VoiceTimeOptionDefault {
   price: number
   label: string
 }
-/** 시간연장: 보이스 화면에서 상담시간 연장 시 선택하는 유료 옵션 */
-export interface VoiceTimeOptionExtension {
-  type: 'extension'
-  minutes: number
-  seconds?: number
-  price: number
-  label: string
-}
-/** 충전시간: 분:초 + 충전 1회 가격 + 차감 단위(N초당 M원) */
+/** 충전시간: 분:초 + 충전 1회 가격 + 차감 단위(N초당 M원). 추천상품이면 폼에서 디폴트 선택 */
 export interface VoiceTimeOptionCharge {
   type: 'charge'
   minutes: number
@@ -31,13 +23,10 @@ export interface VoiceTimeOptionCharge {
   label?: string
   rate_seconds: number
   rate_won: number
+  /** 어드민에서 추천상품 체크 시 true. 폼에서 디폴트 라디오 선택 */
+  recommended?: boolean
 }
-export type VoiceTimeOption = VoiceTimeOptionDefault | VoiceTimeOptionExtension | VoiceTimeOptionCharge
-
-/** 레거시: type 없이 저장된 항목은 extension으로 간주 */
-export function isExtensionOption(o: any): o is VoiceTimeOptionExtension {
-  return o?.type === 'extension' || (o && o.type != 'default' && o.type != 'charge' && typeof o?.price === 'number')
-}
+export type VoiceTimeOption = VoiceTimeOptionDefault | VoiceTimeOptionCharge
 export function isDefaultOption(o: any): o is VoiceTimeOptionDefault {
   return o?.type === 'default'
 }
@@ -186,8 +175,7 @@ const INITIAL_FORM: VoiceFormData = {
   voice_conversation_sound_probability_pct: 5,
   voice_time_options: [
     { type: 'default', minutes: 5, seconds: 0, price: 0, label: '5분(무료)' },
-    { type: 'extension', minutes: 5, seconds: 0, price: 3000, label: '5분 연장' },
-    { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19 },
+    { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19, recommended: true },
   ],
   voice_pitch: '',
   voice_speaking_rate: '',
@@ -306,8 +294,7 @@ export function useVoiceForm() {
         const timeOpts = c.voice_time_options
         let parsedTimeOpts: VoiceTimeOption[] = [
           { type: 'default', minutes: 5, seconds: 0, price: 0, label: '5분(무료)' },
-          { type: 'extension', minutes: 5, seconds: 0, price: 3000, label: '5분 연장' },
-          { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19 },
+          { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19, recommended: true },
         ]
         if (timeOpts) {
           try {
@@ -315,7 +302,7 @@ export function useVoiceForm() {
             if (Array.isArray(arr) && arr.length > 0) {
               const normalized: VoiceTimeOption[] = []
               let hasDefault = false
-              let hasCharge = false
+              const chargeOpts: VoiceTimeOptionCharge[] = []
               for (const o of arr) {
                 if (o?.type === 'default' || (o && (o.price === 0 || o.price === '0') && !hasDefault)) {
                   normalized.push({
@@ -327,7 +314,7 @@ export function useVoiceForm() {
                   })
                   hasDefault = true
                 } else if (o?.type === 'charge' || (o?.rate_seconds != null && o?.rate_won != null)) {
-                  normalized.push({
+                  chargeOpts.push({
                     type: 'charge',
                     minutes: Math.max(0, parseInt(o?.minutes, 10) || 11),
                     seconds: Math.min(59, Math.max(0, parseInt(o?.seconds, 10) || 0)),
@@ -335,23 +322,33 @@ export function useVoiceForm() {
                     label: String(o?.label ?? '').trim() || undefined,
                     rate_seconds: Math.max(1, parseInt(o?.rate_seconds, 10) || 12),
                     rate_won: Math.max(1, parseInt(o?.rate_won, 10) || 19),
+                    recommended: !!o?.recommended,
                   })
-                  hasCharge = true
                 } else {
-                  normalized.push({
-                    type: 'extension',
-                    minutes: Math.max(0, parseInt(o?.minutes, 10) || 0),
+                  // 레거시 extension → charge로 변환 (기본 차감 단위)
+                  chargeOpts.push({
+                    type: 'charge',
+                    minutes: Math.max(0, parseInt(o?.minutes, 10) || 5),
                     seconds: Math.min(59, Math.max(0, parseInt(o?.seconds, 10) || 0)),
-                    price: parseInt(o?.price, 10) || 0,
-                    label: String(o?.label ?? '').trim() || '0분',
+                    price: Math.max(0, parseInt(o?.price, 10) || 3000),
+                    label: String(o?.label ?? '').trim() || undefined,
+                    rate_seconds: 12,
+                    rate_won: 19,
+                    recommended: false,
                   })
                 }
               }
               if (!hasDefault) {
-                normalized.unshift({ type: 'default', minutes: 5, seconds: 0, price: 0, label: '5분(무료)' })
+                normalized.push({ type: 'default', minutes: 5, seconds: 0, price: 0, label: '5분(무료)' })
               }
-              if (!hasCharge) {
-                normalized.push({ type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19 })
+              if (chargeOpts.length > 0) {
+                const hasAnyRecommended = chargeOpts.some((c) => c.recommended)
+                chargeOpts.forEach((c, i) => {
+                  if (!hasAnyRecommended && i === 0) (c as VoiceTimeOptionCharge).recommended = true
+                  normalized.push(c)
+                })
+              } else {
+                normalized.push({ type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19, recommended: true })
               }
               parsedTimeOpts = normalized
             }
@@ -590,35 +587,57 @@ export function useVoiceForm() {
     setShowHtmlPreview(true)
   }
 
-  // 시간 상품 관리: 기본시간(1개) / 시간연장(N개) / 충전시간(1개)
+  // 시간 상품 관리: 기본시간(1개) / 충전시간(N개, 추가·삭제 가능, 추천상품 체크)
   const addTimeOption = () => {
+    const firstCharge = form.voice_time_options.find((o: any) => o?.type === 'charge') as any
+    const rateSeconds = firstCharge != null && Number(firstCharge.rate_seconds) > 0 ? Number(firstCharge.rate_seconds) : 12
+    const rateWon = firstCharge != null && Number(firstCharge.rate_won) > 0 ? Number(firstCharge.rate_won) : 19
     setForm((f) => ({
       ...f,
-      voice_time_options: [...f.voice_time_options, { type: 'extension', minutes: 5, seconds: 0, price: 3000, label: '5분 연장' }],
+      voice_time_options: [...f.voice_time_options, { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: rateSeconds, rate_won: rateWon, recommended: false }],
     }))
   }
   const removeTimeOption = (index: number) => {
     setForm((f) => {
       const opt = f.voice_time_options[index]
-      if (opt && (opt as any).type !== 'extension') return f // 기본시간·충전시간은 삭제 불가
+      if (opt && (opt as any).type === 'default') return f // 기본시간은 삭제 불가
       return { ...f, voice_time_options: f.voice_time_options.filter((_, i) => i !== index) }
     })
   }
-  const updateTimeOption = (index: number, key: string, value: string | number) => {
+  const updateTimeOption = (index: number, key: string, value: string | number | boolean) => {
     setForm((f) => {
       const opts = [...f.voice_time_options]
       const o = opts[index] as any
       if (!o) return f
       if (o.type === 'default') {
         opts[index] = { ...o, [key]: key === 'minutes' || key === 'seconds' || key === 'price' ? Number(value) : value }
-      } else if (o.type === 'extension') {
-        opts[index] = { ...o, [key]: key === 'minutes' || key === 'seconds' || key === 'price' ? Number(value) : value }
       } else if (o.type === 'charge') {
-        if (key === 'rate_seconds' || key === 'rate_won' || key === 'price' || key === 'minutes' || key === 'seconds') opts[index] = { ...o, [key]: Number(value) }
-        else opts[index] = { ...o, [key]: value }
+        if (key === 'recommended') {
+          const recommended = value === true || value === 1 || value === '1'
+          opts[index] = { ...o, recommended }
+          if (recommended) {
+            opts.forEach((opt, i) => {
+              if (i !== index && (opt as any).type === 'charge') (opts[i] as any).recommended = false
+            })
+          }
+        } else if (key === 'price' || key === 'minutes' || key === 'seconds') {
+          opts[index] = { ...o, [key]: Number(value) }
+        } else {
+          opts[index] = { ...o, [key]: value }
+        }
       }
       return { ...f, voice_time_options: opts }
     })
+  }
+
+  /** 충전시간 상품 공통: 차감주기·차감금액을 모든 charge 옵션에 일괄 적용 */
+  const updateChargeRateCommon = (key: 'rate_seconds' | 'rate_won', value: number) => {
+    setForm((f) => ({
+      ...f,
+      voice_time_options: f.voice_time_options.map((o) =>
+        (o as any).type === 'charge' ? { ...o, [key]: value } : o
+      ),
+    }))
   }
 
   const addConversationSound = () => {
@@ -734,10 +753,8 @@ export function useVoiceForm() {
   const handleSave = async () => {
     if (!form.content_name?.trim()) { alert('컨텐츠명을 입력하세요.'); return }
     const hasDefault = form.voice_time_options.some((o: any) => o?.type === 'default')
-    const hasExtension = form.voice_time_options.some((o: any) => o?.type === 'extension')
-    const hasCharge = form.voice_time_options.some((o: any) => o?.type === 'charge')
-    if (!hasDefault || !hasCharge) { alert('기본시간과 충전시간 설정이 필요합니다.'); return }
-    if (!hasExtension) { alert('시간연장 옵션을 1개 이상 추가하세요.'); return }
+    const chargeOpts = form.voice_time_options.filter((o: any) => o?.type === 'charge')
+    if (!hasDefault || chargeOpts.length === 0) { alert('기본시간과 충전시간 옵션을 1개 이상 설정하세요.'); return }
     setSaving(true)
     try {
       const { show_exposed, voice_advisor_video_urls, ...rest } = form
@@ -816,7 +833,7 @@ export function useVoiceForm() {
     handleOpenContentImagesModal, handleContentImageUpload,
     handleRemoveContentImage, handleCloseContentImagesModal,
     handleOpenHtmlPreview, setShowHtmlPreview,
-    addTimeOption, removeTimeOption, updateTimeOption,
+    addTimeOption, removeTimeOption, updateTimeOption, updateChargeRateCommon,
     addConversationSound, removeConversationSound, updateConversationSound, handleConversationSoundFileUpload,
     updateCartesiaConfig,
     addCartesiaVoice, removeCartesiaVoice, updateCartesiaVoiceEntry, previewCartesiaVoice,

@@ -356,17 +356,22 @@ export function useVoiceResult() {
   const saveRemainingPromiseRef = useRef<Promise<void> | null>(null)
   /** 충전형(잔여 저장) 진입 여부 — 음성 종료 팝업 문구 분기용 + disconnectInternal에서 save_remaining 여부 판단 */
   const [isVoiceSessionChargeType, setIsVoiceSessionChargeType] = useState(false)
+  /** 무료시작 등 기본시간(type: default) 진입 여부 — 종료 팝업에 "잔여시간 소멸" 안내 표시용 + save_remaining 제외(휘발) */
+  const [isDefaultTimeOptionSession, setIsDefaultTimeOptionSession] = useState(false)
+  const isDefaultTimeOptionSessionRef = useRef(false)
   const isChargeSessionRef = useRef(false)
   useEffect(() => {
     if (typeof window === 'undefined') return
     const opt = sessionStorage.getItem('payment_voice_time_option')
     let isCharge = false
+    let isDefault = false
     try {
       if (opt) {
         const parsed = JSON.parse(opt) as { charge?: boolean; type?: string }
         const t = parsed?.type
         if (t === 'default' || t === 'extension') {
           isCharge = false
+          if (t === 'default') isDefault = true
         } else {
           isCharge = parsed?.charge === true || t === 'charge'
         }
@@ -375,7 +380,9 @@ export function useVoiceResult() {
     const fromRemaining = sessionStorage.getItem('voice_session_charge_type') === '1'
     const shouldSave = !!(isCharge || fromRemaining)
     isChargeSessionRef.current = shouldSave
+    isDefaultTimeOptionSessionRef.current = isDefault
     setIsVoiceSessionChargeType(shouldSave)
+    setIsDefaultTimeOptionSession(isDefault)
   }, [])
   /** 이번 세션에서 안부로 물어본 항목 ref (저장 시 injected_summary_item_refs로 전달해 재질문 방지) */
   const injectedSummaryItemRefsRef = useRef<string[]>([])
@@ -508,13 +515,27 @@ export function useVoiceResult() {
           secs = parseInt(storedVoiceMin, 10) * 60
         } else {
           // [원인] 바로이용하기(충전) 결제 후 oid로 진입 시, 기존에는 무조건 secs=0으로 두어 우측 상단 0:00 표시 + remainingSeconds<=0 으로 자동연결/재생 불가.
-          // [결과] 충전 진입(voice_entered_by_100 + oid)이면 반드시 (1) 콘텐츠 charge 옵션 분:초 사용, (2) 없거나 0이면 폼에서 저장한 payment_voice_minutes로 보정.
+          // [결과] 충전 진입(voice_entered_by_100 + oid)이면 (1) 저장된 선택 옵션(payment_voice_time_option) 분:초 우선 사용 → (2) 없으면 콘텐츠 첫 charge 옵션 → (3) payment_voice_minutes 보정.
           const urlOid = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oid') : null
           const skipWaitWithOid = sessionStorage.getItem('voice_entered_by_100') && urlOid
           if (skipWaitWithOid) {
-            const chargeOpt = opts.find((o: any) => o?.type === 'charge')
-            secs = chargeOpt != null ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0) : 0
-            if (secs <= 0 && storedVoiceMin && parseInt(storedVoiceMin, 10) > 0) secs = parseInt(storedVoiceMin, 10) * 60
+            let secsFromStored = 0
+            try {
+              const storedOptionRaw = sessionStorage.getItem('payment_voice_time_option')
+              if (storedOptionRaw) {
+                const parsed = JSON.parse(storedOptionRaw) as { type?: string; charge?: boolean; minutes?: number; seconds?: number }
+                if (parsed?.charge === true || parsed?.type === 'charge') {
+                  secsFromStored = (Number(parsed.minutes) || 0) * 60 + (Number(parsed.seconds) ?? 0)
+                }
+              }
+            } catch { /* ignore */ }
+            if (secsFromStored > 0) {
+              secs = secsFromStored
+            } else {
+              const chargeOpt = opts.find((o: any) => o?.type === 'charge')
+              secs = chargeOpt != null ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0) : 0
+              if (secs <= 0 && storedVoiceMin && parseInt(storedVoiceMin, 10) > 0) secs = parseInt(storedVoiceMin, 10) * 60
+            }
           } else {
           // sessionStorage에 시간 없음: 잔여금액으로 상담 진입 시 balance에서 이용시간 계산
           const phone = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
@@ -694,11 +715,23 @@ export function useVoiceResult() {
           setBalanceWan(chargeData.balance_wan)
         }
 
-        const opts = (contentData?.content_type === 'multi' && Array.isArray((contentData as any)?.multi_time_options))
-          ? (contentData as any).multi_time_options
-          : (contentData?.voice_time_options && Array.isArray(contentData.voice_time_options) ? contentData.voice_time_options : [])
-        const chargeOpt = (opts as any[]).find((o: any) => o?.type === 'charge')
-        const addSec = chargeOpt != null ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0) : 0
+        // 사용자가 결제한 충전 상품(저장된 옵션)의 분·초 사용. 첫 번째 charge 옵션이 아니라 실제 선택한 옵션으로 시간 부여
+        let addSec = 0
+        try {
+          if (storedOption) {
+            const parsed = JSON.parse(storedOption) as { type?: string; charge?: boolean; minutes?: number; seconds?: number }
+            if (parsed?.charge === true || parsed?.type === 'charge') {
+              addSec = (Number(parsed.minutes) || 0) * 60 + (Number(parsed.seconds) ?? 0)
+            }
+          }
+        } catch { /* ignore */ }
+        if (addSec <= 0) {
+          const opts = (contentData?.content_type === 'multi' && Array.isArray((contentData as any)?.multi_time_options))
+            ? (contentData as any).multi_time_options
+            : (contentData?.voice_time_options && Array.isArray(contentData.voice_time_options) ? contentData.voice_time_options : [])
+          const chargeOpt = (opts as any[]).find((o: any) => o?.type === 'charge')
+          addSec = chargeOpt != null ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0) : 0
+        }
         if (addSec > 0) {
           extendSuccessTimeAddedOidsRef.current.add(oid)
           setRemainingSeconds(addSec)
@@ -723,8 +756,9 @@ export function useVoiceResult() {
     // 약간의 딜레이 후 자동 연결 (렌더링 안정화)
     const t = setTimeout(() => { connect() }, 500)
     return () => clearTimeout(t)
+    // remainingSeconds 포함: oid 등으로 시간이 나중에 설정되는 경우에도 한 번 더 시도해 연결 누락 방지(모바일 빈 화면 버그)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, contentData])
+  }, [loading, contentData, remainingSeconds])
 
   /* ── 페이지 이탈 시 대화 저장 (뒤로가기, 탭 닫기 등) ── */
   useEffect(() => {
@@ -1533,9 +1567,9 @@ ${seasonBlock}
 
   /* ── 내부 disconnect ───────────────────── */
   const saveConversationRef = useRef<() => Promise<void>>()
-  const disconnectInternalRef = useRef<((skipSave?: boolean) => void) | null>(null)
+  const disconnectInternalRef = useRef<((skipSave?: boolean, remainingSecOverride?: number) => void) | null>(null)
 
-  function disconnectInternal(skipSave = false) {
+  function disconnectInternal(skipSave = false, remainingSecOverride?: number) {
     // 나가기/종료 시 항상 모든 TTS·재생 즉시 중지 (저장 후 폼 이동해도 소리 계속 나는 현상 방지)
     stopAllTTSRef.current()
     manualDisconnectRef.current = true
@@ -1582,11 +1616,13 @@ ${seasonBlock}
     if (!skipSave && !conversationSavedRef.current) {
       setTimeout(() => { saveConversationRef.current?.() }, 100)
     }
-    // 충전형만 잔여시간 DB 저장 (기본시간/시간연장은 소멸형이므로 저장하지 않음)
-    const sec = remainingSecondsRef.current
+    // 충전형만 잔여시간 DB 저장 (무료시작/기본시간은 소멸형 → 휘발, 저장하지 않음)
+    // 표시된 남은 시간 사용(override). 없으면 ref 사용(종료 버튼에서 나갈 때 화면값 전달로 ref 지연 반영 방지)
+    const sec = remainingSecOverride != null ? remainingSecOverride : remainingSecondsRef.current
     const cid = contentIdRef.current
     const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
-    const shouldSaveRemaining = isChargeSessionRef.current || enteredWithBalanceRef.current || useBalanceModeRef.current
+    const isDefaultSession = isDefaultTimeOptionSessionRef.current
+    const shouldSaveRemaining = !isDefaultSession && (isChargeSessionRef.current || enteredWithBalanceRef.current || useBalanceModeRef.current)
     if (sec > 0 && cid && phone && shouldSaveRemaining) {
       saveRemainingPromiseRef.current = fetch('/api/voice/balance', {
         method: 'POST',
@@ -2776,8 +2812,8 @@ ${seasonBlock}
   }, [contentData, contentData?.voice_provider, systemAndContext, model, voiceName, muted, silenceBreakSecs, startFailoverCheckInterval, startTimer, startBalanceDeductIntervalIfNeeded, clearSilenceTimer, sendSilenceBreak, sendDccTurn])
 
   /* ── disconnect ─────────────────────────── */
-  const disconnect = useCallback(async () => {
-    disconnectInternal(true) // skipSave=true, 직접 saveConversation 호출
+  const disconnect = useCallback(async (remainingSecOverride?: number) => {
+    disconnectInternal(true, remainingSecOverride) // skipSave=true, 직접 saveConversation 호출. 종료 시 화면 잔여초 전달
     // disconnect 후 바로 saveConversation 실행 (await으로 완료 대기)
     if (!conversationSavedRef.current) {
       await saveConversationRef.current?.()
@@ -3537,7 +3573,7 @@ ${seasonBlock}
     setShowExitConfirmPopup(false)
     setIsNavigatingAway(true)
     stopAllTTSRef.current()
-    await disconnect()
+    await disconnect(remainingSeconds)
     try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
     const p = saveRemainingPromiseRef.current
     saveRemainingPromiseRef.current = null
@@ -3545,7 +3581,7 @@ ${seasonBlock}
       await p
     }
     router.push(getFormUrl())
-  }, [disconnect, router, getFormUrl])
+  }, [disconnect, router, getFormUrl, remainingSeconds])
 
   /* ── 시간 포맷 ──────────────────────────── */
   const formatTime = useCallback((sec: number) => {
@@ -3622,6 +3658,7 @@ ${seasonBlock}
     handleExitConfirmContinue,
     handleExitConfirmExit,
     isVoiceSessionChargeType,
+    isDefaultTimeOptionSession,
     // Deepgram+Claude+Cartesia 턴 기반
     isDccProvider,
     dccRecording,

@@ -37,15 +37,32 @@ function VoiceAdvisorVideoBlock({ rawVideoUrl }: { rawVideoUrl?: string }) {
   const [currentIdx, setCurrentIdx] = useState(0)
   const videoRef0 = useRef<HTMLVideoElement>(null)
   const videoRef1 = useRef<HTMLVideoElement>(null)
+  const loadRetryCountRef = useRef(0)
+  const LOAD_RETRY_MAX = 2
 
   useEffect(() => {
     if (shuffledUrls.length === 0) return
     const v = videoRef0.current
     if (!v) return
-    v.src = shuffledUrls[0]
+    const src = shuffledUrls[0]
+    v.src = src
     v.play().catch(() => {})
     setActiveSlot(0)
     setCurrentIdx(0)
+    const onError = () => {
+      if (loadRetryCountRef.current >= LOAD_RETRY_MAX) return
+      loadRetryCountRef.current += 1
+      setTimeout(() => {
+        if (v && src) {
+          v.src = ''
+          v.src = src
+          v.load()
+          v.play().catch(() => {})
+        }
+      }, 1500)
+    }
+    v.addEventListener('error', onError, { once: true })
+    return () => v.removeEventListener('error', onError)
   }, [shuffledUrls])
 
   const goNext = useCallback(() => {
@@ -522,7 +539,7 @@ function AudioEqualizer({
     <canvas
       ref={canvasRef}
       className="w-full"
-      style={{ height: 120, background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)' }}
+      style={{ height: 72, background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)' }}
     />
   )
 }
@@ -610,22 +627,8 @@ export default function VoiceResultContent() {
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm">{h.error}</div>
         ) : null}
 
-        {/* 잔여금액 (0원일 때는 표시하지 않음. 메인 화면 상시 표시) */}
-        {(() => {
-          const chargeOpt = Array.isArray(h.contentData?.voice_time_options) ? (h.contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
-          if (!chargeOpt) return null
-          const bal = h.balanceWan ?? 0
-          if (bal <= 0) return null
-          const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
-          const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
-          const rateText = rateSeconds > 0 && rateWon > 0 ? ` (차감주기 ${rateSeconds}초당 ${rateWon}원)` : ''
-          return (
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
-              잔여금액 <span className="font-bold text-violet-600">{bal.toLocaleString()}원</span>
-              {rateText}
-            </div>
-          )
-        })()}
+        {/* 잔여금액 라운드 박스: 표시하지 않음 */}
+        {null}
 
         {/* 상담사 영상: 복수 시 세션당 하나 랜덤 선택 후 해당 동영상만 반복 재생. DCC 음성과 동시 재생 시 메인 스레드/GPU 경쟁 완화 위해 레이어 분리 */}
         {h.contentData?.content_type === 'multi' ? (
@@ -677,11 +680,20 @@ export default function VoiceResultContent() {
         </div>
 
         {/* 내가 말한 STT 텍스트 */}
-        {(h.lastUserSttText ?? '').trim() ? (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 min-w-0">
-            <p className="text-gray-700 text-sm break-words">{h.lastUserSttText}</p>
-          </div>
-        ) : null}
+        {(() => {
+          const raw = (h.lastUserSttText ?? '').trim()
+          const displayText = raw === '[시작]' ? '(내 말풍선)' : raw
+          return displayText ? (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 min-w-0">
+              <p className="text-gray-700 text-sm break-words">{displayText}</p>
+            </div>
+          ) : null
+        })()}
+
+        {/* 음성 서비스 이용 안내 */}
+        <p className="text-gray-500 text-xs leading-relaxed text-center">
+          음성 서비스 이용 중에는 다른 작동(화면캡쳐/리프레시/통화 등)을 하지 마세요. 네트워크 단절 현상이 발생할 수 있습니다.
+        </p>
 
         {/* 사주 만세력 (접기/펼치기) — 마이크 민감도 아래, 8006/무료속성이 아닐 때만 표시 */}
         {!isPpoingAttributes(h.contentData) && (
@@ -1066,9 +1078,13 @@ export default function VoiceResultContent() {
             </div>
 
             <div className="p-6">
-              {!h.isVoiceSessionChargeType && (
+              {h.isVoiceSessionChargeType && !h.isDefaultTimeOptionSession ? (
                 <p className="text-gray-700 text-base mb-5">
-                  잔여시간은 종료 후 소멸됩니다.
+                  잔여 이용 가능 시간은 저장되며 언제든지 이어서 할 수 있습니다.
+                </p>
+              ) : (
+                <p className="text-gray-700 text-base mb-5">
+                  무료 이용 중 잔여시간은 종료 시 소멸됩니다.
                 </p>
               )}
               <div className="flex flex-row flex-nowrap items-center gap-3">

@@ -196,6 +196,7 @@ function FormContent() {
     if (typeof window === 'undefined') return
     const flag = sessionStorage.getItem('voice_came_to_form')
     if (flag !== '1') return
+    sessionStorage.setItem('voice_refetch_balance', '1')
     sessionStorage.removeItem('voice_came_to_form')
     history.pushState({ voiceCameToForm: true }, '', window.location.href)
     const onPopState = () => {
@@ -660,7 +661,7 @@ function FormContent() {
   // 바로이용하기(100원 결제) 팝업
   const [showSkipWaitPopup, setShowSkipWaitPopup] = useState(false)
   /** 바로이용하기 팝업에서 선택한 시간 옵션 (보이스 연장과 동일: extension 또는 charge) */
-  const [selectedSkipWaitOption, setSelectedSkipWaitOption] = useState<{ minutes: number; seconds?: number; price: number; label: string; charge?: boolean } | null>(null)
+  const [selectedSkipWaitOption, setSelectedSkipWaitOption] = useState<{ minutes: number; seconds?: number; price: number; label: string; charge?: boolean; rate_seconds?: number; rate_won?: number } | null>(null)
   
   // 로딩 팝업 상태 (PDF 생성 등)
   const [showLoadingPopup, setShowLoadingPopup] = useState(false)
@@ -807,6 +808,15 @@ function FormContent() {
       .catch(() => { setVoiceResidualCheckDone(true) })
     return () => { cancelled = true }
   }, [content?.id, content?.content_type])
+  // 보이스 화면에서 폼으로 돌아온 직후: 저장된 잔여시간 반영을 위해 잔여 조회 1회 추가 실행
+  useEffect(() => {
+    if (typeof window === 'undefined' || !content?.id) return
+    const needRefetch = sessionStorage.getItem('voice_refetch_balance') === '1'
+    if (!needRefetch) return
+    sessionStorage.removeItem('voice_refetch_balance')
+    const t = setTimeout(() => refetchVoiceBalance(), 400)
+    return () => clearTimeout(t)
+  }, [content?.id, refetchVoiceBalance])
   // 보이스 화면에서 폼으로 돌아왔을 때 잔여금액/잔여시간 갱신 (리셋 방지)
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -3227,7 +3237,7 @@ function FormContent() {
           if (!res.ok) return
           sessionStorage.setItem('payment_voice_total_seconds', String(voiceRemainingSeconds))
           sessionStorage.removeItem('voice_time_expired')
-          setVoiceRemainingSeconds(0)
+          // 이동 직전에 0으로 바꾸면 잔여금액 기준 시간(예: 13:20)이 잠깐 보이는 현상이 있으므로, 0 설정은 하지 않고 바로 이동. 다음 폼 진입 시 balance 조회에서 0으로 갱신됨.
         } else {
           sessionStorage.removeItem('payment_voice_total_seconds')
           sessionStorage.removeItem('payment_voice_minutes')
@@ -3284,6 +3294,7 @@ function FormContent() {
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
       if (typeof window !== 'undefined') {
         sessionStorage.removeItem('voice_entered_by_100')
+        sessionStorage.removeItem('voice_session_charge_type')
         sessionStorage.setItem('payment_oid', oid)
         sessionStorage.setItem('payment_method', 'card')
         sessionStorage.setItem('payment_content_id', String(content.id))
@@ -3504,6 +3515,7 @@ function FormContent() {
         const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
         if (typeof window !== 'undefined') {
           sessionStorage.removeItem('voice_entered_by_100')
+          sessionStorage.removeItem('voice_session_charge_type')
           sessionStorage.setItem('payment_oid', oid)
           sessionStorage.setItem('payment_method', 'card')
           sessionStorage.setItem('payment_content_id', String(content.id))
@@ -4072,8 +4084,12 @@ function FormContent() {
       ? (content as any)?.multi_time_options
       : (content as any)?.voice_time_options
     const opts = Array.isArray(raw) ? raw : (typeof raw === 'string' ? (() => { try { const a = JSON.parse(raw); return Array.isArray(a) ? a : [] } catch { return [] } })() : [])
-    const hasVoiceOptions = opts.some((o: any) => o?.type === 'extension' || o?.type === 'charge' || (o?.price > 0 && o?.type !== 'default'))
-    const optionToUse = selectedSkipWaitOption ?? (hasVoiceOptions ? null : { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' })
+    const chargeOptsForPay = opts.filter((o: any) => o?.type === 'charge')
+    const defaultChargeForPay = chargeOptsForPay.length > 0 ? (chargeOptsForPay.find((o: any) => o?.recommended) || chargeOptsForPay[0]) : null
+    const hasVoiceOptions = chargeOptsForPay.length > 0
+    const optionToUse = selectedSkipWaitOption ?? (hasVoiceOptions && defaultChargeForPay
+      ? { minutes: Number(defaultChargeForPay.minutes) || 0, seconds: Number(defaultChargeForPay.seconds) ?? 0, price: Number(defaultChargeForPay.price) ?? 1000, label: (defaultChargeForPay.label && String(defaultChargeForPay.label).trim()) || `${Number(defaultChargeForPay.price) ?? 1000}원 충전`, charge: true, rate_seconds: Number(defaultChargeForPay.rate_seconds) || 12, rate_won: Number(defaultChargeForPay.rate_won) || 19 }
+      : { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' })
     if (!optionToUse) {
       showAlertMessage('이용 시간을 선택해 주세요.')
       return
@@ -4287,7 +4303,15 @@ function FormContent() {
       showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
       return
     }
-    const effectiveOption = selectedSkipWaitOption ?? { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' }
+    const rawOT = content.content_type === 'multi'
+      ? (content as any)?.multi_time_options
+      : (content as any)?.voice_time_options
+    const optsOT = Array.isArray(rawOT) ? rawOT : (typeof rawOT === 'string' ? (() => { try { const a = JSON.parse(rawOT); return Array.isArray(a) ? a : [] } catch { return [] } })() : [])
+    const chargeOptsOT = optsOT.filter((o: any) => o?.type === 'charge')
+    const defaultChargeOT = chargeOptsOT.length > 0 ? (chargeOptsOT.find((o: any) => o?.recommended) || chargeOptsOT[0]) : null
+    const effectiveOption = selectedSkipWaitOption ?? (defaultChargeOT
+      ? { minutes: Number(defaultChargeOT.minutes) || 0, seconds: Number(defaultChargeOT.seconds) ?? 0, price: Number(defaultChargeOT.price) ?? 1000, label: (defaultChargeOT.label && String(defaultChargeOT.label).trim()) || `${Number(defaultChargeOT.price) ?? 1000}원 충전`, charge: true, rate_seconds: Number(defaultChargeOT.rate_seconds) || 12, rate_won: Number(defaultChargeOT.rate_won) || 19 }
+      : { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' })
     setSubmitting(true)
     try {
       const oid = generateOrderId()
@@ -5893,37 +5917,52 @@ function FormContent() {
             </div>
 
             <div className="p-6">
-              {/* 이용 시간 옵션: 음성형 voice_time_options / 다자형 multi_time_options 동일하게 연장·충전 선택 + 안내 문구 */}
+              {/* 이용 시간 옵션: 충전시간 상품만 표시. 추천상품이 디폴트 선택, 사용자가 다른 상품 선택 가능 */}
               {(() => {
                 const raw = content?.content_type === 'multi'
                   ? (content as any)?.multi_time_options
                   : (content as any)?.voice_time_options
                 const opts = Array.isArray(raw) ? raw : (typeof raw === 'string' ? (() => { try { const a = JSON.parse(raw); return Array.isArray(a) ? a : [] } catch { return [] } })() : [])
-                const extensionOpts = opts.filter((o: any) => o?.type === 'extension' || (o?.price > 0 && o?.type !== 'charge' && o?.type !== 'default'))
-                const chargeOpt = opts.find((o: any) => o?.type === 'charge') as { rate_seconds?: number; rate_won?: number; price?: number; label?: string; minutes?: number; seconds?: number } | undefined
-                const chargePrice = Number(chargeOpt?.price) ?? 1000
-                const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
-                const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
-                const chargeMin = chargeOpt != null ? (Number(chargeOpt.minutes) || 0) : 0
-                const chargeSec = chargeOpt != null ? (Number(chargeOpt.seconds) ?? 0) : 0
-                const chargeTimeLabel = chargeMin > 0 || chargeSec > 0 ? (chargeSec > 0 ? `${chargeMin}분 ${chargeSec}초` : `${chargeMin}분`) : ''
-                const chargeLabel = (chargeOpt?.label && String(chargeOpt.label).trim())
-                  ? String(chargeOpt.label).trim()
-                  : (rateSeconds > 0 && rateWon > 0 ? `${chargePrice.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` + (chargeTimeLabel ? ` · ${chargeTimeLabel}` : '') : `${chargePrice.toLocaleString()}원 충전` + (chargeTimeLabel ? ` (${chargeTimeLabel})` : ''))
-                const hasOptions = extensionOpts.length > 0 || chargeOpt != null
+                const chargeOpts = opts.filter((o: any) => o?.type === 'charge') as Array<{ rate_seconds?: number; rate_won?: number; price?: number; label?: string; minutes?: number; seconds?: number; recommended?: boolean }>
+                const defaultChargeOption = chargeOpts.length > 0
+                  ? (chargeOpts.find((o: any) => o?.recommended) || chargeOpts[0])
+                  : null
+                const hasOptions = chargeOpts.length > 0
+
+                const optionToDisplay = (opt: typeof chargeOpts[0]) => {
+                  const price = Number(opt?.price) ?? 1000
+                  const rateSeconds = opt != null && Number(opt.rate_seconds) > 0 ? Number(opt.rate_seconds) : 0
+                  const rateWon = opt != null && Number(opt.rate_won) > 0 ? Number(opt.rate_won) : 0
+                  const min = opt != null ? (Number(opt.minutes) || 0) : 0
+                  const sec = opt != null ? (Number(opt.seconds) ?? 0) : 0
+                  const timeLabel = min > 0 || sec > 0 ? (sec > 0 ? `${min}분 ${sec}초` : `${min}분`) : ''
+                  const label = (opt?.label && String(opt.label).trim()) || (rateSeconds > 0 && rateWon > 0 ? `${price.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` + (timeLabel ? ` · ${timeLabel}` : '') : `${price.toLocaleString()}원 충전`)
+                  return { price, label, rate_seconds: rateSeconds, rate_won: rateWon, minutes: min, seconds: sec }
+                }
+                const isOptionEqual = (a: typeof selectedSkipWaitOption, b: typeof chargeOpts[0]) => {
+                  if (!a || !b) return false
+                  const d = optionToDisplay(b)
+                  return a.price === d.price && (a.seconds ?? 0) === d.seconds && (a.minutes ?? 0) === d.minutes
+                }
 
                 if (hasOptions) {
                   return (
                     <>
-                      <p className="text-sm text-gray-700 mb-3">기다리면 무료로 이용할 수 있습니다. 아래에서 이용 시간을 선택한 뒤 결제해 주세요.</p>
+                      <ul className="text-sm text-gray-700 mb-3 list-disc list-inside space-y-1">
+                        <li>기다리면 무료 이용 가능</li>
+                        <li>바로이용은 시간 충전 후 가능</li>
+                      </ul>
                       <div className="space-y-2 mb-4">
-                        {extensionOpts.map((opt: { minutes: number; seconds?: number; price: number; label: string }, idx: number) => {
-                          const isSelected = !(opt as any).charge && selectedSkipWaitOption?.minutes === opt.minutes && (selectedSkipWaitOption?.seconds ?? 0) === (opt.seconds ?? 0) && selectedSkipWaitOption?.price === opt.price
+                        {chargeOpts.map((opt, idx) => {
+                          const d = optionToDisplay(opt)
+                          const isSelected = selectedSkipWaitOption != null
+                            ? isOptionEqual(selectedSkipWaitOption, opt)
+                            : (defaultChargeOption === opt)
                           return (
                             <button
                               key={idx}
                               type="button"
-                              onClick={() => setSelectedSkipWaitOption(opt)}
+                              onClick={() => setSelectedSkipWaitOption({ minutes: d.minutes, seconds: d.seconds, price: d.price, label: d.label, charge: true, rate_seconds: d.rate_seconds, rate_won: d.rate_won })}
                               disabled={submitting}
                               className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${isSelected ? 'border-violet-500 bg-violet-50' : 'border-gray-200 bg-white hover:border-gray-300'} ${submitting ? 'opacity-50 pointer-events-none' : ''}`}
                             >
@@ -5931,32 +5970,18 @@ function FormContent() {
                                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-violet-500' : 'border-gray-300'}`}>
                                   {isSelected ? <div className="w-2.5 h-2.5 rounded-full bg-violet-500" /> : null}
                                 </div>
-                                <span className={`font-semibold text-[15px] ${isSelected ? 'text-violet-700' : 'text-gray-800'}`}>{opt.label}</span>
+                                <span className={`font-semibold text-[15px] ${isSelected ? 'text-violet-700' : 'text-gray-800'}`}>
+                                  {d.label}
+                                  {opt?.recommended ? <span className="text-amber-600 text-xs ml-1">(추천)</span> : null}
+                                </span>
                               </div>
-                              <span className={`font-bold text-[15px] ${isSelected ? 'text-violet-600' : 'text-gray-600'}`}>{opt.price.toLocaleString()}원</span>
+                              <span className={`font-bold text-[15px] ${isSelected ? 'text-violet-600' : 'text-gray-600'}`}>{d.price.toLocaleString()}원</span>
                             </button>
                           )
                         })}
-                        {chargeOpt != null && (
-                          <button
-                            type="button"
-                            onClick={() => setSelectedSkipWaitOption({ minutes: 0, seconds: 0, price: chargePrice, label: chargeLabel, charge: true })}
-                            disabled={submitting}
-                            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${selectedSkipWaitOption?.charge ? 'border-violet-500 bg-violet-50' : 'border-gray-200 bg-white hover:border-gray-300'} ${submitting ? 'opacity-50 pointer-events-none' : ''}`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedSkipWaitOption?.charge ? 'border-violet-500' : 'border-gray-300'}`}>
-                                {selectedSkipWaitOption?.charge ? <div className="w-2.5 h-2.5 rounded-full bg-violet-500" /> : null}
-                              </div>
-                              <span className={`font-semibold text-[15px] ${selectedSkipWaitOption?.charge ? 'text-violet-700' : 'text-gray-800'}`}>{chargeLabel}</span>
-                            </div>
-                            <span className={`font-bold text-[15px] ${selectedSkipWaitOption?.charge ? 'text-violet-600' : 'text-gray-600'}`}>{chargePrice.toLocaleString()}원</span>
-                          </button>
-                        )}
                       </div>
                       <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-6 text-xs text-gray-600 space-y-1">
-                        <p>* 잔여시간 소멸형: 남은 음성 시간은 종료 시 소멸됩니다.</p>
-                        <p>* 충전 후 차감형: 사용 시간 분만 차감되고 잔여시간은 유지됩니다.</p>
+                        <p>* 이용 중 잔여시간은 재방문시 사용가능합니다.</p>
                       </div>
                     </>
                   )
@@ -7776,13 +7801,13 @@ function FormContent() {
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
                   {voiceRemainingSeconds > 0 && (
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">잔여시간</span>
+                      <span className="text-sm text-gray-600">이용가능 잔여시간</span>
                       <span className="font-semibold text-gray-900 tabular-nums">{timeStrSaved}</span>
                     </div>
                   )}
                   {showBalance && secFromBalance > 0 && !voiceRemainingSeconds && (
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">잔여시간</span>
+                      <span className="text-sm text-gray-600">이용가능 잔여시간</span>
                       <span className="font-semibold text-gray-900 tabular-nums">{timeStrFromBalance}</span>
                     </div>
                   )}
@@ -7804,9 +7829,8 @@ function FormContent() {
               return (
                 <div className="flex flex-wrap items-center justify-between gap-3 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">이용 가능 시간</span>
                     <span className="font-semibold text-gray-900 tabular-nums">
-                      {timeStr} 후 이용 가능
+                      무료는 {timeStr} 후 이용가능
                     </span>
                   </div>
                   <button

@@ -80,27 +80,41 @@ export async function GET(request: NextRequest) {
       .select('day,page,source,view_count')
       .in('page', ALLOWED_PAGES)
 
-    let uniqueViewsQuery = supabase
-      .from('daily_unique_page_views')
-      .select('day,page,source')
-      .in('page', ALLOWED_PAGES)
-
     if (rangeStart && rangeEnd) {
       pageViewsQuery = pageViewsQuery.gte('day', rangeStart).lte('day', rangeEnd)
-      uniqueViewsQuery = uniqueViewsQuery.gte('day', rangeStart).lte('day', rangeEnd)
     }
 
-    const [{ data: pageViews, error: pageViewsError }, { data: uniqueViews, error: uniqueViewsError }] = await Promise.all([
-      pageViewsQuery,
-      uniqueViewsQuery,
-    ])
-
+    const { data: pageViews, error: pageViewsError } = await pageViewsQuery
     if (pageViewsError) {
       throw pageViewsError
     }
-    if (uniqueViewsError) {
-      throw uniqueViewsError
+
+    // daily_unique_page_views는 행 단위로 유니크 수를 세므로, Supabase 기본 1000행 제한을 넘기면 페이지네이션으로 전부 조회
+    const PAGE_SIZE = 1000
+    const allUniqueRows: any[] = []
+    let uniqueOffset = 0
+    let hasMore = true
+    while (hasMore) {
+      let uniqueChunkQuery = supabase
+        .from('daily_unique_page_views')
+        .select('day,page,source')
+        .in('page', ALLOWED_PAGES)
+        .order('id', { ascending: true })
+        .range(uniqueOffset, uniqueOffset + PAGE_SIZE - 1)
+      if (rangeStart && rangeEnd) {
+        uniqueChunkQuery = uniqueChunkQuery.gte('day', rangeStart).lte('day', rangeEnd)
+      }
+      const { data: uniqueChunk, error: uniqueChunkError } = await uniqueChunkQuery
+      if (uniqueChunkError) {
+        throw uniqueChunkError
+      }
+      if (uniqueChunk && uniqueChunk.length > 0) {
+        allUniqueRows.push(...uniqueChunk)
+      }
+      hasMore = uniqueChunk != null && uniqueChunk.length === PAGE_SIZE
+      uniqueOffset += PAGE_SIZE
     }
+    const uniqueViews = allUniqueRows.length > 0 ? allUniqueRows : undefined
 
     const seriesMap: Record<string, { bucket: string; views: number; unique: number }> = {}
     const byPageViews: Record<string, number> = { home: 0, form: 0 }

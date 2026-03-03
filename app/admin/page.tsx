@@ -103,6 +103,18 @@ export default function AdminPage() {
   const [showPaymentStats, setShowPaymentStats] = useState(false)
   const [showPaymentList, setShowPaymentList] = useState(false)
   const [showTrafficStats, setShowTrafficStats] = useState(false)
+  // VOC 보상(음성 시간 충전) 모달 상태
+  const [showVocGrantModal, setShowVocGrantModal] = useState(false)
+  const [vocGrantContentId, setVocGrantContentId] = useState<string>('')
+  const [vocGrantPhone, setVocGrantPhone] = useState('')
+  const [vocGrantMinutes, setVocGrantMinutes] = useState('')
+  const [vocGrantSubmitting, setVocGrantSubmitting] = useState(false)
+  const [vocGrantError, setVocGrantError] = useState<string | null>(null)
+  // 음성형 DB 초기화 모달 상태
+  const [showVoiceResetModal, setShowVoiceResetModal] = useState(false)
+  const [voiceResetConfirm, setVoiceResetConfirm] = useState('')
+  const [voiceResetSubmitting, setVoiceResetSubmitting] = useState(false)
+  const [voiceResetError, setVoiceResetError] = useState<string | null>(null)
 
   // 홈html 조회 (리뷰이벤트와 동일한 방식 - POST로 캐시 우회)
   const loadHomeHtml = async () => {
@@ -665,6 +677,25 @@ export default function AdminPage() {
     }
   }
 
+  /** 휴대폰 번호에 하이픈 자동 포맷 (한국 번호) */
+  const formatPhoneWithHyphen = (value: string): string => {
+    const digits = value.replace(/\D/g, '').slice(0, 11)
+    if (digits.length <= 2) return digits
+    if (digits.startsWith('02')) {
+      if (digits.length <= 5) return `${digits.slice(0, 2)}-${digits.slice(2)}`
+      if (digits.length <= 9) return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`
+      return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6)}`
+    }
+    if (digits.startsWith('010') || digits.startsWith('011') || digits.startsWith('016') || digits.startsWith('019')) {
+      if (digits.length <= 3) return digits
+      if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`
+      return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`
+    }
+    if (digits.length <= 3) return digits
+    if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`
+  }
+
   // 리뷰 노출/베스트 지정
   // 문의 관리 모달 열기
   const handleOpenInquiryModal = async () => {
@@ -798,6 +829,33 @@ export default function AdminPage() {
               >
                 문의 관리
               </button>
+              <button
+                onClick={() => {
+                  setShowVocGrantModal(true)
+                  setVocGrantError(null)
+                  setVocGrantContentId('')
+                  setVocGrantPhone('')
+                  setVocGrantMinutes('')
+                }}
+                className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200"
+                title="VOC 보상: 음성형·다자형 고객에게 이용 시간 충전"
+              >
+                VOC 보상 (시간 충전)
+              </button>
+              {/* 음성형 DB 초기화 버튼 (필요 시 주석 해제)
+              <button
+                type="button"
+                onClick={() => {
+                  setShowVoiceResetModal(true)
+                  setVoiceResetConfirm('')
+                  setVoiceResetError(null)
+                }}
+                className="bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200"
+                title="음성형 잔액·충전 테이블 전체 초기화 (정식 런칭용)"
+              >
+                음성형 DB 초기화
+              </button>
+              */}
             </div>
             
             {/* 병렬점사/직렬점사 토글 */}
@@ -1805,6 +1863,221 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* VOC 보상 (음성형·다자형 시간 충전) 모달 */}
+      {showVocGrantModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-md">
+            <div className="bg-gradient-to-r from-teal-600 to-teal-700 px-6 py-4 flex items-center justify-between rounded-t-lg">
+              <h2 className="text-xl font-bold text-white">VOC 보상 (시간 충전)</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowVocGrantModal(false)
+                  setVocGrantError(null)
+                }}
+                className="text-white hover:text-gray-200 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-teal-800 transition-colors"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {vocGrantError && (
+                <p className="text-sm text-red-400 bg-red-900/30 border border-red-600 rounded p-2">{vocGrantError}</p>
+              )}
+              <p className="text-xs text-gray-400">음성형·다자형 콘텐츠에 대해 고객에게 이용 시간을 충전할 수 있습니다.</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">콘텐츠</label>
+                <select
+                  value={vocGrantContentId}
+                  onChange={(e) => setVocGrantContentId(e.target.value)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white"
+                  required
+                >
+                  <option value="">선택</option>
+                  {contents.filter((c: any) => isVoiceContent(c) || isMultiContent(c)).map((c: any) => (
+                    <option key={c.id} value={c.id}>
+                      {c.content_name || `콘텐츠 ${c.id}`} ({isMultiContent(c) ? '다자형' : '음성형'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">휴대폰 번호</label>
+                <input
+                  type="text"
+                  value={vocGrantPhone}
+                  onChange={(e) => setVocGrantPhone(formatPhoneWithHyphen(e.target.value))}
+                  placeholder="010-1234-5678"
+                  className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">충전할 시간 (분)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  value={vocGrantMinutes}
+                  onChange={(e) => setVocGrantMinutes(e.target.value)}
+                  placeholder="예: 10"
+                  className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">최대 1440분(24시간)</p>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const cid = vocGrantContentId ? parseInt(vocGrantContentId, 10) : NaN
+                    const phone = vocGrantPhone.trim()
+                    const minutes = parseInt(vocGrantMinutes, 10)
+                    if (!Number.isFinite(cid) || !phone) {
+                      setVocGrantError('콘텐츠와 휴대폰 번호를 입력해주세요.')
+                      return
+                    }
+                    if (!Number.isFinite(minutes) || minutes < 1) {
+                      setVocGrantError('충전할 시간(분)을 1 이상 입력해주세요.')
+                      return
+                    }
+                    setVocGrantSubmitting(true)
+                    setVocGrantError(null)
+                    try {
+                      const res = await fetch('/api/admin/voice/grant-time', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          contentId: cid,
+                          phone,
+                          minutes,
+                        }),
+                      })
+                      const data = await res.json().catch(() => ({}))
+                      if (!res.ok) {
+                        setVocGrantError(data?.error || `요청 실패 (${res.status})`)
+                        return
+                      }
+                      if (data.success) {
+                        alert(data.message || `${minutes}분 충전 완료`)
+                        setShowVocGrantModal(false)
+                        setVocGrantContentId('')
+                        setVocGrantPhone('')
+                        setVocGrantMinutes('')
+                      } else {
+                        setVocGrantError(data?.error || '처리 실패')
+                      }
+                    } catch (e: any) {
+                      setVocGrantError(e?.message || '네트워크 오류')
+                    } finally {
+                      setVocGrantSubmitting(false)
+                    }
+                  }}
+                  disabled={vocGrantSubmitting}
+                  className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium py-2 rounded transition-colors"
+                >
+                  {vocGrantSubmitting ? '처리 중...' : '충전하기'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowVocGrantModal(false)
+                    setVocGrantError(null)
+                  }}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded transition-colors"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 음성형 DB 초기화 모달 */}
+      {/* 음성형 DB 초기화 모달 (버튼 주석 해제 시 함께 사용)
+      {showVoiceResetModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-md">
+            <div className="bg-gradient-to-r from-rose-600 to-rose-700 px-6 py-4 flex items-center justify-between rounded-t-lg">
+              <h2 className="text-xl font-bold text-white">음성형 DB 초기화</h2>
+              <button
+                type="button"
+                onClick={() => { setShowVoiceResetModal(false); setVoiceResetError(null) }}
+                className="text-white hover:text-gray-200 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-rose-800 transition-colors"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-300">
+                정식 런칭 전 음성형 관련 데이터를 모두 삭제합니다. voice_balance, voice_balance_charge_log, voice_balance_grant_log, voice_summary_asked, voice_conversation_summaries 테이블이 비워집니다. <strong className="text-rose-400">복구할 수 없습니다.</strong>
+              </p>
+              {voiceResetError && (
+                <p className="text-sm text-red-400 bg-red-900/30 border border-red-600 rounded p-2">{voiceResetError}</p>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">확인 문구 입력</label>
+                <input
+                  type="text"
+                  value={voiceResetConfirm}
+                  onChange={(e) => setVoiceResetConfirm(e.target.value)}
+                  placeholder="음성형 초기화"
+                  className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">위 placeholder와 똑같이 입력해야 실행됩니다.</p>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (voiceResetConfirm.trim() !== '음성형 초기화') {
+                      setVoiceResetError('확인 문구가 일치하지 않습니다.')
+                      return
+                    }
+                    setVoiceResetSubmitting(true)
+                    setVoiceResetError(null)
+                    try {
+                      const res = await fetch('/api/admin/voice/reset-db', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ confirm: voiceResetConfirm.trim() }),
+                      })
+                      const data = await res.json().catch(() => ({}))
+                      if (!res.ok) {
+                        setVoiceResetError(data?.error || `요청 실패 (${res.status})`)
+                        return
+                      }
+                      if (data.success) {
+                        alert(data.message || '초기화 완료')
+                        setShowVoiceResetModal(false)
+                        setVoiceResetConfirm('')
+                      } else {
+                        setVoiceResetError(data?.error || '처리 실패')
+                      }
+                    } catch (e: any) {
+                      setVoiceResetError(e?.message || '네트워크 오류')
+                    } finally {
+                      setVoiceResetSubmitting(false)
+                    }
+                  }}
+                  disabled={voiceResetSubmitting}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium py-2 rounded transition-colors"
+                >
+                  {voiceResetSubmitting ? '초기화 중...' : '초기화 실행'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowVoiceResetModal(false); setVoiceResetError(null) }}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded transition-colors"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      */}
 
       {/* 리뷰 관리 모달 */}
       {showReviewModal && (
