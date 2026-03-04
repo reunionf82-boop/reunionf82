@@ -557,7 +557,11 @@ export function useVoiceResult() {
               secs = secsFromStored
             } else {
               const chargeOpt = opts.find((o: any) => o?.type === 'charge')
-              secs = chargeOpt != null ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0) : 0
+              const rateWon = chargeOpt != null && Number((chargeOpt as any).rate_won) > 0 ? Number((chargeOpt as any).rate_won) : 19
+              const rateSec = chargeOpt != null && Number((chargeOpt as any).rate_seconds) > 0 ? Number((chargeOpt as any).rate_seconds) : 12
+              secs = (chargeOpt != null && rateWon > 0)
+                ? Math.floor((Number((chargeOpt as any).price) || 0) / rateWon) * rateSec
+                : 0
               if (secs <= 0 && storedVoiceMin && parseInt(storedVoiceMin, 10) > 0) secs = parseInt(storedVoiceMin, 10) * 60
             }
           } else {
@@ -731,22 +735,28 @@ export function useVoiceResult() {
           enteredWithBalanceRef.current = true
         }
 
-        // 사용자가 결제한 충전 상품(저장된 옵션)의 분·초 사용. 첫 번째 charge 옵션이 아니라 실제 선택한 옵션으로 시간 부여
+        // 사용자가 결제한 충전 상품: 캐시 방식이므로 잔액(balance_wan) 또는 가격(price)+차감률로 부여 시간 계산
         let addSec = 0
+        const optsForCharge = (contentData?.content_type === 'multi' && Array.isArray((contentData as any)?.multi_time_options))
+          ? (contentData as any).multi_time_options
+          : (contentData?.voice_time_options && Array.isArray(contentData.voice_time_options) ? contentData.voice_time_options : [])
+        const optsCharge = (optsForCharge as any[]).find((o: any) => o?.type === 'charge') ?? null
+        const rateWon = optsCharge != null && Number(optsCharge.rate_won) > 0 ? Number(optsCharge.rate_won) : 19
+        const rateSec = optsCharge != null && Number(optsCharge.rate_seconds) > 0 ? Number(optsCharge.rate_seconds) : 12
         try {
           if (storedOption) {
-            const parsed = JSON.parse(storedOption) as { type?: string; charge?: boolean; minutes?: number; seconds?: number }
+            const parsed = JSON.parse(storedOption) as { type?: string; charge?: boolean; minutes?: number; seconds?: number; price?: number }
             if (parsed?.charge === true || parsed?.type === 'charge') {
-              addSec = (Number(parsed.minutes) || 0) * 60 + (Number(parsed.seconds) ?? 0)
+              addSec = rateWon > 0 ? Math.floor((Number(parsed.price) || 0) / rateWon) * rateSec : 0
+              if (addSec <= 0) addSec = (Number(parsed.minutes) || 0) * 60 + (Number(parsed.seconds) ?? 0)
             }
           }
         } catch { /* ignore */ }
-        if (addSec <= 0) {
-          const opts = (contentData?.content_type === 'multi' && Array.isArray((contentData as any)?.multi_time_options))
-            ? (contentData as any).multi_time_options
-            : (contentData?.voice_time_options && Array.isArray(contentData.voice_time_options) ? contentData.voice_time_options : [])
-          const chargeOpt = (opts as any[]).find((o: any) => o?.type === 'charge')
-          addSec = chargeOpt != null ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0) : 0
+        if (addSec <= 0 && optsCharge != null && rateWon > 0) {
+          addSec = Math.floor((Number(optsCharge.price) || 0) / rateWon) * rateSec
+        }
+        if (addSec <= 0 && optsCharge != null) {
+          addSec = (Number(optsCharge.minutes) || 0) * 60 + (Number(optsCharge.seconds) ?? 0)
         }
         if (addSec > 0) {
           extendSuccessTimeAddedOidsRef.current.add(oid)
@@ -3060,28 +3070,31 @@ ${seasonBlock}
         }
         if (confirmed) {
           if (option.charge) {
+            let chargeData: { success?: boolean; balance_wan?: number } | null = null
             try {
               const chargeRes = await fetch('/api/voice/balance', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'charge', oid: successOid, contentId: cid, phone: phoneNumber, amount_wan: option.price }),
               })
-              const chargeData = await chargeRes.json()
+              chargeData = await chargeRes.json()
               if (chargeData?.success && typeof chargeData.balance_wan === 'number') {
                 setBalanceWan(chargeData.balance_wan)
               }
             } catch (e) {
             }
-            // 충전 시 추가 시간: 동일 oid로 중복 호출 시 1회만 가산 (handlePaymentSuccess/postMessage/storage/폴링 등 중복 방지)
+            // 충전 시 추가 시간: 캐시 방식이므로 잔액(balance_wan)과 차감률로 부여. 동일 oid 중복 1회만 가산
             if (!extendSuccessTimeAddedOidsRef.current.has(successOid)) {
               extendSuccessTimeAddedOidsRef.current.add(successOid)
               const timeOpts = contentData?.content_type === 'multi' && Array.isArray((contentData as any)?.multi_time_options)
                 ? (contentData as any).multi_time_options
                 : (Array.isArray(contentData?.voice_time_options) ? contentData.voice_time_options : [])
               const chargeOpt = (timeOpts as any[]).find((o: any) => o?.type === 'charge') ?? null
-              const addSec = chargeOpt != null
-                ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0)
-                : 0
+              const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 19
+              const rateSec = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 12
+              const addSec = (chargeData?.success && typeof chargeData.balance_wan === 'number' && chargeData.balance_wan > 0 && rateWon > 0)
+                ? Math.floor(chargeData.balance_wan / rateWon) * rateSec
+                : (chargeOpt != null ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0) : 0)
               if (addSec > 0) {
                 setRemainingSeconds((prev) => prev + addSec)
                 setTotalSeconds((prev) => prev + addSec)

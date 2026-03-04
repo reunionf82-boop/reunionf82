@@ -1061,7 +1061,7 @@ export default function VoiceAdminForm() {
               {/* 3-1. 기본시간: 무료시작 시 폼에서 주어지는 시간 */}
               <div className="mb-6">
                 <h3 className="text-sm font-medium text-emerald-400 mb-2">기본시간</h3>
-                <p className="text-xs text-gray-500 mb-2">폼에서 무료시작 시 주어지는 시간 (0원이면 무료, 유료 전환 시 가격 설정)</p>
+                <p className="text-xs text-gray-500 mb-2">폼에서 무료시작 시 주어지는 시간 (0원이면 무료, 유료 전환 시 가격 설정). 부여 시간은 결과 페이지에서 120초 고정.</p>
                 {h.form.voice_time_options.map((opt, idx) =>
                   isDefaultOption(opt) ? (
                     <div key={idx} className="flex gap-3 items-end bg-gray-900 p-3 rounded-lg">
@@ -1069,19 +1069,6 @@ export default function VoiceAdminForm() {
                         <label className="block text-xs text-gray-400 mb-1">라벨</label>
                         <input value={opt.label} onChange={(e) => h.updateTimeOption(idx, 'label', e.target.value)}
                           className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" placeholder="예: 5분(무료)" />
-                      </div>
-                      <div className="flex gap-1 items-end">
-                        <div className="w-14">
-                          <label className="block text-xs text-gray-400 mb-1">분</label>
-                          <input type="number" min={0} value={opt.minutes} onChange={(e) => h.updateTimeOption(idx, 'minutes', Math.max(0, parseInt(e.target.value, 10) || 0))}
-                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
-                        </div>
-                        <span className="text-gray-500 pb-1.5">:</span>
-                        <div className="w-14">
-                          <label className="block text-xs text-gray-400 mb-1">초</label>
-                          <input type="number" min={0} max={59} value={opt.seconds ?? 0} onChange={(e) => h.updateTimeOption(idx, 'seconds', Math.min(59, Math.max(0, parseInt(e.target.value, 10) || 0)))}
-                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
-                        </div>
                       </div>
                       <div className="w-28">
                         <label className="block text-xs text-gray-400 mb-1">가격(원)</label>
@@ -1099,7 +1086,7 @@ export default function VoiceAdminForm() {
                   <h3 className="text-sm font-medium text-amber-400">충전시간</h3>
                   <button type="button" onClick={h.addTimeOption} className="bg-amber-600 hover:bg-amber-700 text-white text-sm px-3 py-1 rounded-lg">+ 추가</button>
                 </div>
-                <p className="text-xs text-gray-500 mb-2">라벨·분:초·가격. 추천상품 체크 시 폼에서 디폴트 라디오 선택.</p>
+                <p className="text-xs text-gray-500 mb-2">라벨·가격(원). 추천상품 체크 시 폼에서 디폴트 라디오 선택. (캐시 차감이므로 시간 설정 없음)</p>
                 {/* 공통 차감 단위: 모든 충전 상품에 적용 */}
                 {(() => {
                   const firstCharge = h.form.voice_time_options.find((o: any) => o?.type === 'charge')
@@ -1107,7 +1094,7 @@ export default function VoiceAdminForm() {
                   const rateWon = firstCharge != null ? Number((firstCharge as any).rate_won) || 19 : 19
                   return (
                     <div className="bg-gray-900/80 p-3 rounded-lg mb-3 border border-gray-700">
-                      <p className="text-gray-500 text-xs mb-2">※ 차감 주기·차감 금액 (충전시간 상품 공통): 선차감 후 주기마다 차감</p>
+                      <p className="text-gray-500 text-xs mb-2">※ 차감 주기·차감 캐시 (충전시간 상품 공통): 선차감 후 주기마다 차감</p>
                       <div className="flex gap-3 items-end">
                         <div className="w-20">
                           <label className="block text-xs text-gray-400 mb-1">차감 주기(초)</label>
@@ -1120,7 +1107,7 @@ export default function VoiceAdminForm() {
                           <input type="number" min={1} value={rateWon} onChange={(e) => h.updateChargeRateCommon('rate_won', Math.max(1, parseInt(e.target.value, 10) || 19))}
                             className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
                         </div>
-                        <span className="text-gray-500 text-sm pb-1.5">원 차감</span>
+                        <span className="text-gray-500 text-sm pb-1.5">캐시 차감</span>
                       </div>
                     </div>
                   )
@@ -1139,19 +1126,6 @@ export default function VoiceAdminForm() {
                           <label className="block text-xs text-gray-400 mb-1">라벨</label>
                           <input value={opt.label ?? ''} onChange={(e) => h.updateTimeOption(idx, 'label', e.target.value)}
                             className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" placeholder="예: 1000원 충전" />
-                        </div>
-                        <div className="flex gap-1 items-end">
-                          <div className="w-14">
-                            <label className="block text-xs text-gray-400 mb-1">분</label>
-                            <input type="number" min={0} value={opt.minutes} onChange={(e) => h.updateTimeOption(idx, 'minutes', Math.max(0, parseInt(e.target.value, 10) || 0))}
-                              className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
-                          </div>
-                          <span className="text-gray-500 pb-1.5">:</span>
-                          <div className="w-14">
-                            <label className="block text-xs text-gray-400 mb-1">초</label>
-                            <input type="number" min={0} max={59} value={opt.seconds ?? 0} onChange={(e) => h.updateTimeOption(idx, 'seconds', Math.min(59, Math.max(0, parseInt(e.target.value, 10) || 0)))}
-                              className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" />
-                          </div>
                         </div>
                         <div className="w-28">
                           <label className="block text-xs text-gray-400 mb-1">가격(원)</label>
