@@ -97,18 +97,17 @@ const INITIAL_FORM: MultiFormData = {
   show_exposed: false,
   is_new: false,
   apply_ppoing_attributes: false,
-  multi_system_prompt: `당신은 한 명의 AI이지만, 이 상담에서는 서로 다른 관점의 세 역술가(신점·타로·사주/역술가)로 빙의해 행동합니다.
+  multi_system_prompt: `당신은 한 명의 AI이지만, 이 상담에서는 서로 다른 관점의 세 역술가(예: 신점·타로·사주/역술가)로 빙의해 행동합니다.
 
 [필수 규칙]
-- 매 턴마다 세 역술가 중 한 명만 대표로 말합니다. 누가 말할지는 맥락상 가장 적절한 한 명을 선택하세요.
-- 답변 맨 앞에 반드시 [1], [2], [3] 중 하나만 한 줄로 쓴 뒤 줄바꿈하고, 그 다음에 선택한 역술가의 대사만 씁니다. 예: "[1]\\n네, 제가 보기엔요..."
-- [1]=첫 번째 페르소나, [2]=두 번째, [3]=세 번째. 이 태그는 음성 합성과 영상 전환에 사용되므로 반드시 지키세요.
+- 맨 처음 턴([시작])에서는 세 역술가 중 한 명이 랜덤으로 인사한 뒤, 자신의 페르소나(신점·타로·사주)에 맞게 오늘의 신점, 오늘의 타로, 오늘의 사주/운세를 약 15초 분량으로 이어서 말합니다. [1], [2], [3] 중 선택한 한 명만 사용해 해당 대사를 쭉 이어가세요.
+- 그 다음 턴부터는 사용자 말에 대해 세 명이 차례로 한 번씩 말합니다. 한 턴마다 당신은 세 번에 나눠 호출됩니다: 1번째 발화, 2번째 발화, 3번째 발화. 각 호출에서는 지시된 순서에 맞는 한 역술가만 골라 그 사람의 대사만 한 문단으로 출력하세요.
+- [1]=첫 번째 페르소나, [2]=두 번째, [3]=세 번째. 이 태그는 음성·영상 전환에 사용되므로, 매 응답 맨 앞에 반드시 [1]\\n 또는 [2]\\n 또는 [3]\\n 중 하나만 쓴 뒤 해당 페르소나의 대사만 작성하세요.
 
 [자기주장·의견 차이 - 반드시 준수]
-- 세 역술가는 같은 질문에 대해 각자만의 해석(신점, 타로, 사주·역술)을 제시해야 합니다. 단순히 앞사람 말에 "맞아요", "그렇죠", "저도 그래요"만 하지 마세요.
+- 세 역술가는 같은 질문에 대해 각자만의 해석(신점, 타로, 사주·역술)을 제시해야 합니다. 앞사람 말에 "맞아요", "그렇죠", "저도 그래요"만 반복하지 마세요.
 - 각 페르소나는 자신의 방식으로 보는 관점을 분명히 말하세요. 예: "제가 타로로 보면 그건 조금 다르게 나와요.", "사주상으로는 그렇게만 말할 수는 없어요.", "신점에서는 오히려 이렇게 읽혀요."
-- 의견이 겹치거나 반대될 수 있습니다. 부드럽게 반론하거나 보완하는 말("그런데 한 가지 더 보면", "그 부분은 제가 보기엔")을 넣어 대화가 단조롭지 않게 하세요.
-- 사용자는 세 명의 대화에 끼어드는 손님입니다. 사용자가 말하면 세 명이 그 말을 받아, 각자 자기 방식으로 해석·의견을 내며 답합니다.`,
+- 의견이 겹치거나 반대될 수 있습니다. 부드럽게 반론·보완("그런데 한 가지 더 보면", "그 부분은 제가 보기엔")을 넣어 단조롭지 않게 하세요. 사용자는 세 명의 대화에 끼어드는 손님이며, 사용자가 말하면 세 명이 그 말을 받아 각자 자기 방식으로 해석·의견을 내며 답합니다.`,
   multi_persona_1_prompt: '',
   multi_persona_2_prompt: '',
   multi_persona_3_prompt: '',
@@ -271,6 +270,7 @@ export function useMultiForm() {
     return () => { cancelled = true }
   }, [router])
 
+  // 음성형/점사형과 동일: 다음 결제코드 API 응답 시 항상 폼에 반영 (신규/복제 공통)
   useEffect(() => {
     if (!authenticated) return
     fetch('/api/admin/content/next-payment-code?type=multi', { cache: 'no-store' })
@@ -278,13 +278,11 @@ export function useMultiForm() {
       .then((d) => {
         if (d?.nextPaymentCode) {
           setNextPaymentCode(d.nextPaymentCode)
-          if (!loadId) {
-            setForm((f) => {
-              const next = { ...f, payment_code: d.nextPaymentCode }
-              initialFormSnapshotRef.current = toFormSnapshot(next)
-              return next
-            })
-          }
+          setForm((f) => {
+            const next = { ...f, payment_code: d.nextPaymentCode }
+            if (!loadId) initialFormSnapshotRef.current = toFormSnapshot(next)
+            return next
+          })
         } else if (!loadId) {
           initialFormSnapshotRef.current = toFormSnapshot(INITIAL_FORM)
         }
@@ -292,6 +290,7 @@ export function useMultiForm() {
       .catch(() => { if (!loadId) initialFormSnapshotRef.current = toFormSnapshot(INITIAL_FORM) })
   }, [authenticated, loadId])
 
+  // 기존 데이터 로드 (음성형과 동일: 단일 fetch, 복제 시 nextPaymentCode 상태 사용)
   useEffect(() => {
     if (!authenticated || !loadId) {
       if (loadId) setLoading(false)
@@ -499,10 +498,12 @@ export function useMultiForm() {
     setSaving(true)
     try {
       const { show_exposed, ...formRest } = form
+      // 음성형/점사형과 동일: 수정 시에만 payment_code 전송, 신규/복제 시 빈 문자열 → 서버가 7000번대 비어있는 번호 순서대로 자동 부여
       const payload = {
         ...formRest,
         id: id ? parseInt(id, 10) : undefined,
         is_exposed: show_exposed,
+        payment_code: id && !duplicateId ? form.payment_code : '',
         multi_time_options: form.multi_time_options,
         multi_advisor_video_urls_1: form.multi_advisor_video_urls_1,
         multi_advisor_video_urls_2: form.multi_advisor_video_urls_2,

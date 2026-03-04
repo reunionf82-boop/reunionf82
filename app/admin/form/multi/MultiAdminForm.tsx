@@ -236,6 +236,19 @@ export default function MultiAdminForm() {
               <p className="text-amber-400 text-sm font-medium">리턴제로+클로드+카테시아 (고정)</p>
             </section>
 
+            {/* 코어 프롬프트 — 다자형 시스템 지시(DB multi_system_prompt). 비어 있으면 상담 시 기본 동작만 적용 */}
+            <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+              <h2 className="font-bold mb-4">코어 프롬프트</h2>
+              <p className="text-gray-400 text-sm mb-3">3인 역술가 공통 규칙·턴 구조·화자 태그 규칙. API에서 이 값을 그대로 시스템 프롬프트에 주입합니다. 비워두면 코드 기본값 없이 빈 문자열로 전달됩니다.</p>
+              <textarea
+                value={h.form.multi_system_prompt}
+                onChange={(e) => h.setForm((f) => ({ ...f, multi_system_prompt: e.target.value }))}
+                rows={14}
+                className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono text-sm placeholder-gray-500"
+                placeholder="예: 당신은 한 명의 AI이지만..."
+              />
+            </section>
+
             {/* 2. 컨텐츠명 · 썸네일 · 가격 — 이미지 썸네일 + 동영상 썸네일 */}
             <section className="bg-gray-800 rounded-xl p-5 border border-gray-700">
               <h2 className="font-bold mb-4">컨텐츠명 &middot; 썸네일 &middot; 가격</h2>

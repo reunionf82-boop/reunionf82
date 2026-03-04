@@ -246,6 +246,12 @@ const DCC_FILLER_DURATION_MS = 2500
 const DCC_MULTI_CONTEXT_SWITCH_DELAY_MS = 18000
 /** done 수신 후 추가 대기(ms). Cartesia가 done 먼저 보내고 청크가 늦게 도착하는 경우 겹침 완화 */
 const DCC_MULTI_POST_DONE_BUFFER_MS = 600
+/** 다자형: 사용자 개입 없이 토론/배틀을 이어가는 라운드 수(1=기본 3발화만, 2=6발화). '[다음 라운드]' 요청 시에는 1라운드만 수행(클라이언트가 STT 감지될 때까지 반복 호출) */
+const MULTI_AUTO_CONTINUE_ROUNDS = 2
+/** 클라이언트가 이 문자열을 transcript로 보내면 1라운드(3발화)만 생성. 재생 끝난 뒤 클라이언트가 다시 이걸 보내 STT 감지될 때까지 반복 */
+export const DCC_MULTI_CONTINUE_TRANSCRIPT = '[다음 라운드] 사용자는 아직 말하지 않았습니다. 앞선 발화를 이어받아 세 전문가가 토론/배틀을 계속하세요. 서로 반론·보완하며 대화를 이어가세요.'
+/** 클라이언트가 이 접두어로 transcript 보내면 1라운드(3발화)만 생성. STT 감지될 때까지 클라이언트가 반복 요청 */
+export const DCC_MULTI_CONTINUE_TRANSCRIPT_PREFIX = '[다음 라운드]'
 
 /** PCM 버퍼 → WAV base64 (청크마다 헤더 붙이면 틱틱 소리 나서, 버퍼 모아서 한 번만 씀) */
 function pcmBufferToWavBase64(pcm: Buffer, sampleRate = CARTESIA_SAMPLE_RATE, numChannels = CARTESIA_NUM_CHANNELS, bitsPerSample = CARTESIA_BITS): string {
@@ -413,6 +419,7 @@ export async function POST(req: NextRequest) {
       .from('contents')
       .select(`
         content_type,
+        content_name,
         voice_cartesia_config,
         voice_persona_prompt,
         voice_counselor_name,
@@ -813,24 +820,18 @@ export async function POST(req: NextRequest) {
     const fullContext = (todayDateFactBlock + '\n' + truncatedContext + fortuneBlock).trim()
     const contextBlock = fullContext ? `\n\n${fullContext}` : ''
     const isStartTurn = userTranscript.trim() === '[시작]'
-    /** 다자형 기본 시스템 프롬프트(DB에 없을 때 사용). 순차 세그먼트(한 턴에 3번 호출·한 번에 한 페르소나) 로직에 맞춤 */
-    const DEFAULT_MULTI_SYSTEM_PROMPT = `당신은 한 명의 AI이지만, 이 상담에서는 서로 다른 관점의 세 역술가(예: 신점·타로·사주/역술가)로 빙의해 행동합니다.
-
-[필수 규칙]
-- 맨 처음 턴([시작])에서는 세 역술가 중 한 명이 랜덤으로 인사한 뒤, 자신의 페르소나(신점·타로·사주)에 맞게 오늘의 신점, 오늘의 타로, 오늘의 사주/운세를 약 15초 분량으로 이어서 말합니다. [1], [2], [3] 중 선택한 한 명만 사용해 해당 대사를 쭉 이어가세요.
-- 그 다음 턴부터는 사용자 말에 대해 세 명이 차례로 한 번씩 말합니다. 한 턴마다 당신은 세 번에 나눠 호출됩니다: 1번째 발화, 2번째 발화, 3번째 발화. 각 호출에서는 지시된 순서에 맞는 한 역술가만 골라 그 사람의 대사만 한 문단으로 출력하세요.
-- [1]=첫 번째 페르소나, [2]=두 번째, [3]=세 번째. 이 태그는 음성·영상 전환에 사용되므로, 매 응답 맨 앞에 반드시 [1]\\n 또는 [2]\\n 또는 [3]\\n 중 하나만 쓴 뒤 해당 페르소나의 대사만 작성하세요.
-
-[자기주장·의견 차이 - 반드시 준수]
-- 세 역술가는 같은 질문에 대해 각자만의 해석(신점, 타로, 사주·역술)을 제시해야 합니다. 앞사람 말에 "맞아요", "그렇죠", "저도 그래요"만 반복하지 마세요.
-- 각 페르소나는 자신의 방식으로 보는 관점을 분명히 말하세요. 예: "제가 타로로 보면 그건 조금 다르게 나와요.", "사주상으로는 그렇게만 말할 수는 없어요.", "신점에서는 오히려 이렇게 읽혀요."
-- 의견이 겹치거나 반대될 수 있습니다. 부드럽게 반론·보완("그런데 한 가지 더 보면", "그 부분은 제가 보기엔")을 넣어 단조롭지 않게 하세요. 사용자는 세 명의 대화에 끼어드는 손님이며, 사용자가 말하면 세 명이 그 말을 받아 각자 자기 방식으로 해석·의견을 내며 답합니다.`
+    /** 다자형 '[다음 라운드]' 요청 시 1라운드(3발화)만 수행 → 클라이언트가 재생 끝나면 다시 호출해 STT 감지될 때까지 반복 */
+    const isMultiContinueTurn = isMulti && typeof userTranscript === 'string' && userTranscript.trim().startsWith('[다음 라운드]')
     /** 다자형 순차 세그먼트: 한 번의 응답 = 한 페르소나의 한 문단. 내부 지시로 1/2/3번째 발화를 구분함 */
     const multiSpeakerTagRule = `
 - [화자 태그 - 필수] 이번 응답에는 한 역술가의 대사만 출력하세요. 반드시 "[1]\\n", "[2]\\n", "[3]\\n" 중 하나로 시작한 뒤 줄바꿈하고, 그 다음에 해당 페르소나의 대사만 한 문단으로 작성하세요. [1]=첫 번째, [2]=두 번째, [3]=세 번째. 이 태그는 음성·영상 전환에 사용됩니다.
 - 이번에 말할 한 명은 자신의 방식(신점/타로/사주)으로만 해석하고, 앞사람과 다른 관점이나 보완·반론을 부드럽게 넣어도 됩니다. 단순 동의("맞아요"만) 반복 금지. 이전 발화 맥락을 이어받되, 자기주장을 분명히 하세요.`
+    const contentName = String((content as any).content_name ?? '').trim()
+    const multiThemeBlock = contentName
+      ? `[이 상담의 주제]\n이 콘텐츠명/주제: 「${contentName}」. 반드시 이 주제에 맞는 내용만 말하세요. 콘텐츠명과 무관한 일반 운세(재물운, 애정운 등)를 말하지 마세요.\n\n`
+      : ''
     const systemPrompt = isMulti
-      ? `${(String((content as any).multi_system_prompt || '').trim() || DEFAULT_MULTI_SYSTEM_PROMPT)}
+      ? `${multiThemeBlock}${String((content as any).multi_system_prompt ?? '').trim()}
 
 [페르소나 1]
 ${String((content as any).multi_persona_1_prompt || '').trim()}
@@ -1246,7 +1247,10 @@ ${emotionTagRule}
                 '이번 턴의 2번째 발화입니다. 아직 말하지 않은 역술가 중 이어서 말할 한 명을 골라 [1] 또는 [2] 또는 [3] 태그와 대사만 한 문단으로 출력하세요.',
                 '이번 턴의 3번째 발화입니다. 마지막 남은 역술가가 말하세요. [1] 또는 [2] 또는 [3] 태그와 대사만 한 문단으로 출력하세요.',
               ]
-              const baseMessages: { role: 'user' | 'assistant'; content: string }[] = [
+              const CONTINUE_ROUND_USER_MSG = DCC_MULTI_CONTINUE_TRANSCRIPT
+              /** [다음 라운드] 요청이면 1라운드만(클라이언트가 STT 감지될 때까지 반복 호출); 그 외는 MULTI_AUTO_CONTINUE_ROUNDS */
+              const roundsToRun = (typeof userTranscript === 'string' && userTranscript.trim().startsWith(DCC_MULTI_CONTINUE_TRANSCRIPT_PREFIX)) ? 1 : MULTI_AUTO_CONTINUE_ROUNDS
+              let baseMessages: { role: 'user' | 'assistant'; content: string }[] = [
                 ...history.map((m) => ({ role: m.role, content: m.content })),
                 { role: 'user', content: userMessage },
               ]
@@ -1258,7 +1262,16 @@ ${emotionTagRule}
                   await new Promise((r) => setTimeout(r, 100))
                 }
                 if (!wsOpen) console.warn('[dcc-turn] multi: Cartesia WS 아직 미개방, 전송 대기 중')
-                for (let seg = 0; seg < 3; seg++) {
+                let multiLoopBroken = false
+                for (let round = 0; round < roundsToRun && !multiLoopBroken; round++) {
+                  if (round > 0) {
+                    const prevRoundText = segmentTexts.slice(-3).join('\n\n')
+                    baseMessages = [...baseMessages, { role: 'assistant', content: prevRoundText }, { role: 'user', content: CONTINUE_ROUND_USER_MSG }]
+                    segmentTexts.splice(0, segmentTexts.length)
+                  }
+                  for (let seg = 0; seg < 3; seg++) {
+                  const segIndex = round * 3 + seg + 1
+                  const segTotal = roundsToRun * 3
                   /** 세그먼트마다 전용 WebSocket 사용 → 같은 연결에서 context 전환 시 Cartesia가 이전 세그먼트 남은 청크를 끊는 문제 회피 */
                   const segWs = new WebSocket(CARTESIA_WS_URL, {
                     headers: {
@@ -1318,11 +1331,13 @@ ${emotionTagRule}
                     const errBody = await res.text()
                     console.error('[dcc-turn] multi segment Claude:', res.status, errBody?.slice(0, 300))
                     try { segWs.close() } catch (_) {}
+                    multiLoopBroken = true
                     break
                   }
                   const segStreamBody = res.body
                   if (!segStreamBody) {
                     try { segWs.close() } catch (_) {}
+                    multiLoopBroken = true
                     break
                   }
                   const reader = segStreamBody.getReader()
@@ -1332,7 +1347,7 @@ ${emotionTagRule}
                   let segFullText = ''
                   let segSpeakerIndex: number | null = null
                   let sentAnySeg = false
-                  process.stdout.write(`\n[dcc-turn] LLM(실시간) [세그먼트 ${seg + 1}/3] `)
+                  process.stdout.write(`\n[dcc-turn] LLM(실시간) [세그먼트 ${segIndex}/${segTotal}] `)
                   while (true) {
                     const { done, value } = await reader.read()
                     if (done) break
@@ -1394,6 +1409,7 @@ ${emotionTagRule}
                   await Promise.race([segDonePromise, timeout])
                   try { segWs.close() } catch (_) {}
                   await new Promise<void>((r) => setTimeout(r, DCC_MULTI_POST_DONE_BUFFER_MS))
+                }
                 }
                 assistantText = fullAssistantText.trim()
                 if (assistantText) {

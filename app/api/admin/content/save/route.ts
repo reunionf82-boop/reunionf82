@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
         .eq('id', id)
         .single()
       
-      // 북커버/엔딩북커버 썸네일이 빈 문자열이거나 undefined/null이면 기존 값으로 유지
+      // 북커버/엔딩북커버 썸네일 보호: 이미지 썸네일만 빈 문자열이면 기존 값 유지. 동영상 썸네일은 선택 항목이므로 빈 값이면 삭제(비우기) 허용
       if (existingContent) {
         if (!dataToSave.book_cover_thumbnail || dataToSave.book_cover_thumbnail.trim() === '') {
           if (existingContent.book_cover_thumbnail) {
@@ -63,14 +63,7 @@ export async function POST(req: NextRequest) {
             delete dataToSave.book_cover_thumbnail
           }
         }
-        
-        if (!dataToSave.book_cover_thumbnail_video || dataToSave.book_cover_thumbnail_video.trim() === '') {
-          if (existingContent.book_cover_thumbnail_video) {
-            dataToSave.book_cover_thumbnail_video = existingContent.book_cover_thumbnail_video
-          } else {
-            delete dataToSave.book_cover_thumbnail_video
-          }
-        }
+        // book_cover_thumbnail_video: 빈 문자열이면 사용자가 삭제한 것으로 보고 비움 (기존 값으로 복원하지 않음)
         
         if (!dataToSave.ending_book_cover_thumbnail || dataToSave.ending_book_cover_thumbnail.trim() === '') {
           if (existingContent.ending_book_cover_thumbnail) {
@@ -79,14 +72,7 @@ export async function POST(req: NextRequest) {
             delete dataToSave.ending_book_cover_thumbnail
           }
         }
-        
-        if (!dataToSave.ending_book_cover_thumbnail_video || dataToSave.ending_book_cover_thumbnail_video.trim() === '') {
-          if (existingContent.ending_book_cover_thumbnail_video) {
-            dataToSave.ending_book_cover_thumbnail_video = existingContent.ending_book_cover_thumbnail_video
-          } else {
-            delete dataToSave.ending_book_cover_thumbnail_video
-          }
-        }
+        // ending_book_cover_thumbnail_video: 빈 문자열이면 삭제한 것으로 보고 비움
       }
 
       if (existingContent && menu_items) {
