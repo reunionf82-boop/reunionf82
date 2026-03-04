@@ -760,8 +760,8 @@ export default function VoiceResultContent() {
                   </span>
                 </div>
               </button>
-              {/* 상담시간 연장 기능 비활성화: 버튼 숨김 */}
-              {false && h.connected && (
+              {/* 상담시간 연장하기 — 음성형만 표시 (다자형은 연장 버튼 없음) */}
+              {h.connected && h.contentData?.content_type !== 'multi' && (
                 <button
                   type="button"
                   onClick={h.openExtendPopupByButton}
@@ -792,8 +792,8 @@ export default function VoiceResultContent() {
         )}
       </main>
 
-      {/* 상담시간 연장 기능 비활성화: 1분 무료 연장 팝업 주석처리 */}
-      {false && h.showFreeExtendPopup ? (
+      {/* 1분 무료 연장 팝업 — 음성형·다자형 동일 (무료시작 1회만) */}
+      {h.showFreeExtendPopup ? (
         <div
           className="fixed top-0 left-0 right-0 bottom-0 z-[9998] flex items-center justify-center px-4"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998 }}
@@ -840,8 +840,8 @@ export default function VoiceResultContent() {
         </div>
       ) : null}
 
-      {/* 상담시간 연장 기능 비활성화: 시간연장/충전 팝업 주석처리 */}
-      {false && h.showExtendPopup ? (
+      {/* 시간연장/충전 팝업 — 음성형·다자형 동일 UI (다자형은 충전형만 표시) */}
+      {h.showExtendPopup ? (
         <div
           className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
@@ -881,7 +881,12 @@ export default function VoiceResultContent() {
 
               {/* 현재 잔액 (충전식, 0원일 때는 표시하지 않음) */}
               {(() => {
-                const chargeOpt = Array.isArray(h.contentData?.voice_time_options) ? (h.contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge') : null
+                const timeOpts = h.contentData?.content_type === 'multi' && Array.isArray((h.contentData as any)?.multi_time_options)
+                  ? (h.contentData as any).multi_time_options
+                  : Array.isArray(h.contentData?.voice_time_options)
+                    ? h.contentData.voice_time_options
+                    : []
+                const chargeOpt = (timeOpts as any[]).find((o: any) => o?.type === 'charge') ?? null
                 const bal = h.balanceWan ?? 0
                 if (bal <= 0) return null
                 const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
@@ -895,10 +900,15 @@ export default function VoiceResultContent() {
                 )
               })()}
 
-            {/* 시간연장 옵션(extension) + 1000원 충전(charge) */}
+            {/* 시간연장 옵션(extension) + 1000원 충전(charge) — 다자형은 충전형만 표시 */}
             {(() => {
-              const opts = Array.isArray(h.contentData?.voice_time_options) ? h.contentData.voice_time_options : []
-              const extensionOpts = opts.filter((o: any) => o?.type === 'extension' || (o?.price > 0 && o?.type !== 'charge' && o?.type !== 'default'))
+              const opts = h.contentData?.content_type === 'multi' && Array.isArray((h.contentData as any)?.multi_time_options)
+                ? (h.contentData as any).multi_time_options
+                : Array.isArray(h.contentData?.voice_time_options)
+                  ? h.contentData.voice_time_options
+                  : []
+              const isMulti = h.contentData?.content_type === 'multi'
+              const extensionOpts = isMulti ? [] : opts.filter((o: any) => o?.type === 'extension' || (o?.price > 0 && o?.type !== 'charge' && o?.type !== 'default'))
               const chargeOpt = opts.find((o: any) => o?.type === 'charge') as { rate_seconds?: number; rate_won?: number; price?: number; label?: string; minutes?: number; seconds?: number } | undefined
               const rateSeconds = chargeOpt != null && Number(chargeOpt?.rate_seconds) > 0 ? Number(chargeOpt?.rate_seconds) : 0
               const rateWon = chargeOpt != null && Number(chargeOpt?.rate_won) > 0 ? Number(chargeOpt?.rate_won) : 0

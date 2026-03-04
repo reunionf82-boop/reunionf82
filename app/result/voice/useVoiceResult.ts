@@ -589,17 +589,20 @@ export function useVoiceResult() {
         const probPct = typeof c?.voice_conversation_sound_probability_pct === 'number'
           ? c.voice_conversation_sound_probability_pct
           : (c?.voice_bubble_sound_probability_pct ?? 0)
-        if (c?.voice_start_sound_url) {
+        const isMulti = c?.content_type === 'multi'
+        const startSoundUrl = isMulti ? (c as any).multi_start_sound_url : c?.voice_start_sound_url
+        const endSoundUrl = isMulti ? (c as any).multi_end_sound_url : c?.voice_end_sound_url
+        if (startSoundUrl) {
           const startAudio = new Audio()
           setPlaysInlineForSpeaker(startAudio)
           startAudio.crossOrigin = 'anonymous'
-          startAudio.src = getAudioSrc(c.voice_start_sound_url)
+          startAudio.src = getAudioSrc(startSoundUrl)
           startAudio.preload = 'auto'
           startAudio.addEventListener('error', () => {})
           startSoundRef.current = startAudio
           // 시작 소리는 상담 연결(ready) 시 한 번 재생하여 녹음에 포함됨 (페이지 로드 시 재생 제거)
         }
-        if (c?.voice_end_sound_url) {
+        if (endSoundUrl) {
           const endAudio = new Audio()
           setPlaysInlineForSpeaker(endAudio)
           endAudio.crossOrigin = 'anonymous'
@@ -745,7 +748,7 @@ export function useVoiceResult() {
         skipWaitChargeAppliedRef.current = true
       } catch { /* ignore */ }
     })()
-  }, [contentData?.id, contentData?.voice_time_options, searchParams])
+  }, [contentData?.id, contentData?.voice_time_options, contentData?.multi_time_options, contentData?.content_type, searchParams])
 
   /* ── 자동 연결 (페이지 진입 시 버튼 없이 바로 시작) ── */
   const autoConnectTriedRef = useRef(false)
@@ -774,8 +777,10 @@ export function useVoiceResult() {
       const contentTitle = contentData?.content_name || '음성 상담'
       const cid = contentIdRef.current ? parseInt(contentIdRef.current, 10) : null
       // 잔여시간이 1블록(rate_seconds) 초과면 잔액 유지, 이하일 때만 이탈 시 소진 (이탈 시점의 실제 값 사용)
-      const opts = Array.isArray(contentData?.voice_time_options) ? contentData.voice_time_options : []
-      const chargeOpt = opts.find((o: any) => o?.type === 'charge')
+      const opts = contentData?.content_type === 'multi' && Array.isArray((contentData as any)?.multi_time_options)
+        ? (contentData as any).multi_time_options
+        : (Array.isArray(contentData?.voice_time_options) ? contentData.voice_time_options : [])
+      const chargeOpt = (opts as any[]).find((o: any) => o?.type === 'charge')
       const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
       const remAtLeave = remainingSecondsRef.current
       const shouldDrainBalance = (useBalanceModeRef.current || enteredWithBalanceRef.current) && cid != null && !!phone && rateSeconds > 0 && remAtLeave <= rateSeconds
@@ -1223,20 +1228,19 @@ ${seasonBlock}
         if (extendPaymentInProgressRef.current) return prev
         if (extendPopupOpenRef.current && !isAiSpeakingRef.current) return prev
         const next = prev - 1
-        // 30초 전: 무료시작 1회 → 1분 무료 연장 팝업 / 유료진입·이미 무료팝업 봤음 → 시간연장·충전 팝업
-        // 상담시간 연장 기능 비활성화: 연장 팝업 자동 오픈 주석처리
-        // if (next === 30 && !extendPopupShownRef.current) {
-        //   extendPopupShownRef.current = true
-        //   const isFreeStartNow = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
-        //   if (isFreeStartNow && !freeExtendPopupShownThisSessionRef.current) {
-        //     freeExtendPopupShownThisSessionRef.current = true
-        //     setExtendPopupOpenedByButton(false)
-        //     setShowFreeExtendPopup(true)
-        //   } else {
-        //     setExtendPopupOpenedByButton(false)
-        //     setShowExtendPopup(true)
-        //   }
-        // }
+        // 30초 전: 무료시작 1회 → 1분 무료 연장 팝업 / 유료·다자형 → 시간연장·충전 팝업
+        if (next === 30 && !extendPopupShownRef.current) {
+          extendPopupShownRef.current = true
+          const isFreeStartNow = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
+          if (isFreeStartNow && !freeExtendPopupShownThisSessionRef.current) {
+            freeExtendPopupShownThisSessionRef.current = true
+            setExtendPopupOpenedByButton(false)
+            setShowFreeExtendPopup(true)
+          } else {
+            setExtendPopupOpenedByButton(false)
+            setShowExtendPopup(true)
+          }
+        }
         // 시간 종료
         if (next <= 0) {
           if (timerIntervalRef.current) {
@@ -1250,18 +1254,16 @@ ${seasonBlock}
             timeHitZeroNoExtendPopupRef.current = true
             return 0
           }
-          // 상담시간 연장 기능 비활성화: 시간 종료 시 연장 팝업 자동 오픈 주석처리
-          // extendPopupShownRef.current = true
-          // const isFreeStartAtZero = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
-          // if (isFreeStartAtZero && !freeExtendPopupShownThisSessionRef.current) {
-          //   freeExtendPopupShownThisSessionRef.current = true
-          //   setExtendPopupOpenedByButton(false)
-          //   setShowFreeExtendPopup(true)
-          // } else {
-          //   setExtendPopupOpenedByButton(false)
-          //   setShowExtendPopup(true)
-          // }
           extendPopupShownRef.current = true
+          const isFreeStartAtZero = typeof window !== 'undefined' && !sessionStorage.getItem('voice_entered_by_100')
+          if (isFreeStartAtZero && !freeExtendPopupShownThisSessionRef.current) {
+            freeExtendPopupShownThisSessionRef.current = true
+            setExtendPopupOpenedByButton(false)
+            setShowFreeExtendPopup(true)
+          } else {
+            setExtendPopupOpenedByButton(false)
+            setShowExtendPopup(true)
+          }
           return 0
         }
         return next
@@ -1286,7 +1288,8 @@ ${seasonBlock}
       }
       // TTS/재생 무조건 중단 (말 중이어도 끊음)
       stopAllTTSRef.current()
-      const endUrl = contentData?.voice_end_sound_url
+      const isMulti = contentData?.content_type === 'multi'
+      const endUrl = isMulti ? (contentData as any).multi_end_sound_url : contentData?.voice_end_sound_url
       const endEl = endSoundRef.current
       if (endUrl && endEl && !endSoundPlayedRef.current) {
         endSoundPlayedRef.current = true
@@ -1307,7 +1310,7 @@ ${seasonBlock}
         doDisconnect()
       }
     }
-  }, [totalSeconds, remainingSeconds, contentData?.voice_end_sound_url])
+  }, [totalSeconds, remainingSeconds, contentData?.voice_end_sound_url, contentData?.multi_end_sound_url, contentData?.content_type])
 
   /* ── 침묵 깨기 ─────────────────────────── */
   const clearSilenceTimer = useCallback(() => {
@@ -2119,9 +2122,10 @@ ${seasonBlock}
   const startBalanceDeductIntervalIfNeeded = useCallback((data: typeof contentData) => {
     if (!enteredWithBalanceRef.current) return
     if (balanceDeductIntervalRef.current) return
-    const chargeOpt = data?.voice_time_options && Array.isArray(data.voice_time_options)
-      ? (data.voice_time_options as any[]).find((o: any) => o?.type === 'charge')
-      : null
+    const timeOpts = data?.content_type === 'multi' && Array.isArray((data as any)?.multi_time_options)
+      ? (data as any).multi_time_options
+      : (Array.isArray(data?.voice_time_options) ? data.voice_time_options : [])
+    const chargeOpt = (timeOpts as any[]).find((o: any) => o?.type === 'charge') ?? null
     const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
     const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
     if (!rateSeconds || !rateWon) return
@@ -3056,9 +3060,10 @@ ${seasonBlock}
             // 충전 시 추가 시간: 동일 oid로 중복 호출 시 1회만 가산 (handlePaymentSuccess/postMessage/storage/폴링 등 중복 방지)
             if (!extendSuccessTimeAddedOidsRef.current.has(successOid)) {
               extendSuccessTimeAddedOidsRef.current.add(successOid)
-              const chargeOpt = contentData?.voice_time_options && Array.isArray(contentData.voice_time_options)
-                ? (contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge')
-                : null
+              const timeOpts = contentData?.content_type === 'multi' && Array.isArray((contentData as any)?.multi_time_options)
+                ? (contentData as any).multi_time_options
+                : (Array.isArray(contentData?.voice_time_options) ? contentData.voice_time_options : [])
+              const chargeOpt = (timeOpts as any[]).find((o: any) => o?.type === 'charge') ?? null
               const addSec = chargeOpt != null
                 ? (Number(chargeOpt.minutes) || 0) * 60 + (Number(chargeOpt.seconds) ?? 0)
                 : 0
@@ -3249,9 +3254,10 @@ ${seasonBlock}
     const cid = contentIdRef.current
     const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
     if (!cid || !phone) return
-    const chargeOpt = contentData?.voice_time_options && Array.isArray(contentData.voice_time_options)
-      ? (contentData.voice_time_options as any[]).find((o: any) => o?.type === 'charge')
-      : null
+    const timeOpts = contentData?.content_type === 'multi' && Array.isArray((contentData as any)?.multi_time_options)
+      ? (contentData as any).multi_time_options
+      : (Array.isArray(contentData?.voice_time_options) ? contentData.voice_time_options : [])
+    const chargeOpt = (timeOpts as any[]).find((o: any) => o?.type === 'charge') ?? null
     const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 0
     const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 0
     if (!rateSeconds || !rateWon) return
@@ -3334,7 +3340,9 @@ ${seasonBlock}
       const rem = remainingSecondsRef.current
       const cidSave = contentIdRef.current ? parseInt(contentIdRef.current, 10) : null
       const phoneSave = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
-      const optsSave = Array.isArray(contentData?.voice_time_options) ? contentData.voice_time_options : []
+      const optsSave = contentData?.content_type === 'multi' && Array.isArray((contentData as any)?.multi_time_options)
+        ? (contentData as any).multi_time_options
+        : (Array.isArray(contentData?.voice_time_options) ? contentData.voice_time_options : [])
       if ((useBalanceModeRef.current || enteredWithBalanceRef.current) && cidSave != null && phoneSave && optsSave.length > 0) {
         const chargeOptSave = (optsSave as any[]).find((o: any) => o?.type === 'charge')
         const rateSecondsSave = chargeOptSave != null && Number(chargeOptSave.rate_seconds) > 0 ? Number(chargeOptSave.rate_seconds) : 0

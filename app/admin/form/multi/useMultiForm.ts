@@ -26,6 +26,8 @@ export interface MultiTimeOptionCharge {
   label?: string
   rate_seconds: number
   rate_won: number
+  /** 어드민에서 추천상품 체크 시 true. 폼에서 디폴트 라디오 선택 */
+  recommended?: boolean
 }
 export type MultiTimeOption = MultiTimeOptionDefault | MultiTimeOptionExtension | MultiTimeOptionCharge
 
@@ -82,8 +84,7 @@ export interface MultiFormData {
 
 const DEFAULT_TIME_OPTIONS: MultiTimeOption[] = [
   { type: 'default', minutes: 5, seconds: 0, price: 0, label: '5분(무료)' },
-  { type: 'extension', minutes: 5, seconds: 0, price: 3000, label: '5분 연장' },
-  { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19 },
+  { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19, recommended: false },
 ]
 
 const INITIAL_FORM: MultiFormData = {
@@ -435,19 +436,22 @@ export function useMultiForm() {
   }
 
   const addTimeOption = () => {
+    const firstCharge = form.multi_time_options.find((o: any) => o?.type === 'charge') as MultiTimeOptionCharge | undefined
+    const rateSeconds = firstCharge != null && Number(firstCharge.rate_seconds) > 0 ? Number(firstCharge.rate_seconds) : 12
+    const rateWon = firstCharge != null && Number(firstCharge.rate_won) > 0 ? Number(firstCharge.rate_won) : 19
     setForm((f) => ({
       ...f,
-      multi_time_options: [...f.multi_time_options, { type: 'extension', minutes: 5, seconds: 0, price: 3000, label: '5분 연장' }],
+      multi_time_options: [...f.multi_time_options, { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: rateSeconds, rate_won: rateWon, recommended: false }],
     }))
   }
   const removeTimeOption = (index: number) => {
     setForm((f) => {
       const o = f.multi_time_options[index] as MultiTimeOption & { type?: string }
-      if (o?.type !== 'extension') return f
+      if (o?.type === 'default') return f
       return { ...f, multi_time_options: f.multi_time_options.filter((_, i) => i !== index) }
     })
   }
-  const updateTimeOption = (index: number, key: string, value: string | number) => {
+  const updateTimeOption = (index: number, key: string, value: string | number | boolean) => {
     setForm((f) => {
       const opts = [...f.multi_time_options]
       const o = opts[index] as unknown as Record<string, unknown>
@@ -457,14 +461,32 @@ export function useMultiForm() {
       } else if (o.type === 'extension') {
         opts[index] = { ...o, [key]: key === 'minutes' || key === 'seconds' || key === 'price' ? Number(value) : value } as unknown as MultiTimeOption
       } else if (o.type === 'charge') {
-        if (key === 'rate_seconds' || key === 'rate_won' || key === 'price' || key === 'minutes' || key === 'seconds') {
-          (opts[index] as unknown as Record<string, unknown>)[key] = Number(value)
+        if (key === 'recommended') {
+          const recommended = value === true || value === 1 || value === '1'
+          ;(opts[index] as any).recommended = recommended
+          if (recommended) {
+            opts.forEach((opt, i) => {
+              if (i !== index && (opt as any)?.type === 'charge') (opts[i] as any).recommended = false
+            })
+          }
+        } else if (key === 'rate_seconds' || key === 'rate_won' || key === 'price' || key === 'minutes' || key === 'seconds') {
+          (opts[index] as any)[key] = Number(value)
         } else {
-          (opts[index] as unknown as Record<string, unknown>)[key] = value
+          (opts[index] as any)[key] = value
         }
       }
       return { ...f, multi_time_options: opts }
     })
+  }
+
+  /** 충전시간 상품 공통: 차감주기·차감금액을 모든 charge 옵션에 일괄 적용 (음성형과 동일) */
+  const updateChargeRateCommon = (key: 'rate_seconds' | 'rate_won', value: number) => {
+    setForm((f) => ({
+      ...f,
+      multi_time_options: f.multi_time_options.map((o) =>
+        (o as any).type === 'charge' ? { ...o, [key]: value } : o
+      ),
+    }))
   }
 
   const updateCartesiaEmotions = (emotions: string[]) => {
@@ -558,6 +580,7 @@ export function useMultiForm() {
     addTimeOption,
     removeTimeOption,
     updateTimeOption,
+    updateChargeRateCommon,
     updateCartesiaEmotions,
     router,
     goBack,
