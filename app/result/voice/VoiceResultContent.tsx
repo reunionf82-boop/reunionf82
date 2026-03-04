@@ -461,16 +461,20 @@ function AudioEqualizer({
     ) => {
       const half = HALF_BARS / 2
       for (let i = 0; i < HALF_BARS; i++) {
-        const distFromCenter = Math.abs(i - half) / half
-        const envelope = 1 - distFromCenter * distFromCenter * 0.5
-        const noise = 0.65 + Math.random() * 0.35
-        const target = pct * envelope * noise * maxH * 0.92
-        if (target > bars[i]) {
-          bars[i] = bars[i] + (target - bars[i]) * RISE
+        if (pct < 0.01) {
+          bars[i] = 0
         } else {
-          bars[i] = bars[i] * DECAY
+          const distFromCenter = Math.abs(i - half) / half
+          const envelope = 1 - distFromCenter * distFromCenter * 0.5
+          const noise = 0.65 + Math.random() * 0.35
+          const target = pct * envelope * noise * maxH * 0.92
+          if (target > bars[i]) {
+            bars[i] = bars[i] + (target - bars[i]) * RISE
+          } else {
+            bars[i] = bars[i] * DECAY
+          }
+          if (bars[i] < 2) bars[i] = 2 + Math.random() * 4
         }
-        if (bars[i] < 2) bars[i] = pct > 0.01 ? 2 + Math.random() * 4 : 0
       }
       for (let i = 0; i < HALF_BARS; i++) {
         const x = startX + i * (barW + gap)
@@ -579,12 +583,18 @@ export default function VoiceResultContent() {
     )
   }
 
-  const timerColor = h.remainingSeconds <= 30
-    ? 'text-red-400'
-    : h.remainingSeconds <= 60
-      ? 'text-yellow-400'
-      : 'text-emerald-400'
-
+  // 캐시 표시: 잔액 있으면 balanceWan, 없으면 남은초에서 환산
+  const timeOpts = h.contentData?.content_type === 'multi' && Array.isArray((h.contentData as any)?.multi_time_options)
+    ? (h.contentData as any).multi_time_options
+    : Array.isArray(h.contentData?.voice_time_options)
+      ? h.contentData.voice_time_options
+      : []
+  const chargeOpt = (timeOpts as any[]).find((o: any) => o?.type === 'charge') ?? null
+  const rateSeconds = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 12
+  const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 19
+  const displayCache = (h.balanceWan != null && h.balanceWan > 0)
+    ? h.balanceWan
+    : Math.floor(h.remainingSeconds / rateSeconds) * rateWon
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col">
       {/* 상단 바 */}
@@ -613,9 +623,16 @@ export default function VoiceResultContent() {
             </button>
           </div>
           <h2 className="text-lg font-bold text-gray-900 truncate min-w-0 flex-1 text-center">{h.contentData?.content_name || '음성 상담'}</h2>
-          <div className="flex items-center gap-3 shrink-0 w-14 justify-end">
-            <span className={`font-mono font-bold text-lg ${timerColor}`}>
-              {h.formatTime(h.remainingSeconds)}
+          <div className="flex items-center shrink-0 justify-end">
+            <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
+              displayCache <= 100
+                ? 'bg-red-50 text-red-600 ring-1 ring-red-200'
+                : displayCache <= 300
+                  ? 'bg-amber-50 text-amber-600 ring-1 ring-amber-200'
+                  : 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200'
+            }`}>
+              <svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="8" opacity=".15"/><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.736 6.979C9.208 6.193 9.696 6 10 6c.304 0 .792.193 1.264.979a1 1 0 001.715-1.029C12.279 4.784 11.232 4 10 4s-2.279.784-2.979 1.95c-.285.475-.507 1-.67 1.55H6a1 1 0 000 2h.013a9.358 9.358 0 000 1H6a1 1 0 100 2h.35c.164.55.386 1.075.67 1.55C7.721 15.216 8.768 16 10 16s2.279-.784 2.979-1.95a1 1 0 10-1.715-1.029c-.472.786-.96.979-1.264.979-.304 0-.792-.193-1.264-.979a5.389 5.389 0 01-.497-.969L10 12.021h2a1 1 0 000-2h-2.38a7.308 7.308 0 010-1.002L12 9a1 1 0 100-2H9.236a5.389 5.389 0 01.5-.021z" /></svg>
+              {displayCache} 캐시
             </span>
           </div>
         </div>
@@ -760,20 +777,6 @@ export default function VoiceResultContent() {
                   </span>
                 </div>
               </button>
-              {/* 상담시간 연장하기 — 음성형만 표시 (다자형은 연장 버튼 없음) */}
-              {h.connected && h.contentData?.content_type !== 'multi' && (
-                <button
-                  type="button"
-                  onClick={h.openExtendPopupByButton}
-                  disabled={h.savingConversation}
-                  className="group relative overflow-hidden rounded-xl transition-all duration-300 active:scale-[0.97] disabled:opacity-50"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-pink-600 group-hover:from-pink-600 group-hover:to-pink-700 transition-all duration-300" />
-                  <div className="relative flex items-center justify-center gap-1.5 py-2.5 px-4">
-                    <span className="text-white font-semibold text-[13px]">음성시간 연장하기</span>
-                  </div>
-                </button>
-              )}
             </>
           )}
           </div>
@@ -792,7 +795,7 @@ export default function VoiceResultContent() {
         )}
       </main>
 
-      {/* 1분 무료 연장 팝업 — 음성형·다자형 동일 (무료시작 1회만) */}
+      {/* 무료 캐시 연장 팝업 — 음성형·다자형 동일 (무료시작 1회만) */}
       {h.showFreeExtendPopup ? (
         <div
           className="fixed top-0 left-0 right-0 bottom-0 z-[9998] flex items-center justify-center px-4"
@@ -817,7 +820,7 @@ export default function VoiceResultContent() {
             </div>
             <div className="p-6">
               <p className="text-gray-700 text-sm mb-6">
-                음성 시간이 곧 끝납니다. 1분 무료 연장을 사용할 수 있습니다. (이번 이용 중 1회)
+                캐시가 곧 소진됩니다. 무료 캐시 연장을 사용할 수 있습니다. (이번 이용 중 1회)
               </p>
               <div className="flex gap-3">
                 <button
@@ -825,7 +828,7 @@ export default function VoiceResultContent() {
                   onClick={h.handleFreeExtend1Min}
                   className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all"
                 >
-                  1분 무료 연장
+                  무료 캐시 연장
                 </button>
                 <button
                   type="button"
@@ -840,7 +843,7 @@ export default function VoiceResultContent() {
         </div>
       ) : null}
 
-      {/* 시간연장/충전 팝업 — 음성형·다자형 동일 UI (다자형은 충전형만 표시) */}
+      {/* 캐시 충전/연장 팝업 — 음성형·다자형 동일 UI (다자형은 충전형만 표시) */}
       {h.showExtendPopup ? (
         <div
           className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
@@ -853,7 +856,7 @@ export default function VoiceResultContent() {
           >
             {/* 헤더 - 폼 결제정보와 동일 */}
             <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
-              <h2 className="text-xl font-bold text-white cursor-default">음성 시간 연장</h2>
+              <h2 className="text-xl font-bold text-white cursor-default">캐시 충전</h2>
               <button
                 type="button"
                 onClick={h.dismissExtendPopup}
@@ -867,14 +870,14 @@ export default function VoiceResultContent() {
             </div>
 
             <div className="p-6">
-              {/* 안내 섹션 - 버튼으로 연 경우 '상담 시간이 종료되었습니다' 메시지 박스 숨김 */}
+              {/* 안내 섹션 - 버튼으로 연 경우 '캐시 소진 종료' 메시지 박스 숨김 */}
               {!h.extendPopupOpenedByButton && (
                 <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
                   <p className="text-gray-700 text-sm">
-                    {h.remainingSeconds > 0
-                      ? `${h.remainingSeconds}초 후 음성이 종료됩니다.`
-                      : '음성 시간이 종료되었습니다.'}
-                    {' '}원하는 시간을 선택해 주세요.
+                    {((h.balanceWan ?? 0) > 0)
+                      ? '캐시가 소진되면 음성이 종료됩니다.'
+                      : '캐시가 소진되어 음성이 종료되었습니다.'}
+                    {' '}원하는 충전을 선택해 주세요.
                   </p>
                 </div>
               )}
@@ -894,13 +897,13 @@ export default function VoiceResultContent() {
                 const rateText = rateSeconds > 0 && rateWon > 0 ? ` (차감주기 ${rateSeconds}초당 ${rateWon}원)` : ''
                 return (
                   <p className="text-sm text-gray-600 mb-4">
-                    잔여금액 <span className="font-bold text-violet-600">{bal.toLocaleString()}원</span>
+                    잔여 캐시 <span className="font-bold text-violet-600">{bal.toLocaleString()}원</span>
                     {rateText}
                   </p>
                 )
               })()}
 
-            {/* 시간연장 옵션(extension) + 1000원 충전(charge) — 다자형은 충전형만 표시 */}
+            {/* 연장 옵션(extension) + 충전(charge) — 다자형은 충전형만 표시 */}
             {(() => {
               const opts = h.contentData?.content_type === 'multi' && Array.isArray((h.contentData as any)?.multi_time_options)
                 ? (h.contentData as any).multi_time_options
@@ -1060,7 +1063,7 @@ export default function VoiceResultContent() {
           </div>
         </div>
       ) : null}
-      {/* 상담시간 연장 팝업 블록 끝 */}
+      {/* 캐시 충전/연장 팝업 블록 끝 */}
 
       {/* 종료 버튼 확인 팝업 (폼 결제정보 팝업과 동일 스타일) */}
       {h.showExitConfirmPopup ? (
@@ -1090,11 +1093,11 @@ export default function VoiceResultContent() {
             <div className="p-6">
               {h.isVoiceSessionChargeType && !h.isDefaultTimeOptionSession ? (
                 <p className="text-gray-700 text-base mb-5">
-                  잔여 이용 가능 시간은 저장되며 언제든지 이어서 할 수 있습니다.
+                  잔여 캐시는 저장되며 언제든지 이어서 할 수 있습니다.
                 </p>
               ) : (
                 <p className="text-gray-700 text-base mb-5">
-                  무료 이용 중 잔여시간은 종료 시 소멸됩니다.
+                  무료 이용 중 잔여 캐시는 종료 시 소멸됩니다.
                 </p>
               )}
               <div className="flex flex-row flex-nowrap items-center gap-3">

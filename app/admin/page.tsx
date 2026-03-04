@@ -103,11 +103,11 @@ export default function AdminPage() {
   const [showPaymentStats, setShowPaymentStats] = useState(false)
   const [showPaymentList, setShowPaymentList] = useState(false)
   const [showTrafficStats, setShowTrafficStats] = useState(false)
-  // VOC 보상(음성 시간 충전) 모달 상태
+  // VOC 보상(캐시 충전) 모달 상태
   const [showVocGrantModal, setShowVocGrantModal] = useState(false)
   const [vocGrantContentId, setVocGrantContentId] = useState<string>('')
   const [vocGrantPhone, setVocGrantPhone] = useState('')
-  const [vocGrantMinutes, setVocGrantMinutes] = useState('')
+  const [vocGrantCache, setVocGrantCache] = useState('')
   const [vocGrantSubmitting, setVocGrantSubmitting] = useState(false)
   const [vocGrantError, setVocGrantError] = useState<string | null>(null)
   // 음성형 DB 초기화 모달 상태
@@ -835,12 +835,12 @@ export default function AdminPage() {
                   setVocGrantError(null)
                   setVocGrantContentId('')
                   setVocGrantPhone('')
-                  setVocGrantMinutes('')
+                  setVocGrantCache('')
                 }}
                 className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium px-4 py-2 rounded transition-colors duration-200"
-                title="VOC 보상: 음성형·다자형 고객에게 이용 시간 충전"
+                title="VOC 보상: 음성형·다자형 고객에게 캐시 충전"
               >
-                VOC 보상 (시간 충전)
+                VOC 보상 (캐시 충전)
               </button>
               {/* 음성형 DB 초기화 버튼 (필요 시 주석 해제)
               <button
@@ -1864,12 +1864,12 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* VOC 보상 (음성형·다자형 시간 충전) 모달 */}
+      {/* VOC 보상 (음성형·다자형 캐시 충전) 모달 */}
       {showVocGrantModal && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-md">
             <div className="bg-gradient-to-r from-teal-600 to-teal-700 px-6 py-4 flex items-center justify-between rounded-t-lg">
-              <h2 className="text-xl font-bold text-white">VOC 보상 (시간 충전)</h2>
+              <h2 className="text-xl font-bold text-white">VOC 보상 (캐시 충전)</h2>
               <button
                 type="button"
                 onClick={() => {
@@ -1885,7 +1885,7 @@ export default function AdminPage() {
               {vocGrantError && (
                 <p className="text-sm text-red-400 bg-red-900/30 border border-red-600 rounded p-2">{vocGrantError}</p>
               )}
-              <p className="text-xs text-gray-400">음성형·다자형 콘텐츠에 대해 고객에게 이용 시간을 충전할 수 있습니다.</p>
+              <p className="text-xs text-gray-400">음성형·다자형 콘텐츠에 대해 고객에게 캐시를 충전할 수 있습니다.</p>
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">콘텐츠</label>
                 <select
@@ -1913,17 +1913,15 @@ export default function AdminPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">충전할 시간 (분)</label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">충전할 캐시 (원)</label>
                 <input
                   type="number"
                   min={1}
-                  max={1440}
-                  value={vocGrantMinutes}
-                  onChange={(e) => setVocGrantMinutes(e.target.value)}
-                  placeholder="예: 10"
+                  value={vocGrantCache}
+                  onChange={(e) => setVocGrantCache(e.target.value)}
+                  placeholder="예: 500"
                   className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">최대 1440분(24시간)</p>
               </div>
               <div className="flex gap-2 pt-2">
                 <button
@@ -1931,13 +1929,13 @@ export default function AdminPage() {
                   onClick={async () => {
                     const cid = vocGrantContentId ? parseInt(vocGrantContentId, 10) : NaN
                     const phone = vocGrantPhone.trim()
-                    const minutes = parseInt(vocGrantMinutes, 10)
+                    const cacheWon = parseInt(vocGrantCache, 10)
                     if (!Number.isFinite(cid) || !phone) {
                       setVocGrantError('콘텐츠와 휴대폰 번호를 입력해주세요.')
                       return
                     }
-                    if (!Number.isFinite(minutes) || minutes < 1) {
-                      setVocGrantError('충전할 시간(분)을 1 이상 입력해주세요.')
+                    if (!Number.isFinite(cacheWon) || cacheWon < 1) {
+                      setVocGrantError('충전할 캐시(원)를 1 이상 입력해주세요.')
                       return
                     }
                     setVocGrantSubmitting(true)
@@ -1949,7 +1947,7 @@ export default function AdminPage() {
                         body: JSON.stringify({
                           contentId: cid,
                           phone,
-                          minutes,
+                          cache_won: cacheWon,
                         }),
                       })
                       const data = await res.json().catch(() => ({}))
@@ -1958,11 +1956,11 @@ export default function AdminPage() {
                         return
                       }
                       if (data.success) {
-                        alert(data.message || `${minutes}분 충전 완료`)
+                        alert(data.message || `${cacheWon}캐시 충전 완료`)
                         setShowVocGrantModal(false)
                         setVocGrantContentId('')
                         setVocGrantPhone('')
-                        setVocGrantMinutes('')
+                        setVocGrantCache('')
                       } else {
                         setVocGrantError(data?.error || '처리 실패')
                       }

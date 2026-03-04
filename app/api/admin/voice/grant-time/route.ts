@@ -5,9 +5,9 @@ import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
 export const dynamic = 'force-dynamic'
 
 /**
- * VOC 보상: 관리자가 고객에게 음성형·다자형 이용 시간을 충전(부여)
+ * VOC 보상: 관리자가 고객에게 캐시(원) 충전
  * POST /api/admin/voice/grant-time
- * body: { contentId: number, phone: string, minutes: number, reason?: string }
+ * body: { contentId: number, phone: string, cache: number, reason?: string }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const contentId = body?.contentId
     const phone = body?.phone
-    const minutes = body?.minutes
+    const cache = body?.cache_won ?? body?.cache ?? body?.minutes
     const reason = body?.reason
 
     if (contentId == null || !phone) {
@@ -33,10 +33,10 @@ export async function POST(request: NextRequest) {
     if (!Number.isFinite(cid)) {
       return NextResponse.json({ success: false, error: 'contentId는 숫자여야 합니다.' }, { status: 400 })
     }
-    const addSec = Math.max(0, Math.min(24 * 60 * 60, Math.floor(Number(minutes) || 0) * 60)) // 최대 24시간
-    if (addSec <= 0) {
+    const addWan = Math.max(0, Math.floor(Number(cache) || 0))
+    if (addWan <= 0) {
       return NextResponse.json(
-        { success: false, error: '충전할 시간(분)을 1 이상 입력해주세요.' },
+        { success: false, error: '충전할 캐시(원)를 1 이상 입력해주세요.' },
         { status: 400 }
       )
     }
@@ -57,8 +57,7 @@ export async function POST(request: NextRequest) {
 
     const existedInDb = row != null
     const currentWan = (row as any)?.balance_wan ?? 0
-    const currentRem = (row as any)?.remaining_seconds ?? 0
-    const newRemainingSeconds = currentRem + addSec
+    const newBalanceWan = currentWan + addWan
 
     const { error: upsertError } = await supabase
       .from('voice_balance')
@@ -66,8 +65,8 @@ export async function POST(request: NextRequest) {
         {
           content_id: cid,
           phone: phoneStr,
-          balance_wan: currentWan,
-          remaining_seconds: newRemainingSeconds,
+          balance_wan: newBalanceWan,
+          remaining_seconds: (row as any)?.remaining_seconds ?? 0,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'content_id,phone' }
@@ -77,13 +76,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: upsertError.message }, { status: 500 })
     }
 
-    // 로그용 (선택): voice_balance_grant_log 테이블이 있으면 기록
     if (reason !== undefined && typeof reason === 'string' && reason.trim()) {
       try {
         await supabase.from('voice_balance_grant_log').insert({
           content_id: cid,
           phone: phoneStr,
-          granted_seconds: addSec,
+          granted_wan: addWan,
           reason: reason.trim().slice(0, 500),
           created_at: new Date().toISOString(),
         })
@@ -94,11 +92,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      remaining_seconds: newRemainingSeconds,
-      granted_seconds: addSec,
+      balance_wan: newBalanceWan,
+      granted_wan: addWan,
       existed_in_db: existedInDb,
       message: existedInDb
-        ? `${addSec / 60}분 충전 완료. 잔여시간 ${Math.floor(newRemainingSeconds / 60)}분`
+        ? `${addWan}캐시 충전 완료. 보유캐시 ${newBalanceWan}캐시`
         : 'DB에 없습니다. 전화번호를 다시 확인하세요.',
     })
   } catch (e: any) {

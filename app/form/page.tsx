@@ -3250,7 +3250,7 @@ function FormContent() {
         await finishIOSVoicePrepare(micPromise)
         navigateToVoiceResult(`/result/voice?id=${encodeURIComponent(content!.id)}`)
       } catch {
-        showAlertMessage('잔여시간 사용 처리에 실패했습니다.')
+        showAlertMessage('잔여 캐시 사용 처리에 실패했습니다.')
       }
       return
     }
@@ -3543,10 +3543,8 @@ function FormContent() {
             localStorage.setItem('voice_content_id', String(content.id))
           } catch { /* ignore */ }
           if (defaultVoiceOption) {
-            const sec = (defaultVoiceOption as { minutes?: number; seconds?: number }).seconds ?? 0
-            const totalSec = (defaultVoiceOption.minutes || 0) * 60 + sec
-            sessionStorage.setItem('payment_voice_minutes', String(defaultVoiceOption.minutes))
-            sessionStorage.setItem('payment_voice_total_seconds', String(totalSec || 300))
+            sessionStorage.setItem('payment_voice_minutes', String(2))
+            sessionStorage.setItem('payment_voice_total_seconds', String(120))
             sessionStorage.setItem('payment_voice_time_option', JSON.stringify(defaultVoiceOption))
             sessionStorage.removeItem('voice_time_expired')
           }
@@ -3642,9 +3640,8 @@ function FormContent() {
             try { localStorage.setItem('voice_payment_oid', oid); localStorage.setItem('voice_content_id', String(content.id)) } catch { /* ignore */ }
             const opts = Array.isArray(content?.multi_time_options) ? content.multi_time_options : (Array.isArray(content?.voice_time_options) ? content.voice_time_options : [])
             const defaultOpt = (opts as any[]).find((o: any) => o?.type === 'default' || Number(o?.price) === 0)
-            const totalSec = defaultOpt ? (Number(defaultOpt.minutes || 0) * 60 + Number(defaultOpt.seconds ?? 0)) || 300 : 300
-            sessionStorage.setItem('payment_voice_minutes', String(defaultOpt?.minutes ?? 5))
-            sessionStorage.setItem('payment_voice_total_seconds', String(totalSec))
+            sessionStorage.setItem('payment_voice_minutes', String(2))
+            sessionStorage.setItem('payment_voice_total_seconds', String(120))
             sessionStorage.removeItem('voice_time_expired')
           }
         }
@@ -5950,7 +5947,7 @@ function FormContent() {
                     <>
                       <ul className="text-sm text-gray-700 mb-3 list-disc list-inside space-y-1">
                         <li>기다리면 무료 이용 가능</li>
-                        <li>바로이용은 시간 충전 후 가능</li>
+                        <li>바로이용은 캐시 충전 후 가능</li>
                       </ul>
                       <div className="space-y-2 mb-4">
                         {chargeOpts.map((opt, idx) => {
@@ -5981,7 +5978,7 @@ function FormContent() {
                         })}
                       </div>
                       <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-6 text-xs text-gray-600 space-y-1">
-                        <p>* 이용 중 잔여시간은 재방문시 사용가능합니다.</p>
+                        <p>* 이용 중 잔여 캐시는 재방문 시 사용 가능합니다.</p>
                       </div>
                     </>
                   )
@@ -7778,39 +7775,23 @@ function FormContent() {
               </div>
             </div>
 
-            {/* 음성: 잔여시간만 표시 (잔여금액은 표시하지 않음), 진입은 아래 메인 버튼으로 */}
+            {/* 음성: 이용가능 캐시 표시 (잔여시간→캐시 환산 또는 잔여금액), 진입은 아래 메인 버튼으로 */}
             {(content?.content_type === 'voice' || content?.content_type === 'multi') && content != null && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0)) && (() => {
               const showBalance = voiceBalanceWan != null && voiceBalanceWan > 0
               const timeOptsUi = content?.content_type === 'multi'
                 ? (Array.isArray((content as any).multi_time_options) ? (content as any).multi_time_options : [])
                 : (Array.isArray(content?.voice_time_options) ? content.voice_time_options : [])
               const chargeOpt = timeOptsUi.find((o: any) => o?.type === 'charge')
-              const rateSeconds = chargeOpt?.rate_seconds ?? 12
-              const rateWon = chargeOpt?.rate_won ?? 19
-              const secFromBalance = showBalance && rateWon > 0 ? Math.floor(voiceBalanceWan! / rateWon) * rateSeconds : 0
-              const h = Math.floor(secFromBalance / 3600)
-              const m = Math.floor((secFromBalance % 3600) / 60)
-              const s = secFromBalance % 60
-              const timeStrFromBalance = [h, m, s].map((v) => String(v).padStart(2, '0')).join(':')
-              const secSaved = voiceRemainingSeconds
-              const hSaved = Math.floor(secSaved / 3600)
-              const mSaved = Math.floor((secSaved % 3600) / 60)
-              const sSaved = secSaved % 60
-              const timeStrSaved = [hSaved, mSaved, sSaved].map((v) => String(v).padStart(2, '0')).join(':')
+              const rateSeconds = Math.max(1, Number(chargeOpt?.rate_seconds) || 12)
+              const rateWon = Math.max(1, Number(chargeOpt?.rate_won) || 19)
+              const displayCache = showBalance
+                ? voiceBalanceWan!
+                : Math.floor(voiceRemainingSeconds / rateSeconds) * rateWon
               return (
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                  {voiceRemainingSeconds > 0 && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">이용가능 잔여시간</span>
-                      <span className="font-semibold text-gray-900 tabular-nums">{timeStrSaved}</span>
-                    </div>
-                  )}
-                  {showBalance && secFromBalance > 0 && !voiceRemainingSeconds && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">이용가능 잔여시간</span>
-                      <span className="font-semibold text-gray-900 tabular-nums">{timeStrFromBalance}</span>
-                    </div>
-                  )}
+                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600 font-bold">나의 보유캐시 : {displayCache} 캐시 이용가능</span>
+                  </div>
                 </div>
               )
             })()}
@@ -7864,7 +7845,7 @@ function FormContent() {
               )
             })()}
 
-            {/* 버튼 영역: 잔여 가능 시 "잔여시간/잔여금액으로 상담", 0원일 때 "무료시작", 그 외 "결제하기" */}
+            {/* 버튼 영역: 잔여 캐시 있으면 "캐시로 음성 서비스", 0원일 때 "무료시작", 그 외 "결제하기" */}
             <div className="flex flex-col sm:flex-row gap-3 mt-6">
               {(() => {
                 const priceVal = content?.price
@@ -7881,7 +7862,7 @@ function FormContent() {
                 const mainButtonText = submitting
                   ? '처리 중...'
                   : hasResidual
-                    ? (voiceRemainingSeconds > 0 ? '잔여시간으로 음성 서비스' : '잔여금액으로 음성 서비스')
+                    ? (voiceRemainingSeconds > 0 ? '잔여 캐시로 음성 서비스' : '잔여 캐시로 음성 서비스')
                     : (isExplicitlyFree ? '무료시작' : '결제하기')
                 return (
                   <button
