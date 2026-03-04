@@ -847,7 +847,7 @@ export function useVoiceResult() {
       if (!sessionStartedRef.current) return
       if (conversationSavedRef.current) {
         stopAllTTSRef.current()
-        try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
+        try { sessionStorage.setItem('voice_came_to_form', '1'); sessionStorage.setItem('voice_return_phone', sessionStorage.getItem('payment_phone') || '') } catch { /* ignore */ }
         router.replace(getFormUrl())
         return
       }
@@ -864,7 +864,7 @@ export function useVoiceResult() {
       leaveAfterSaveRef.current = false
       stopAllTTSRef.current()
       setIsNavigatingAway(true)
-      try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
+      try { sessionStorage.setItem('voice_came_to_form', '1'); sessionStorage.setItem('voice_return_phone', sessionStorage.getItem('payment_phone') || '') } catch { /* ignore */ }
       const p = saveRemainingPromiseRef.current
       saveRemainingPromiseRef.current = null
       if (p) {
@@ -3515,7 +3515,7 @@ ${seasonBlock}
   const handleConsultationEndConfirm = useCallback(() => {
     setShowConsultationEndModal(false)
     stopAllTTSRef.current()
-    try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
+    try { sessionStorage.setItem('voice_came_to_form', '1'); sessionStorage.setItem('voice_return_phone', sessionStorage.getItem('payment_phone') || '') } catch { /* ignore */ }
     router.push(getFormUrl())
   }, [router, getFormUrl])
 
@@ -3524,7 +3524,7 @@ ${seasonBlock}
     if (conversationSavedRef.current) {
       stopAllTTSRef.current()
       setIsNavigatingAway(true)
-      try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
+      try { sessionStorage.setItem('voice_came_to_form', '1'); sessionStorage.setItem('voice_return_phone', sessionStorage.getItem('payment_phone') || '') } catch { /* ignore */ }
       router.push(getFormUrl())
       return
     }
@@ -3534,7 +3534,7 @@ ${seasonBlock}
     }
     stopAllTTSRef.current()
     setIsNavigatingAway(true)
-    try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
+    try { sessionStorage.setItem('voice_came_to_form', '1'); sessionStorage.setItem('voice_return_phone', sessionStorage.getItem('payment_phone') || '') } catch { /* ignore */ }
     router.push(getFormUrl())
   }, [router, getFormUrl])
 
@@ -3567,7 +3567,7 @@ ${seasonBlock}
         /* 소진 실패해도 나가기 진행 */
       }
     }
-    try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
+    try { sessionStorage.setItem('voice_came_to_form', '1'); sessionStorage.setItem('voice_return_phone', sessionStorage.getItem('payment_phone') || '') } catch { /* ignore */ }
     router.push(getFormUrl())
   }, [router, getFormUrl])
 
@@ -3589,7 +3589,7 @@ ${seasonBlock}
     setIsNavigatingAway(true)
     stopAllTTSRef.current()
     await disconnect(remainingSeconds)
-    try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
+    try { sessionStorage.setItem('voice_came_to_form', '1'); sessionStorage.setItem('voice_return_phone', sessionStorage.getItem('payment_phone') || '') } catch { /* ignore */ }
     const p = saveRemainingPromiseRef.current
     saveRemainingPromiseRef.current = null
     if (p) {
@@ -3693,7 +3693,7 @@ ${seasonBlock}
     dismissMannerWarning: () => {
       setMannerWarningMessage(null)
       stopAllTTSRef.current()
-      try { sessionStorage.setItem('voice_came_to_form', '1') } catch { /* ignore */ }
+      try { sessionStorage.setItem('voice_came_to_form', '1'); sessionStorage.setItem('voice_return_phone', sessionStorage.getItem('payment_phone') || '') } catch { /* ignore */ }
       router.push(getFormUrl())
     },
   }

@@ -718,7 +718,13 @@ function FormContent() {
   const refetchVoiceBalance = useCallback(() => {
     const isVoiceForm = content?.content_type === 'voice' || content?.content_type === 'multi'
     if (typeof window === 'undefined' || !content?.id || !isVoiceForm) return
-    const phone = sessionStorage.getItem('payment_phone') || localStorage.getItem('voice_last_phone')
+    let phone = sessionStorage.getItem('payment_phone') || localStorage.getItem('voice_last_phone')
+    if (!phone) {
+      phone = sessionStorage.getItem('voice_return_phone')
+      if (phone) {
+        try { sessionStorage.setItem('payment_phone', phone); sessionStorage.removeItem('voice_return_phone') } catch { /* ignore */ }
+      }
+    }
     if (!phone) return
     fetch(`/api/voice/balance?contentId=${encodeURIComponent(content.id)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
       .then((r) => r.ok ? r.json() : null)
@@ -762,6 +768,12 @@ function FormContent() {
     if (!phone) {
       phone = localStorage.getItem('voice_last_phone')
       if (phone) try { sessionStorage.setItem('payment_phone', phone) } catch { /* ignore */ }
+    }
+    if (!phone) {
+      phone = sessionStorage.getItem('voice_return_phone')
+      if (phone) {
+        try { sessionStorage.setItem('payment_phone', phone); sessionStorage.removeItem('voice_return_phone') } catch { /* ignore */ }
+      }
     }
     if (!phone) {
       setVoiceResidualCheckDone(true)
@@ -814,6 +826,10 @@ function FormContent() {
     const needRefetch = sessionStorage.getItem('voice_refetch_balance') === '1'
     if (!needRefetch) return
     sessionStorage.removeItem('voice_refetch_balance')
+    const returnPhone = sessionStorage.getItem('voice_return_phone')
+    if (returnPhone && !sessionStorage.getItem('payment_phone')) {
+      try { sessionStorage.setItem('payment_phone', returnPhone); sessionStorage.removeItem('voice_return_phone') } catch { /* ignore */ }
+    }
     const t = setTimeout(() => refetchVoiceBalance(), 400)
     return () => clearTimeout(t)
   }, [content?.id, refetchVoiceBalance])
