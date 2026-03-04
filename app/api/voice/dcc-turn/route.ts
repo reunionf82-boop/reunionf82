@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
 import { getTodayDateFactBlockForVoice } from '@/lib/manse-ryeok'
+import { DCC_MULTI_CONTINUE_TRANSCRIPT, DCC_MULTI_CONTINUE_TRANSCRIPT_PREFIX } from '@/lib/dcc-multi-constants'
 import WebSocket from 'ws'
 
 export const maxDuration = 300
@@ -248,10 +249,6 @@ const DCC_MULTI_CONTEXT_SWITCH_DELAY_MS = 18000
 const DCC_MULTI_POST_DONE_BUFFER_MS = 600
 /** 다자형: 사용자 개입 없이 토론/배틀을 이어가는 라운드 수(1=기본 3발화만, 2=6발화). '[다음 라운드]' 요청 시에는 1라운드만 수행(클라이언트가 STT 감지될 때까지 반복 호출) */
 const MULTI_AUTO_CONTINUE_ROUNDS = 2
-/** 클라이언트가 이 문자열을 transcript로 보내면 1라운드(3발화)만 생성. 재생 끝난 뒤 클라이언트가 다시 이걸 보내 STT 감지될 때까지 반복 */
-export const DCC_MULTI_CONTINUE_TRANSCRIPT = '[다음 라운드] 사용자는 아직 말하지 않았습니다. 앞선 발화를 이어받아 세 전문가가 토론/배틀을 계속하세요. 서로 반론·보완하며 대화를 이어가세요.'
-/** 클라이언트가 이 접두어로 transcript 보내면 1라운드(3발화)만 생성. STT 감지될 때까지 클라이언트가 반복 요청 */
-export const DCC_MULTI_CONTINUE_TRANSCRIPT_PREFIX = '[다음 라운드]'
 
 /** PCM 버퍼 → WAV base64 (청크마다 헤더 붙이면 틱틱 소리 나서, 버퍼 모아서 한 번만 씀) */
 function pcmBufferToWavBase64(pcm: Buffer, sampleRate = CARTESIA_SAMPLE_RATE, numChannels = CARTESIA_NUM_CHANNELS, bitsPerSample = CARTESIA_BITS): string {

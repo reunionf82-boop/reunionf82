@@ -24,11 +24,10 @@ import VolMeterWorket from '@/lib/voice-mvp/genai-live/worklets/vol-meter'
 import { Modality } from '@google/genai/web'
 import { computeManseFromFormInput } from '@/lib/manse-ryeok'
 import { generateOrderId } from '@/lib/payment-utils'
+import { DCC_MULTI_CONTINUE_TRANSCRIPT } from '@/lib/dcc-multi-constants'
 
 /* ── 상수 ────────────────────────────────── */
 const LIVE_MODEL_FALLBACK = 'gemini-live-2.5-flash-native-audio'
-/** 다자형: 재생 끝난 뒤 이 문자열을 transcript로 보내면 다음 3발화 생성. 서버 dcc-turn과 동일 문자열. STT 감지될 때까지 반복 */
-const DCC_MULTI_CONTINUE_TRANSCRIPT = '[다음 라운드] 사용자는 아직 말하지 않았습니다. 앞선 발화를 이어받아 세 전문가가 토론/배틀을 계속하세요. 서로 반론·보완하며 대화를 이어가세요.'
 
 const AUTO_RECONNECT_MAX = 3
 const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
@@ -45,8 +44,6 @@ const DCC_MIN_CHUNKS_QUIET_FALLBACK = 8
 const DCC_SILENCE_END_MS = 600
 /** DCC 스트리밍 PCM 샘플레이트 (백엔드 Cartesia와 동일해야 함) */
 const DCC_PCM_SAMPLE_RATE = 24000
-/** 다자형: 재생 완료 후 사용자(STT) 개입이 없으면 이 문구로 서버에 재요청 → 1라운드(3발화) 추가 */
-const DCC_MULTI_CONTINUE_MSG = '[다음 라운드] 사용자는 아직 말하지 않았습니다. 앞선 발화를 이어받아 세 전문가가 토론/배틀을 계속하세요. 서로 반론·보완하며 대화를 이어가세요.'
 /** 대화중 소리 연타 방지 쿨타임(ms). 이 간격 동안은 재생하지 않음 */
 const CONVERSATION_SOUND_COOLDOWN_MS = 20 * 1000
 
