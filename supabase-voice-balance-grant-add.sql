@@ -5,6 +5,7 @@ CREATE OR REPLACE FUNCTION voice_balance_add_wan(p_content_id int, p_phone text,
 RETURNS TABLE(new_balance_wan int)
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public
 AS $$
   INSERT INTO voice_balance (content_id, phone, balance_wan, updated_at)
   VALUES (p_content_id, p_phone, GREATEST(0, p_add_wan), now())

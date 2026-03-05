@@ -647,7 +647,7 @@ function FormContent() {
   // 알림 팝업 상태
   const [showAlert, setShowAlert] = useState(false)
   const [alertMessage, setAlertMessage] = useState('')
-  // 무료 음성상담 24시간 1회 제한: 차단 시 팝업
+  // 무료 음성상담 5시간 1회 제한: 차단 시 팝업
   const [showFreeVoiceOnceModal, setShowFreeVoiceOnceModal] = useState(false)
   const [freeVoiceOnceRemainingMs, setFreeVoiceOnceRemainingMs] = useState(0)
   // 0원 음성 폼: 이용 가능 시간 역카운트(1초마다)
@@ -704,7 +704,7 @@ function FormContent() {
     if (!Number.isFinite(p) || p > 0) return
     const contentId = String(content.id)
     const lastAt = localStorage.getItem(`voice_free_start_${contentId}`)
-    const FREE_MS = 24 * 60 * 60 * 1000
+    const FREE_MS = 5 * 60 * 60 * 1000
     const remaining = lastAt ? Math.max(0, FREE_MS - (Date.now() - parseInt(lastAt, 10))) : 0
     setFreeVoiceFormRemainingMs(remaining)
     if (remaining <= 0) return
@@ -3283,9 +3283,9 @@ function FormContent() {
       : null
     const priceNum = selectedVoiceOption ? (selectedVoiceOption as any).price : parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
     if (isVoiceContent && Number.isFinite(priceNum) && priceNum <= 0 && (isPpoingAttributes(content) || content?.content_type === 'multi')) {
-      // 무료속성(8006) 0원 음성 또는 다자형 0원: 24시간 제한 검사 → 휴대폰/비번 없으면 스샷 알림; 있으면 무료시작
+      // 무료속성(8006) 0원 음성 또는 다자형 0원: 5시간 제한 검사 → 휴대폰/비번 없으면 스샷 알림; 있으면 무료시작
       const contentId = content?.id != null ? String(content.id) : ''
-      const FREE_VOICE_COOLDOWN_MS = 24 * 60 * 60 * 1000
+      const FREE_VOICE_COOLDOWN_MS = 5 * 60 * 60 * 1000
       if (typeof window !== 'undefined' && contentId) {
         const lastAt = localStorage.getItem(`voice_free_start_${contentId}`)
         if (lastAt) {
@@ -3397,7 +3397,7 @@ function FormContent() {
       return
     }
 
-    // 0원+무료 음성/다자형: 24시간 제한 먼저 검사 → 차단 시 전화번호/비밀번호 입력 없이 바로 안내 팝업
+    // 0원+무료 음성/다자형: 5시간 제한 먼저 검사 → 차단 시 전화번호/비밀번호 입력 없이 바로 안내 팝업
     const rawOptsEarly = content?.content_type === 'multi'
       ? (content as any)?.multi_time_options
       : content?.voice_time_options
@@ -3417,7 +3417,7 @@ function FormContent() {
     const isFreeVoiceEarly = isVoiceContentEarly && (!Number.isFinite(displayedPriceNumEarly) || displayedPriceNumEarly <= 0)
     if (isFreeVoiceEarly) {
       const contentId = content?.id != null ? String(content.id) : ''
-      const FREE_VOICE_COOLDOWN_MS = 24 * 60 * 60 * 1000
+      const FREE_VOICE_COOLDOWN_MS = 5 * 60 * 60 * 1000
       if (contentId && typeof window !== 'undefined') {
         const lastAt = localStorage.getItem(`voice_free_start_${contentId}`)
         if (lastAt) {
@@ -3506,10 +3506,10 @@ function FormContent() {
         ? selectedVoiceOption.price
         : displayedPriceNum
 
-      // 보이스 대표 가격 0원: 24시간 내 1회만 무료 시작 가능
+      // 보이스 대표 가격 0원: 5시간 내 1회만 무료 시작 가능
       if (isFreeVoice) {
         const contentId = content?.id != null ? String(content.id) : ''
-        const FREE_VOICE_COOLDOWN_MS = 24 * 60 * 60 * 1000
+        const FREE_VOICE_COOLDOWN_MS = 5 * 60 * 60 * 1000
         if (contentId && typeof window !== 'undefined') {
           const lastAt = localStorage.getItem(`voice_free_start_${contentId}`)
           if (lastAt) {
@@ -5874,13 +5874,13 @@ function FormContent() {
         onClose={() => setShowAlert(false)} 
       />
 
-      {/* 무료 음성 서비스 24시간 1회 제한 안내 팝업 */}
+      {/* 무료 음성 서비스 5시간 1회 제한 안내 팝업 */}
       {showFreeVoiceOnceModal && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4 bg-black/60" onClick={() => setShowFreeVoiceOnceModal(false)}>
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-gray-900 mb-2">무료 음성 서비스 이용 안내</h3>
             <p className="text-gray-600 text-sm mb-3">
-              무료 음성 서비스는 1회 이용 후 24시간 이후 재이용 가능합니다.
+              무료 음성 서비스는 1회 이용 후 5시간 이후 재이용 가능합니다.
             </p>
             <p className="text-gray-700 text-sm font-medium mb-1">이용 가능까지 남은 시간</p>
             <p className="text-xl font-bold text-pink-600 mb-5 font-mono">

@@ -463,6 +463,59 @@ export function useVoiceResult() {
         }
         contentIdRef.current = cid
 
+        // 강제 리프레시 감지: 음성 상담 중 새로고침 시 종료 처리·캐시(무료시간) 소멸 후 폼으로
+        const navEntry = typeof performance !== 'undefined' && performance.getEntriesByType ? performance.getEntriesByType('navigation')[0] : null
+        const isPageReload = (navEntry as any)?.type === 'reload'
+        const hasVoiceSession = sessionStorage.getItem('payment_voice_total_seconds') || sessionStorage.getItem('payment_phone')
+        if (isPageReload && hasVoiceSession) {
+          const phoneForRefresh = sessionStorage.getItem('payment_phone')
+          // 충전(잔액) 세션: 리프레시로 첫 doDeduct 미완료 시 시간이 그대로 채워지는 버그 방지 — 1블록 차감 시도
+          if (phoneForRefresh && cid) {
+            try {
+              const resContent = await fetch(`/api/content/${cid}?full=true&_t=${Date.now()}`, { cache: 'no-store' })
+              if (resContent.ok) {
+                const dataContent = await resContent.json()
+                const content = dataContent?.data || dataContent?.content || dataContent
+                let optsRefresh = (content?.content_type === 'multi' && Array.isArray((content as any)?.multi_time_options))
+                  ? (content as any).multi_time_options
+                  : (Array.isArray(content?.voice_time_options) ? content.voice_time_options : [])
+                if (content?.voice_time_options && typeof content.voice_time_options === 'string') {
+                  try { optsRefresh = JSON.parse(content.voice_time_options) } catch { optsRefresh = [] }
+                }
+                if (content?.content_type === 'multi' && (content as any).multi_time_options && typeof (content as any).multi_time_options === 'string') {
+                  try { optsRefresh = JSON.parse((content as any).multi_time_options) } catch { optsRefresh = [] }
+                }
+                const chargeOptRefresh = (Array.isArray(optsRefresh) ? optsRefresh : []).find((o: any) => o?.type === 'charge') ?? null
+                const rateSecondsRefresh = chargeOptRefresh != null && Number(chargeOptRefresh.rate_seconds) > 0 ? Number(chargeOptRefresh.rate_seconds) : 12
+                const rateWonRefresh = chargeOptRefresh != null && Number(chargeOptRefresh.rate_won) > 0 ? Number(chargeOptRefresh.rate_won) : 19
+                await fetch('/api/voice/balance', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    action: 'deduct',
+                    contentId: parseInt(String(cid), 10),
+                    phone: phoneForRefresh,
+                    secondsUsed: rateSecondsRefresh,
+                    rate_seconds: rateSecondsRefresh,
+                    rate_won: rateWonRefresh,
+                  }),
+                })
+              }
+            } catch { /* ignore */ }
+          }
+          try {
+            sessionStorage.setItem('voice_time_expired', '1')
+            sessionStorage.removeItem('payment_voice_total_seconds')
+            sessionStorage.removeItem('payment_voice_minutes')
+            sessionStorage.removeItem('payment_voice_time_option')
+          } catch { /* ignore */ }
+          stopAllTTSRef.current()
+          setLoading(false)
+          alert('새로고침으로 인해 상담이 종료되었습니다. 이용 중이던 무료 시간은 소멸됩니다.')
+          window.location.replace('/form?id=' + encodeURIComponent(cid))
+          return
+        }
+
         // 상담 종료(시간 0) 후 폼을 나갔다가 이전 버튼으로 재진입한 경우 → 폼으로 리다이렉트(반응 없음)
         if (sessionStorage.getItem('voice_time_expired') === '1') {
           stopAllTTSRef.current()
@@ -1250,8 +1303,8 @@ ${seasonBlock}
     sessionStartedRef.current = true
     // 차감주기 = admin/form/voice 충전시간 섹션
     const rateSec = Math.max(1, rateSecondsTimerRef.current)
-    // 선차감: 진입 직후 첫 블록(차감주기) 즉시 차감. 잔액 모드는 startBalanceDeductIntervalIfNeeded의 doDeduct()에서 선차감 처리하므로 제외
-    if (!useBalanceModeRef.current && !enteredWithBalanceRef.current && rateSec > 0) {
+    // 선차감: 진입 직후 첫 블록(차감주기) 즉시 차감. 무료(기본시간)는 제외(전체 시간 그대로). 잔액 모드는 doDeduct()에서 선차감 처리하므로 제외
+    if (!useBalanceModeRef.current && !enteredWithBalanceRef.current && !isFreeStartSessionRef.current && rateSec > 0) {
       setRemainingSeconds((prev) => Math.max(0, prev - rateSec))
     }
     timerIntervalRef.current = setInterval(() => {
@@ -2144,6 +2197,7 @@ ${seasonBlock}
     const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 19
     if (!rateSeconds || !rateWon) return
     useBalanceModeRef.current = true
+    balanceDeductFirstCallDoneRef.current = false
     const doDeduct = async () => {
       if (!useBalanceModeRef.current) return
       const cid2 = contentIdRef.current
@@ -2167,7 +2221,17 @@ ${seasonBlock}
           return
         }
         setBalanceWan(d.balance_wan ?? 0)
-        setRemainingSeconds((prev) => Math.max(0, prev - rateSeconds))
+        // 선차감: 첫 호출에서는 잔액만 차감하고 남은시간은 유지. 두 번째 호출부터 남은시간 반영
+        if (balanceDeductFirstCallDoneRef.current) {
+          const newBalance = d.balance_wan ?? 0
+          if (newBalance === 0) {
+            // 방금 선차감으로 마지막 블록 결제함 → 그 블록 시간(rateSeconds)만큼 더 재생
+            setRemainingSeconds(rateSeconds)
+          } else {
+            setRemainingSeconds((prev) => Math.max(0, prev - rateSeconds))
+          }
+        }
+        balanceDeductFirstCallDoneRef.current = true
       } catch {
         useBalanceModeRef.current = false
         if (balanceDeductIntervalRef.current) {
@@ -2176,7 +2240,7 @@ ${seasonBlock}
         }
       }
     }
-    // 차감 주기(초)마다 doDeduct 호출 → 서버가 차감 금액(원)만큼 잔액 차감
+    // 선차감: 연결 직후 1블록 즉시 차감, 이후 차감 주기(초)마다 doDeduct 호출
     doDeduct()
     balanceDeductIntervalRef.current = setInterval(doDeduct, rateSeconds * 1000)
   }, [])
@@ -2897,7 +2961,7 @@ ${seasonBlock}
   const extendSuccessTimeAddedOidsRef = useRef<Set<string>>(new Set())
   /** 바로이용하기(충전) 결제 후 result 진입 시 URL oid로 충전 적용 1회만 수행 */
   const skipWaitChargeAppliedRef = useRef(false)
-  /** 무료 연장 24시간 1회 제한: 차단 시 팝업용 */
+  /** 무료 연장 5시간 1회 제한: 차단 시 팝업용 */
   const [showFreeExtendBlockedPopup, setShowFreeExtendBlockedPopup] = useState(false)
   const [freeExtendBlockedRemainingMs, setFreeExtendBlockedRemainingMs] = useState(0)
 
@@ -2905,6 +2969,8 @@ ${seasonBlock}
   const [balanceWan, setBalanceWan] = useState<number>(0)
   const useBalanceModeRef = useRef(false)
   const balanceDeductIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  /** 선차감 시 첫 호출에서는 잔액만 차감하고 remainingSeconds는 그대로 둠 → 100캐시가 60초 쓰이도록 */
+  const balanceDeductFirstCallDoneRef = useRef(false)
   /** 폼에서 잔여금액으로 상담 진입 시 true → 차감 주기마다 잔액 차감·UI 갱신 인터벌 자동 시작 */
   const enteredWithBalanceRef = useRef(false)
 
@@ -2943,10 +3009,10 @@ ${seasonBlock}
     setExtendPaymentProcessing(true)
     extendPaymentInProgressRef.current = true
     try {
-      // 0원 무료 추가: 24시간 내 1회만 가능 (이미 사용했으면 연장 팝업 자체를 안 띄우므로 여기 오는 경우는 드묾; 차단 시 별도 팝업 없이 그냥 return)
+      // 0원 무료 추가: 5시간 내 1회만 가능 (이미 사용했으면 연장 팝업 자체를 안 띄우므로 여기 오는 경우는 드묾; 차단 시 별도 팝업 없이 그냥 return)
       if (!option.charge && option.price <= 0) {
         const cid = contentIdRef.current
-        const FREE_EXTEND_COOLDOWN_MS = 24 * 60 * 60 * 1000
+        const FREE_EXTEND_COOLDOWN_MS = 5 * 60 * 60 * 1000
         if (typeof window !== 'undefined' && cid) {
           const lastAt = localStorage.getItem(`voice_free_extend_${cid}`)
           if (lastAt) {

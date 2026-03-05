@@ -2182,53 +2182,6 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
     return remaining
   }
 
-  const formatUserInfoLine = (result: SavedResult) => {
-    const name = result.user_name || result.content?.user_info?.name || ''
-    const birthDate = result.content?.user_info?.birth_date || ''
-    const birthHour = result.content?.user_info?.birth_hour || ''
-
-    if (!name) return ''
-
-    const parts: string[] = [name]
-    if (birthDate || birthHour) {
-      let formattedDate = birthDate;
-      if (birthDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        const [y, m, d] = birthDate.split('-');
-        formattedDate = `${y}년 ${parseInt(m, 10)}월 ${parseInt(d, 10)}일`;
-      }
-      
-      let formattedHour = '';
-      if (birthHour) {
-        // 자(子), 축(丑) 등의 한자를 한글로 변환
-        const zodiacMap: Record<string, string> = {
-          '子': '자', '丑': '축', '寅': '인', '卯': '묘',
-          '辰': '진', '巳': '사', '午': '오', '未': '미',
-          '申': '신', '酉': '유', '戌': '술', '亥': '해'
-        };
-        
-        // birthHour가 "丑" 또는 "丑시" 등으로 올 수 있음
-        const cleanHour = birthHour.replace('시', '').trim();
-        
-        if (zodiacMap[cleanHour]) {
-          // 예: "축(丑)시"
-          formattedHour = `${zodiacMap[cleanHour]}(${cleanHour})시`;
-        } else {
-          // 그 외 (모름 등): "X시" 또는 그대로
-          formattedHour = birthHour.endsWith('시') ? birthHour : `${birthHour}시`;
-        }
-      }
-      
-      if (formattedDate || formattedHour) {
-        const dateParts = [];
-        if (formattedDate) dateParts.push(formattedDate);
-        if (formattedHour) dateParts.push(formattedHour);
-        parts.push(`(${dateParts.join(' ')})`);
-      }
-    }
-
-    return parts.join(' ')
-  }
-
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col relative">
@@ -2543,11 +2496,6 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                             </span>
                           )}
                         </div>
-                        {formatUserInfoLine(result) && (
-                          <p className="text-sm text-gray-700">
-                            {formatUserInfoLine(result)}
-                          </p>
-                        )}
                         {isVoice && result.voice_duration_seconds != null && result.voice_duration_seconds > 0 && (
                           <p className="text-sm text-gray-600">
                             상담시간: {Math.floor(result.voice_duration_seconds / 60)}분 {result.voice_duration_seconds % 60}초
