@@ -35,7 +35,7 @@ const AUTO_RECONNECT_DELAYS = [2000, 4000, 6000]
 const SPEECH_THRESHOLD_MIN = 0.005
 const SPEECH_THRESHOLD_MAX = 0.035
 /** TTS 중단용: 볼륨이 (threshold * 이 값) 이상일 때 TTS 멈춤. 1.0=말 시작 감지와 동일, 높이면 에코 방지. */
-const TTS_INTERRUPT_VOLUME_FACTOR = 0.8
+const TTS_INTERRUPT_VOLUME_FACTOR = 1.3
 /** TTS 중단 디바운스(ms): 이 시간 이상 연속으로 기준 초과 시에만 중단 (순간 스파이크 무시). */
 const TTS_INTERRUPT_DEBOUNCE_MS = 60
 /** DCC 연속 대화: 침묵 시 턴 전송. 이 청크 수 이상이면 '말함' 없이도 전송(조용한 목소리 폴백). 16kHz 기준 약 2초. */
