@@ -6206,15 +6206,17 @@ function FormContent() {
               })()}
               {/* 바로이용하기: 휴대폰/비밀번호는 메인 폼에 입력. 결제 버튼 클릭 시 미입력이면 알림 팝업으로 안내 */}
 
-              {/* 버튼 - 1행: 기다리기(크게) / 2행: 카드결제, 휴대폰 결제 */}
+              {/* 버튼 - 1행: 기다리기(크게) / 2행: 카드결제, 휴대폰 결제 (충전하기 팝업에서는 기다리기 숨김) */}
               <div className="flex flex-col gap-3">
-                <button
-                  type="button"
-                  onClick={() => { setShowSkipWaitPopup(false); setSelectedSkipWaitOption(null) }}
-                  className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-5 px-4 rounded-xl transition-colors text-lg"
-                >
-                  기다리기
-                </button>
+                {skipWaitPopupMode !== 'charge-only' && (
+                  <button
+                    type="button"
+                    onClick={() => { setShowSkipWaitPopup(false); setSelectedSkipWaitOption(null) }}
+                    className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-5 px-4 rounded-xl transition-colors text-lg"
+                  >
+                    기다리기
+                  </button>
+                )}
                 <div className="flex gap-3">
                   <button
                     type="button"
