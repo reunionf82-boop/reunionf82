@@ -76,6 +76,39 @@ function VoiceReplayContent() {
       void unlock.play().catch(() => {})
     }
   }, [])
+
+  // 모바일 Pull-to-Refresh 방지
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const root = document.documentElement
+    root.classList.add('no-pull-to-refresh')
+    const ua = navigator.userAgent || ''
+    const isIOSUA = /iP(hone|ad|od)/.test(ua)
+    const isWebKit = /WebKit/.test(ua)
+    const isSafari = isIOSUA && isWebKit && !/CriOS|FxiOS|EdgiOS/.test(ua)
+    if (!isSafari) {
+      return () => { root.classList.remove('no-pull-to-refresh') }
+    }
+    let startY = 0
+    const onTouchStart = (e: TouchEvent) => {
+      if (!e.touches?.length) return
+      startY = e.touches[0].clientY
+    }
+    const onTouchMove = (e: TouchEvent) => {
+      if (!e.touches?.length) return
+      if (window.scrollY > 0) return
+      const currentY = e.touches[0].clientY
+      if (currentY > startY + 5) e.preventDefault()
+    }
+    window.addEventListener('touchstart', onTouchStart, { passive: true })
+    window.addEventListener('touchmove', onTouchMove, { passive: false })
+    return () => {
+      root.classList.remove('no-pull-to-refresh')
+      window.removeEventListener('touchstart', onTouchStart as any)
+      window.removeEventListener('touchmove', onTouchMove as any)
+    }
+  }, [])
+
   const [error, setError] = useState('')
   const [result, setResult] = useState<VoiceResult | null>(null)
 

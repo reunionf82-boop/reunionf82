@@ -876,7 +876,8 @@ export function useVoiceResult() {
       if (!conversationSavedRef.current && sessionStartedRef.current) {
         saveViaBeacon()
         e.preventDefault()
-        e.returnValue = ''
+        // 이중 방어: 당겨서 리프레시 백업으로 확인 대화상자 (일부 브라우저는 커스텀 문구 미표시)
+        e.returnValue = '음성 상담 중입니다. 나가시겠습니까?'
       }
     }
     const handlePageHide = () => {
