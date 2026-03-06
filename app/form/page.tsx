@@ -7827,9 +7827,36 @@ function FormContent() {
 
             {/* 음성: 보유캐시(잔여원)=voice_balance.balance_wan만 표시. 잔여 이용시간(remaining_seconds)은 사용하지 않음 */}
             {(content?.content_type === 'voice' || content?.content_type === 'multi') && content != null && (voiceBalanceWan != null && voiceBalanceWan > 0) && (
-              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                <div className="flex flex-col sm:flex-row items-center gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3">
                   <span className="text-sm text-gray-600 font-bold">나의 보유캐시 : {voiceBalanceWan} 캐시 이용가능</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const micPromise = (content?.content_type === 'voice' || content?.content_type === 'multi') && typeof window !== 'undefined' && isIOS() ? startIOSVoicePrepare() : null
+                      if (!agreeTerms) {
+                        showAlertMessage('서비스 이용 약관에 동의해주세요.')
+                        return
+                      }
+                      if (!agreePrivacy) {
+                        showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
+                        return
+                      }
+                      if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
+                        showAlertMessage('휴대폰 번호를 입력하세요.')
+                        return
+                      }
+                      if (!password || password.length < 4) {
+                        showAlertMessage('비밀번호를 입력하세요.')
+                        return
+                      }
+                      await finishIOSVoicePrepare(micPromise)
+                      setShowSkipWaitPopup(true)
+                    }}
+                    className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"
+                  >
+                    충전하기
+                  </button>
                 </div>
               </div>
             )}
