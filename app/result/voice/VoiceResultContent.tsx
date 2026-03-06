@@ -594,7 +594,9 @@ export default function VoiceResultContent() {
   const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 19
   const displayCache = (h.balanceWan != null && h.balanceWan > 0)
     ? h.balanceWan
-    : Math.floor(h.remainingSeconds / rateSeconds) * rateWon
+    : (h.balanceModeForDisplay && (h.balanceWan ?? 0) === 0)
+      ? 0
+      : Math.floor(h.remainingSeconds / rateSeconds) * rateWon
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col">
       {/* 상단 바 */}

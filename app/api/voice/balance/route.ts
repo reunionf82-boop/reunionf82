@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminSupabaseClient } from '@/lib/supabase-admin-client'
+import { normalizePhoneForBalance } from '@/lib/payment-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,16 +26,37 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'contentId 숫자 필요' }, { status: 400 })
     }
 
+    const phoneTrim = String(phone).trim()
+    const phoneNorm = normalizePhoneForBalance(phoneTrim)
     const supabase = getAdminSupabaseClient()
-    const { data, error } = await supabase
-      .from('voice_balance')
-      .select('balance_wan, remaining_seconds')
-      .eq('content_id', cid)
-      .eq('phone', String(phone).trim())
-      .maybeSingle()
-
-    if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    // 조회: 숫자만 정규화·trim 둘 다 시도 후, 같은 content_id면 잔액 큰 쪽 사용 (형식별 중복 행 시 프론트·어드민 불일치 방지)
+    let data: any = null
+    let err: any = null
+    const run = (p: string) =>
+      supabase
+        .from('voice_balance')
+        .select('balance_wan, remaining_seconds')
+        .eq('content_id', cid)
+        .eq('phone', p)
+        .maybeSingle()
+    if (phoneNorm) {
+      const res = await run(phoneNorm)
+      data = res.data
+      err = res.error
+    }
+    if (!err && phoneTrim && phoneTrim !== phoneNorm) {
+      const res = await run(phoneTrim)
+      if (res.error) err = res.error
+      else if (res.data) {
+        const a = (data as any)?.balance_wan ?? 0
+        const b = (res.data as any)?.balance_wan ?? 0
+        if (b > a) data = res.data
+      } else if (!data) {
+        data = res.data
+      }
+    }
+    if (err) {
+      return NextResponse.json({ success: false, error: err.message }, { status: 500 })
     }
 
     const balance_wan = (data as any)?.balance_wan ?? 0
@@ -87,12 +109,11 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // 부가세 제외 금액으로 잔액 누적 (클라이언트에서 amount_wan 전달 시 사용, 없으면 결제액 그대로)
-      const amountToAdd = (bodyAmountWan != null && Number.isFinite(Number(bodyAmountWan)) && Number(bodyAmountWan) > 0 && Number(bodyAmountWan) <= payAmount)
-        ? Math.floor(Number(bodyAmountWan))
-        : payAmount
+      // 실제 결제액(payments.pay)만 잔액에 반영. 클라이언트 amount_wan과 불일치 시에도 결제된 금액만 추가(1100원 결제 시 2000 표시 버그 방지)
+      const amountToAdd = Math.floor(payAmount)
 
-      const phoneStr = String(phone).trim()
+      const phoneTrim = String(phone).trim()
+      const phoneStr = normalizePhoneForBalance(phoneTrim) || phoneTrim
 
       // 멱등성: 동일 oid로 이미 충전된 적 있으면 잔액만 반환 (중복 충전 방지)
       const { error: logError } = await supabase
@@ -106,13 +127,15 @@ export async function POST(request: NextRequest) {
 
       if (logError) {
         if (logError.code === '23505') {
-          // unique_violation: 이미 충전된 oid → 현재 잔액만 반환
-          const { data: row } = await supabase
-            .from('voice_balance')
-            .select('balance_wan')
-            .eq('content_id', cid)
-            .eq('phone', phoneStr)
-            .maybeSingle()
+          // unique_violation: 이미 충전된 oid → 현재 잔액만 반환 (정규화·trim 둘 다 시도)
+          const tryRow = (p: string) => supabase.from('voice_balance').select('balance_wan').eq('content_id', cid).eq('phone', p).maybeSingle()
+          let row: any = null
+          const r1 = await tryRow(phoneStr)
+          if (r1.data) row = r1.data
+          if (!row && String(phone).trim() !== phoneStr) {
+            const r2 = await tryRow(String(phone).trim())
+            if (r2.data) row = r2.data
+          }
           const current = (row as any)?.balance_wan ?? 0
           return NextResponse.json({ success: true, balance_wan: current })
         }
@@ -129,7 +152,6 @@ export async function POST(request: NextRequest) {
         .eq('content_id', cid)
         .eq('phone', phoneStr)
         .maybeSingle()
-
       const current = (row as any)?.balance_wan ?? 0
       const nextBalance = current + amountToAdd
 
@@ -164,20 +186,24 @@ export async function POST(request: NextRequest) {
       if (!Number.isFinite(cid)) {
         return NextResponse.json({ success: false, error: 'contentId 숫자 필요' }, { status: 400 })
       }
+      const phoneTrim = String(phone).trim()
+      const phoneStr = normalizePhoneForBalance(phoneTrim) || phoneTrim
       const supabase = getAdminSupabaseClient()
-      const { data: row } = await supabase
-        .from('voice_balance')
-        .select('balance_wan')
-        .eq('content_id', cid)
-        .eq('phone', String(phone).trim())
-        .maybeSingle()
+      const tryRow = (p: string) => supabase.from('voice_balance').select('balance_wan').eq('content_id', cid).eq('phone', p).maybeSingle()
+      let row: any = null
+      const r1 = await tryRow(phoneStr)
+      if (r1.data) row = r1.data
+      if (!row && phoneTrim !== phoneStr) {
+        const r2 = await tryRow(phoneTrim)
+        if (r2.data) row = r2.data
+      }
       const currentWan = (row as any)?.balance_wan ?? 0
       const { error: upsertError } = await supabase
         .from('voice_balance')
         .upsert(
           {
             content_id: cid,
-            phone: String(phone).trim(),
+            phone: phoneStr,
             balance_wan: currentWan,
             remaining_seconds: sec,
             updated_at: new Date().toISOString(),
@@ -202,13 +228,17 @@ export async function POST(request: NextRequest) {
       if (!Number.isFinite(cid)) {
         return NextResponse.json({ success: false, error: 'contentId 숫자 필요' }, { status: 400 })
       }
+      const phoneTrim = String(phone).trim()
+      const phoneStr = normalizePhoneForBalance(phoneTrim) || phoneTrim
       const supabase = getAdminSupabaseClient()
-      const { data: row } = await supabase
-        .from('voice_balance')
-        .select('balance_wan, remaining_seconds')
-        .eq('content_id', cid)
-        .eq('phone', String(phone).trim())
-        .maybeSingle()
+      const tryRow = (p: string) => supabase.from('voice_balance').select('balance_wan, remaining_seconds').eq('content_id', cid).eq('phone', p).maybeSingle()
+      let row: any = null
+      const r1 = await tryRow(phoneStr)
+      if (r1.data) row = r1.data
+      if (!row && phoneTrim !== phoneStr) {
+        const r2 = await tryRow(phoneTrim)
+        if (r2.data) row = r2.data
+      }
       const currentWan = (row as any)?.balance_wan ?? 0
       const { error: updateError } = await supabase
         .from('voice_balance')
@@ -217,7 +247,7 @@ export async function POST(request: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq('content_id', cid)
-        .eq('phone', String(phone).trim())
+        .eq('phone', phoneStr)
       if (updateError) {
         return NextResponse.json({ success: false, error: updateError.message }, { status: 500 })
       }
@@ -237,38 +267,41 @@ export async function POST(request: NextRequest) {
       if (!Number.isFinite(cid)) {
         return NextResponse.json({ success: false, error: 'contentId 숫자 필요' }, { status: 400 })
       }
+      const phoneTrim = String(phone).trim()
+      const phoneStr = normalizePhoneForBalance(phoneTrim) || phoneTrim
       const rateSeconds = Math.max(1, parseInt(String(bodyRateSec), 10) || 12)
       const rateWon = Math.max(1, parseInt(String(bodyRateWon), 10) || DEDUCT_PER_12SEC)
       const deductWan = Math.ceil(sec / rateSeconds) * rateWon
+      const supabase = getAdminSupabaseClient()
+      const tryRow = (p: string) => supabase.from('voice_balance').select('balance_wan').eq('content_id', cid).eq('phone', p).maybeSingle()
       if (deductWan <= 0) {
-        const supabase = getAdminSupabaseClient()
-        const { data: row } = await supabase
-          .from('voice_balance')
-          .select('balance_wan')
-          .eq('content_id', cid)
-          .eq('phone', String(phone).trim())
-          .maybeSingle()
+        let row: any = null
+        const r1 = await tryRow(phoneStr)
+        if (r1.data) row = r1.data
+        if (!row && phoneTrim !== phoneStr) {
+          const r2 = await tryRow(phoneTrim)
+          if (r2.data) row = r2.data
+        }
         const balance_wan = (row as any)?.balance_wan ?? 0
         return NextResponse.json({ success: true, balance_wan })
       }
 
-      const supabase = getAdminSupabaseClient()
-      const { data: row } = await supabase
-        .from('voice_balance')
-        .select('balance_wan')
-        .eq('content_id', cid)
-        .eq('phone', String(phone).trim())
-        .maybeSingle()
-
-      const current = (row as any)?.balance_wan ?? 0
-      if (current < deductWan) {
-        return NextResponse.json(
-          { success: false, error: '잔액 부족', balance_wan: current, required: deductWan },
-          { status: 402 }
-        )
+      let row: any = null
+      const r1 = await tryRow(phoneStr)
+      if (r1.data) row = r1.data
+      if (!row && phoneTrim !== phoneStr) {
+        const r2 = await tryRow(phoneTrim)
+        if (r2.data) row = r2.data
       }
 
-      const nextBalance = current - deductWan
+      const current = (row as any)?.balance_wan ?? 0
+      // VOC 보상 등으로 차감 단위(rate_won)보다 적게 남은 경우: 남은 금액 전부 1블록으로 차감 후 정상 종료 (시스템 팝업 없음)
+      const amountToDeduct = current >= deductWan ? deductWan : (current > 0 ? current : 0)
+      if (amountToDeduct <= 0) {
+        return NextResponse.json({ success: true, balance_wan: current })
+      }
+
+      const nextBalance = current - amountToDeduct
 
       const { error: updateError } = await supabase
         .from('voice_balance')
@@ -277,7 +310,7 @@ export async function POST(request: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq('content_id', cid)
-        .eq('phone', String(phone).trim())
+        .eq('phone', phoneStr)
 
       if (updateError) {
         return NextResponse.json({ success: false, error: updateError.message }, { status: 500 })
@@ -298,7 +331,18 @@ export async function POST(request: NextRequest) {
       if (!Number.isFinite(cid)) {
         return NextResponse.json({ success: false, error: 'contentId 숫자 필요' }, { status: 400 })
       }
+      const phoneTrim = String(phone).trim()
+      const phoneStr = normalizePhoneForBalance(phoneTrim) || phoneTrim
       const supabase = getAdminSupabaseClient()
+      const tryRow = (p: string) => supabase.from('voice_balance').select('phone').eq('content_id', cid).eq('phone', p).maybeSingle()
+      let row: any = null
+      const r1 = await tryRow(phoneStr)
+      if (r1.data) row = r1.data
+      if (!row && phoneTrim !== phoneStr) {
+        const r2 = await tryRow(phoneTrim)
+        if (r2.data) row = r2.data
+      }
+      const targetPhone = row ? (row as any).phone : phoneStr
       const { error: updateError } = await supabase
         .from('voice_balance')
         .update({
@@ -307,7 +351,7 @@ export async function POST(request: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq('content_id', cid)
-        .eq('phone', String(phone).trim())
+        .eq('phone', targetPhone)
       if (updateError) {
         return NextResponse.json({ success: false, error: updateError.message }, { status: 500 })
       }

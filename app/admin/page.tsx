@@ -111,7 +111,10 @@ export default function AdminPage() {
   const [vocGrantSubmitting, setVocGrantSubmitting] = useState(false)
   const [vocGrantError, setVocGrantError] = useState<string | null>(null)
   const [vocGrantBalance, setVocGrantBalance] = useState<{ balance_wan: number; remaining_seconds: number; found: boolean } | null>(null)
+  /** 해당 번호의 콘텐츠별 잔액 (보유캐시 조회 시 contentId 없이 조회 → 프론트와 동일한 잔액 표시) */
+  const [vocGrantBalanceByContent, setVocGrantBalanceByContent] = useState<{ content_id: number; balance_wan: number; remaining_seconds: number }[] | null>(null)
   const [vocGrantBalanceLoading, setVocGrantBalanceLoading] = useState(false)
+  const [vocGrantAction, setVocGrantAction] = useState<'add' | 'deduct'>('add')
   // 음성형 DB 초기화 모달 상태
   const [showVoiceResetModal, setShowVoiceResetModal] = useState(false)
   const [voiceResetConfirm, setVoiceResetConfirm] = useState('')
@@ -1879,6 +1882,8 @@ export default function AdminPage() {
                   setShowVocGrantModal(false)
                   setVocGrantError(null)
                   setVocGrantBalance(null)
+                  setVocGrantBalanceByContent(null)
+                  setVocGrantAction('add')
                 }}
                 className="text-white hover:text-gray-200 text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-teal-800 transition-colors"
               >
@@ -1889,7 +1894,29 @@ export default function AdminPage() {
               {vocGrantError && (
                 <p className="text-sm text-red-400 bg-red-900/30 border border-red-600 rounded p-2">{vocGrantError}</p>
               )}
-              <p className="text-xs text-gray-400">음성형·다자형 콘텐츠에 대해 고객에게 캐시를 충전할 수 있습니다.</p>
+              <p className="text-xs text-gray-400">음성형·다자형 콘텐츠에 대해 고객에게 캐시를 충전하거나 차감할 수 있습니다.</p>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="vocGrantAction"
+                    checked={vocGrantAction === 'add'}
+                    onChange={() => setVocGrantAction('add')}
+                    className="text-teal-500"
+                  />
+                  <span className="text-gray-300">충전</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="vocGrantAction"
+                    checked={vocGrantAction === 'deduct'}
+                    onChange={() => setVocGrantAction('deduct')}
+                    className="text-teal-500"
+                  />
+                  <span className="text-gray-300">차감</span>
+                </label>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">콘텐츠</label>
                 <select
@@ -1915,36 +1942,42 @@ export default function AdminPage() {
                   placeholder="010-1234-5678"
                   className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white placeholder-gray-500"
                 />
-                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                  <div className="mt-2 flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
                     onClick={async () => {
-                      const cid = vocGrantContentId ? parseInt(vocGrantContentId, 10) : NaN
                       const phone = vocGrantPhone.trim()
-                      if (!Number.isFinite(cid) || !phone) {
-                        setVocGrantError('콘텐츠와 휴대폰 번호를 입력한 뒤 조회해주세요.')
+                      if (!phone) {
+                        setVocGrantError('휴대폰 번호를 입력한 뒤 조회해주세요.')
+                        return
+                      }
+                      const cid = vocGrantContentId ? parseInt(vocGrantContentId, 10) : NaN
+                      if (!Number.isFinite(cid)) {
+                        setVocGrantError('콘텐츠를 선택한 뒤 조회해주세요.')
                         return
                       }
                       setVocGrantBalanceLoading(true)
                       setVocGrantError(null)
                       setVocGrantBalance(null)
+                      setVocGrantBalanceByContent(null)
                       try {
+                        // 드롭다운에서 선택한 콘텐츠만 조회 → 해당 콘텐츠 캐시만 출력
                         const res = await fetch(
-                          `/api/admin/voice/grant-time?contentId=${encodeURIComponent(cid)}&phone=${encodeURIComponent(phone)}`
+                          `/api/admin/voice/grant-time?phone=${encodeURIComponent(phone)}&contentId=${encodeURIComponent(vocGrantContentId)}`
                         )
                         const data = await res.json().catch(() => ({}))
                         if (!res.ok) {
                           setVocGrantError(data?.error || `조회 실패 (${res.status})`)
                           return
                         }
-                        if (data.success) {
+                        if (data.success && data.found === true) {
                           setVocGrantBalance({
                             balance_wan: data.balance_wan ?? 0,
                             remaining_seconds: data.remaining_seconds ?? 0,
-                            found: data.found === true,
+                            found: true,
                           })
                         } else {
-                          setVocGrantError(data?.error || '조회 실패')
+                          setVocGrantBalance({ balance_wan: 0, remaining_seconds: 0, found: false })
                         }
                       } catch (e: any) {
                         setVocGrantError(e?.message || '네트워크 오류')
@@ -1967,7 +2000,7 @@ export default function AdminPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">충전할 캐시 (원)</label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">{vocGrantAction === 'deduct' ? '차감할' : '충전할'} 캐시 (원)</label>
                 <input
                   type="number"
                   min={1}
@@ -1989,7 +2022,7 @@ export default function AdminPage() {
                       return
                     }
                     if (!Number.isFinite(cacheWon) || cacheWon < 1) {
-                      setVocGrantError('충전할 캐시(원)를 1 이상 입력해주세요.')
+                      setVocGrantError((vocGrantAction === 'deduct' ? '차감할' : '충전할') + ' 캐시(원)를 1 이상 입력해주세요.')
                       return
                     }
                     setVocGrantSubmitting(true)
@@ -2002,6 +2035,7 @@ export default function AdminPage() {
                           contentId: cid,
                           phone,
                           cache_won: cacheWon,
+                          action: vocGrantAction,
                         }),
                       })
                       const data = await res.json().catch(() => ({}))
@@ -2010,12 +2044,14 @@ export default function AdminPage() {
                         return
                       }
                       if (data.success) {
-                        alert(data.message || `${cacheWon}캐시 충전 완료`)
+                        alert(data.message || (vocGrantAction === 'deduct' ? `${cacheWon}캐시 차감 완료` : `${cacheWon}캐시 충전 완료`))
                         setShowVocGrantModal(false)
                         setVocGrantContentId('')
                         setVocGrantPhone('')
                         setVocGrantCache('')
                         setVocGrantBalance(null)
+                        setVocGrantBalanceByContent(null)
+                        setVocGrantAction('add')
                       } else {
                         setVocGrantError(data?.error || '처리 실패')
                       }
@@ -2028,7 +2064,7 @@ export default function AdminPage() {
                   disabled={vocGrantSubmitting}
                   className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium py-2 rounded transition-colors"
                 >
-                  {vocGrantSubmitting ? '처리 중...' : '충전하기'}
+                  {vocGrantSubmitting ? '처리 중...' : (vocGrantAction === 'deduct' ? '차감하기' : '충전하기')}
                 </button>
                 <button
                   type="button"
@@ -2036,6 +2072,7 @@ export default function AdminPage() {
                     setShowVocGrantModal(false)
                     setVocGrantError(null)
                     setVocGrantBalance(null)
+                    setVocGrantBalanceByContent(null)
                   }}
                   className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded transition-colors"
                 >

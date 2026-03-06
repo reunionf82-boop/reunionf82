@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getKSTNow } from '@/lib/payment-utils'
+import { getContentById } from '@/lib/supabase-admin'
 import { normalizeVoiceMessagesToKorean } from '@/lib/voice-transcript-korean'
 import { summarizeVoiceConversation, normalizePhoneForVoice, getAlreadyAskedSummaryTexts } from '@/lib/voice-summary'
 
@@ -36,7 +37,16 @@ export async function POST(request: NextRequest) {
 
     const savedAtKST = getKSTNow()
     let finalVoiceMessages = voice_messages || null
-    if (Array.isArray(finalVoiceMessages) && finalVoiceMessages.length > 0) {
+    let useDcc = false
+    if (content_id != null && Array.isArray(finalVoiceMessages) && finalVoiceMessages.length > 0) {
+      try {
+        const c = await getContentById(Number(content_id))
+        useDcc = (c as any)?.voice_provider === 'deepgram-claude-cartesia' || (c as any)?.content_type === 'multi'
+      } catch {
+        /* ignore */
+      }
+    }
+    if (Array.isArray(finalVoiceMessages) && finalVoiceMessages.length > 0 && !useDcc) {
       try {
         finalVoiceMessages = await normalizeVoiceMessagesToKorean(finalVoiceMessages)
       } catch {

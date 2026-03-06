@@ -261,6 +261,10 @@ export function useVoiceResult() {
   const timeHitZeroNoExtendPopupRef = useRef(false)
   /** 시간 0 전환 시 세션 1회만 끊었는지 (오디오 즉시 정지용) */
   const disconnectedAtZeroRef = useRef(false)
+  /** 잔액 0 후 마지막 블록(rateSeconds) 카운트다운 중 → 메인 타이머가 이 구간에서만 remainingSeconds 감소 */
+  const balanceZeroLastBlockRef = useRef(false)
+  /** 잔액 0 시 rateSeconds 후 remainingSeconds=0 으로 만들기 위한 타임아웃 (확실한 종료) */
+  const balanceZeroEndTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** 연장 결제 후 이미 연결 중이면 connect() 호출하지 않기 위해 (connect() 호출 시 DCC는 새 세션+[시작] 전송됨) */
   const connectedRef = useRef(false)
   /* ── WS / 오디오 refs ──────────────────── */
@@ -573,53 +577,35 @@ export function useVoiceResult() {
             if (balRes.ok) {
               const balData = await balRes.json()
               const balanceWan = typeof (balData as any)?.balance_wan === 'number' ? (balData as any).balance_wan : 0
-              if (balanceWan > 0) {
+              const urlOid = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oid') : null
+              const skipWaitWithOid = sessionStorage.getItem('voice_entered_by_100') && urlOid
+              // oid 충전 진입 시 DB 잔액(이전 2000 등)으로 세팅하면 2000→1900→1100으로 보이는 버그. charge API가 실제 결제액으로 세팅하므로 여기서 사용하지 않음
+              if (balanceWan > 0 && !skipWaitWithOid) {
                 usedBalancePath = true
                 setBalanceWan(balanceWan)
                 const chargeOpt = opts.find((o: any) => o?.type === 'charge')
                 const rateSec = chargeOpt != null && Number(chargeOpt.rate_seconds) > 0 ? Number(chargeOpt.rate_seconds) : 12
                 const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 19
                 if (rateWon > 0 && rateSec > 0) secs = Math.floor(balanceWan / rateWon) * rateSec
-                if (secs > 0) enteredWithBalanceRef.current = true
+                if (secs > 0) {
+                  enteredWithBalanceRef.current = true
+                  setBalanceModeForDisplay(true)
+                }
               }
             }
           } catch { /* ignore */ }
         }
         if (!usedBalancePath) {
-        if (Number.isFinite(storedTotalSecNum) && storedTotalSecNum > 0) {
+        const urlOid = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oid') : null
+        const skipWaitWithOid = sessionStorage.getItem('voice_entered_by_100') && urlOid
+        if (skipWaitWithOid) {
+          secs = 0
+        } else if (Number.isFinite(storedTotalSecNum) && storedTotalSecNum > 0) {
           secs = storedTotalSecNum
         } else if (storedVoiceMin && parseInt(storedVoiceMin, 10) > 0) {
           secs = parseInt(storedVoiceMin, 10) * 60
         } else {
-          // [원인] 바로이용하기(충전) 결제 후 oid로 진입 시, 기존에는 무조건 secs=0으로 두어 우측 상단 0:00 표시 + remainingSeconds<=0 으로 자동연결/재생 불가.
-          // [결과] 충전 진입(voice_entered_by_100 + oid)이면 (1) 저장된 선택 옵션(payment_voice_time_option) 분:초 우선 사용 → (2) 없으면 콘텐츠 첫 charge 옵션 → (3) payment_voice_minutes 보정.
-          const urlOid = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('oid') : null
-          const skipWaitWithOid = sessionStorage.getItem('voice_entered_by_100') && urlOid
-          if (skipWaitWithOid) {
-            let secsFromStored = 0
-            try {
-              const storedOptionRaw = sessionStorage.getItem('payment_voice_time_option')
-              if (storedOptionRaw) {
-                const parsed = JSON.parse(storedOptionRaw) as { type?: string; charge?: boolean; minutes?: number; seconds?: number }
-                if (parsed?.charge === true || parsed?.type === 'charge') {
-                  secsFromStored = (Number(parsed.minutes) || 0) * 60 + (Number(parsed.seconds) ?? 0)
-                }
-              }
-            } catch { /* ignore */ }
-            if (secsFromStored > 0) {
-              secs = secsFromStored
-            } else {
-              const chargeOpt = opts.find((o: any) => o?.type === 'charge')
-              const rateWon = chargeOpt != null && Number((chargeOpt as any).rate_won) > 0 ? Number((chargeOpt as any).rate_won) : 19
-              const rateSec = chargeOpt != null && Number((chargeOpt as any).rate_seconds) > 0 ? Number((chargeOpt as any).rate_seconds) : 12
-              secs = (chargeOpt != null && rateWon > 0)
-                ? Math.floor((Number((chargeOpt as any).price) || 0) / rateWon) * rateSec
-                : 0
-              if (secs <= 0 && storedVoiceMin && parseInt(storedVoiceMin, 10) > 0) secs = parseInt(storedVoiceMin, 10) * 60
-            }
-          } else {
           if (secs <= 0) secs = defaultSecs
-          }
         }
         }
         const voiceMin = Math.floor(secs / 60)
@@ -788,7 +774,7 @@ export function useVoiceResult() {
           enteredWithBalanceRef.current = true
         }
 
-        // 사용자가 결제한 충전 상품: 캐시 방식이므로 잔액(balance_wan) 또는 가격(price)+차감률로 부여 시간 계산
+        // 부여 시간: 실제 충전된 잔액(balance_wan) 기준으로만 계산. 상품가격(price) 사용 시 1100결제에 2000캐시로 보이는 버그 방지
         let addSec = 0
         const optsForCharge = (contentData?.content_type === 'multi' && Array.isArray((contentData as any)?.multi_time_options))
           ? (contentData as any).multi_time_options
@@ -796,15 +782,20 @@ export function useVoiceResult() {
         const optsCharge = (optsForCharge as any[]).find((o: any) => o?.type === 'charge') ?? null
         const rateWon = optsCharge != null && Number(optsCharge.rate_won) > 0 ? Number(optsCharge.rate_won) : 19
         const rateSec = optsCharge != null && Number(optsCharge.rate_seconds) > 0 ? Number(optsCharge.rate_seconds) : 12
-        try {
-          if (storedOption) {
-            const parsed = JSON.parse(storedOption) as { type?: string; charge?: boolean; minutes?: number; seconds?: number; price?: number }
-            if (parsed?.charge === true || parsed?.type === 'charge') {
-              addSec = rateWon > 0 ? Math.floor((Number(parsed.price) || 0) / rateWon) * rateSec : 0
-              if (addSec <= 0) addSec = (Number(parsed.minutes) || 0) * 60 + (Number(parsed.seconds) ?? 0)
+        if (chargeData?.success && typeof chargeData.balance_wan === 'number' && chargeData.balance_wan > 0 && rateWon > 0) {
+          addSec = Math.floor(chargeData.balance_wan / rateWon) * rateSec
+        }
+        if (addSec <= 0) {
+          try {
+            if (storedOption) {
+              const parsed = JSON.parse(storedOption) as { type?: string; charge?: boolean; minutes?: number; seconds?: number; price?: number }
+              if (parsed?.charge === true || parsed?.type === 'charge') {
+                addSec = rateWon > 0 ? Math.floor((Number(parsed.price) || 0) / rateWon) * rateSec : 0
+                if (addSec <= 0) addSec = (Number(parsed.minutes) || 0) * 60 + (Number(parsed.seconds) ?? 0)
+              }
             }
-          }
-        } catch { /* ignore */ }
+          } catch { /* ignore */ }
+        }
         if (addSec <= 0 && optsCharge != null && rateWon > 0) {
           addSec = Math.floor((Number(optsCharge.price) || 0) / rateWon) * rateSec
         }
@@ -1309,14 +1300,15 @@ ${seasonBlock}
     }
     timerIntervalRef.current = setInterval(() => {
       setRemainingSeconds((prev) => {
-        // 잔액 모드: 1초 단위 감소 없음. 차감주기(rate_seconds)마다 doDeduct에서만 감소
-        if (useBalanceModeRef.current) return prev
+        // 잔액 모드: 차감주기마다 doDeduct에서만 감소. 단, 잔액 0 후 마지막 블록 카운트다운 중에는 여기서 감소
+        if (useBalanceModeRef.current && !balanceZeroLastBlockRef.current) return prev
         if (extendPaymentInProgressRef.current) return prev
         if (extendPopupOpenRef.current && !isAiSpeakingRef.current) return prev
         const next = prev - rateSec
         // 연장 팝업 자동 표시 비활성화 (30초/0초 시 띄우지 않음)
         // 시간 종료
         if (next <= 0) {
+          balanceZeroLastBlockRef.current = false
           if (timerIntervalRef.current) {
             clearInterval(timerIntervalRef.current)
             timerIntervalRef.current = null
@@ -1346,7 +1338,10 @@ ${seasonBlock}
       const doDisconnect = () => {
         if (disconnectedAtZeroRef.current) return
         disconnectedAtZeroRef.current = true
+        setBalanceModeForDisplay(false)
         disconnectInternalRef.current?.()
+        // 저장은 disconnectInternal 내부에서 백그라운드(setTimeout)로 실행됨 → 사용자는 즉시 종료 팝업을 보도록
+        setTimeout(() => setShowConsultationEndModal(true), 150)
       }
       // TTS/재생 무조건 중단 (말 중이어도 끊음)
       stopAllTTSRef.current()
@@ -1869,7 +1864,10 @@ ${seasonBlock}
               if (parsed.type === 'userTranscript' && typeof parsed.text === 'string') {
                 userT = parsed.text
                 if (!isSilenceBreak) {
-                  setMessages((prev) => [...prev, { role: 'user', text: userT }])
+                  const isStartTurn = opts.transcript === '[시작]'
+                  const t = userT.trim()
+                  const looksLikeAssistantMislabeled = isStartTurn && t.length > 10 && (/규칙에\s*따라|출력해\s*드리겠습니다|한국어로\s*변환|문장들을\s*주시면|변환하여\s*출력/i.test(t))
+                  setMessages((prev) => [...prev, { role: looksLikeAssistantMislabeled ? 'assistant' : 'user', text: userT }])
                   lastUserTranscriptAtRef.current = Date.now()
                   clearSilenceTimer()
                 }
@@ -2002,9 +2000,12 @@ ${seasonBlock}
         if (!isSilenceBreak) {
           const userContent = (userT && userT.trim()) || (opts.transcript && opts.transcript !== '[시작]' ? opts.transcript.trim() : '')
           const toPush: { role: 'user' | 'assistant'; content: string }[] = []
-          if (userContent) toPush.push({ role: 'user', content: userContent })
+          const isStartTurn = opts.transcript === '[시작]'
+          const looksLikeAssistantMislabeled = isStartTurn && userContent.length > 10 && (/규칙에\s*따라|출력해\s*드리겠습니다|한국어로\s*변환|문장들을\s*주시면|변환하여\s*출력/i.test(userContent))
+          if (userContent && !looksLikeAssistantMislabeled) toPush.push({ role: 'user', content: userContent })
+          if (looksLikeAssistantMislabeled) toPush.push({ role: 'assistant', content: userContent })
           if (assistantT && assistantT.trim()) toPush.push({ role: 'assistant', content: assistantT.trim() })
-          if (toPush.length === 2) {
+          if (toPush.length >= 1) {
             dccHistoryRef.current = [...dccHistoryRef.current, ...toPush].slice(-50)
           }
         }
@@ -2022,7 +2023,10 @@ ${seasonBlock}
       const assistantT = (data as any).assistantText
       const audioB64 = (data as any).audioBase64
       if (userT && !isSilenceBreak) {
-        setMessages((prev) => [...prev, { role: 'user', text: userT }])
+        const isStartTurn = opts.transcript === '[시작]'
+        const t = String(userT).trim()
+        const looksLikeAssistantMislabeled = isStartTurn && t.length > 10 && (/규칙에\s*따라|출력해\s*드리겠습니다|한국어로\s*변환|문장들을\s*주시면|변환하여\s*출력/i.test(t))
+        setMessages((prev) => [...prev, { role: looksLikeAssistantMislabeled ? 'assistant' : 'user', text: userT }])
         lastUserTranscriptAtRef.current = Date.now()
         clearSilenceTimer()
       }
@@ -2030,9 +2034,12 @@ ${seasonBlock}
       if (!isSilenceBreak) {
         const userContent = (userT && String(userT).trim()) || (opts.transcript && opts.transcript !== '[시작]' ? String(opts.transcript).trim() : '')
         const toPush: { role: 'user' | 'assistant'; content: string }[] = []
-        if (userContent) toPush.push({ role: 'user', content: userContent })
+        const isStartTurn = opts.transcript === '[시작]'
+        const looksLikeAssistantMislabeled = isStartTurn && userContent.length > 10 && (/규칙에\s*따라|출력해\s*드리겠습니다|한국어로\s*변환|문장들을\s*주시면|변환하여\s*출력/i.test(userContent))
+        if (userContent && !looksLikeAssistantMislabeled) toPush.push({ role: 'user', content: userContent })
+        if (looksLikeAssistantMislabeled) toPush.push({ role: 'assistant', content: userContent })
         if (assistantT && String(assistantT).trim()) toPush.push({ role: 'assistant', content: String(assistantT).trim() })
-        if (toPush.length === 2) {
+        if (toPush.length >= 1) {
           dccHistoryRef.current = [...dccHistoryRef.current, ...toPush].slice(-50)
         }
       }
@@ -2188,6 +2195,7 @@ ${seasonBlock}
   const startBalanceDeductIntervalIfNeeded = useCallback((data: typeof contentData) => {
     if (!enteredWithBalanceRef.current) return
     if (balanceDeductIntervalRef.current) return
+    setBalanceModeForDisplay(true)
     const timeOpts = data?.content_type === 'multi' && Array.isArray((data as any)?.multi_time_options)
       ? (data as any).multi_time_options
       : (Array.isArray(data?.voice_time_options) ? data.voice_time_options : [])
@@ -2197,6 +2205,7 @@ ${seasonBlock}
     const rateWon = chargeOpt != null && Number(chargeOpt.rate_won) > 0 ? Number(chargeOpt.rate_won) : 19
     if (!rateSeconds || !rateWon) return
     useBalanceModeRef.current = true
+    balanceZeroLastBlockRef.current = false
     balanceDeductFirstCallDoneRef.current = false
     const doDeduct = async () => {
       if (!useBalanceModeRef.current) return
@@ -2210,14 +2219,13 @@ ${seasonBlock}
           body: JSON.stringify({ action: 'deduct', contentId: cid2, phone: phone2, secondsUsed: rateSeconds, rate_seconds: rateSeconds, rate_won: rateWon }),
         })
         const d = await r.json()
-        if (r.status === 402 || !d?.success) {
+        if (!d?.success) {
           useBalanceModeRef.current = false
           if (balanceDeductIntervalRef.current) {
             clearInterval(balanceDeductIntervalRef.current)
             balanceDeductIntervalRef.current = null
           }
           setRemainingSeconds(0)
-          alert('잔액이 부족하여 상담이 종료됩니다.')
           return
         }
         setBalanceWan(d.balance_wan ?? 0)
@@ -2225,8 +2233,19 @@ ${seasonBlock}
         if (balanceDeductFirstCallDoneRef.current) {
           const newBalance = d.balance_wan ?? 0
           if (newBalance === 0) {
-            // 방금 선차감으로 마지막 블록 결제함 → 그 블록 시간(rateSeconds)만큼 더 재생
+            // 마지막 블록(차감 단위 미만도 1블록으로 처리됨) → interval 중단, rateSeconds 후 remainingSeconds=0으로 확실히 종료
+            if (balanceDeductIntervalRef.current) {
+              clearInterval(balanceDeductIntervalRef.current)
+              balanceDeductIntervalRef.current = null
+            }
+            balanceZeroLastBlockRef.current = true
             setRemainingSeconds(rateSeconds)
+            if (balanceZeroEndTimeoutRef.current) clearTimeout(balanceZeroEndTimeoutRef.current)
+            balanceZeroEndTimeoutRef.current = setTimeout(() => {
+              balanceZeroEndTimeoutRef.current = null
+              balanceZeroLastBlockRef.current = false
+              setRemainingSeconds(0)
+            }, rateSeconds * 1000)
           } else {
             setRemainingSeconds((prev) => Math.max(0, prev - rateSeconds))
           }
@@ -2897,11 +2916,15 @@ ${seasonBlock}
   }, [contentData, contentData?.voice_provider, systemAndContext, model, voiceName, muted, silenceBreakSecs, startFailoverCheckInterval, startTimer, startBalanceDeductIntervalIfNeeded, clearSilenceTimer, sendSilenceBreak, sendDccTurn])
 
   /* ── disconnect ─────────────────────────── */
-  const disconnect = useCallback(async (remainingSecOverride?: number) => {
+  const disconnect = useCallback(async (remainingSecOverride?: number, opts?: { backgroundSave?: boolean }) => {
     disconnectInternal(true, remainingSecOverride) // skipSave=true, 직접 saveConversation 호출. 종료 시 화면 잔여초 전달
-    // disconnect 후 바로 saveConversation 실행 (await으로 완료 대기)
     if (!conversationSavedRef.current) {
-      await saveConversationRef.current?.()
+      if (opts?.backgroundSave) {
+        // 저장을 백그라운드로 실행 → UI는 즉시 폼으로 이동 (저장 대기 시간 제거)
+        void saveConversationRef.current?.()
+      } else {
+        await saveConversationRef.current?.()
+      }
     }
   }, [])
 
@@ -2967,6 +2990,7 @@ ${seasonBlock}
 
   /* ── 1000원 충전식 잔액: 어드민 /admin/form/voice 시간 상품섹션의 차감 주기(초)·차감 금액(원)만 사용 (하드코딩 없음) ── */
   const [balanceWan, setBalanceWan] = useState<number>(0)
+  const [balanceModeForDisplay, setBalanceModeForDisplay] = useState(false)
   const useBalanceModeRef = useRef(false)
   const balanceDeductIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   /** 선차감 시 첫 호출에서는 잔액만 차감하고 remainingSeconds는 그대로 둠 → 100캐시가 60초 쓰이도록 */
@@ -2974,8 +2998,9 @@ ${seasonBlock}
   /** 폼에서 잔여금액으로 상담 진입 시 true → 차감 주기마다 잔액 차감·UI 갱신 인터벌 자동 시작 */
   const enteredWithBalanceRef = useRef(false)
 
-  // 레이스 컨디션 방지: connected·balanceWan 둘 다 준비된 시점에 차감 인터벌 보장
+  // 레이스 컨디션 방지: connected·balanceWan 둘 다 준비된 시점에 차감 인터벌 보장. 잔액 0 후 마지막 블록 카운트다운 중에는 재시작하지 않음
   useEffect(() => {
+    if (balanceZeroLastBlockRef.current) return
     if (connected && balanceWan > 0 && enteredWithBalanceRef.current && !balanceDeductIntervalRef.current && contentData) {
       startBalanceDeductIntervalIfNeeded(contentData)
     }
@@ -2985,6 +3010,8 @@ ${seasonBlock}
     const cid = contentIdRef.current
     const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
     if (!cid || !phone) return
+    // oid 충전 진입 시 잔액은 charge API가 세팅. 여기서 GET으로 덮어쓰면 이전 잔액(2000 등)이 순간 보일 수 있음
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('oid') && sessionStorage.getItem('voice_entered_by_100')) return
     try {
       const res = await fetch(`/api/voice/balance?contentId=${encodeURIComponent(cid)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
       const data = await res.json()
@@ -3136,6 +3163,11 @@ ${seasonBlock}
         }
         if (confirmed) {
           if (option.charge) {
+            // 충전 후에는 어떤 경우에도 잔여 저장: 세션 중 연장 충전이어도 플래그 갱신
+            isChargeSessionRef.current = true
+            isDefaultTimeOptionSessionRef.current = false
+            setIsVoiceSessionChargeType(true)
+            setIsDefaultTimeOptionSession(false)
             let chargeData: { success?: boolean; balance_wan?: number } | null = null
             try {
               const chargeRes = await fetch('/api/voice/balance', {
@@ -3362,8 +3394,7 @@ ${seasonBlock}
         body: JSON.stringify({ action: 'deduct', contentId: cid, phone, secondsUsed: rateSeconds, rate_seconds: rateSeconds, rate_won: rateWon }),
       })
       const data = await res.json()
-      if (res.status === 402 || !data?.success) {
-        alert('잔액이 부족합니다.')
+      if (!data?.success) {
         return
       }
       setBalanceWan(data.balance_wan ?? 0)
@@ -3371,6 +3402,7 @@ ${seasonBlock}
       setTotalSeconds((prev) => prev + rateSeconds)
       if (!timerIntervalRef.current && connected) startTimer()
       useBalanceModeRef.current = true
+      setBalanceModeForDisplay(true)
       setShowExtendPopup(false)
       setSelectedExtendOption(null)
 
@@ -3387,18 +3419,24 @@ ${seasonBlock}
             body: JSON.stringify({ action: 'deduct', contentId: cid2, phone: phone2, secondsUsed: rateSeconds, rate_seconds: rateSeconds, rate_won: rateWon }),
           })
           const d = await r.json()
-          if (r.status === 402 || !d?.success) {
+          if (!d?.success) {
             useBalanceModeRef.current = false
             if (balanceDeductIntervalRef.current) {
               clearInterval(balanceDeductIntervalRef.current)
               balanceDeductIntervalRef.current = null
             }
             setRemainingSeconds(0)
-            alert('잔액이 부족하여 상담이 종료됩니다.')
             return
           }
           setBalanceWan(d.balance_wan ?? 0)
-          setRemainingSeconds((prev) => Math.max(0, prev - rateSeconds))
+          const newBal = d.balance_wan ?? 0
+          if (newBal === 0 && balanceDeductIntervalRef.current) {
+            clearInterval(balanceDeductIntervalRef.current)
+            balanceDeductIntervalRef.current = null
+            setRemainingSeconds(rateSeconds)
+          } else {
+            setRemainingSeconds((prev) => Math.max(0, prev - rateSeconds))
+          }
         } catch {
           useBalanceModeRef.current = false
           if (balanceDeductIntervalRef.current) {
@@ -3417,6 +3455,10 @@ ${seasonBlock}
       if (balanceDeductIntervalRef.current) {
         clearInterval(balanceDeductIntervalRef.current)
         balanceDeductIntervalRef.current = null
+      }
+      if (balanceZeroEndTimeoutRef.current) {
+        clearTimeout(balanceZeroEndTimeoutRef.current)
+        balanceZeroEndTimeoutRef.current = null
       }
     }
   }, [])
@@ -3641,19 +3683,7 @@ ${seasonBlock}
     const srp = saveRemainingPromiseRef.current
     saveRemainingPromiseRef.current = null
     if (srp) { try { await srp } catch { /* ignore */ } }
-    const cid = contentIdRef.current ? parseInt(contentIdRef.current, 10) : null
-    const phone = typeof window !== 'undefined' ? sessionStorage.getItem('payment_phone') : null
-    if ((useBalanceModeRef.current || enteredWithBalanceRef.current) && cid != null && phone) {
-      try {
-        await fetch('/api/voice/balance', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'drain_balance', contentId: cid, phone }),
-        })
-      } catch {
-        /* 소진 실패해도 나가기 진행 */
-      }
-    }
+    // 잔액은 세션 중 주기적 deduct로 이미 DB에 반영됨. drain 호출하지 않음(900캐시 등 남은 잔액 유지).
     try { sessionStorage.setItem('voice_came_to_form', '1'); sessionStorage.setItem('voice_return_phone', sessionStorage.getItem('payment_phone') || '') } catch { /* ignore */ }
     router.push(getFormUrl())
   }, [router, getFormUrl])
@@ -3675,13 +3705,9 @@ ${seasonBlock}
     setShowExitConfirmPopup(false)
     setIsNavigatingAway(true)
     stopAllTTSRef.current()
-    await disconnect(remainingSeconds)
+    await disconnect(remainingSeconds, { backgroundSave: true })
     try { sessionStorage.setItem('voice_came_to_form', '1'); sessionStorage.setItem('voice_return_phone', sessionStorage.getItem('payment_phone') || '') } catch { /* ignore */ }
-    const p = saveRemainingPromiseRef.current
-    saveRemainingPromiseRef.current = null
-    if (p) {
-      await p
-    }
+    // 저장은 백그라운드로 진행 → 대기 없이 즉시 폼으로 이동 (저장 시간 단축 체감)
     router.push(getFormUrl())
   }, [disconnect, router, getFormUrl, remainingSeconds])
 
@@ -3738,6 +3764,7 @@ ${seasonBlock}
     handleExtendPayment,
     // 1000원 충전식 잔액
     balanceWan,
+    balanceModeForDisplay,
     fetchBalance,
     handleUseBalanceContinue,
     // 무료 연장 24h 1회 제한 차단 팝업

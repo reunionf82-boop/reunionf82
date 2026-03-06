@@ -2,6 +2,11 @@
  * 결제 관련 유틸리티 함수
  */
 
+/** voice_balance 조회/저장 시 전화번호 통일용: 숫자만 추출 (010-1234-5678 ↔ 01012345678 동일 처리) */
+export function normalizePhoneForBalance(phone: string): string {
+  return String(phone ?? '').replace(/\D/g, '').trim()
+}
+
 /**
  * 주문번호(oid) 생성
  * 형식: AI + YYYYMMDDHHmmss + _ + 밀리초 타임스탬프

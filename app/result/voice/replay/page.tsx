@@ -33,6 +33,22 @@ function stripEmotionTags(text: string): string {
   return text.replace(/\s*\[[^\]]*\]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim()
 }
 
+/** role이 user로 저장됐지만 내용이 상담사/AI 응답 패턴이면 다시보기에서 상담사로 표시 (저장 단계 버그 방어) */
+function looksLikeAssistantMislabeledAsUser(text: string): boolean {
+  if (!text || typeof text !== 'string') return false
+  const t = text.trim()
+  if (t.length < 10) return false
+  const patterns = [
+    /규칙에\s*따라/,
+    /출력해\s*드리겠습니다/,
+    /한국어로\s*변환/,
+    /변환하여\s*출력/,
+    /문장들을\s*주시면/,
+    /알겠습니다\.\s*문장/,
+  ]
+  return patterns.some((p) => p.test(t))
+}
+
 function isIOS(): boolean {
   if (typeof navigator === 'undefined') return false
   return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
@@ -97,11 +113,16 @@ function VoiceReplayContent() {
           setLoading(false)
           return
         }
-        // voice_messages 파싱
+        // voice_messages 파싱 (DB에 text 또는 content 키로 저장된 경우 모두 처리)
         let msgs: VoiceMessage[] = []
         if (r.voice_messages) {
           try {
-            msgs = typeof r.voice_messages === 'string' ? JSON.parse(r.voice_messages) : r.voice_messages
+            const raw = typeof r.voice_messages === 'string' ? JSON.parse(r.voice_messages) : r.voice_messages
+            const arr = Array.isArray(raw) ? raw : []
+            msgs = arr.map((m: any) => ({
+              role: m?.role === 'assistant' ? 'assistant' : 'user',
+              text: String(m?.text ?? m?.content ?? '').trim()
+            }))
           } catch { msgs = [] }
         }
         setResult({
@@ -357,9 +378,48 @@ function VoiceReplayContent() {
               if (firstUserIdx >= 0 && String(filtered[firstUserIdx].text).trim() === '[시작]') {
                 filtered.splice(firstUserIdx, 1)
               }
-              return filtered
+              // 사용자 발화가 없을 때(리프레시/무료2분 등): "나" 한 글자나 빈 메시지만 있으면 실제 대화가 아님 → 표시하지 않음
+              const hasRealUserSpeech = filtered.some(
+                (m) => m.role === 'user' && (() => {
+                  const t = String(m.text).trim()
+                  return t.length > 1 || (t.length === 1 && t !== '나')
+                })()
+              )
+              // [시작]만 있고 상담사 응답만 있는 경우(DCC 등)에도 상담사 텍스트는 표시
+              const hasAnyAssistantSpeech = filtered.some(
+                (m) => m.role === 'assistant' && String(m.text ?? '').trim().length > 0
+              )
+              const toShow = (hasRealUserSpeech || hasAnyAssistantSpeech) ? filtered : []
+              return toShow
+            })().length === 0 ? (
+              <div className="text-center py-20">
+                <svg className="w-16 h-16 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <p className="text-gray-500 mb-2">텍스트 대화 기록이 없습니다.</p>
+                {result.voice_audio_url && (
+                  <p className="text-gray-500 text-sm">위의 오디오 플레이어로 상담 내용을 들으실 수 있습니다.</p>
+                )}
+              </div>
+            ) : (
+            (() => {
+              const filtered = result.voice_messages.slice()
+              const firstUserIdx = filtered.findIndex((m) => m.role === 'user')
+              if (firstUserIdx >= 0 && String(filtered[firstUserIdx].text).trim() === '[시작]') {
+                filtered.splice(firstUserIdx, 1)
+              }
+              const hasRealUserSpeech = filtered.some(
+                (m) => m.role === 'user' && (() => {
+                  const t = String(m.text).trim()
+                  return t.length > 1 || (t.length === 1 && t !== '나')
+                })()
+              )
+              const hasAnyAssistantSpeech = filtered.some(
+                (m) => m.role === 'assistant' && String(m.text ?? '').trim().length > 0
+              )
+              return (hasRealUserSpeech || hasAnyAssistantSpeech) ? filtered : []
             })().map((msg, idx) => {
-              const isAssistant = msg.role === 'assistant'
+              const isAssistant = msg.role === 'assistant' || (msg.role === 'user' && looksLikeAssistantMislabeledAsUser(msg.text))
               const displayText = stripEmotionTags(msg.text)
               return (
                 <div key={idx} className={`flex ${isAssistant ? 'justify-start' : 'justify-end'}`}>
@@ -377,7 +437,7 @@ function VoiceReplayContent() {
                   </div>
                 </div>
               )
-            })}
+            }) )}
           </div>
         )}
 

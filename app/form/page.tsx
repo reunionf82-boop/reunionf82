@@ -3236,7 +3236,7 @@ function FormContent() {
     const usableSecFromBalance = voiceBalanceWan != null && voiceBalanceWan > 0 && rateWon > 0
       ? Math.floor(voiceBalanceWan / rateWon) * rateSeconds
       : 0
-    const hasVoiceResidual = (content?.content_type === 'voice' || content?.content_type === 'multi') && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0 && usableSecFromBalance > 0))
+    const hasVoiceResidual = (content?.content_type === 'voice' || content?.content_type === 'multi') && (voiceBalanceWan != null && voiceBalanceWan > 0 && usableSecFromBalance > 0)
     if (hasVoiceResidual) {
       const phone = sessionStorage.getItem('payment_phone')
       if (!phone) {
@@ -5846,7 +5846,8 @@ function FormContent() {
       </header>
 
       {/* ✅ 전체 화면 스피너 대신, 상단에 작은 로딩 안내만 표시 (체감 속도 개선) */}
-      {loading && (
+      {/* 음성형/멀티형: content 로드 전까지 로딩 유지 → 사주입력창이 잠깐 보이는 현상 방지 */}
+      {(loading || content == null) && (
         <div className="w-full bg-white/80 backdrop-blur border-b border-pink-100">
           <div className="container mx-auto px-4 py-2 flex items-center justify-center gap-2 text-sm text-gray-600">
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-pink-500"></div>
@@ -6604,6 +6605,7 @@ function FormContent() {
         </div>
       )}
       
+      {!loading && content != null && (
       <main className="container mx-auto px-4 sm:px-6 py-8 max-w-4xl w-full">
         {/* 상단 썸네일 영역 */}
         {(thumbnailImageUrl || hasVideo) && !thumbnailError && (
@@ -7269,7 +7271,8 @@ function FormContent() {
             </div>
           )}
           
-          <div className={isPpoingAttributes(content) ? 'hidden' : undefined}>
+          {content != null && content?.content_type !== 'voice' && content?.content_type !== 'multi' && !isPpoingAttributes(content) && (
+          <div>
           <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">본인 정보</h2>
           
           <div className="space-y-6">
@@ -7504,6 +7507,7 @@ function FormContent() {
             </div>
           </div>
           </div>
+          )}
 
             {/* 이성 정보 입력 폼 (궁합형인 경우) */}
             {isGonghapType && (
@@ -7791,32 +7795,20 @@ function FormContent() {
               </div>
             </div>
 
-            {/* 음성: 이용가능 캐시 표시 (잔여시간→캐시 환산 또는 잔여금액), 진입은 아래 메인 버튼으로 */}
-            {(content?.content_type === 'voice' || content?.content_type === 'multi') && content != null && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0)) && (() => {
-              const showBalance = voiceBalanceWan != null && voiceBalanceWan > 0
-              const timeOptsUi = content?.content_type === 'multi'
-                ? (Array.isArray((content as any).multi_time_options) ? (content as any).multi_time_options : [])
-                : (Array.isArray(content?.voice_time_options) ? content.voice_time_options : [])
-              const chargeOpt = timeOptsUi.find((o: any) => o?.type === 'charge')
-              const rateSeconds = Math.max(1, Number(chargeOpt?.rate_seconds) || 12)
-              const rateWon = Math.max(1, Number(chargeOpt?.rate_won) || 19)
-              const displayCache = showBalance
-                ? voiceBalanceWan!
-                : Math.floor(voiceRemainingSeconds / rateSeconds) * rateWon
-              return (
-                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600 font-bold">나의 보유캐시 : {displayCache} 캐시 이용가능</span>
-                  </div>
+            {/* 음성: 보유캐시(잔여원)=voice_balance.balance_wan만 표시. 잔여 이용시간(remaining_seconds)은 사용하지 않음 */}
+            {(content?.content_type === 'voice' || content?.content_type === 'multi') && content != null && (voiceBalanceWan != null && voiceBalanceWan > 0) && (
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <span className="text-sm text-gray-600 font-bold">나의 보유캐시 : {voiceBalanceWan} 캐시 이용가능</span>
                 </div>
-              )
-            })()}
+              </div>
+            )}
 
-            {/* 0원 음성/다자형: 이용 가능 시간(24h 역카운트) + 바로이용하기. 잔여 조회 완료 후 잔여 없을 때만 표시(스샷 깜빡임 방지) */}
+            {/* 0원 음성/다자형: 이용 가능 시간(5시간 역카운트) + 바로이용하기. 나의 보유캐시가 있으면 이 박스 미표시 */}
             {(content?.content_type === 'voice' || content?.content_type === 'multi') && content != null && voiceResidualCheckDone && (() => {
               const p = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
               if (!Number.isFinite(p) || p > 0) return null
-              if (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0)) return null
+              if (voiceBalanceWan != null && voiceBalanceWan > 0) return null
               const ms = freeVoiceFormRemainingMs
               if (ms <= 0) return null
               const h = Math.floor(ms / 3600000)
@@ -7874,11 +7866,11 @@ function FormContent() {
                 const chargeOptBtn = timeOptsBtn.find((o: any) => o?.type === 'charge')
                 const rateWonBtn = Math.max(1, Number(chargeOptBtn?.rate_won) ?? 19)
                 const secFromBalanceBtn = voiceBalanceWan != null && voiceBalanceWan > 0 && rateWonBtn > 0 ? Math.floor(voiceBalanceWan / rateWonBtn) * (Math.max(1, Number(chargeOptBtn?.rate_seconds) || 12)) : 0
-                const hasResidual = (content?.content_type === 'voice' || content?.content_type === 'multi') && (voiceRemainingSeconds > 0 || (voiceBalanceWan != null && voiceBalanceWan > 0 && secFromBalanceBtn > 0))
+                const hasResidual = (content?.content_type === 'voice' || content?.content_type === 'multi') && (voiceBalanceWan != null && voiceBalanceWan > 0 && secFromBalanceBtn > 0)
                 const mainButtonText = submitting
                   ? '처리 중...'
                   : hasResidual
-                    ? (voiceRemainingSeconds > 0 ? '잔여 캐시로 음성 서비스' : '잔여 캐시로 음성 서비스')
+                    ? '잔여 캐시로 음성 서비스'
                     : (isExplicitlyFree ? '무료시작' : '결제하기')
                 return (
                   <button
@@ -10986,6 +10978,7 @@ function FormContent() {
         </div>
         )}
       </main>
+      )}
     </div>
   )
 }
