@@ -2707,7 +2707,28 @@ function FormContent() {
           setSubmitting(false)
           setPaymentProcessingMethod(null)
           sessionStorage.removeItem('voice_entered_by_100')
-          sessionStorage.removeItem('skip_wait_charge_only')
+          // skip_wait_charge_only는 제거하지 않음 → doSkipWaitSuccess가 나중에 실행돼도 이동하지 않도록
+          const cid = sessionStorage.getItem('payment_content_id')
+          const phone = sessionStorage.getItem('payment_phone')
+          if (cid && phone) {
+            try {
+              let chargeRes = await fetch('/api/voice/balance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+              })
+              let chargeData = await chargeRes.json().catch(() => ({}))
+              if (!chargeData?.success && chargeRes.status === 400) {
+                await new Promise((r) => setTimeout(r, 500))
+                chargeRes = await fetch('/api/voice/balance', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+                })
+                chargeData = await chargeRes.json().catch(() => ({}))
+              }
+            } catch { /* ignore */ }
+          }
           refetchVoiceBalance()
           showAlertMessage('충전이 완료되었습니다.')
           return
@@ -2820,7 +2841,28 @@ function FormContent() {
           setSubmitting(false)
           setPaymentProcessingMethod(null)
           sessionStorage.removeItem('voice_entered_by_100')
-          sessionStorage.removeItem('skip_wait_charge_only')
+          // skip_wait_charge_only는 제거하지 않음 → doSkipWaitSuccess가 나중에 실행돼도 이동하지 않도록
+          const cid = sessionStorage.getItem('payment_content_id')
+          const phone = sessionStorage.getItem('payment_phone')
+          if (cid && phone) {
+            try {
+              let chargeRes = await fetch('/api/voice/balance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+              })
+              let chargeData = await chargeRes.json().catch(() => ({}))
+              if (!chargeData?.success && chargeRes.status === 400) {
+                await new Promise((r) => setTimeout(r, 500))
+                chargeRes = await fetch('/api/voice/balance', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+                })
+                chargeData = await chargeRes.json().catch(() => ({}))
+              }
+            } catch { /* ignore */ }
+          }
           refetchVoiceBalance()
           showAlertMessage('충전이 완료되었습니다.')
           return
@@ -3059,6 +3101,27 @@ function FormContent() {
                 body: JSON.stringify({ oid: storedOid, password: sessionStorage.getItem('payment_password') || null }),
               })
             } catch { /* ignore */ }
+            const cid = sessionStorage.getItem('payment_content_id')
+            const phone = sessionStorage.getItem('payment_phone')
+            if (cid && phone) {
+              try {
+                let chargeRes = await fetch('/api/voice/balance', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'charge', oid: storedOid, contentId: cid, phone }),
+                })
+                let chargeData = await chargeRes.json().catch(() => ({}))
+                if (!chargeData?.success && chargeRes.status === 400) {
+                  await new Promise((r) => setTimeout(r, 500))
+                  chargeRes = await fetch('/api/voice/balance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'charge', oid: storedOid, contentId: cid, phone }),
+                  })
+                  chargeData = await chargeRes.json().catch(() => ({}))
+                }
+              } catch { /* ignore */ }
+            }
             setSubmitting(false)
             setShowSkipWaitPopup(false)
             sessionStorage.removeItem('voice_entered_by_100')
@@ -4330,13 +4393,47 @@ function FormContent() {
         try {
           if (paymentWindowRef.current && !paymentWindowRef.current.closed) paymentWindowRef.current.close()
         } catch { /* ignore */ }
-        // 충전하기로 결제한 경우: 보이스로 이동하지 않고 폼에 머무름
+        // 충전하기로 결제한 경우: 보이스로 이동하지 않고 폼에 머무름 (잔액 충전 API 호출 후 갱신)
         if (typeof window !== 'undefined' && sessionStorage.getItem('skip_wait_charge_only')) {
           setShowSkipWaitPopup(false)
           sessionStorage.removeItem('voice_entered_by_100')
-          sessionStorage.removeItem('skip_wait_charge_only')
-          refetchVoiceBalance()
-          showAlertMessage('충전이 완료되었습니다.')
+          // skip_wait_charge_only는 charge API 성공 후 제거 (processPaymentSuccess가 나중에 실행돼도 이동하지 않도록 유지)
+          const cid = sessionStorage.getItem('payment_content_id')
+          const phone = sessionStorage.getItem('payment_phone')
+          if (cid && phone) {
+            fetch('/api/voice/balance', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+            })
+              .then((r) => r.json().catch(() => ({})))
+              .then((chargeData) => {
+                if (!chargeData?.success) {
+                  return new Promise((r) => setTimeout(r, 500)).then(() =>
+                    fetch('/api/voice/balance', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+                    }).then((r2) => r2.json().catch(() => ({})))
+                  )
+                }
+                return chargeData
+              })
+              .then(() => {
+                sessionStorage.removeItem('skip_wait_charge_only')
+                refetchVoiceBalance()
+                showAlertMessage('충전이 완료되었습니다.')
+              })
+              .catch(() => {
+                sessionStorage.removeItem('skip_wait_charge_only')
+                refetchVoiceBalance()
+                showAlertMessage('충전이 완료되었습니다.')
+              })
+          } else {
+            sessionStorage.removeItem('skip_wait_charge_only')
+            refetchVoiceBalance()
+            showAlertMessage('충전이 완료되었습니다.')
+          }
           return
         }
         const cid = typeof window !== 'undefined' ? sessionStorage.getItem('payment_content_id') : null
