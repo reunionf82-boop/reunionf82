@@ -2492,13 +2492,15 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                           {isVoice && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-xs font-semibold">
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-                              음성상담
+                              음성이용
                             </span>
                           )}
                         </div>
-                        {isVoice && result.voice_duration_seconds != null && result.voice_duration_seconds > 0 && (
+                        {isVoice && (
                           <p className="text-sm text-gray-600">
-                            이용시간: {Math.floor(result.voice_duration_seconds / 60)}분 {result.voice_duration_seconds % 60}초
+                            이용시간: {result.voice_duration_seconds != null && result.voice_duration_seconds > 0
+                              ? `${Math.floor(result.voice_duration_seconds / 60)}분 ${result.voice_duration_seconds % 60}초`
+                              : '알 수 없음'}
                           </p>
                         )}
                         <p className="text-sm text-gray-500">
