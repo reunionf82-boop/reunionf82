@@ -18,8 +18,10 @@ export interface VoiceTimeOptionCharge {
   type: 'charge'
   minutes: number
   seconds?: number
-  /** 충전 1회 가격(원). 예: 1000 */
+  /** PG 결제 금액(원). 예: 1000 */
   price: number
+  /** 충전되는 캐시(원). 미설정 시 price와 동일. 예: 2000 → 1000원 결제 시 2000캐시 충전 */
+  balance_wan?: number
   label?: string
   rate_seconds: number
   rate_won: number
@@ -175,7 +177,7 @@ const INITIAL_FORM: VoiceFormData = {
   voice_conversation_sound_probability_pct: 5,
   voice_time_options: [
     { type: 'default', minutes: 5, seconds: 0, price: 0, label: '5분(무료)' },
-    { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19, recommended: true },
+    { type: 'charge', minutes: 11, seconds: 0, price: 1000, balance_wan: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19, recommended: true },
   ],
   voice_pitch: '',
   voice_speaking_rate: '',
@@ -294,7 +296,7 @@ export function useVoiceForm() {
         const timeOpts = c.voice_time_options
         let parsedTimeOpts: VoiceTimeOption[] = [
           { type: 'default', minutes: 5, seconds: 0, price: 0, label: '5분(무료)' },
-          { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19, recommended: true },
+          { type: 'charge', minutes: 11, seconds: 0, price: 1000, balance_wan: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19, recommended: true },
         ]
         if (timeOpts) {
           try {
@@ -314,11 +316,13 @@ export function useVoiceForm() {
                   })
                   hasDefault = true
                 } else if (o?.type === 'charge' || (o?.rate_seconds != null && o?.rate_won != null)) {
+                  const price = Math.max(0, parseInt(o?.price, 10) || 1000)
                   chargeOpts.push({
                     type: 'charge',
                     minutes: Math.max(0, parseInt(o?.minutes, 10) || 11),
                     seconds: Math.min(59, Math.max(0, parseInt(o?.seconds, 10) || 0)),
-                    price: Math.max(0, parseInt(o?.price, 10) || 1000),
+                    price,
+                    balance_wan: o?.balance_wan != null ? Math.max(0, parseInt(String(o.balance_wan), 10) || price) : price,
                     label: String(o?.label ?? '').trim() || undefined,
                     rate_seconds: Math.max(1, parseInt(o?.rate_seconds, 10) || 12),
                     rate_won: Math.max(1, parseInt(o?.rate_won, 10) || 19),
@@ -331,6 +335,7 @@ export function useVoiceForm() {
                     minutes: Math.max(0, parseInt(o?.minutes, 10) || 5),
                     seconds: Math.min(59, Math.max(0, parseInt(o?.seconds, 10) || 0)),
                     price: Math.max(0, parseInt(o?.price, 10) || 3000),
+                    balance_wan: Math.max(0, parseInt(String(o?.balance_wan ?? o?.price), 10) || 3000),
                     label: String(o?.label ?? '').trim() || undefined,
                     rate_seconds: 12,
                     rate_won: 19,
@@ -348,7 +353,7 @@ export function useVoiceForm() {
                   normalized.push(c)
                 })
               } else {
-                normalized.push({ type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19, recommended: true })
+                normalized.push({ type: 'charge', minutes: 11, seconds: 0, price: 1000, balance_wan: 1000, label: '1000원 충전', rate_seconds: 12, rate_won: 19, recommended: true })
               }
               parsedTimeOpts = normalized
             }
@@ -594,7 +599,7 @@ export function useVoiceForm() {
     const rateWon = firstCharge != null && Number(firstCharge.rate_won) > 0 ? Number(firstCharge.rate_won) : 19
     setForm((f) => ({
       ...f,
-      voice_time_options: [...f.voice_time_options, { type: 'charge', minutes: 11, seconds: 0, price: 1000, label: '1000원 충전', rate_seconds: rateSeconds, rate_won: rateWon, recommended: false }],
+      voice_time_options: [...f.voice_time_options, { type: 'charge', minutes: 11, seconds: 0, price: 1000, balance_wan: 1000, label: '1000원 충전', rate_seconds: rateSeconds, rate_won: rateWon, recommended: false }],
     }))
   }
   const removeTimeOption = (index: number) => {
@@ -620,7 +625,7 @@ export function useVoiceForm() {
               if (i !== index && (opt as any).type === 'charge') (opts[i] as any).recommended = false
             })
           }
-        } else if (key === 'price' || key === 'minutes' || key === 'seconds') {
+        } else if (key === 'price' || key === 'minutes' || key === 'seconds' || key === 'balance_wan') {
           opts[index] = { ...o, [key]: Number(value) }
         } else {
           opts[index] = { ...o, [key]: value }

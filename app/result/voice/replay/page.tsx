@@ -441,16 +441,22 @@ function VoiceReplayContent() {
               if (firstUserIdx >= 0 && String(filtered[firstUserIdx].text).trim() === '[시작]') {
                 filtered.splice(firstUserIdx, 1)
               }
-              const hasRealUserSpeech = filtered.some(
+              // 아무 말 없이 "나"만 찍힌 user 메시지 제거 (리프레시/무음 등으로 빈 발화가 저장된 경우)
+              const filteredNoEmptyUser = filtered.filter((m) => {
+                if (m.role !== 'user') return true
+                const t = String(m.text).trim()
+                return t.length > 1 || (t.length === 1 && t !== '나')
+              })
+              const hasRealUserSpeech = filteredNoEmptyUser.some(
                 (m) => m.role === 'user' && (() => {
                   const t = String(m.text).trim()
                   return t.length > 1 || (t.length === 1 && t !== '나')
                 })()
               )
-              const hasAnyAssistantSpeech = filtered.some(
+              const hasAnyAssistantSpeech = filteredNoEmptyUser.some(
                 (m) => m.role === 'assistant' && String(m.text ?? '').trim().length > 0
               )
-              return (hasRealUserSpeech || hasAnyAssistantSpeech) ? filtered : []
+              return (hasRealUserSpeech || hasAnyAssistantSpeech) ? filteredNoEmptyUser : []
             })().map((msg, idx) => {
               const isAssistant = msg.role === 'assistant' || (msg.role === 'user' && looksLikeAssistantMislabeledAsUser(msg.text))
               const displayText = stripEmotionTags(msg.text)

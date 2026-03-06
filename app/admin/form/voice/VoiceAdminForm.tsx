@@ -1086,7 +1086,7 @@ export default function VoiceAdminForm() {
                   <h3 className="text-sm font-medium text-amber-400">충전시간</h3>
                   <button type="button" onClick={h.addTimeOption} className="bg-amber-600 hover:bg-amber-700 text-white text-sm px-3 py-1 rounded-lg">+ 추가</button>
                 </div>
-                <p className="text-xs text-gray-500 mb-2">라벨·가격(원). 추천상품 체크 시 폼에서 디폴트 라디오 선택. (캐시 차감이므로 시간 설정 없음)</p>
+                <p className="text-xs text-gray-500 mb-2">라벨 · 충전캐시(결제 시 들어갈 캐시) · 가격(원, PG 결제 금액). 추천상품 체크 시 폼에서 디폴트 라디오 선택. (캐시 차감이므로 시간 설정 없음)</p>
                 {/* 공통 차감 단위: 모든 충전 상품에 적용 */}
                 {(() => {
                   const firstCharge = h.form.voice_time_options.find((o: any) => o?.type === 'charge')
@@ -1128,9 +1128,14 @@ export default function VoiceAdminForm() {
                             className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" placeholder="예: 1000원 충전" />
                         </div>
                         <div className="w-28">
+                          <label className="block text-xs text-gray-400 mb-1">충전캐시</label>
+                          <input type="number" min={0} value={(opt as any).balance_wan ?? opt.price} onChange={(e) => h.updateTimeOption(idx, 'balance_wan', parseInt(e.target.value, 10) || 0)}
+                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" placeholder="캐시" title="결제 시 충전될 캐시(원)" />
+                        </div>
+                        <div className="w-28">
                           <label className="block text-xs text-gray-400 mb-1">가격(원)</label>
                           <input type="number" min={0} value={opt.price} onChange={(e) => h.updateTimeOption(idx, 'price', parseInt(e.target.value, 10) || 1000)}
-                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" placeholder="1000" />
+                            className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm" placeholder="1000" title="PG 결제 금액" />
                         </div>
                         <button type="button" onClick={() => h.removeTimeOption(idx)} className="text-red-400 hover:text-red-300 text-sm px-2 py-1 shrink-0">&times; 삭제</button>
                       </div>

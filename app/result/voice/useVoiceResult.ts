@@ -764,11 +764,17 @@ export function useVoiceResult() {
         const phone = sessionStorage.getItem('payment_phone')
         if (!phone) return
 
+        let amountWan: number | undefined
+        try {
+          const opt = storedOption ? JSON.parse(storedOption) as { balance_wan?: number; price?: number } : null
+          amountWan = typeof opt?.balance_wan === 'number' ? opt.balance_wan : (typeof opt?.price === 'number' ? opt.price : undefined)
+        } catch { /* ignore */ }
+
         const tryCharge = async (): Promise<{ success: boolean; balance_wan?: number }> => {
           const chargeRes = await fetch('/api/voice/balance', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'charge', oid, contentId: contentIdNum, phone }),
+            body: JSON.stringify({ action: 'charge', oid, contentId: contentIdNum, phone, ...(amountWan != null ? { amount_wan: amountWan } : {}) }),
           })
           const chargeData = await chargeRes.json()
           return chargeData?.success && typeof chargeData.balance_wan === 'number'
@@ -3217,7 +3223,7 @@ ${seasonBlock}
               const chargeRes = await fetch('/api/voice/balance', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'charge', oid: successOid, contentId: cid, phone: phoneNumber, amount_wan: option.price }),
+                body: JSON.stringify({ action: 'charge', oid: successOid, contentId: cid, phone: phoneNumber, amount_wan: (option as any).balance_wan ?? option.price }),
               })
               chargeData = await chargeRes.json()
               if (chargeData?.success && typeof chargeData.balance_wan === 'number') {

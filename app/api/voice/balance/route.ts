@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
  * 차감(deduct): 사용 시간을 rate_seconds 단위로 올림 후 rate_won원씩 차감 (1초만 넘겨도 1블록 전체 차감)
  *
  * POST /api/voice/balance
- * - charge: { action: 'charge', oid, contentId, phone }
+ * - charge: { action: 'charge', oid, contentId, phone [, amount_wan ] } — amount_wan 있으면 해당 캐시 충전, 없으면 결제금액(pay) 사용
  * - deduct: { action: 'deduct', contentId, phone, secondsUsed [, rate_seconds, rate_won ] }
  */
 export async function POST(request: NextRequest) {
@@ -109,8 +109,11 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // 실제 결제액(payments.pay)만 잔액에 반영. 클라이언트 amount_wan과 불일치 시에도 결제된 금액만 추가(1100원 결제 시 2000 표시 버그 방지)
-      const amountToAdd = Math.floor(payAmount)
+      // 충전캐시: 클라이언트가 amount_wan 전달 시 해당 값 사용(PG 결제금액과 별도), 없으면 결제금액(pay) 사용
+      const amountToAdd =
+        typeof bodyAmountWan === 'number' && Number.isFinite(bodyAmountWan) && bodyAmountWan > 0
+          ? Math.floor(bodyAmountWan)
+          : Math.floor(payAmount)
 
       const phoneTrim = String(phone).trim()
       const phoneStr = normalizePhoneForBalance(phoneTrim) || phoneTrim

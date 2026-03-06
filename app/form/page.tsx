@@ -661,7 +661,7 @@ function FormContent() {
   // 바로이용하기(100원 결제) 팝업
   const [showSkipWaitPopup, setShowSkipWaitPopup] = useState(false)
   /** 바로이용하기 팝업에서 선택한 시간 옵션 (보이스 연장과 동일: extension 또는 charge) */
-  const [selectedSkipWaitOption, setSelectedSkipWaitOption] = useState<{ minutes: number; seconds?: number; price: number; label: string; charge?: boolean; rate_seconds?: number; rate_won?: number } | null>(null)
+  const [selectedSkipWaitOption, setSelectedSkipWaitOption] = useState<{ minutes: number; seconds?: number; price: number; label: string; charge?: boolean; rate_seconds?: number; rate_won?: number; balance_wan?: number } | null>(null)
   /** 팝업 진입 목적: 'charge-only' = 충전하기(결제 후 폼 유지), 'use-now' = 바로이용하기(결제 후 보이스 이동) */
   const [skipWaitPopupMode, setSkipWaitPopupMode] = useState<'use-now' | 'charge-only'>('use-now')
 
@@ -2711,11 +2711,19 @@ function FormContent() {
           const cid = sessionStorage.getItem('payment_content_id')
           const phone = sessionStorage.getItem('payment_phone')
           if (cid && phone) {
+            let chargeWan: number | undefined
+            try {
+              const o = sessionStorage.getItem('payment_voice_time_option')
+              if (o) {
+                const p = JSON.parse(o) as { balance_wan?: number; price?: number }
+                chargeWan = typeof p?.balance_wan === 'number' ? p.balance_wan : (typeof p?.price === 'number' ? p.price : undefined)
+              }
+            } catch { /* ignore */ }
             try {
               let chargeRes = await fetch('/api/voice/balance', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+                body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone, ...(chargeWan != null ? { amount_wan: chargeWan } : {}) }),
               })
               let chargeData = await chargeRes.json().catch(() => ({}))
               if (!chargeData?.success && chargeRes.status === 400) {
@@ -2723,7 +2731,7 @@ function FormContent() {
                 chargeRes = await fetch('/api/voice/balance', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+                  body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone, ...(chargeWan != null ? { amount_wan: chargeWan } : {}) }),
                 })
                 chargeData = await chargeRes.json().catch(() => ({}))
               }
@@ -2845,11 +2853,19 @@ function FormContent() {
           const cid = sessionStorage.getItem('payment_content_id')
           const phone = sessionStorage.getItem('payment_phone')
           if (cid && phone) {
+            let chargeWan: number | undefined
+            try {
+              const o = sessionStorage.getItem('payment_voice_time_option')
+              if (o) {
+                const p = JSON.parse(o) as { balance_wan?: number; price?: number }
+                chargeWan = typeof p?.balance_wan === 'number' ? p.balance_wan : (typeof p?.price === 'number' ? p.price : undefined)
+              }
+            } catch { /* ignore */ }
             try {
               let chargeRes = await fetch('/api/voice/balance', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+                body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone, ...(chargeWan != null ? { amount_wan: chargeWan } : {}) }),
               })
               let chargeData = await chargeRes.json().catch(() => ({}))
               if (!chargeData?.success && chargeRes.status === 400) {
@@ -2857,7 +2873,7 @@ function FormContent() {
                 chargeRes = await fetch('/api/voice/balance', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+                  body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone, ...(chargeWan != null ? { amount_wan: chargeWan } : {}) }),
                 })
                 chargeData = await chargeRes.json().catch(() => ({}))
               }
@@ -3104,11 +3120,19 @@ function FormContent() {
             const cid = sessionStorage.getItem('payment_content_id')
             const phone = sessionStorage.getItem('payment_phone')
             if (cid && phone) {
+              let chargeWan: number | undefined
+              try {
+                const o = sessionStorage.getItem('payment_voice_time_option')
+                if (o) {
+                  const p = JSON.parse(o) as { balance_wan?: number; price?: number }
+                  chargeWan = typeof p?.balance_wan === 'number' ? p.balance_wan : (typeof p?.price === 'number' ? p.price : undefined)
+                }
+              } catch { /* ignore */ }
               try {
                 let chargeRes = await fetch('/api/voice/balance', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ action: 'charge', oid: storedOid, contentId: cid, phone }),
+                  body: JSON.stringify({ action: 'charge', oid: storedOid, contentId: cid, phone, ...(chargeWan != null ? { amount_wan: chargeWan } : {}) }),
                 })
                 let chargeData = await chargeRes.json().catch(() => ({}))
                 if (!chargeData?.success && chargeRes.status === 400) {
@@ -3116,7 +3140,7 @@ function FormContent() {
                   chargeRes = await fetch('/api/voice/balance', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'charge', oid: storedOid, contentId: cid, phone }),
+                    body: JSON.stringify({ action: 'charge', oid: storedOid, contentId: cid, phone, ...(chargeWan != null ? { amount_wan: chargeWan } : {}) }),
                   })
                   chargeData = await chargeRes.json().catch(() => ({}))
                 }
@@ -4224,8 +4248,8 @@ function FormContent() {
     const defaultChargeForPay = chargeOptsForPay.length > 0 ? (chargeOptsForPay.find((o: any) => o?.recommended) || chargeOptsForPay[0]) : null
     const hasVoiceOptions = chargeOptsForPay.length > 0
     const optionToUse = selectedSkipWaitOption ?? (hasVoiceOptions && defaultChargeForPay
-      ? { minutes: Number(defaultChargeForPay.minutes) || 0, seconds: Number(defaultChargeForPay.seconds) ?? 0, price: Number(defaultChargeForPay.price) ?? 1000, label: (defaultChargeForPay.label && String(defaultChargeForPay.label).trim()) || `${Number(defaultChargeForPay.price) ?? 1000}원 충전`, charge: true, rate_seconds: Number(defaultChargeForPay.rate_seconds) || 12, rate_won: Number(defaultChargeForPay.rate_won) || 19 }
-      : { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, label: '1분' })
+      ? { minutes: Number(defaultChargeForPay.minutes) || 0, seconds: Number(defaultChargeForPay.seconds) ?? 0, price: Number(defaultChargeForPay.price) ?? 1000, balance_wan: (defaultChargeForPay as any)?.balance_wan != null ? Number((defaultChargeForPay as any).balance_wan) : Number(defaultChargeForPay.price) ?? 1000, label: (defaultChargeForPay.label && String(defaultChargeForPay.label).trim()) || `${Number(defaultChargeForPay.price) ?? 1000}원 충전`, charge: true, rate_seconds: Number(defaultChargeForPay.rate_seconds) || 12, rate_won: Number(defaultChargeForPay.rate_won) || 19 }
+      : { minutes: 1, seconds: 0, price: SKIP_WAIT_PAY_AMOUNT, balance_wan: SKIP_WAIT_PAY_AMOUNT, label: '1분' })
     if (!optionToUse) {
       showAlertMessage('이용 시간을 선택해 주세요.')
       return
@@ -4245,6 +4269,7 @@ function FormContent() {
         charge: true,
         rate_won: (optionToUse as any).rate_won ?? 19,
         rate_seconds: (optionToUse as any).rate_seconds ?? 12,
+        balance_wan: (optionToUse as any).balance_wan ?? optionToUse.price,
       }
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('payment_oid', oid)
@@ -4400,11 +4425,19 @@ function FormContent() {
           // skip_wait_charge_only는 charge API 성공 후 제거 (processPaymentSuccess가 나중에 실행돼도 이동하지 않도록 유지)
           const cid = sessionStorage.getItem('payment_content_id')
           const phone = sessionStorage.getItem('payment_phone')
+          let chargeWan: number | undefined
+          try {
+            const o = sessionStorage.getItem('payment_voice_time_option')
+            if (o) {
+              const p = JSON.parse(o) as { balance_wan?: number; price?: number }
+              chargeWan = typeof p?.balance_wan === 'number' ? p.balance_wan : (typeof p?.price === 'number' ? p.price : undefined)
+            }
+          } catch { /* ignore */ }
           if (cid && phone) {
             fetch('/api/voice/balance', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+              body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone, ...(chargeWan != null ? { amount_wan: chargeWan } : {}) }),
             })
               .then((r) => r.json().catch(() => ({})))
               .then((chargeData) => {
@@ -4413,7 +4446,7 @@ function FormContent() {
                     fetch('/api/voice/balance', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+                      body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone, ...(chargeWan != null ? { amount_wan: chargeWan } : {}) }),
                     }).then((r2) => r2.json().catch(() => ({})))
                   )
                 }
@@ -6137,7 +6170,8 @@ function FormContent() {
                   const sec = opt != null ? (Number(opt.seconds) ?? 0) : 0
                   const timeLabel = min > 0 || sec > 0 ? (sec > 0 ? `${min}분 ${sec}초` : `${min}분`) : ''
                   const label = (opt?.label && String(opt.label).trim()) || (rateSeconds > 0 && rateWon > 0 ? `${price.toLocaleString()}원 충전 (${rateSeconds}초당 ${rateWon}원)` + (timeLabel ? ` · ${timeLabel}` : '') : `${price.toLocaleString()}원 충전`)
-                  return { price, label, rate_seconds: rateSeconds, rate_won: rateWon, minutes: min, seconds: sec }
+                  const balance_wan = (opt as any)?.balance_wan != null ? Number((opt as any).balance_wan) : price
+                  return { price, label, rate_seconds: rateSeconds, rate_won: rateWon, minutes: min, seconds: sec, balance_wan }
                 }
                 const isOptionEqual = (a: typeof selectedSkipWaitOption, b: typeof chargeOpts[0]) => {
                   if (!a || !b) return false
@@ -6164,7 +6198,7 @@ function FormContent() {
                             <button
                               key={idx}
                               type="button"
-                              onClick={() => setSelectedSkipWaitOption({ minutes: d.minutes, seconds: d.seconds, price: d.price, label: d.label, charge: true, rate_seconds: d.rate_seconds, rate_won: d.rate_won })}
+                              onClick={() => setSelectedSkipWaitOption({ minutes: d.minutes, seconds: d.seconds, price: d.price, label: d.label, charge: true, rate_seconds: d.rate_seconds, rate_won: d.rate_won, balance_wan: d.balance_wan })}
                               disabled={submitting}
                               className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${isSelected ? 'border-violet-500 bg-violet-50' : 'border-gray-200 bg-white hover:border-gray-300'} ${submitting ? 'opacity-50 pointer-events-none' : ''}`}
                             >
