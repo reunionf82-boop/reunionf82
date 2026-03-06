@@ -4298,7 +4298,7 @@ function FormContent() {
           if (paymentWindow.closed) {
             clearInterval(skipWaitIntervalRef.current!)
             skipWaitIntervalRef.current = null
-            // 성공 페이지가 complete 호출을 못 했을 수 있으므로 한 번 호출 후 재확인
+            // 성공 페이지가 complete 호출을 못 했을 수 있으므로 한 번 호출 후, 서버에서 success 나올 때까지 대기(long-poll) 한 번만 요청
             try {
               await fetch('/api/payment/complete', {
                 method: 'POST',
@@ -4307,19 +4307,13 @@ function FormContent() {
               })
             } catch { /* ignore */ }
             await new Promise((r) => setTimeout(r, 800))
-            // 결제 성공 시에만 보이스로 이동. DB 반영 지연 대비해 status 재조회(최대 25회, 100ms 간격)
-            let confirmed = false
-            for (let i = 0; i < 25; i++) {
-              const statusRes = await fetch(`/api/payment/status?oid=${oid}`, { cache: 'no-store' })
-              const statusData = await statusRes.json().catch(() => ({}))
-              if (statusData?.success && statusData?.status === 'success') {
-                confirmed = true
-                doSkipWaitSuccess()
-                break
-              }
-              await new Promise((r) => setTimeout(r, 100))
+            const waitRes = await fetch(`/api/payment/wait-status?oid=${encodeURIComponent(oid)}`, { cache: 'no-store' })
+            const waitData = await waitRes.json().catch(() => ({}))
+            if (waitData?.success && waitData?.status === 'success') {
+              doSkipWaitSuccess()
+            } else {
+              setSubmitting(false)
             }
-            if (!confirmed) setSubmitting(false)
           }
         } catch { /* ignore */ }
       }, 1000)
