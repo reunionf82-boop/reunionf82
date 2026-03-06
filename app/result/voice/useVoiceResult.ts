@@ -759,39 +759,48 @@ export function useVoiceResult() {
 
     ;(async () => {
       try {
-        // 카드/휴대폰 결제 즉시 반영: success 될 때까지 짧은 간격 재시도 (200ms x 50 = 최대 10초)
-        let statusData: { success?: boolean; status?: string } | null = null
-        for (let attempt = 1; attempt <= 50; attempt++) {
-          const statusRes = await fetch(`/api/payment/status?oid=${encodeURIComponent(oid)}`, { cache: 'no-store' })
-          if (statusRes.ok) {
-            statusData = await statusRes.json()
-            if (statusData?.success && statusData?.status === 'success') break
-          }
-          if (attempt < 50) await new Promise((r) => setTimeout(r, 200))
-        }
-        if (!statusData?.success || statusData?.status !== 'success') return
-
-        // 운영자테스트와 동일하게 payments.content_id와 일치시키기 위해 로드된 콘텐츠 id 사용 (ref는 문자열 등 타입 불일치 가능)
         const contentIdNum = Number(contentData.id) || parseInt(String(contentIdRef.current ?? ''), 10)
         if (!Number.isFinite(contentIdNum)) return
-
         const phone = sessionStorage.getItem('payment_phone')
         if (!phone) return
 
-        const chargeRes = await fetch('/api/voice/balance', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'charge', oid, contentId: contentIdNum, phone }),
-        })
-        const chargeData = await chargeRes.json()
-        if (chargeData?.success && typeof chargeData.balance_wan === 'number') {
-          setBalanceWan(chargeData.balance_wan)
+        const tryCharge = async (): Promise<{ success: boolean; balance_wan?: number }> => {
+          const chargeRes = await fetch('/api/voice/balance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'charge', oid, contentId: contentIdNum, phone }),
+          })
+          const chargeData = await chargeRes.json()
+          return chargeData?.success && typeof chargeData.balance_wan === 'number'
+            ? { success: true, balance_wan: chargeData.balance_wan }
+            : { success: false }
+        }
+
+        // 1) 먼저 charge 즉시 시도 (이미 complete 반영됐을 수 있음). 실패 시에만 status 폴링 후 재시도
+        let chargeResult = await tryCharge()
+        if (!chargeResult.success) {
+          for (let attempt = 1; attempt <= 50; attempt++) {
+            const statusRes = await fetch(`/api/payment/status?oid=${encodeURIComponent(oid)}`, { cache: 'no-store' })
+            if (statusRes.ok) {
+              const statusData = await statusRes.json()
+              if (statusData?.success && statusData?.status === 'success') {
+                chargeResult = await tryCharge()
+                if (chargeResult.success) break
+              }
+            }
+            if (attempt < 50) await new Promise((r) => setTimeout(r, 200))
+          }
+        }
+        if (!chargeResult.success) return
+
+        if (chargeResult.balance_wan != null) {
+          setBalanceWan(chargeResult.balance_wan)
           setBalanceModeForDisplay(true)
           enteredWithBalanceRef.current = true
         }
 
         // charge 응답 실패/누락 시: 이미 충전됐을 수 있으므로 GET balance로 보정 (캐시 0 표시 버그 방지)
-        let balanceWanToUse = chargeData?.success && typeof chargeData.balance_wan === 'number' ? chargeData.balance_wan : 0
+        let balanceWanToUse = chargeResult.balance_wan ?? 0
         if (balanceWanToUse <= 0) {
           try {
             const getRes = await fetch(`/api/voice/balance?contentId=${encodeURIComponent(contentIdNum)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
