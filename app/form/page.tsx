@@ -3050,6 +3050,23 @@ function FormContent() {
             clearInterval(skipWaitIntervalRef.current)
             skipWaitIntervalRef.current = null
           }
+          // 충전하기로 결제한 경우: 보이스로 이동하지 않고 폼에 머무름
+          if (typeof window !== 'undefined' && sessionStorage.getItem('skip_wait_charge_only')) {
+            try {
+              await fetch('/api/payment/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ oid: storedOid, password: sessionStorage.getItem('payment_password') || null }),
+              })
+            } catch { /* ignore */ }
+            setSubmitting(false)
+            setShowSkipWaitPopup(false)
+            sessionStorage.removeItem('voice_entered_by_100')
+            sessionStorage.removeItem('skip_wait_charge_only')
+            refetchVoiceBalance()
+            showAlertMessage('충전이 완료되었습니다.')
+            return
+          }
           try {
             await fetch('/api/payment/complete', {
               method: 'POST',
@@ -4313,6 +4330,15 @@ function FormContent() {
         try {
           if (paymentWindowRef.current && !paymentWindowRef.current.closed) paymentWindowRef.current.close()
         } catch { /* ignore */ }
+        // 충전하기로 결제한 경우: 보이스로 이동하지 않고 폼에 머무름
+        if (typeof window !== 'undefined' && sessionStorage.getItem('skip_wait_charge_only')) {
+          setShowSkipWaitPopup(false)
+          sessionStorage.removeItem('voice_entered_by_100')
+          sessionStorage.removeItem('skip_wait_charge_only')
+          refetchVoiceBalance()
+          showAlertMessage('충전이 완료되었습니다.')
+          return
+        }
         const cid = typeof window !== 'undefined' ? sessionStorage.getItem('payment_content_id') : null
         const voicePath = cid
           ? `/result/voice?oid=${encodeURIComponent(oid)}&id=${encodeURIComponent(cid)}`
