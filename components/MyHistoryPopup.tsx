@@ -2498,7 +2498,7 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                         </div>
                         {isVoice && result.voice_duration_seconds != null && result.voice_duration_seconds > 0 && (
                           <p className="text-sm text-gray-600">
-                            상담시간: {Math.floor(result.voice_duration_seconds / 60)}분 {result.voice_duration_seconds % 60}초
+                            이용시간: {Math.floor(result.voice_duration_seconds / 60)}분 {result.voice_duration_seconds % 60}초
                           </p>
                         )}
                         <p className="text-sm text-gray-500">

@@ -656,7 +656,7 @@ export default function VoiceResultContent() {
               </svg>
             </button>
           </div>
-          <h2 className="text-lg font-bold text-gray-900 truncate min-w-0 flex-1 text-center">{h.contentData?.content_name || '음성 상담'}</h2>
+          <h2 className="text-lg font-bold text-gray-900 truncate min-w-0 flex-1 text-center">{h.contentData?.content_name || '음성 이용'}</h2>
           <div className="flex items-center shrink-0 justify-end">
             <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${
               displayCache <= 100

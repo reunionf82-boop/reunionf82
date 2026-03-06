@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     }
 
     const insertData: Record<string, any> = {
-      title: title || '음성 상담',
+      title: title || '음성 이용',
       html: '',
       user_name: userName || null,
       saved_at: savedAtKST,

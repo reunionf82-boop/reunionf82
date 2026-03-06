@@ -142,7 +142,7 @@ function VoiceReplayContent() {
         // voice 판별: result_type이 'voice'이거나, voice_messages/voice_audio_url이 존재
         const isVoiceResult = r.result_type === 'voice' || !!r.voice_messages || !!r.voice_audio_url
         if (!isVoiceResult) {
-          setError('음성 상담 결과가 아닙니다.')
+          setError('음성 이용 결과가 아닙니다.')
           setLoading(false)
           return
         }

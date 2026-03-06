@@ -322,7 +322,7 @@ export default function VoiceMvpAdminClient() {
                 />
                 <div className="border-t border-gray-700/70 pt-4" />
                 <div className="bg-gray-700/40 border border-gray-600 rounded-lg p-4 space-y-3">
-                  <div className="text-sm font-bold text-gray-100">음성 상담 최초 인사 (재회 결과 페이지)</div>
+                  <div className="text-sm font-bold text-gray-100">음성 이용 최초 인사 (재회 결과 페이지)</div>
                   <p className="text-gray-400 text-xs">
                     AI가 접속 후 약 20초 동안 먼저 말할 내용 지시. <code className="bg-gray-600 px-1 rounded">{'{{userName}}'}</code> 있으면 내담자 이름으로 치환됩니다.
                   </p>

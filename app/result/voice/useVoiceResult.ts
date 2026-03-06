@@ -886,7 +886,7 @@ export function useVoiceResult() {
       const userName = sessionStorage.getItem('payment_user_name') || ''
       const phone = sessionStorage.getItem('payment_phone') || ''
       const password = sessionStorage.getItem('payment_password') || ''
-      const contentTitle = contentData?.content_name || '음성 상담'
+      const contentTitle = contentData?.content_name || '음성 이용'
       const cid = contentIdRef.current ? parseInt(contentIdRef.current, 10) : null
       // 잔여시간이 1블록(rate_seconds) 초과면 잔액 유지, 이하일 때만 이탈 시 소진 (이탈 시점의 실제 값 사용)
       const opts = contentData?.content_type === 'multi' && Array.isArray((contentData as any)?.multi_time_options)
@@ -920,7 +920,7 @@ export function useVoiceResult() {
         saveViaBeacon()
         e.preventDefault()
         // 이중 방어: 당겨서 리프레시 백업으로 확인 대화상자 (일부 브라우저는 커스텀 문구 미표시)
-        e.returnValue = '음성 상담 중입니다. 나가시겠습니까?'
+        e.returnValue = '음성 이용 중입니다. 나가시겠습니까?'
       }
     }
     const handlePageHide = () => {
@@ -3582,7 +3582,7 @@ ${seasonBlock}
 
       // 3) saved_results에 voice 타입으로 저장
       const userName = sessionStorage.getItem('payment_user_name') || ''
-      const contentTitle = contentData?.content_name || '음성 상담'
+      const contentTitle = contentData?.content_name || '음성 이용'
 
       // voice 전용 필드로 저장 (phone: 요약 연동용, injected_summary_item_refs: 안부로 물어본 항목 기록)
       const phoneForSave = sessionStorage.getItem('payment_phone') || ''
@@ -3615,7 +3615,7 @@ ${seasonBlock}
         const errDetail = await saveRes.text().catch(() => '')
         const fallbackPayload = {
           title: contentTitle,
-          html: `<p>음성 상담 기록</p><p>상담시간: ${durationSeconds > 0 ? `${Math.floor(durationSeconds / 60)}분 ${durationSeconds % 60}초` : '알 수 없음'}</p>${msgs.length > 0 ? `<h3>대화 내용</h3>${msgs.map((m) => `<p><strong>${m.role === 'assistant' ? '상담사' : userName || '나'}:</strong> ${m.text}</p>`).join('')}` : ''}`,
+          html: `<p>음성 이용 기록</p><p>이용시간: ${durationSeconds > 0 ? `${Math.floor(durationSeconds / 60)}분 ${durationSeconds % 60}초` : '알 수 없음'}</p>${msgs.length > 0 ? `<h3>대화 내용</h3>${msgs.map((m) => `<p><strong>${m.role === 'assistant' ? '상담사' : userName || '나'}:</strong> ${m.text}</p>`).join('')}` : ''}`,
           result_type: 'voice',
           userName,
           phone: phoneForSave,

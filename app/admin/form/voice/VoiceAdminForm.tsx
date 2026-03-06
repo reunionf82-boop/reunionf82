@@ -928,7 +928,7 @@ export default function VoiceAdminForm() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-200 mb-1">음성 상담 최초 인사 (접속 시 AI에 주입)</label>
+                  <label className="block text-sm font-medium text-gray-200 mb-1">음성 이용 최초 인사 (접속 시 AI에 주입)</label>
                   <p className="text-gray-400 text-xs mb-2">접속 후 AI가 먼저 말할 내용입니다. 반드시 여기에 입력한 프롬프트만 사용됩니다. <code className="bg-gray-700 px-1 rounded">{'{{userName}}'}</code> 있으면 내담자 이름으로 치환됩니다.</p>
                   <div className="mb-2 p-3 bg-violet-950/40 border border-violet-700/60 rounded-lg">
                     <p className="text-xs font-semibold text-violet-200 mb-1.5">권장 예시 (복사해서 아래 칸에 붙여 넣으세요)</p>
