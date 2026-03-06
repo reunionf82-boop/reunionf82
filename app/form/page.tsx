@@ -2692,6 +2692,21 @@ function FormContent() {
       } catch (e) {
 
       }
+
+      // 바로이용하기(충전): 성공 페이지가 이미 complete 후 opener 노티한 경우 → 추가 요청 없이 즉시 보이스 이동
+      const successOidEarly = typeof window !== 'undefined' ? localStorage.getItem('payment_success_oid') : null
+      const hasLocalStorageSignalEarly = successOidEarly === oid
+      if (typeof window !== 'undefined' && sessionStorage.getItem('voice_entered_by_100') && hasLocalStorageSignalEarly) {
+        const paymentContentIdEarly = sessionStorage.getItem('payment_content_id')
+        if (paymentContentIdEarly) {
+          isProcessing = false
+          setShowPaymentPopup(false)
+          setSubmitting(false)
+          setPaymentProcessingMethod(null)
+          navigateToVoiceResult(`/result/voice?oid=${encodeURIComponent(oid)}&id=${encodeURIComponent(paymentContentIdEarly)}`)
+          return
+        }
+      }
       
       // 먼저 localStorage 확인 (서버 상태 확인보다 우선)
       const successOid = localStorage.getItem('payment_success_oid')
@@ -2780,21 +2795,8 @@ function FormContent() {
         return
       }
 
-      // 바로이용하기(충전) 음성 결제: DB에 success 반영된 뒤에만 보이스로 이동 (0원 표시 보장)
+      // 바로이용하기(충전) 음성 결제: 성공 페이지에서 이미 complete() 호출 후 opener 노티 → 즉시 보이스 이동 (폴링 없음)
       if (typeof window !== 'undefined' && sessionStorage.getItem('voice_entered_by_100')) {
-        if (!serverStatusConfirmed && hasLocalStorageSignal) {
-          for (let w = 0; w < 25; w++) {
-            await new Promise((r) => setTimeout(r, 600))
-            const rRes = await fetch(`/api/payment/status?oid=${encodeURIComponent(oid)}`, { cache: 'no-store' })
-            if (rRes.ok) {
-              const rData = await rRes.json()
-              if (rData?.success && rData?.status === 'success') {
-                serverStatusConfirmed = true
-                break
-              }
-            }
-          }
-        }
         isProcessing = false
         setShowPaymentPopup(false)
         setSubmitting(false)
@@ -4284,13 +4286,12 @@ function FormContent() {
           : `/result/voice?oid=${encodeURIComponent(oid)}`
         setTimeout(() => {
           navigateToVoiceResult(voicePath)
-        }, 50)
+        }, 0)
       }
       let skipWaitCheckCount = 0
       skipWaitIntervalRef.current = setInterval(async () => {
         try {
           skipWaitCheckCount++
-          // 매 틱마다 상태 확인 (2초마다가 아님)
           const statusRes = await fetch(`/api/payment/status?oid=${oid}`, { cache: 'no-store' })
           const statusData = await statusRes.json().catch(() => ({}))
           if (statusData?.success && statusData?.status === 'success') {
@@ -4302,7 +4303,6 @@ function FormContent() {
           if (paymentWindow.closed) {
             clearInterval(skipWaitIntervalRef.current!)
             skipWaitIntervalRef.current = null
-            // 성공 페이지가 complete 호출을 못 했을 수 있으므로 한 번 호출 후, 서버에서 success 나올 때까지 대기(long-poll) 한 번만 요청
             try {
               await fetch('/api/payment/complete', {
                 method: 'POST',
@@ -4310,17 +4310,21 @@ function FormContent() {
                 body: JSON.stringify({ oid, password: typeof window !== 'undefined' ? sessionStorage.getItem('payment_password') : null }),
               })
             } catch { /* ignore */ }
-            await new Promise((r) => setTimeout(r, 800))
-            const waitRes = await fetch(`/api/payment/wait-status?oid=${encodeURIComponent(oid)}`, { cache: 'no-store' })
-            const waitData = await waitRes.json().catch(() => ({}))
-            if (waitData?.success && waitData?.status === 'success') {
-              doSkipWaitSuccess()
-            } else {
-              setSubmitting(false)
+            await new Promise((r) => setTimeout(r, 200))
+            // 롱폴 대신 짧은 주기 클라이언트 폴링 (50ms x 60 = 최대 3초)
+            for (let i = 0; i < 60; i++) {
+              const res = await fetch(`/api/payment/status?oid=${encodeURIComponent(oid)}`, { cache: 'no-store' })
+              const data = await res.json().catch(() => ({}))
+              if (data?.success && data?.status === 'success') {
+                doSkipWaitSuccess()
+                return
+              }
+              await new Promise((r) => setTimeout(r, 50))
             }
+            setSubmitting(false)
           }
         } catch { /* ignore */ }
-      }, 1000)
+      }, 300)
     } catch (error: any) {
       setSubmitting(false)
       showAlertMessage(error?.message || '결제 요청 중 오류가 발생했습니다.')

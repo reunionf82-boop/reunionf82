@@ -759,15 +759,15 @@ export function useVoiceResult() {
 
     ;(async () => {
       try {
-        // 카드/휴대폰 결제 보장: success 될 때까지 재시도 (최대 약 24초, 800ms 간격 30회)
+        // 카드/휴대폰 결제 즉시 반영: success 될 때까지 짧은 간격 재시도 (200ms x 50 = 최대 10초)
         let statusData: { success?: boolean; status?: string } | null = null
-        for (let attempt = 1; attempt <= 30; attempt++) {
+        for (let attempt = 1; attempt <= 50; attempt++) {
           const statusRes = await fetch(`/api/payment/status?oid=${encodeURIComponent(oid)}`, { cache: 'no-store' })
           if (statusRes.ok) {
             statusData = await statusRes.json()
             if (statusData?.success && statusData?.status === 'success') break
           }
-          if (attempt < 30) await new Promise((r) => setTimeout(r, 800))
+          if (attempt < 50) await new Promise((r) => setTimeout(r, 200))
         }
         if (!statusData?.success || statusData?.status !== 'success') return
 

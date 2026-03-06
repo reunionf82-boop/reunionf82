@@ -65,7 +65,7 @@ function PaymentSuccessContent() {
       return false
     }
 
-    // DB 업데이트를 먼저 완료한 뒤 opener 호출 → 본창에서 status 조회 시 success 확실히 반영
+    // DB 업데이트를 먼저 완료한 뒤 opener에 즉시 알림 (결제 완료 = 서버 노티)
     runCompleteWithRetry().then(() => {
       try {
         localStorage.setItem('payment_success_oid', oid)
@@ -83,32 +83,24 @@ function PaymentSuccessContent() {
         } catch {}
       }
 
-      // DB 반영 직후 약간 딜레이 후 opener 호출 (본창 폴링/status와 겹치지 않도록)
+      // 결제 완료 즉시 opener에 노티 (딜레이 제거 → 보이스 화면 즉시 이동)
+      callOpenerFunction().then((result) => {
+        functionCalled = result
+        if (result) setTimeout(tryClose, 300)
+      })
+
+      const messageInterval = setInterval(() => {
+        if (!functionCalled && window.opener && !window.opener.closed) {
+          callOpenerFunction().then((result) => {
+            if (result) functionCalled = true
+          })
+        }
+        tryClose()
+      }, 150)
       setTimeout(() => {
-        callOpenerFunction().then((result) => {
-          functionCalled = result
-          if (result) setTimeout(tryClose, 500)
-        })
-
-        let attemptCount = 0
-        const messageInterval = setInterval(() => {
-          attemptCount++
-          if (!functionCalled && window.opener && !window.opener.closed) {
-            callOpenerFunction().then((result) => {
-              if (result) functionCalled = true
-            })
-          }
-          if (attemptCount >= 20 || functionCalled) {
-            clearInterval(messageInterval)
-            setTimeout(tryClose, 500)
-          }
-        }, 100)
-
-        setTimeout(() => {
-          clearInterval(messageInterval)
-          tryClose()
-        }, 3000)
-      }, 200)
+        clearInterval(messageInterval)
+        tryClose()
+      }, 2500)
     })
   }, [oid])
 
