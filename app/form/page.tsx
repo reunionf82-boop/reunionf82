@@ -2799,7 +2799,7 @@ function FormContent() {
         setShowPaymentPopup(false)
         setSubmitting(false)
         setPaymentProcessingMethod(null)
-        navigateToVoiceResult(`/result/voice?oid=${encodeURIComponent(oid)}`)
+        navigateToVoiceResult(`/result/voice?oid=${encodeURIComponent(oid)}&id=${encodeURIComponent(paymentContentId)}`)
         return
       }
       
@@ -4278,8 +4278,12 @@ function FormContent() {
         try {
           if (paymentWindowRef.current && !paymentWindowRef.current.closed) paymentWindowRef.current.close()
         } catch { /* ignore */ }
+        const cid = typeof window !== 'undefined' ? sessionStorage.getItem('payment_content_id') : null
+        const voicePath = cid
+          ? `/result/voice?oid=${encodeURIComponent(oid)}&id=${encodeURIComponent(cid)}`
+          : `/result/voice?oid=${encodeURIComponent(oid)}`
         setTimeout(() => {
-          navigateToVoiceResult(`/result/voice?oid=${encodeURIComponent(oid)}`)
+          navigateToVoiceResult(voicePath)
         }, 50)
       }
       let skipWaitCheckCount = 0
