@@ -2780,8 +2780,21 @@ function FormContent() {
         return
       }
 
-      // 바로이용하기(100원) 음성 결제: 생년월일 없이 바로 음성 결과로 이동
+      // 바로이용하기(충전) 음성 결제: DB에 success 반영된 뒤에만 보이스로 이동 (0원 표시 보장)
       if (typeof window !== 'undefined' && sessionStorage.getItem('voice_entered_by_100')) {
+        if (!serverStatusConfirmed && hasLocalStorageSignal) {
+          for (let w = 0; w < 25; w++) {
+            await new Promise((r) => setTimeout(r, 600))
+            const rRes = await fetch(`/api/payment/status?oid=${encodeURIComponent(oid)}`, { cache: 'no-store' })
+            if (rRes.ok) {
+              const rData = await rRes.json()
+              if (rData?.success && rData?.status === 'success') {
+                serverStatusConfirmed = true
+                break
+              }
+            }
+          }
+        }
         isProcessing = false
         setShowPaymentPopup(false)
         setSubmitting(false)
