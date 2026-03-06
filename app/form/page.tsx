@@ -2706,8 +2706,8 @@ function FormContent() {
           setShowSkipWaitPopup(false)
           setSubmitting(false)
           setPaymentProcessingMethod(null)
-          sessionStorage.removeItem('voice_entered_by_100')
-          // skip_wait_charge_only는 제거하지 않음 → doSkipWaitSuccess가 나중에 실행돼도 이동하지 않도록
+          // voice_entered_by_100 제거하지 않음 → checkLocalStorage 등으로 processPaymentSuccess가 다시 호출돼도 이 블록에 걸려 보이스 이동 방지
+          // skip_wait_charge_only도 제거하지 않음 → doSkipWaitSuccess가 나중에 실행돼도 이동하지 않도록
           const cid = sessionStorage.getItem('payment_content_id')
           const phone = sessionStorage.getItem('payment_phone')
           if (cid && phone) {
@@ -2840,8 +2840,8 @@ function FormContent() {
           setShowSkipWaitPopup(false)
           setSubmitting(false)
           setPaymentProcessingMethod(null)
-          sessionStorage.removeItem('voice_entered_by_100')
-          // skip_wait_charge_only는 제거하지 않음 → doSkipWaitSuccess가 나중에 실행돼도 이동하지 않도록
+          // voice_entered_by_100 제거하지 않음 → checkLocalStorage 등으로 processPaymentSuccess가 다시 호출돼도 이 블록에 걸려 보이스 이동 방지
+          // skip_wait_charge_only도 제거하지 않음
           const cid = sessionStorage.getItem('payment_content_id')
           const phone = sessionStorage.getItem('payment_phone')
           if (cid && phone) {
@@ -8062,6 +8062,7 @@ function FormContent() {
                       }
                       await finishIOSVoicePrepare(micPromise)
                       setSkipWaitPopupMode('use-now')
+                      if (typeof window !== 'undefined') sessionStorage.removeItem('skip_wait_charge_only')
                       setShowSkipWaitPopup(true)
                     }}
                     className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"
