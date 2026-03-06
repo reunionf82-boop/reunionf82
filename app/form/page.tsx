@@ -4307,13 +4307,19 @@ function FormContent() {
               })
             } catch { /* ignore */ }
             await new Promise((r) => setTimeout(r, 800))
-            const statusRes = await fetch(`/api/payment/status?oid=${oid}`, { cache: 'no-store' })
-            const statusData = await statusRes.json().catch(() => ({}))
-            if (statusData?.success && statusData?.status === 'success') {
-              doSkipWaitSuccess()
-            } else {
-              setSubmitting(false)
+            // 결제 성공 시에만 보이스로 이동. DB 반영 지연 대비해 status 재조회(최대 25회, 100ms 간격)
+            let confirmed = false
+            for (let i = 0; i < 25; i++) {
+              const statusRes = await fetch(`/api/payment/status?oid=${oid}`, { cache: 'no-store' })
+              const statusData = await statusRes.json().catch(() => ({}))
+              if (statusData?.success && statusData?.status === 'success') {
+                confirmed = true
+                doSkipWaitSuccess()
+                break
+              }
+              await new Promise((r) => setTimeout(r, 100))
             }
+            if (!confirmed) setSubmitting(false)
           }
         } catch { /* ignore */ }
       }, 1000)
