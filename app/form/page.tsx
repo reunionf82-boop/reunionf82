@@ -662,7 +662,9 @@ function FormContent() {
   const [showSkipWaitPopup, setShowSkipWaitPopup] = useState(false)
   /** 바로이용하기 팝업에서 선택한 시간 옵션 (보이스 연장과 동일: extension 또는 charge) */
   const [selectedSkipWaitOption, setSelectedSkipWaitOption] = useState<{ minutes: number; seconds?: number; price: number; label: string; charge?: boolean; rate_seconds?: number; rate_won?: number } | null>(null)
-  
+  /** 팝업 진입 목적: 'charge-only' = 충전하기(결제 후 폼 유지), 'use-now' = 바로이용하기(결제 후 보이스 이동) */
+  const [skipWaitPopupMode, setSkipWaitPopupMode] = useState<'use-now' | 'charge-only'>('use-now')
+
   // 로딩 팝업 상태 (PDF 생성 등)
   const [showLoadingPopup, setShowLoadingPopup] = useState(false)
   const [streamingProgress, setStreamingProgress] = useState(0)
@@ -2697,6 +2699,19 @@ function FormContent() {
       const successOidEarly = typeof window !== 'undefined' ? localStorage.getItem('payment_success_oid') : null
       const hasLocalStorageSignalEarly = successOidEarly === oid
       if (typeof window !== 'undefined' && sessionStorage.getItem('voice_entered_by_100') && hasLocalStorageSignalEarly) {
+        // 충전하기로 결제한 경우: 보이스로 이동하지 않고 폼에 머무르며 잔액만 갱신
+        if (sessionStorage.getItem('skip_wait_charge_only')) {
+          isProcessing = false
+          setShowPaymentPopup(false)
+          setShowSkipWaitPopup(false)
+          setSubmitting(false)
+          setPaymentProcessingMethod(null)
+          sessionStorage.removeItem('voice_entered_by_100')
+          sessionStorage.removeItem('skip_wait_charge_only')
+          refetchVoiceBalance()
+          showAlertMessage('충전이 완료되었습니다.')
+          return
+        }
         const paymentContentIdEarly = sessionStorage.getItem('payment_content_id')
         if (paymentContentIdEarly) {
           isProcessing = false
@@ -2797,6 +2812,19 @@ function FormContent() {
 
       // 바로이용하기(충전) 음성 결제: 성공 페이지에서 이미 complete() 호출 후 opener 노티 → 즉시 보이스 이동 (폴링 없음)
       if (typeof window !== 'undefined' && sessionStorage.getItem('voice_entered_by_100')) {
+        // 충전하기로 결제한 경우: 보이스로 이동하지 않고 폼에 머무르며 잔액만 갱신
+        if (sessionStorage.getItem('skip_wait_charge_only')) {
+          isProcessing = false
+          setShowPaymentPopup(false)
+          setShowSkipWaitPopup(false)
+          setSubmitting(false)
+          setPaymentProcessingMethod(null)
+          sessionStorage.removeItem('voice_entered_by_100')
+          sessionStorage.removeItem('skip_wait_charge_only')
+          refetchVoiceBalance()
+          showAlertMessage('충전이 완료되었습니다.')
+          return
+        }
         isProcessing = false
         setShowPaymentPopup(false)
         setSubmitting(false)
@@ -4148,6 +4176,11 @@ function FormContent() {
         sessionStorage.setItem('payment_password', password)
         sessionStorage.setItem('voice_pay_amount', String(optionToUse.price))
         sessionStorage.setItem('voice_entered_by_100', '1')
+        if (skipWaitPopupMode === 'charge-only') {
+          sessionStorage.setItem('skip_wait_charge_only', '1')
+        } else {
+          sessionStorage.removeItem('skip_wait_charge_only')
+        }
         sessionStorage.setItem('payment_voice_minutes', String(skipWaitOption.minutes))
         if (totalSeconds > 0) {
           sessionStorage.setItem('payment_voice_total_seconds', String(totalSeconds))
@@ -5947,7 +5980,7 @@ function FormContent() {
           >
             {/* 헤더 - 결제정보와 동일 */}
             <div className="relative bg-gradient-to-r from-pink-500 to-pink-600 px-6 py-4">
-              <h2 className="text-xl font-bold text-white cursor-default">바로이용하기</h2>
+              <h2 className="text-xl font-bold text-white cursor-default">{skipWaitPopupMode === 'charge-only' ? '충전하기' : '바로이용하기'}</h2>
               <button
                 type="button"
                 onClick={() => { setShowSkipWaitPopup(false); setSelectedSkipWaitOption(null) }}
@@ -5992,10 +6025,12 @@ function FormContent() {
                 if (hasOptions) {
                   return (
                     <>
-                      <ul className="text-sm text-gray-700 mb-3 list-disc list-inside space-y-1">
-                        <li>기다리면 무료 이용 가능</li>
-                        <li>바로이용은 캐시 충전 후 가능</li>
-                      </ul>
+                      {skipWaitPopupMode !== 'charge-only' && (
+                        <ul className="text-sm text-gray-700 mb-3 list-disc list-inside space-y-1">
+                          <li>기다리면 무료 이용 가능</li>
+                          <li>바로이용은 캐시 충전 후 가능</li>
+                        </ul>
+                      )}
                       <div className="space-y-2 mb-4">
                         {chargeOpts.map((opt, idx) => {
                           const d = optionToDisplay(opt)
@@ -6033,9 +6068,11 @@ function FormContent() {
                 return (
                   <div className="bg-gradient-to-br from-pink-50 to-pink-100 border-2 border-pink-200 rounded-xl p-4 mb-6">
                     <div className="space-y-2">
-                      <p className="text-sm text-gray-700">
-                        기다리면 무료로 이용할 수 있습니다. {SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원 결제하고 즉시 시작할까요?
-                      </p>
+                      {skipWaitPopupMode !== 'charge-only' && (
+                        <p className="text-sm text-gray-700">
+                          기다리면 무료로 이용할 수 있습니다. {SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원 결제하고 즉시 시작할까요?
+                        </p>
+                      )}
                       <div className="flex justify-between items-center pt-2 border-t border-pink-300">
                         <span className="text-sm font-medium text-gray-700">즉시 이용 금액</span>
                         <span className="text-xl font-bold text-pink-500">{SKIP_WAIT_PAY_AMOUNT.toLocaleString()}원</span>
@@ -7851,6 +7888,7 @@ function FormContent() {
                         return
                       }
                       await finishIOSVoicePrepare(micPromise)
+                      setSkipWaitPopupMode('charge-only')
                       setShowSkipWaitPopup(true)
                     }}
                     className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"
@@ -7900,6 +7938,7 @@ function FormContent() {
                         return
                       }
                       await finishIOSVoicePrepare(micPromise)
+                      setSkipWaitPopupMode('use-now')
                       setShowSkipWaitPopup(true)
                     }}
                     className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"
