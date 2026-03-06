@@ -771,12 +771,12 @@ export function useVoiceResult() {
         }
         if (!statusData?.success || statusData?.status !== 'success') return
 
-        const cid = contentIdRef.current
-        const phone = sessionStorage.getItem('payment_phone')
-        if (!cid || !phone) return
-
-        const contentIdNum = parseInt(String(cid), 10)
+        // 운영자테스트와 동일하게 payments.content_id와 일치시키기 위해 로드된 콘텐츠 id 사용 (ref는 문자열 등 타입 불일치 가능)
+        const contentIdNum = Number(contentData.id) || parseInt(String(contentIdRef.current ?? ''), 10)
         if (!Number.isFinite(contentIdNum)) return
+
+        const phone = sessionStorage.getItem('payment_phone')
+        if (!phone) return
 
         const chargeRes = await fetch('/api/voice/balance', {
           method: 'POST',
