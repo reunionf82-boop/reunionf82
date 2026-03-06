@@ -746,10 +746,15 @@ export function useVoiceResult() {
     if (!oid || typeof window === 'undefined') return
     if (!sessionStorage.getItem('voice_entered_by_100')) return
     if (skipWaitChargeAppliedRef.current) return
-    // 충전 결제만 여기서 잔액 충전 처리. 연장(분) 결제는 초기 로드에서 이미 적용됨
+    // 충전 결제만 여기서 잔액 충전 처리. oid+voice_entered_by_100이면 바로이용하기(충전) 진입 → option에 charge 없어도 충전 실행
     const storedOption = sessionStorage.getItem('payment_voice_time_option')
-    let isChargePayment = false
-    try { isChargePayment = storedOption ? (JSON.parse(storedOption) as { charge?: boolean })?.charge === true : false } catch {}
+    let isChargePayment = true
+    try {
+      if (storedOption) {
+        const parsed = JSON.parse(storedOption) as { charge?: boolean }
+        if (parsed && parsed.charge === false) isChargePayment = false
+      }
+    } catch { /* keep true */ }
     if (!isChargePayment) { skipWaitChargeAppliedRef.current = true; return }
 
     ;(async () => {
@@ -770,15 +775,37 @@ export function useVoiceResult() {
         const phone = sessionStorage.getItem('payment_phone')
         if (!cid || !phone) return
 
+        const contentIdNum = parseInt(String(cid), 10)
+        if (!Number.isFinite(contentIdNum)) return
+
         const chargeRes = await fetch('/api/voice/balance', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'charge', oid, contentId: cid, phone }),
+          body: JSON.stringify({ action: 'charge', oid, contentId: contentIdNum, phone }),
         })
         const chargeData = await chargeRes.json()
         if (chargeData?.success && typeof chargeData.balance_wan === 'number') {
           setBalanceWan(chargeData.balance_wan)
+          setBalanceModeForDisplay(true)
           enteredWithBalanceRef.current = true
+        }
+
+        // charge 응답 실패/누락 시: 이미 충전됐을 수 있으므로 GET balance로 보정 (캐시 0 표시 버그 방지)
+        let balanceWanToUse = chargeData?.success && typeof chargeData.balance_wan === 'number' ? chargeData.balance_wan : 0
+        if (balanceWanToUse <= 0) {
+          try {
+            const getRes = await fetch(`/api/voice/balance?contentId=${encodeURIComponent(contentIdNum)}&phone=${encodeURIComponent(phone)}`, { cache: 'no-store' })
+            if (getRes.ok) {
+              const getData = await getRes.json()
+              const got = typeof (getData as any)?.balance_wan === 'number' ? (getData as any).balance_wan : 0
+              if (got > 0) {
+                balanceWanToUse = got
+                setBalanceWan(got)
+                setBalanceModeForDisplay(true)
+                enteredWithBalanceRef.current = true
+              }
+            }
+          } catch { /* ignore */ }
         }
 
         // 부여 시간: 실제 충전된 잔액(balance_wan) 기준으로만 계산. 상품가격(price) 사용 시 1100결제에 2000캐시로 보이는 버그 방지
@@ -789,8 +816,8 @@ export function useVoiceResult() {
         const optsCharge = (optsForCharge as any[]).find((o: any) => o?.type === 'charge') ?? null
         const rateWon = optsCharge != null && Number(optsCharge.rate_won) > 0 ? Number(optsCharge.rate_won) : 19
         const rateSec = optsCharge != null && Number(optsCharge.rate_seconds) > 0 ? Number(optsCharge.rate_seconds) : 12
-        if (chargeData?.success && typeof chargeData.balance_wan === 'number' && chargeData.balance_wan > 0 && rateWon > 0) {
-          addSec = Math.floor(chargeData.balance_wan / rateWon) * rateSec
+        if (balanceWanToUse > 0 && rateWon > 0) {
+          addSec = Math.floor(balanceWanToUse / rateWon) * rateSec
         }
         if (addSec <= 0) {
           try {

@@ -4126,7 +4126,16 @@ function FormContent() {
       const oid = generateOrderId()
       const phoneNumber = `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`
       const totalSeconds = (optionToUse.minutes || 0) * 60 + (optionToUse.seconds ?? 0)
-      const skipWaitOption = { minutes: optionToUse.minutes, seconds: optionToUse.seconds ?? 0, price: optionToUse.price, label: optionToUse.label, ...(optionToUse.charge ? { charge: true, rate_won: (optionToUse as any).rate_won, rate_seconds: (optionToUse as any).rate_seconds } : {}) }
+      // 보이스 페이지에서 oid 충전 로직을 타도록 항상 charge: true + rate 포함 (미포함 시 isChargePayment=false로 충전 스킵됨)
+      const skipWaitOption = {
+        minutes: optionToUse.minutes,
+        seconds: optionToUse.seconds ?? 0,
+        price: optionToUse.price,
+        label: optionToUse.label,
+        charge: true,
+        rate_won: (optionToUse as any).rate_won ?? 19,
+        rate_seconds: (optionToUse as any).rate_seconds ?? 12,
+      }
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('payment_oid', oid)
         sessionStorage.setItem('payment_method', paymentMethod)
