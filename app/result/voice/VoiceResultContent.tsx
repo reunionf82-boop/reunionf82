@@ -741,10 +741,11 @@ export default function VoiceResultContent() {
           ) : null
         })()}
 
-        {/* 음성 서비스 이용 안내 */}
-        <p className="text-gray-500 text-xs leading-relaxed text-center">
-          음성 서비스 이용 중에는 다른 작동(화면캡쳐/리프레시/통화 등)을 하지 마세요. 네트워크 단절 현상이 발생할 수 있습니다.
-        </p>
+        {/* 음성 이용 안내 (블릿, 왼쪽 정렬) */}
+        <ul className="text-gray-500 text-xs leading-relaxed text-left list-disc list-inside pl-1 space-y-0.5 min-w-0">
+          <li>음성 질문 후 1~2초 지연될 수 있어요. 말풍선이 완성되야 질문이 완성된 것입니다.</li>
+          <li>음성 이용 중에는 다른 작동(화면캡처, 새로고침, 통화 등)을 하지 마세요. 네트워크 단절 현상이 발생할 수 있습니다.</li>
+        </ul>
 
         {/* 사주 만세력 (접기/펼치기) — 마이크 민감도 아래, 8006/무료속성이 아닐 때만 표시 */}
         {!isPpoingAttributes(h.contentData) && (

@@ -475,8 +475,11 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
       }
 
       if (result.success && result.data) {
-        console.log('[MyHistory] raw results:', JSON.stringify(result.data.map((r: any) => ({ id: r.id, result_type: r.result_type, has_voice_msgs: !!r.voice_messages, has_voice_audio: !!r.voice_audio_url }))))
-        setSavedResults(result.data)
+        const normalized = (result.data as any[]).map((r: any) => ({
+          ...r,
+          voice_audio_url: r.voice_audio_url ?? (r as any).voiceAudioUrl ?? undefined
+        }))
+        setSavedResults(normalized)
         setShowResults(true)
       } else {
         setError(result.error || '이용내역을 찾을 수 없습니다.')
@@ -2476,8 +2479,9 @@ export default function MyHistoryPopup({ isOpen, onClose, streamingFinished = tr
                 savedResults.map((result) => {
                   // voice 판별: result_type이 'voice'이거나, voice_messages/voice_audio_url이 존재
                   const isVoice = result.result_type === 'voice' || !!result.voice_messages || !!result.voice_audio_url
-                  // 음성듣기: 녹음(voice_audio_url)이 저장된 경우에만 버튼 표시
-                  const hasAudio = isVoice && !!result.voice_audio_url
+                  // 음성듣기: 녹음(voice_audio_url)이 저장된 경우에만 버튼 표시 (snake_case/camelCase 모두 확인)
+                  const voiceAudioUrl = result.voice_audio_url ?? (result as any).voiceAudioUrl
+                  const hasAudio = isVoice && !!(voiceAudioUrl && String(voiceAudioUrl).trim())
                   return (
                   <div
                     key={result.id}

@@ -1,7 +1,8 @@
 -- Supabase Security Advisor: "Function Search Path Mutable" (pg_temp_*.count_estimate) 대응
+-- 경고 예: pg_temp_88.count_estimate, pg_temp_87.count_estimate 등
 --
 -- 1) public 스키마에 count_estimate가 있으면 search_path 설정
--- 2) pg_temp_87 등 pg_temp_* 스키마의 count_estimate는 세션 임시 객체라
+-- 2) pg_temp_88 등 pg_temp_* 스키마의 count_estimate는 세션 임시 객체라
 --    마이그레이션으로 수정 불가 → 해당 세션 종료 시 사라지거나, 경고만 남을 수 있음 (무시 가능)
 
 DO $$

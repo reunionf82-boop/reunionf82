@@ -134,7 +134,11 @@ export async function POST(request: NextRequest) {
         .gte('saved_at', sixtyDaysAgo.toISOString())
         .order('saved_at', { ascending: false })
       if (!error && data) {
-        voiceResults = data.map((r: any) => ({ ...r, result_type: 'voice' }))
+        voiceResults = data.map((r: any) => ({
+          ...r,
+          result_type: 'voice',
+          voice_audio_url: r.voice_audio_url ?? undefined
+        }))
       }
     }
 

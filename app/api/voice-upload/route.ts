@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+/** 큰 녹음 파일 업로드·스토리지 저장에 시간이 걸릴 수 있음 (정상 종료 시 2분~수 분 허용) */
+export const maxDuration = 300 = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
 function getSupabaseClient() {
