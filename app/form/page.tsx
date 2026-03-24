@@ -5966,11 +5966,9 @@ function FormContent() {
     }
   }
 
-  // 년도, 월, 일 옵션 생성
-  // 현재 년도 기준 19세 미만 년도 제외 (현재 년도 - 19년 이하만 표시)
+  // 년도, 월, 일 옵션 생성 (연령 제한 없음: 올해 포함 과거 ~100년)
   const currentYear = new Date().getFullYear()
-  const minAgeYear = currentYear - 19 // 19세 이상만 가능
-  const years = Array.from({ length: 76 }, (_, i) => 2025 - i).filter(y => y <= minAgeYear)
+  const years = Array.from({ length: 101 }, (_, i) => currentYear - i)
   const months = Array.from({ length: 12 }, (_, i) => i + 1)
   
   // 유효한 일자 계산 함수 (양력/음력/음력윤달 모두 지원)
@@ -6865,14 +6863,6 @@ function FormContent() {
                   }}
                 />
               ) : null}
-              {/* 19금 로고 */}
-              <div className="absolute top-2 right-2 z-10">
-                <img 
-                  src="/19logo.png" 
-                  alt="19금"
-                  className="w-14 h-14"
-                />
-              </div>
               {/* NEW 태그 */}
               {content?.is_new && (
                 <div className="absolute top-4 left-4 bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-md shadow-lg">
@@ -7727,10 +7717,6 @@ function FormContent() {
               </select>
             </div>
 
-            {/* 연령 제한 안내 */}
-            <div className="text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-pink-500 font-bold text-sm mb-6 pb-6 text-left">
-              ※ 19세 이하는 이용하실 수 없습니다.
-            </div>
           </div>
           </div>
           )}

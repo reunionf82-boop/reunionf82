@@ -119,14 +119,6 @@ export default function ServiceCard({ service, showExposedBadge }: ServiceCardPr
     >
       {/* 일러스트레이션 영역 */}
       <div className="relative h-48 bg-gradient-to-br from-yellow-50 via-pink-50 to-orange-50 flex items-center justify-center overflow-hidden">
-        {/* 19금 로고 */}
-        <div className="absolute top-2 right-2 z-10">
-          <img 
-            src="/19logo.png" 
-            alt="19금"
-            className="w-14 h-14"
-          />
-        </div>
         {hasVideo && service.thumbnailImageUrl ? (
           <SupabaseVideo
             thumbnailImageUrl={service.thumbnailImageUrl}
