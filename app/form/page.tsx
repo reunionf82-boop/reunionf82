@@ -5966,42 +5966,62 @@ function FormContent() {
     }
   }
 
-  // 년도, 월, 일 옵션 생성 (연령 제한 없음: 올해 포함 과거 ~100년)
-  const currentYear = new Date().getFullYear()
-  const years = Array.from({ length: 101 }, (_, i) => currentYear - i)
-  const months = Array.from({ length: 12 }, (_, i) => i + 1)
-  
+  // 년도, 월, 일 옵션 — 오늘·미래 생일 선택 불가 (어제까지)
+  const today = new Date()
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
+  const maxBirthYear = yesterday.getFullYear()
+  const maxBirthMonth = yesterday.getMonth() + 1
+  const maxBirthDay = yesterday.getDate()
+  const minYear = today.getFullYear() - 100
+
+  const years =
+    maxBirthYear >= minYear
+      ? Array.from({ length: maxBirthYear - minYear + 1 }, (_, i) => maxBirthYear - i)
+      : []
+
+  const getMonthsForYear = (yearStr: string): number[] => {
+    if (!yearStr) return Array.from({ length: 12 }, (_, i) => i + 1)
+    const y = parseInt(yearStr, 10)
+    if (isNaN(y)) return Array.from({ length: 12 }, (_, i) => i + 1)
+    if (y < maxBirthYear) return Array.from({ length: 12 }, (_, i) => i + 1)
+    if (y === maxBirthYear) return Array.from({ length: maxBirthMonth }, (_, i) => i + 1)
+    return []
+  }
+
+  const birthMonths = getMonthsForYear(year)
+  const partnerMonths = getMonthsForYear(partnerYear)
+
   // 유효한 일자 계산 함수 (양력/음력/음력윤달 모두 지원)
   const getValidDays = (yearStr: string, monthStr: string, calendarType: 'solar' | 'lunar' | 'lunar-leap'): number[] => {
     if (!yearStr || !monthStr) {
       return Array.from({ length: 31 }, (_, i) => i + 1)
     }
-    
+
     const year = parseInt(yearStr)
     const month = parseInt(monthStr)
-    
+
     if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
       return Array.from({ length: 31 }, (_, i) => i + 1)
     }
-    
+
+    let days: number[]
+
     // 양력의 경우
     if (calendarType === 'solar') {
       const daysInMonth = new Date(year, month, 0).getDate()
-      return Array.from({ length: daysInMonth }, (_, i) => i + 1)
-    }
-    
-    // 음력의 경우 (간단한 근사치 사용)
-    // 음력은 복잡하므로, 양력과 유사하게 처리하되 윤달은 별도 처리
-    if (calendarType === 'lunar' || calendarType === 'lunar-leap') {
-      // 음력 월의 일수는 대략 29일 또는 30일
-      // 실제로는 음력 변환 라이브러리가 필요하지만, 여기서는 양력 기준으로 근사치 사용
-      // 음력 윤달의 경우도 동일하게 처리
+      days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+    } else if (calendarType === 'lunar' || calendarType === 'lunar-leap') {
       const daysInMonth = new Date(year, month, 0).getDate()
-      // 음력은 보통 29일 또는 30일이지만, 양력 기준으로 계산
-      return Array.from({ length: daysInMonth }, (_, i) => i + 1)
+      days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+    } else {
+      days = Array.from({ length: 31 }, (_, i) => i + 1)
     }
-    
-    return Array.from({ length: 31 }, (_, i) => i + 1)
+
+    if (year === maxBirthYear && month === maxBirthMonth) {
+      days = days.filter((d) => d <= maxBirthDay)
+    }
+
+    return days
   }
   
   // 본인 정보의 유효한 일자
@@ -7619,15 +7639,20 @@ function FormContent() {
                 <select
                   value={year}
                   onChange={(e) => {
-                    setYear(e.target.value)
+                    const newY = e.target.value
+                    setYear(newY)
+                    const allowedM = getMonthsForYear(newY)
+                    if (month && allowedM.length && !allowedM.includes(parseInt(month, 10))) {
+                      setMonth('')
+                    }
                     // 년도가 변경되면 일자가 유효 범위를 벗어날 수 있으므로 초기화
-                    if (e.target.value && month) {
-                      const newValidDays = getValidDays(e.target.value, month, calendarType)
-                      if (day && parseInt(day) > newValidDays.length) {
+                    if (newY && month) {
+                      const newValidDays = getValidDays(newY, month, calendarType)
+                      if (day && (newValidDays.length === 0 || !newValidDays.includes(parseInt(day, 10)))) {
                         setDay('')
                       }
                     }
-                    if (fieldErrors.birthDate && e.target.value && month && day) {
+                    if (fieldErrors.birthDate && newY && month && day) {
                       setFieldErrors(prev => ({ ...prev, birthDate: undefined }))
                     }
                   }}
@@ -7647,10 +7672,9 @@ function FormContent() {
                   value={month}
                   onChange={(e) => {
                     setMonth(e.target.value)
-                    // 월이 변경되면 일자가 유효 범위를 벗어날 수 있으므로 초기화
                     if (e.target.value && year) {
                       const newValidDays = getValidDays(year, e.target.value, calendarType)
-                      if (day && parseInt(day) > newValidDays.length) {
+                      if (day && (newValidDays.length === 0 || !newValidDays.includes(parseInt(day, 10)))) {
                         setDay('')
                       }
                     }
@@ -7664,7 +7688,7 @@ function FormContent() {
                   required
                 >
                   <option value="">월</option>
-                  {months.map((m) => (
+                  {birthMonths.map((m) => (
                     <option key={m} value={m}>{m}월</option>
                   ))}
                 </select>
@@ -7855,15 +7879,19 @@ function FormContent() {
                     <select
                       value={partnerYear}
                       onChange={(e) => {
-                        setPartnerYear(e.target.value)
-                        // 년도가 변경되면 일자가 유효 범위를 벗어날 수 있으므로 초기화
-                        if (e.target.value && partnerMonth) {
-                          const newValidDays = getValidDays(e.target.value, partnerMonth, partnerCalendarType)
-                          if (partnerDay && parseInt(partnerDay) > newValidDays.length) {
+                        const newY = e.target.value
+                        setPartnerYear(newY)
+                        const allowedM = getMonthsForYear(newY)
+                        if (partnerMonth && allowedM.length && !allowedM.includes(parseInt(partnerMonth, 10))) {
+                          setPartnerMonth('')
+                        }
+                        if (newY && partnerMonth) {
+                          const newValidDays = getValidDays(newY, partnerMonth, partnerCalendarType)
+                          if (partnerDay && (newValidDays.length === 0 || !newValidDays.includes(parseInt(partnerDay, 10)))) {
                             setPartnerDay('')
                           }
                         }
-                        if (fieldErrors.partnerBirthDate && e.target.value && partnerMonth && partnerDay) {
+                        if (fieldErrors.partnerBirthDate && newY && partnerMonth && partnerDay) {
                           setFieldErrors(prev => ({ ...prev, partnerBirthDate: undefined }))
                         }
                       }}
@@ -7883,10 +7911,9 @@ function FormContent() {
                       value={partnerMonth}
                       onChange={(e) => {
                         setPartnerMonth(e.target.value)
-                        // 월이 변경되면 일자가 유효 범위를 벗어날 수 있으므로 초기화
                         if (e.target.value && partnerYear) {
                           const newValidDays = getValidDays(partnerYear, e.target.value, partnerCalendarType)
-                          if (partnerDay && parseInt(partnerDay) > newValidDays.length) {
+                          if (partnerDay && (newValidDays.length === 0 || !newValidDays.includes(parseInt(partnerDay, 10)))) {
                             setPartnerDay('')
                           }
                         }
@@ -7900,7 +7927,7 @@ function FormContent() {
                       required
                     >
                       <option value="">월</option>
-                      {months.map((m) => (
+                      {partnerMonths.map((m) => (
                         <option key={m} value={m}>{m}월</option>
                       ))}
                     </select>
