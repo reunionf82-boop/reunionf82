@@ -7262,7 +7262,7 @@ function FormContent() {
             return (
               <>
                 <div className="mb-6 pb-6 border-b border-gray-300 last:border-b-0 last:pb-0 last:mb-0">
-                  <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">재회상품 미리보기</h2>
+                  <h2 className="text-2xl font-extrabold text-pink-500 mb-6 relative pl-4 border-l-4 border-pink-500">미리보기</h2>
                   <div className="flex gap-4 flex-wrap">
                     {[0, 1, 2].map((index: number) => {
                       const thumbnailImageUrl = validThumbnails[index] || ''
@@ -7281,7 +7281,7 @@ function FormContent() {
                             !previewThumbnailErrors[index] ? (
                               <img
                                 src={thumbnailImageUrl}
-                                alt={`재회상품 미리보기 ${index + 1}`}
+                                alt={`미리보기 ${index + 1}`}
                                 className="rounded-lg max-h-48 object-contain"
                                 onError={(e) => {
                                   const img = e.currentTarget
@@ -7374,7 +7374,7 @@ function FormContent() {
                                 {!previewThumbnailErrors[index] ? (
                                 <img
                                   src={thumbnail}
-                                  alt={`재회상품 미리보기 ${index + 1}`}
+                                  alt={`미리보기 ${index + 1}`}
                                   className="max-w-full max-h-[90vh] object-contain"
                                     onError={(e) => {
                                       const img = e.currentTarget

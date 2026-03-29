@@ -80,6 +80,8 @@ export interface ContentData {
   }>
   is_new?: boolean
   is_exposed?: boolean
+  /** 삼선 메뉴: 설백야(재회상품), 도결(평생·올해 사주). 미설정 시 설백야 */
+  slide_menu_category?: '설백야' | '도결'
   tts_speaker?: string // TTS 화자 (nara, jinho, mijin, nhajun, ndain)
   tts_provider?: 'naver' | 'typecast' // TTS 제공자
   typecast_voice_id?: string // Typecast voice id (tc_...)

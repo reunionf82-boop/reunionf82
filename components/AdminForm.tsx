@@ -14,6 +14,11 @@ const addCacheBusting = (url: string | null | undefined): string => {
   return `${cleanUrl}?t=${Date.now()}`
 }
 
+/** 삼선 메뉴: 미설정·기타 값은 설백야(재회상품) */
+function normalizeSlideMenuCategory(raw: unknown): '설백야' | '도결' {
+  return raw === '도결' ? '도결' : '설백야'
+}
+
 // Supabase thumbnails 버킷 기준 썸네일 URL 정규화
 // - http/https로 시작하면 그대로 사용
 // - '/storage/v1/object/public/thumbnails/...' 형식이면 NEXT_PUBLIC_SUPABASE_URL을 앞에 붙임
@@ -206,6 +211,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
     isFree: false,
     showNew: false,
     showExposed: false,
+    slideMenuCategory: '설백야' as '설백야' | '도결',
     typecastEnabled: false,
     contentName: '',
     thumbnailImageUrl: '', // 이미지 썸네일 (JPG)
@@ -614,6 +620,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         })),
         is_new: formData.showNew,
         is_exposed: formData.showExposed,
+        slide_menu_category: formData.slideMenuCategory,
         typecast_enabled: formData.typecastEnabled,
         summary_max_chars: formData.summaryMaxChars === '' ? 500 : (() => { const n = Number(formData.summaryMaxChars); return Number.isFinite(n) ? n : 500; })(),
         tts_speaker: formData.ttsSpeaker || 'nara',
@@ -680,6 +687,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         menu_items: initialData.menu_items || [],
         is_new: initialData.is_new || false,
         is_exposed: initialData.is_exposed || false,
+        slide_menu_category: normalizeSlideMenuCategory((initialData as any).slide_menu_category),
         typecast_enabled: (initialData as any).typecast_enabled === true,
         summary_max_chars: (initialData as any).summary_max_chars != null && (initialData as any).summary_max_chars > 0 ? (initialData as any).summary_max_chars : (initialData as any).summary_max_chars === 0 ? 0 : 500,
         tts_speaker: initialData.tts_speaker || 'nara',
@@ -804,6 +812,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         isFree: data.content_type === 'gonghap',
         showNew: data.is_new || false,
         showExposed: data.is_exposed || false,
+        slideMenuCategory: normalizeSlideMenuCategory((data as any).slide_menu_category),
         typecastEnabled: (data as any).typecast_enabled === true,
         summaryMaxChars: (data as any).summary_max_chars != null && (data as any).summary_max_chars > 0 ? String((data as any).summary_max_chars) : (data as any).summary_max_chars === 0 ? '0' : '500',
         contentName: data.content_name || '',
@@ -1100,6 +1109,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         isFree: data.content_type === 'gonghap',
         showNew: data.is_new || false,
         showExposed: data.is_exposed || false,
+        slideMenuCategory: normalizeSlideMenuCategory((data as any).slide_menu_category),
         typecastEnabled: (data as any).typecast_enabled === true,
         summaryMaxChars: (data as any).summary_max_chars != null && (data as any).summary_max_chars > 0 ? String((data as any).summary_max_chars) : (data as any).summary_max_chars === 0 ? '0' : '500',
         contentName: duplicatedContentName,
@@ -1411,6 +1421,7 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
         })),
         is_new: formData.showNew,
         is_exposed: formData.showExposed,
+        slide_menu_category: formData.slideMenuCategory,
         typecast_enabled: formData.typecastEnabled,
         summary_max_chars: formData.summaryMaxChars === '' ? 500 : (() => { const n = Number(formData.summaryMaxChars); return Number.isFinite(n) ? n : 500; })(),
         tts_speaker: formData.ttsSpeaker || 'nara',
@@ -2261,20 +2272,24 @@ export default function AdminForm({ onAdd }: AdminFormProps) {
               타입캐스트
             </label>
           </div>
-          <div className="flex items-center gap-2 border border-sky-500 rounded-lg px-3 py-2" title="기본 500자. 0이면 점사 요약 버튼 비표시">
-            <label htmlFor="summaryMaxChars" className="text-sm font-medium text-gray-300 whitespace-nowrap">
-              요약 글자수
+          <div className="flex items-center gap-2 border border-violet-500 rounded-lg px-3 py-2">
+            <label htmlFor="slideMenuCategory" className="text-sm font-medium text-gray-300 whitespace-nowrap">
+              삼선 메뉴 구분
             </label>
-            <input
-              type="number"
-              id="summaryMaxChars"
-              min={0}
-              max={2000}
-              placeholder="500"
-              value={formData.summaryMaxChars}
-              onChange={(e) => setFormData(prev => ({ ...prev, summaryMaxChars: e.target.value.replace(/\D/g, '') }))}
-              className="w-20 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm text-right focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-800"
-            />
+            <select
+              id="slideMenuCategory"
+              value={formData.slideMenuCategory}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  slideMenuCategory: e.target.value === '도결' ? '도결' : '설백야',
+                }))
+              }
+              className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 min-w-[200px]"
+            >
+              <option value="설백야">설백야 (재회상품)</option>
+              <option value="도결">도결 (평생·올해 사주)</option>
+            </select>
           </div>
           <div className="flex items-center gap-2 border border-green-500 rounded-lg px-4 py-2 ml-auto">
             <input

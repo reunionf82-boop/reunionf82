@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import TermsPopup from './TermsPopup'
 
@@ -25,7 +25,9 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
   const [loadingContents, setLoadingContents] = useState(false) // 초기값을 false로 변경 (프리로딩 시작 전에는 로딩 중이 아님)
   const [isPreloading, setIsPreloading] = useState(false) // 프리로딩 진행 여부 추적
   const [preloadCompleted, setPreloadCompleted] = useState(false) // 프리로딩 완료 여부 추적
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['설백야', '고객지원']))
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
+    new Set(['설백야', '도결', '고객지원'])
+  )
   
   // localStorage 키
   const STORAGE_KEY = 'baekya_paid_contents'
@@ -99,10 +101,8 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
   // 컨텐츠 목록 로드 및 초기화
   useEffect(() => {
     if (isOpen) {
-      // 메뉴가 열릴 때마다 초기화 - 설백야 카테고리는 기본이 펼침
       setActiveSection('menu')
-      // 설백야 카테고리는 항상 기본 펼침 상태로 설정
-      setExpandedCategories(new Set(['설백야', '고객지원']))
+      setExpandedCategories(new Set(['설백야', '도결', '고객지원']))
       setSelectedContentId(null)
       
       // 프리로딩 완료되었거나 데이터가 이미 있으면 로드하지 않음
@@ -217,10 +217,28 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
     setExpandedCategories(newExpanded)
   }
 
-  // 컨텐츠 클릭 (설백야 카테고리만 점사 중 제한)
+  // 결제 목록을 삼선 메뉴 카테고리별로 분리 (DB slide_menu_category, 미설정=설백야)
+  const { paidSeolbaekya, paidDogyeol } = useMemo(() => {
+    const seol: any[] = []
+    const dog: any[] = []
+    for (const c of paidContents) {
+      if (c?.slide_menu_category === '도결') dog.push(c)
+      else seol.push(c)
+    }
+    return { paidSeolbaekya: seol, paidDogyeol: dog }
+  }, [paidContents])
+
+  const paidMenuCategories = useMemo(
+    () => [
+      { key: '설백야' as const, title: '설백야', caption: '재회상품', items: paidSeolbaekya },
+      { key: '도결' as const, title: '도결', caption: '평생·올해 사주', items: paidDogyeol },
+    ],
+    [paidSeolbaekya, paidDogyeol]
+  )
+
+  // 컨텐츠 클릭 (설백야·도결: 폼 전환 시 점사 중 제한)
   const handleContentClick = (contentId: number, category: string) => {
-    // 설백야 카테고리만 점사 중 제한
-    if (!streamingFinished && category === '설백야') {
+    if (!streamingFinished && (category === '설백야' || category === '도결')) {
       alert('점사중이니 완료될때까지 기다려주세요')
       return
     }
@@ -393,50 +411,54 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
           {/* 메뉴 섹션 (기본) */}
           {activeSection === 'menu' && (
             <div className="p-6 space-y-4">
-              {/* 설백야 카테고리 */}
-              <div>
-                <button
-                  onClick={() => toggleCategory('설백야')}
-                  className="w-full flex items-center justify-between py-3 px-4 bg-pink-50 rounded-lg hover:bg-pink-100 transition-colors"
-                >
-                  <span className="font-bold text-gray-900">설백야</span>
-                  <svg
-                    className={`w-5 h-5 text-gray-600 transition-transform ${
-                      expandedCategories.has('설백야') ? 'rotate-180' : ''
-                    }`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+              {paidMenuCategories.map(({ key, title, caption, items }) => (
+                <div key={key}>
+                  <button
+                    type="button"
+                    onClick={() => toggleCategory(key)}
+                    className="w-full flex items-center justify-between py-3 px-4 bg-pink-50 rounded-lg hover:bg-pink-100 transition-colors gap-2"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {expandedCategories.has('설백야') && (
-                  <div className="mt-2 space-y-1 pl-4">
-                    {/* localStorage에 데이터가 있고 프리로딩 완료되지 않았어도 표시 */}
-                    {/* 로딩 중은 실제로 로딩 중이고 localStorage에도 없을 때만 표시 */}
-                    {!preloadCompleted && !isPreloading && paidContents.length === 0 && loadingContents ? (
-                      <div className="text-sm text-gray-500 py-2">로딩 중...</div>
-                    ) : paidContents.length === 0 ? (
-                      <div className="text-sm text-gray-500 py-2">결제한 컨텐츠가 없습니다.</div>
-                    ) : (
-                      paidContents.map((content) => (
-                        <button
-                          key={content.id}
-                          onClick={() => handleContentClick(content.id, '설백야')}
-                          className={`w-full text-left py-2.5 px-4 rounded-lg text-sm transition-colors ${
-                            selectedContentId === content.id
-                              ? 'bg-pink-600 text-white border-2 border-pink-600'
-                              : 'bg-white text-gray-700 border-2 border-transparent hover:bg-pink-50 hover:border-pink-200'
-                          }`}
-                        >
-                          {content.content_name || '이름 없음'}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
+                    <span className="text-gray-900 text-left whitespace-normal">
+                      <span className="font-bold">{title}</span>
+                      <span className="font-normal"> ({caption})</span>
+                    </span>
+                    <svg
+                      className={`w-5 h-5 text-gray-600 shrink-0 transition-transform ${
+                        expandedCategories.has(key) ? 'rotate-180' : ''
+                      }`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {expandedCategories.has(key) && (
+                    <div className="mt-2 space-y-1 pl-4">
+                      {!preloadCompleted && !isPreloading && paidContents.length === 0 && loadingContents ? (
+                        <div className="text-sm text-gray-500 py-2">로딩 중...</div>
+                      ) : items.length === 0 ? (
+                        <div className="text-sm text-gray-500 py-2">결제한 컨텐츠가 없습니다.</div>
+                      ) : (
+                        items.map((content: any) => (
+                          <button
+                            key={content.id}
+                            type="button"
+                            onClick={() => handleContentClick(content.id, key)}
+                            className={`w-full text-left py-2.5 px-4 rounded-lg text-sm transition-colors ${
+                              selectedContentId === content.id
+                                ? 'bg-pink-600 text-white border-2 border-pink-600'
+                                : 'bg-white text-gray-700 border-2 border-transparent hover:bg-pink-50 hover:border-pink-200'
+                            }`}
+                          >
+                            {content.content_name || '이름 없음'}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
 
               {/* 고객지원 카테고리 */}
               <div>
