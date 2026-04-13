@@ -24,11 +24,19 @@ export async function POST(request: NextRequest) {
     const formData = new URLSearchParams()
     formData.append('uno', String(unoNum))
 
+    // 브라우저 → 리유니온 API 요청에 실린 Cookie(.fortune82.com 등)를 포춘82로 전달해야
+    // cvalue가 POST uno와 세션 쿠키를 대조할 때(E2 방지) 통과하는 경우가 많음.
+    const forwardCookie = request.headers.get('cookie') ?? ''
+    const upstreamHeaders: Record<string, string> = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    }
+    if (forwardCookie) {
+      upstreamHeaders.Cookie = forwardCookie
+    }
+
     const response = await fetch(CVALUE_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
+      headers: upstreamHeaders,
       body: formData.toString(),
     })
 

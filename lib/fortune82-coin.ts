@@ -27,6 +27,51 @@ export function parseFortune82UnoFromBrowser(): number | null {
 /**
  * reunion payment_code → 포춘82 코인 API용 9001~9100 (가이드 구간, 중복 완화용 버킷)
  */
+const CVALUE_URL = 'https://www.fortune82.com/api/payment/cvalue.html'
+
+/**
+ * 브라우저에서 포춘82 cvalue 직접 호출(쿠키 자동 전달). CORS가 허용된 경우에만 성공.
+ * 서버 프록시에 Cookie 포워딩이 없을 때 보조용.
+ */
+export async function fetchFortune82CvalueBalanceFromBrowser(uno: number): Promise<number | null> {
+  if (typeof window === 'undefined') return null
+  try {
+    const res = await fetch(CVALUE_URL, {
+      method: 'POST',
+      credentials: 'include',
+      mode: 'cors',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ uno: String(uno) }).toString(),
+    })
+    const text = (await res.text()).trim()
+    if (/^\d+$/.test(text)) return parseInt(text, 10)
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 1) 브라우저 직접 cvalue (쿠키 포함) 2) 실패 시 리유니온 API(서버가 Cookie 포워딩)
+ */
+export async function fetchFortune82CoinBalanceResolved(uno: number): Promise<number | null> {
+  const direct = await fetchFortune82CvalueBalanceFromBrowser(uno)
+  if (direct != null) return direct
+  try {
+    const r = await fetch('/api/payment/coin-balance', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uno: String(uno) }),
+    })
+    const data = await r.json().catch(() => ({}))
+    if (data?.success && typeof data.balance === 'number') return data.balance
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
 export function mapPaymentCodeToCoinItemCode(paymentCode: string): string {
   const digits = String(paymentCode ?? '').replace(/\D/g, '')
   const tail = digits.slice(-4) || '1'

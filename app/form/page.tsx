@@ -18,7 +18,7 @@ import SupabaseVideo from '@/components/SupabaseVideo'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import { generateOrderId } from '@/lib/payment-utils'
-import { parseFortune82UnoFromBrowser } from '@/lib/fortune82-coin'
+import { parseFortune82UnoFromBrowser, fetchFortune82CoinBalanceResolved } from '@/lib/fortune82-coin'
 
 /** 바로이용하기 결제 금액. PG T103(아이템 금액 오류) 시 .env에 NEXT_PUBLIC_SKIP_WAIT_PAY_AMOUNT=1000 등으로 최소 결제 금액에 맞춰 설정 */
 const SKIP_WAIT_PAY_AMOUNT = (() => {
@@ -642,19 +642,10 @@ function FormContent() {
     }
     let cancelled = false
     setFortuneCoinLoading(true)
-    fetch('/api/payment/coin-balance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uno: String(uno) }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
+    void fetchFortune82CoinBalanceResolved(uno)
+      .then((balance) => {
         if (cancelled) return
-        if (data?.success && typeof data.balance === 'number') {
-          setFortuneCoinBalance(data.balance)
-        } else {
-          setFortuneCoinBalance(null)
-        }
+        setFortuneCoinBalance(balance != null ? balance : null)
       })
       .catch(() => {
         if (!cancelled) setFortuneCoinBalance(null)
@@ -3897,27 +3888,19 @@ function FormContent() {
           return
         }
         try {
-          const balRes = await fetch('/api/payment/coin-balance', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uno: String(unoLogin) }),
-          })
-          const balJson = await balRes.json().catch(() => ({}))
-          if (!balJson?.success || typeof balJson.balance !== 'number') {
+          const balance = await fetchFortune82CoinBalanceResolved(unoLogin)
+          if (balance == null) {
             setSubmitting(false)
             setPaymentProcessingMethod(null)
-            const code = balJson?.code
             showAlertMessage(
-              typeof code === 'string' && code.startsWith('E')
-                ? '코인 잔액을 확인할 수 없습니다. 포춘82 로그인 상태에서 다시 시도해 주세요.'
-                : balJson?.error || '코인 잔액을 확인할 수 없습니다.'
+              '코인 잔액을 확인할 수 없습니다. 포춘82에 로그인한 뒤 다시 시도해 주세요.'
             )
             return
           }
-          if (balJson.balance < priceNum) {
+          if (balance < priceNum) {
             setSubmitting(false)
             setPaymentProcessingMethod(null)
-            showAlertMessage(`코인이 부족합니다. (내 코인: ${balJson.balance}코인)`)
+            showAlertMessage(`코인이 부족합니다. (내 코인: ${balance}코인)`)
             return
           }
         } catch {
