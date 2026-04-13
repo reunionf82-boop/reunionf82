@@ -6601,8 +6601,8 @@ function FormContent() {
                 let coinMain = '코인으로 결제'
                 let coinSub: string | null = null
                 if (uno == null) {
-                  coinMain = '포춘82 로그인 필요'
-                  coinSub = '코인결제는 포춘82 로그인(회원)만 이용할 수 있어요'
+                  coinMain = ''
+                  coinSub = ''
                 } else if (loadingCoin) {
                   coinMain = '코인 확인 중…'
                 } else if (bal == null) {
@@ -6647,30 +6647,50 @@ function FormContent() {
                         )}
                       </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handlePaymentSubmit('coin')}
-                      disabled={coinDisabled}
-                      className={coinPink ? activeCoinClass : dimCoinClass}
-                    >
-                      {paymentProcessingMethod === 'coin' ? (
-                        <>
-                          <div className={`animate-spin rounded-full h-6 w-6 border-b-2 ${coinPink ? 'border-white' : 'border-gray-500'}`} />
-                          <span>처리 중...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="text-lg leading-snug text-center">{coinMain}</span>
-                          {coinSub ? (
-                            <span
-                              className={`text-xs font-normal max-w-[300px] text-center leading-tight ${coinPink ? 'text-white/90' : 'text-gray-500'}`}
-                            >
-                              {coinSub}
-                            </span>
-                          ) : null}
-                        </>
-                      )}
-                    </button>
+                    {uno == null ? (
+                      <div className={dimCoinClass}>
+                        <span className="text-lg leading-snug text-center">
+                          포춘82 로그인 필요(
+                          <a
+                            href="https://www.fortune82.com/login.html"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-pink-600 underline font-semibold"
+                          >
+                            로그인 하기
+                          </a>
+                          )
+                        </span>
+                        <span className="text-xs font-normal max-w-[300px] text-center leading-tight text-gray-500">
+                          코인결제는 포춘82 로그인(회원)만 이용할 수 있어요
+                        </span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handlePaymentSubmit('coin')}
+                        disabled={coinDisabled}
+                        className={coinPink ? activeCoinClass : dimCoinClass}
+                      >
+                        {paymentProcessingMethod === 'coin' ? (
+                          <>
+                            <div className={`animate-spin rounded-full h-6 w-6 border-b-2 ${coinPink ? 'border-white' : 'border-gray-500'}`} />
+                            <span>처리 중...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-lg leading-snug text-center">{coinMain}</span>
+                            {coinSub ? (
+                              <span
+                                className={`text-xs font-normal max-w-[300px] text-center leading-tight ${coinPink ? 'text-white/90' : 'text-gray-500'}`}
+                              >
+                                {coinSub}
+                              </span>
+                            ) : null}
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 )
               })()}
