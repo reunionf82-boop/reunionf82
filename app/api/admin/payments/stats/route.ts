@@ -112,6 +112,7 @@ export async function GET(request: NextRequest) {
       const totalCount = payments.length
       const cardCount = payments.filter(p => p.payment_type === 'card').length
       const mobileCount = payments.filter(p => p.payment_type === 'mobile').length
+      const coinCount = payments.filter(p => p.payment_type === 'coin').length
       const maleCount = payments.filter(p => p.gender === 'male').length
       const femaleCount = payments.filter(p => p.gender === 'female').length
 
@@ -160,10 +161,13 @@ export async function GET(request: NextRequest) {
       // 결제 타입별 남녀 통계
       const cardPayments = payments.filter(p => p.payment_type === 'card')
       const mobilePayments = payments.filter(p => p.payment_type === 'mobile')
+      const coinPayments = payments.filter(p => p.payment_type === 'coin')
       const cardMaleCount = cardPayments.filter(p => p.gender === 'male').length
       const cardFemaleCount = cardPayments.filter(p => p.gender === 'female').length
       const mobileMaleCount = mobilePayments.filter(p => p.gender === 'male').length
       const mobileFemaleCount = mobilePayments.filter(p => p.gender === 'female').length
+      const coinMaleCount = coinPayments.filter(p => p.gender === 'male').length
+      const coinFemaleCount = coinPayments.filter(p => p.gender === 'female').length
 
       // 컨텐츠별 통계
       const contentStats: { [key: number]: { content_id: number; content_name: string; amount: number; count: number } } = {}
@@ -207,6 +211,7 @@ export async function GET(request: NextRequest) {
           count: totalCount,
           cardCount,
           mobileCount,
+          coinCount,
           maleCount,
           femaleCount
         },
@@ -226,6 +231,12 @@ export async function GET(request: NextRequest) {
             amount: payments.filter(p => p.payment_type === 'mobile').reduce((sum, p) => sum + (p.pay || 0), 0),
             maleCount: mobileMaleCount,
             femaleCount: mobileFemaleCount
+          },
+          coin: {
+            count: coinCount,
+            amount: payments.filter(p => p.payment_type === 'coin').reduce((sum, p) => sum + (p.pay || 0), 0),
+            maleCount: coinMaleCount,
+            femaleCount: coinFemaleCount
           }
         }
       }

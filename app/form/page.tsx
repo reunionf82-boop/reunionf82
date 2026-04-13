@@ -18,6 +18,7 @@ import SupabaseVideo from '@/components/SupabaseVideo'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import { generateOrderId } from '@/lib/payment-utils'
+import { parseFortune82UnoFromBrowser } from '@/lib/fortune82-coin'
 
 /** 바로이용하기 결제 금액. PG T103(아이템 금액 오류) 시 .env에 NEXT_PUBLIC_SKIP_WAIT_PAY_AMOUNT=1000 등으로 최소 결제 금액에 맞춰 설정 */
 const SKIP_WAIT_PAY_AMOUNT = (() => {
@@ -564,7 +565,10 @@ function FormContent() {
   
   // 결제 팝업 상태
   const [showPaymentPopup, setShowPaymentPopup] = useState(false)
-  const [paymentProcessingMethod, setPaymentProcessingMethod] = useState<null | 'card' | 'mobile'>(null)
+  const [paymentProcessingMethod, setPaymentProcessingMethod] = useState<null | 'card' | 'mobile' | 'coin'>(null)
+  /** 포춘82 코인 잔액(결제 팝업 열릴 때 조회, 비회원은 조회 안 함) */
+  const [fortuneCoinBalance, setFortuneCoinBalance] = useState<number | null>(null)
+  const [fortuneCoinLoading, setFortuneCoinLoading] = useState(false)
   // 중복 결제/생성 확인 커스텀 팝업 (확인 시 진행할 콜백 저장)
   const [showDuplicateConfirmPopup, setShowDuplicateConfirmPopup] = useState(false)
   const [duplicateConfirmMessage, setDuplicateConfirmMessage] = useState('')
@@ -627,6 +631,41 @@ function FormContent() {
     if (typeof window === 'undefined') return
     void loadDevUnlockConfig()
   }, [loadDevUnlockConfig])
+
+  useEffect(() => {
+    if (!showPaymentPopup || typeof window === 'undefined') return
+    const uno = parseFortune82UnoFromBrowser()
+    if (!uno) {
+      setFortuneCoinBalance(null)
+      setFortuneCoinLoading(false)
+      return
+    }
+    let cancelled = false
+    setFortuneCoinLoading(true)
+    fetch('/api/payment/coin-balance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uno: String(uno) }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return
+        if (data?.success && typeof data.balance === 'number') {
+          setFortuneCoinBalance(data.balance)
+        } else {
+          setFortuneCoinBalance(null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFortuneCoinBalance(null)
+      })
+      .finally(() => {
+        if (!cancelled) setFortuneCoinLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [showPaymentPopup])
   
   // 결제 창 참조 (닫기용)
   const paymentWindowRef = useRef<Window | null>(null)
@@ -3532,7 +3571,7 @@ function FormContent() {
   }
 
   // 결제 처리 함수
-  const handlePaymentSubmit = async (paymentMethod: 'card' | 'mobile') => {
+  const handlePaymentSubmit = async (paymentMethod: 'card' | 'mobile' | 'coin') => {
     // 컨텐츠 정보 확인
     if (!content || !content.id) {
       showAlertMessage('컨텐츠 정보를 불러올 수 없습니다.')
@@ -3849,6 +3888,46 @@ function FormContent() {
         return
       }
 
+      if (paymentMethod === 'coin') {
+        const unoLogin = parseFortune82UnoFromBrowser()
+        if (!unoLogin) {
+          setSubmitting(false)
+          setPaymentProcessingMethod(null)
+          showAlertMessage('포춘82에 로그인한 회원만 코인 결제를 이용할 수 있습니다.')
+          return
+        }
+        try {
+          const balRes = await fetch('/api/payment/coin-balance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uno: String(unoLogin) }),
+          })
+          const balJson = await balRes.json().catch(() => ({}))
+          if (!balJson?.success || typeof balJson.balance !== 'number') {
+            setSubmitting(false)
+            setPaymentProcessingMethod(null)
+            const code = balJson?.code
+            showAlertMessage(
+              typeof code === 'string' && code.startsWith('E')
+                ? '코인 잔액을 확인할 수 없습니다. 포춘82 로그인 상태에서 다시 시도해 주세요.'
+                : balJson?.error || '코인 잔액을 확인할 수 없습니다.'
+            )
+            return
+          }
+          if (balJson.balance < priceNum) {
+            setSubmitting(false)
+            setPaymentProcessingMethod(null)
+            showAlertMessage(`코인이 부족합니다. (내 코인: ${balJson.balance}코인)`)
+            return
+          }
+        } catch {
+          setSubmitting(false)
+          setPaymentProcessingMethod(null)
+          showAlertMessage('코인 잔액 조회에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+          return
+        }
+      }
+
       // 1. 주문번호 생성 (가장 먼저 수행)
       const oid = generateOrderId()
       
@@ -3971,23 +4050,37 @@ function FormContent() {
           }
         }
 
-      // 결제 요청
-      const paymentRequestResponse = await fetch('/api/payment/request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          paymentMethod,
-          contentId: content.id,
-          paymentCode: content.payment_code,
-          name: content.content_name || '',
-          pay: priceNum,
-          userName: name,
-          phoneNumber: `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`,
-          oid
-        })
-      })
+      // 결제 요청 (카드·휴대폰: request / 코인: coin-request 후 reqcoin.html 로 POST)
+      const unoForCoin = paymentMethod === 'coin' ? parseFortune82UnoFromBrowser() : null
+      const paymentRequestResponse = await fetch(
+        paymentMethod === 'coin' ? '/api/payment/coin-request' : '/api/payment/request',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(
+            paymentMethod === 'coin'
+              ? {
+                  oid,
+                  uno: String(unoForCoin ?? ''),
+                  paymentCode: content.payment_code,
+                  name: content.content_name || '',
+                  pay: priceNum,
+                }
+              : {
+                  paymentMethod,
+                  contentId: content.id,
+                  paymentCode: content.payment_code,
+                  name: content.content_name || '',
+                  pay: priceNum,
+                  userName: name,
+                  phoneNumber: `${phoneNumber1}-${phoneNumber2}-${phoneNumber3}`,
+                  oid,
+                }
+          ),
+        }
+      )
 
       if (!paymentRequestResponse.ok) {
         const errorData = await paymentRequestResponse.json().catch(() => ({}))
@@ -4001,7 +4094,7 @@ function FormContent() {
 
       const { paymentUrl, formData, successUrl, failUrl } = paymentRequestData.data
 
-      // 카드 결제와 휴대폰 결제 모두 실제 결제 서버로 요청 (form submit)
+      // 카드·휴대폰·코인 모두 결제 서버로 form POST (코인은 uno/code/name/pay/oid 만 전송)
       // 중요: window.open으로 연 "같은 창"에만 submit 해야 postMessage/close가 안정적으로 동작함
       const form = document.createElement('form')
       form.method = 'POST'
@@ -4009,17 +4102,20 @@ function FormContent() {
       form.style.display = 'none'
 
       // 결제사 리다이렉트 URL도 함께 전달 (결제 성공/실패 시 우리 페이지로 돌아오게)
-      // 결제사 구현별 파라미터명이 다를 수 있어 호환 키를 모두 보낸다.
-      const redirectFields: Record<string, string> = {
-        successUrl,
-        failUrl,
-        success_url: successUrl,
-        fail_url: failUrl,
-        returnUrl: successUrl,
-        return_url: successUrl,
-        ret_url: successUrl,
-        nextUrl: successUrl,
-      }
+      // 결제사 구현별 파라미터명이 다를 수 있어 호환 키를 모두 보낸다. (코인 결제 API는 해당 파라미터 미사용)
+      const redirectFields: Record<string, string> =
+        paymentMethod === 'coin' || successUrl == null || failUrl == null
+          ? {}
+          : {
+              successUrl,
+              failUrl,
+              success_url: successUrl,
+              fail_url: failUrl,
+              returnUrl: successUrl,
+              return_url: successUrl,
+              ret_url: successUrl,
+              nextUrl: successUrl,
+            }
 
       const fullFormData: Record<string, string> = {
         ...Object.fromEntries(Object.entries(formData).map(([k, v]) => [k, String(v)])),
@@ -6454,7 +6550,7 @@ function FormContent() {
                 <div className="mb-6"></div>
               )}
 
-              {/* 결제 버튼: 0원(무료)일 때는 [음성상담 무료 시작] 1개만, 그 외 [카드결제] [휴대폰 결제] — 팝업 이용금액 표시와 동일하게 content.price 기준 */}
+              {/* 결제 버튼: 0원(무료)일 때는 [음성상담 무료 시작] 1개만, 유료는 카드·휴대폰 + 포춘82 코인(하단 크게) */}
               {(() => {
                 const displayedPriceNum = parseInt(String(content?.price ?? '0').replace(/[^0-9]/g, ''), 10)
                 const isZeroWon = !Number.isFinite(displayedPriceNum) || displayedPriceNum <= 0
@@ -6479,36 +6575,117 @@ function FormContent() {
                     </div>
                   )
                 }
+                const rawOptsPopup = content?.content_type === 'multi'
+                  ? (content as any)?.multi_time_options
+                  : content?.voice_time_options
+                let voiceTimeOptionsPopup: Array<{ minutes: number; price: number; label: string }> = []
+                if (Array.isArray(rawOptsPopup)) voiceTimeOptionsPopup = rawOptsPopup
+                else if (typeof rawOptsPopup === 'string' && rawOptsPopup.trim()) {
+                  try { voiceTimeOptionsPopup = JSON.parse(rawOptsPopup) } catch { voiceTimeOptionsPopup = [] }
+                }
+                const isVoiceContentPopup =
+                  content?.content_type === 'voice' ||
+                  content?.content_type === 'multi' ||
+                  !!content?.voice_model ||
+                  !!content?.voice_persona_prompt ||
+                  (Array.isArray(voiceTimeOptionsPopup) && voiceTimeOptionsPopup.length > 0) ||
+                  (typeof content?.content_name === 'string' && content.content_name.includes('음성'))
+                const isFreeVoicePopup = isVoiceContentPopup && (!Number.isFinite(displayedPriceNum) || displayedPriceNum <= 0)
+                const priceNumForOptionPopup = isFreeVoicePopup
+                  ? 0
+                  : (Number.isFinite(displayedPriceNum) ? displayedPriceNum : (voiceTimeOptionsPopup[0] as any)?.price)
+                const selectedVoiceOptionPopup =
+                  isVoiceContentPopup && voiceTimeOptionsPopup.length > 0
+                    ? (voiceTimeOptionsPopup.find((o: any) => Number(o?.price) === priceNumForOptionPopup) || voiceTimeOptionsPopup[0])
+                    : null
+                const effectivePay =
+                  selectedVoiceOptionPopup != null && Number.isFinite(selectedVoiceOptionPopup.price)
+                    ? selectedVoiceOptionPopup.price
+                    : displayedPriceNum
+                const uno = typeof window !== 'undefined' ? parseFortune82UnoFromBrowser() : null
+                const bal = fortuneCoinBalance
+                const loadingCoin = fortuneCoinLoading
+                const price = effectivePay
+                const coinCanPay =
+                  uno != null && !loadingCoin && bal != null && bal >= price
+                const coinDisabled = submitting || paymentProcessingMethod !== null || !coinCanPay
+                const coinPink =
+                  coinCanPay && (paymentProcessingMethod === null || paymentProcessingMethod === 'coin')
+                const dimCoinClass =
+                  'w-full border-2 border-gray-200 bg-gray-100 text-gray-600 font-bold py-4 px-4 rounded-xl flex flex-col items-center justify-center gap-1 min-h-[4.5rem]'
+                const activeCoinClass =
+                  'w-full bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl flex flex-col items-center justify-center gap-1 min-h-[4.5rem] disabled:opacity-50 disabled:cursor-not-allowed'
+                let coinMain = '코인으로 결제'
+                let coinSub: string | null = null
+                if (uno == null) {
+                  coinMain = '포춘82 로그인 필요'
+                  coinSub = '코인결제는 포춘82 로그인(회원)만 이용할 수 있어요'
+                } else if (loadingCoin) {
+                  coinMain = '코인 확인 중…'
+                } else if (bal == null) {
+                  coinMain = '코인 잔액을 불러오지 못했습니다'
+                  coinSub = '잠시 후 다시 시도해 주세요'
+                } else if (bal < price) {
+                  coinMain = `코인부족(내코인 : ${bal}코인)`
+                } else {
+                  coinSub = `보유 ${bal.toLocaleString()}코인 · 결제 ${price.toLocaleString()}코인`
+                }
                 return (
-                  <div className="flex gap-3">
+                  <div className="space-y-3">
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handlePaymentSubmit('card')}
+                        disabled={submitting || paymentProcessingMethod !== null}
+                        className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {paymentProcessingMethod === 'card' ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                            <span>처리 중...</span>
+                          </>
+                        ) : (
+                          '카드결제'
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePaymentSubmit('mobile')}
+                        disabled={submitting || paymentProcessingMethod !== null}
+                        className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {paymentProcessingMethod === 'mobile' ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                            <span>처리 중...</span>
+                          </>
+                        ) : (
+                          '휴대폰 결제'
+                        )}
+                      </button>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => handlePaymentSubmit('card')}
-                      disabled={submitting || paymentProcessingMethod !== null}
-                      className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      onClick={() => handlePaymentSubmit('coin')}
+                      disabled={coinDisabled}
+                      className={coinPink ? activeCoinClass : dimCoinClass}
                     >
-                      {paymentProcessingMethod === 'card' ? (
+                      {paymentProcessingMethod === 'coin' ? (
                         <>
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                          <div className={`animate-spin rounded-full h-6 w-6 border-b-2 ${coinPink ? 'border-white' : 'border-gray-500'}`} />
                           <span>처리 중...</span>
                         </>
                       ) : (
-                        '카드결제'
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handlePaymentSubmit('mobile')}
-                      disabled={submitting || paymentProcessingMethod !== null}
-                      className="flex-1 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {paymentProcessingMethod === 'mobile' ? (
                         <>
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                          <span>처리 중...</span>
+                          <span className="text-lg leading-snug text-center">{coinMain}</span>
+                          {coinSub ? (
+                            <span
+                              className={`text-xs font-normal max-w-[300px] text-center leading-tight ${coinPink ? 'text-white/90' : 'text-gray-500'}`}
+                            >
+                              {coinSub}
+                            </span>
+                          ) : null}
                         </>
-                      ) : (
-                        '휴대폰 결제'
                       )}
                     </button>
                   </div>
@@ -7502,7 +7679,7 @@ function FormContent() {
                 })()}
               </div>
               <p className="text-sm text-gray-700 leading-relaxed">
-                해당 상품은 포춘82 코인 결제가 불가능하며 별도로 운영됩니다.
+                포춘82에 로그인한 회원은 보유 코인으로 결제할 수 있습니다. 비회원 또는 코인이 부족한 경우 카드·휴대폰 결제를 이용해 주세요. (운영 정책에 따라 코인 연동이 달라질 수 있습니다.)
               </p>
             </div>
           )}
@@ -8552,8 +8729,8 @@ function FormContent() {
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-8">
           <h3 className="text-lg font-bold text-gray-900 mb-4">이용안내</h3>
           <div className="space-y-2 text-sm text-gray-700">
-            <p>※ 본 상품은 포춘82에 재유니온이 샵인샵 형태로 별도로 운영되는 콘텐츠 입니다.</p>
-            <p>※ 재유니온 상품은 포춘82 코인 결제가 불가능하며 별도로 운영됩니다.</p>
+            <p>※ 본 상품은 포춘82에 재유니온이 샵인샵 형태로 별도로 운영되는 콘텐츠입니다.</p>
+            <p>※ 포춘82에 로그인한 회원은 보유 코인으로 결제할 수 있으며, 카드·휴대폰 결제도 이용할 수 있습니다. (향후 운영 방식은 변경될 수 있습니다.)</p>
             <p>※ 다시보기는 재유니온 → 나의 이용내역에서 결제일로부터 60일간 확인이 가능합니다.</p>
             <p>※ 회원님의 실수로 인하여 결제된 서비스에 대해서는 교환 및 환불이 안됩니다.</p>
           </div>

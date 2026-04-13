@@ -13,7 +13,7 @@ import { logPaymentEvent } from '@/lib/payment-event-log'
  * - paymentCode: string
  * - name: string
  * - pay: number
- * - paymentType: 'card' | 'mobile'
+ * - paymentType: 'card' | 'mobile' | 'coin'
  * - userName: string
  * - phoneNumber: string
  * - gender?: 'male' | 'female' | null

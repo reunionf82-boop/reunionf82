@@ -354,7 +354,7 @@ export default function SlideMenuBar({ isOpen, onClose, streamingFinished = true
   const faqData = [
     {
       question: '포춘82 결제(코인)와 재유니온 결제가 다른가요?',
-      answer: '포춘82와 재유니온은 별도로 운영되고 있습니다. 서로 호환되지 않으며 개인정보 및 이용내역도 별도로 관리되고 있습니다.'
+      answer: '재유니온은 포춘82 샵인샵으로 연결되어 있으며, 포춘82에 로그인한 회원은 보유 코인으로 결제할 수 있습니다. 나의 이용내역·다시보기는 재유니온에서 관리됩니다.'
     },
     {
       question: '생년월일을 잘못 입력했는데 수정이 가능한가요?',

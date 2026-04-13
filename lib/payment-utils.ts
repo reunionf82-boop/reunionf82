@@ -30,8 +30,10 @@ export function generateOrderId(): string {
 /**
  * 결제 타입을 한글 표시명으로 변환
  */
-export function getPaymentTypeDisplayName(paymentType: 'card' | 'mobile'): string {
-  return paymentType === 'card' ? '카드결제' : '휴대폰 결제'
+export function getPaymentTypeDisplayName(paymentType: 'card' | 'mobile' | 'coin'): string {
+  if (paymentType === 'card') return '카드결제'
+  if (paymentType === 'coin') return '코인결제'
+  return '휴대폰 결제'
 }
 
 /**
