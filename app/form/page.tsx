@@ -30,6 +30,8 @@ const SKIP_WAIT_PAY_AMOUNT = (() => {
 function FormContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  /** 서비스 중단: 결제 진입 UI 전체 숨김 (무료/잔여 캐시 이용 등 비결제 흐름은 기존 로직 유지) */
+  const HIDE_PAYMENT_ENTRY_UI = true
   /** iOS: 같은 창 유지해 폼에서 준비한 __voicePrimedContext 사용(마이크 팝업·소리). 그 외는 기존대로 전체 로드 */
   const navigateToVoiceResult = useCallback((url: string) => {
     if (typeof window !== 'undefined' && isIOS()) router.push(url)
@@ -6221,7 +6223,7 @@ function FormContent() {
       )}
 
       {/* 바로이용하기 팝업 (결제정보 팝업과 동일 레이아웃) */}
-      {showSkipWaitPopup && (
+      {!HIDE_PAYMENT_ENTRY_UI && showSkipWaitPopup && (
         <div
           className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
@@ -6397,7 +6399,7 @@ function FormContent() {
       )}
 
       {/* 결제 팝업 - 최상위 레벨로 이동하여 헤더 포함 전체 화면 덮기 */}
-      {showPaymentPopup && (
+      {!HIDE_PAYMENT_ENTRY_UI && showPaymentPopup && (
         <div 
           className="fixed top-0 left-0 right-0 bottom-0 z-[9999] flex items-center justify-center px-4"
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
@@ -8219,34 +8221,36 @@ function FormContent() {
               <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3">
                   <span className="text-sm text-gray-600 font-bold">나의 보유캐시 : {voiceBalanceWan} 캐시 이용가능</span>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const micPromise = (content?.content_type === 'voice' || content?.content_type === 'multi') && typeof window !== 'undefined' && isIOS() ? startIOSVoicePrepare() : null
-                      if (!agreeTerms) {
-                        showAlertMessage('서비스 이용 약관에 동의해주세요.')
-                        return
-                      }
-                      if (!agreePrivacy) {
-                        showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
-                        return
-                      }
-                      if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
-                        showAlertMessage('휴대폰 번호를 입력하세요.')
-                        return
-                      }
-                      if (!password || password.length < 4) {
-                        showAlertMessage('비밀번호를 입력하세요.')
-                        return
-                      }
-                      await finishIOSVoicePrepare(micPromise)
-                      setSkipWaitPopupMode('charge-only')
-                      setShowSkipWaitPopup(true)
-                    }}
-                    className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"
-                  >
-                    충전하기
-                  </button>
+                  {!HIDE_PAYMENT_ENTRY_UI && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const micPromise = (content?.content_type === 'voice' || content?.content_type === 'multi') && typeof window !== 'undefined' && isIOS() ? startIOSVoicePrepare() : null
+                        if (!agreeTerms) {
+                          showAlertMessage('서비스 이용 약관에 동의해주세요.')
+                          return
+                        }
+                        if (!agreePrivacy) {
+                          showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
+                          return
+                        }
+                        if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
+                          showAlertMessage('휴대폰 번호를 입력하세요.')
+                          return
+                        }
+                        if (!password || password.length < 4) {
+                          showAlertMessage('비밀번호를 입력하세요.')
+                          return
+                        }
+                        await finishIOSVoicePrepare(micPromise)
+                        setSkipWaitPopupMode('charge-only')
+                        setShowSkipWaitPopup(true)
+                      }}
+                      className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"
+                    >
+                      충전하기
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -8269,35 +8273,37 @@ function FormContent() {
                       무료는 {timeStr} 후 이용가능
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const micPromise = (content?.content_type === 'voice' || content?.content_type === 'multi') && typeof window !== 'undefined' && isIOS() ? startIOSVoicePrepare() : null
-                      if (!agreeTerms) {
-                        showAlertMessage('서비스 이용 약관에 동의해주세요.')
-                        return
-                      }
-                      if (!agreePrivacy) {
-                        showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
-                        return
-                      }
-                      if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
-                        showAlertMessage('휴대폰 번호를 입력하세요.')
-                        return
-                      }
-                      if (!password || password.length < 4) {
-                        showAlertMessage('비밀번호를 입력하세요.')
-                        return
-                      }
-                      await finishIOSVoicePrepare(micPromise)
-                      setSkipWaitPopupMode('use-now')
-                      if (typeof window !== 'undefined') sessionStorage.removeItem('skip_wait_charge_only')
-                      setShowSkipWaitPopup(true)
-                    }}
-                    className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"
-                  >
-                    바로이용하기
-                  </button>
+                  {!HIDE_PAYMENT_ENTRY_UI && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const micPromise = (content?.content_type === 'voice' || content?.content_type === 'multi') && typeof window !== 'undefined' && isIOS() ? startIOSVoicePrepare() : null
+                        if (!agreeTerms) {
+                          showAlertMessage('서비스 이용 약관에 동의해주세요.')
+                          return
+                        }
+                        if (!agreePrivacy) {
+                          showAlertMessage('개인정보 수집 및 이용에 동의해주세요.')
+                          return
+                        }
+                        if (!phoneNumber1 || !phoneNumber2 || !phoneNumber3) {
+                          showAlertMessage('휴대폰 번호를 입력하세요.')
+                          return
+                        }
+                        if (!password || password.length < 4) {
+                          showAlertMessage('비밀번호를 입력하세요.')
+                          return
+                        }
+                        await finishIOSVoicePrepare(micPromise)
+                        setSkipWaitPopupMode('use-now')
+                        if (typeof window !== 'undefined') sessionStorage.removeItem('skip_wait_charge_only')
+                        setShowSkipWaitPopup(true)
+                      }}
+                      className="shrink-0 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium"
+                    >
+                      바로이용하기
+                    </button>
+                  )}
                 </div>
               )
             })()}
@@ -8321,6 +8327,9 @@ function FormContent() {
                   : hasResidual
                     ? '잔여 캐시로 음성 서비스'
                     : (isExplicitlyFree ? '무료시작' : '결제하기')
+                // 서비스 내림: 폼 화면에서 "결제하기" 버튼만 숨김 (무료/잔여캐시는 유지)
+                const shouldHidePaymentButton = mainButtonText === '결제하기'
+                if (shouldHidePaymentButton) return null
                 return (
                   <button
                     type="button"
