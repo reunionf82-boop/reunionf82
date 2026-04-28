@@ -30,8 +30,6 @@ const SKIP_WAIT_PAY_AMOUNT = (() => {
 function FormContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  /** 서비스 중단: 결제 진입 UI 전체 숨김 (무료/잔여 캐시 이용 등 비결제 흐름은 기존 로직 유지) */
-  const HIDE_PAYMENT_ENTRY_UI = true
   /** iOS: 같은 창 유지해 폼에서 준비한 __voicePrimedContext 사용(마이크 팝업·소리). 그 외는 기존대로 전체 로드 */
   const navigateToVoiceResult = useCallback((url: string) => {
     if (typeof window !== 'undefined' && isIOS()) router.push(url)
@@ -588,6 +586,12 @@ function FormContent() {
   const [devUnlockDurationMinutes, setDevUnlockDurationMinutes] = useState<number>(60)
   const [devUnlockHideEnabled, setDevUnlockHideEnabled] = useState(false)
   const devUnlockClickRef = useRef<{ count: number; timer: ReturnType<typeof setTimeout> | null }>({ count: 0, timer: null })
+
+  /**
+   * 서비스 중단: 결제 진입 UI 전체 숨김.
+   * 단, 홈에서 관리자 언락 시(devUnlockEnabled=true)에는 결제 UI를 다시 노출한다.
+   */
+  const HIDE_PAYMENT_ENTRY_UI = !devUnlockEnabled
 
   const formatInquiryPhone = (value: string) => {
     let digits = String(value || '').replace(/[^0-9]/g, '')
@@ -8328,7 +8332,7 @@ function FormContent() {
                     ? '잔여 캐시로 음성 서비스'
                     : (isExplicitlyFree ? '무료시작' : '결제하기')
                 // 서비스 내림: 폼 화면에서 "결제하기" 버튼만 숨김 (무료/잔여캐시는 유지)
-                const shouldHidePaymentButton = mainButtonText === '결제하기'
+                const shouldHidePaymentButton = HIDE_PAYMENT_ENTRY_UI && mainButtonText === '결제하기'
                 if (shouldHidePaymentButton) return null
                 return (
                   <button
